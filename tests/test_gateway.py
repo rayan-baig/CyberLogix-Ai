@@ -2,10 +2,10 @@
 
 
 def test_root_gateway_lists_every_module(api):
-    body = api.get("/").json()
+    body = api.get("/api").json()
     assert body["system"] == "CyberLogix AI Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
-    assert len(body["modules_active"]) == 7
+    assert len(body["modules_active"]) == 8
     for module in ("universal_iot_telemetry", "byod_hardware_bridge"):
         assert module in body["modules_active"]
 
@@ -14,7 +14,7 @@ def test_health_reports_subsystem_state(api):
     body = api.get("/api/health").json()
     assert body["status"] == "online"
     assert body["active_profiles"] == 8
-    assert body["modules_active"] == 7
+    assert body["modules_active"] == 8
     assert body["plan_tiers"] == ["trial", "growth", "enterprise"]
 
 
@@ -28,6 +28,7 @@ def test_every_router_is_actually_mounted(api):
         "/api/forecast/fleet",
         "/api/v1/bridge/sensor-webhook-ingest",
         "/api/v1/bridge/summarize-transcript",
+        "/api/console/overview",
     ):
         assert expected in paths, f"{expected} is not mounted"
 
@@ -40,3 +41,10 @@ def test_industry_catalogue_exposes_eight_verticals(api):
     )
     assert medical["danger_above"] == 46.0
     assert medical["danger_below"] == 36.0
+
+
+def test_console_html_is_served_at_root(api):
+    resp = api.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "CyberLogix" in resp.text

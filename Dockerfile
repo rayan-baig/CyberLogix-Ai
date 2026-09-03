@@ -13,8 +13,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY main.py store.py gemini.py licenses.py telemetry.py \
-     automation.py voice_dispatch.py forecaster.py hardware_bridge.py ./
+COPY main.py store.py gemini.py notifications.py licenses.py telemetry.py \
+     automation.py voice_dispatch.py forecaster.py hardware_bridge.py \
+     console_api.py ./
+COPY static/ ./static/
 
 # Run as an unprivileged user.
 RUN useradd --create-home --shell /usr/sbin/nologin cyberlogix \

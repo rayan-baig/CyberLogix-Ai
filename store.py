@@ -272,6 +272,8 @@ class Incident:
     sms_text: str
     sms_dispatch_source: str
     opened_at: datetime
+    sms_delivery: Optional[Dict[str, Any]] = None
+    voice_delivery: Optional[Dict[str, Any]] = None
     acknowledged_at: Optional[datetime] = None
     acknowledged_by: Optional[str] = None
     voice_escalated_at: Optional[datetime] = None
@@ -301,6 +303,8 @@ class Incident:
             "breach_details": self.breach_details,
             "dispatched_sms_text": self.sms_text,
             "sms_dispatch_source": self.sms_dispatch_source,
+            "sms_delivery": self.sms_delivery,
+            "voice_delivery": self.voice_delivery,
             "opened_at": iso(self.opened_at),
             "acknowledged_at": iso(self.acknowledged_at),
             "acknowledged_by": self.acknowledged_by,

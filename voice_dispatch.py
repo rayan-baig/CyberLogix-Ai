@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from gemini import safe_generate
 from licenses import require_entitlement, require_tenant
+from notifications import place_voice_call
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -91,6 +92,30 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     return safe_generate(prompt, fallback, purpose="voice escalation script")
 
 
+def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
+    """Draft the script, place the call and stamp the incident.
+
+    Shared by the manual escalate endpoint and the autopilot sweep so both
+    routes record delivery identically.
+    """
+    script, source = build_voice_script(incident, tenant)
+    delivery = place_voice_call(tenant.contact_phone, script)
+
+    incident.voice_escalated_at = utc_now()
+    incident.voice_script = script
+    incident.voice_dispatch_source = source
+    incident.voice_delivery = delivery
+
+    logger.critical(
+        "Voice escalation: incident=%s sensor=%s tenant=%s delivered=%s",
+        incident.incident_id,
+        incident.sensor_id,
+        tenant.tenant_id,
+        delivery["delivered"],
+    )
+    return {"script": script, "source": source, "delivery": delivery}
+
+
 @router.get("/pending")
 def pending_escalations(tenant: Tenant = Depends(require_tenant)):
     """Incidents past the grace window with nobody yet on the case."""
@@ -152,18 +177,7 @@ def escalate_to_voice(
             ),
         )
 
-    script, source = build_voice_script(incident, tenant)
-    incident.voice_escalated_at = utc_now()
-    incident.voice_script = script
-    incident.voice_dispatch_source = source
-
-    logger.critical(
-        "Voice escalation: incident=%s sensor=%s tenant=%s unacknowledged=%.1fmin",
-        incident.incident_id,
-        incident.sensor_id,
-        tenant.tenant_id,
-        waited,
-    )
+    outcome = dispatch_voice_call(incident, tenant)
 
     return {
         "status": "VOICE_ESCALATION_DISPATCHED",
@@ -171,8 +185,9 @@ def escalate_to_voice(
         "call_to": tenant.contact_phone,
         "call_recipient": tenant.contact_name,
         "minutes_unacknowledged": waited,
-        "voice_script": script,
-        "voice_dispatch_source": source,
+        "voice_script": outcome["script"],
+        "voice_dispatch_source": outcome["source"],
+        "voice_delivery": outcome["delivery"],
         "forced": force,
     }
 

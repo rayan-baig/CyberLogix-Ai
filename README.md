@@ -21,8 +21,34 @@ ask for.
 | Predictive Breakdown Forecaster | `/api/forecast` | Trend fitting, time-to-breach projection |
 | BYOD Hardware Bridge | `/api/v1/bridge` | Webhook ingest from off-the-shelf sensors |
 | Sector Meeting Intelligence | `/api/v1/bridge` | Transcripts into structured action items |
+| Operations Console | `/` | Browser UI over the whole platform |
 
-Interactive API docs are at `/docs`.
+The console is at `/`, the machine-readable gateway at `/api`, and
+interactive API docs at `/docs`.
+
+## The console
+
+Open `/` in a browser and sign in with a tenant API key (or onboard a company
+from the same card). The console shows the fleet with a 12-point sparkline per
+sensor, headline counts, the incident feed with the exact SMS and voice text
+that went out and whether each was delivered, and controls to acknowledge,
+resolve or escalate. It polls every 10 seconds.
+
+Sensor cards carry **Send safe pulse** and **Simulate failure** buttons, which
+post a real reading through the real pipeline — the fastest way to watch a
+breach open an incident end to end. A table view of the fleet is one click
+away for screen readers and for copying figures out.
+
+To see it with something on it:
+
+```bash
+.venv/bin/python seed_demo.py --print-key
+```
+
+That seeds six sensors across six verticals with backdated history — one
+walk-in already failed, a data hall and an engine bay drifting toward their
+limits — then serves the console on :8080. It resets the store, so run it only
+against a throwaway instance.
 
 ## Industry profiles
 
@@ -185,6 +211,27 @@ Add `narrate=true` for a preventive-maintenance brief.
 A forecast needs at least 3 readings spanning 5 minutes; below that it
 returns `insufficient_data` rather than guessing.
 
+## Message delivery
+
+Alerts are delivered over Twilio: an SMS when an incident opens, and an
+outbound call speaking the escalation script (twice, with a pause) when one
+goes unacknowledged past the grace window. Set `TWILIO_ACCOUNT_SID`,
+`TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` to go live.
+
+Without those, the platform runs in **dry run**: alerts are still composed,
+incidents still open and escalate, and every attempt is recorded on the
+incident as `not_configured`. `GET /api/health` reports `message_delivery` as
+`twilio` or `dry_run`, and the console shows a banner when delivery is off.
+
+Delivery never raises. A telephony outage is recorded on the incident as an
+undelivered attempt rather than killing the breach handler, so an operator can
+see that an alert was written but not sent. Both `sms_delivery` and
+`voice_delivery` carry `delivered`, `status`, `provider_sid` and a detail
+string.
+
+The spoken script is model-authored, so it is XML-escaped before it reaches
+TwiML — an ampersand in a generated sentence would otherwise fail the call.
+
 ## AI generation is fail-open
 
 Every Gemini call routes through `safe_generate`, which never raises. If the
@@ -203,6 +250,9 @@ content.
 | Variable | Default | Purpose |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Google GenAI credentials, read by the SDK |
+| `TWILIO_ACCOUNT_SID` | — | Twilio account SID; unset means dry-run delivery |
+| `TWILIO_AUTH_TOKEN` | — | Twilio auth token |
+| `TWILIO_FROM_NUMBER` | — | Sending number in E.164, e.g. `+15550100` |
 | `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Model for all generated copy |
 | `CYBERLOGIX_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
 | `PORT` | `8080` | Listen port |
@@ -234,8 +284,8 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-82 tests across the seven modules. Gemini is stubbed, so the suite runs
-without credentials and makes no network calls.
+97 tests across the eight modules. Gemini and Twilio are both stubbed, so
+the suite runs without credentials and makes no network calls.
 
 ## Deploying to Cloud Run
 
@@ -245,5 +295,8 @@ gcloud run deploy cyberlogix-hub \
   --region us-central1 \
   --max-instances 1 \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_API_KEY=your-key
+  --set-env-vars GEMINI_API_KEY=your-key,TWILIO_ACCOUNT_SID=AC...,TWILIO_AUTH_TOKEN=...,TWILIO_FROM_NUMBER=+15550100
 ```
+
+Put the two secrets in Secret Manager rather than plain env vars for a real
+deployment.

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from gemini import safe_generate
 from licenses import require_tenant
+from notifications import send_sms
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -177,6 +178,7 @@ def process_reading(
         sms_text=sms_text,
         sms_dispatch_source=sms_source,
     )
+    incident.sms_delivery = send_sms(tenant.contact_phone, sms_text)
 
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"

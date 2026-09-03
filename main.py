@@ -8,15 +8,19 @@ forecasting.
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 # Import all modular system routers
 from automation import router as autopilot_router
+from console_api import router as console_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
+from notifications import delivery_ready
 from licenses import router as license_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
@@ -61,6 +65,7 @@ app.include_router(autopilot_router)
 app.include_router(voice_router)
 app.include_router(forecaster_router)
 app.include_router(bridge_router)
+app.include_router(console_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -70,10 +75,20 @@ MODULES_ACTIVE = [
     "predictive_breakdown_forecaster",
     "byod_hardware_bridge",
     "sector_meeting_intelligence",
+    "operations_console",
 ]
 
 
-@app.get("/", status_code=200, tags=["Gateway"])
+CONSOLE_HTML = Path(__file__).parent / "static" / "console.html"
+
+
+@app.get("/", include_in_schema=False)
+def operations_console():
+    """Serve the operations console to a browser."""
+    return FileResponse(CONSOLE_HTML, media_type="text/html")
+
+
+@app.get("/api", status_code=200, tags=["Gateway"])
 def root_gateway():
     return {
         "system": "CyberLogix AI Master Engine",
@@ -81,6 +96,7 @@ def root_gateway():
         "version": app.version,
         "modules_active": MODULES_ACTIVE,
         "docs": "/docs",
+        "console": "/",
     }
 
 
@@ -96,6 +112,7 @@ def health_check():
         "plan_tiers": list(PLAN_TIERS),
         "gemini_model": GEMINI_MODEL,
         "gemini_dispatch": "ready" if dispatch_ready() else "fallback_template",
+        "message_delivery": "twilio" if delivery_ready() else "dry_run",
         "timestamp": iso(utc_now()),
     }
 

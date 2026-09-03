@@ -26,7 +26,7 @@ from store import (
     iso,
     utc_now,
 )
-from voice_dispatch import build_voice_script
+from voice_dispatch import dispatch_voice_call
 
 logger = logging.getLogger("cyberlogix.autopilot")
 
@@ -219,18 +219,8 @@ def autopilot_sweep(
             )
             continue
 
-        script, source = build_voice_script(incident, tenant)
-        incident.voice_escalated_at = utc_now()
-        incident.voice_script = script
-        incident.voice_dispatch_source = source
+        outcome = dispatch_voice_call(incident, tenant)
         escalated += 1
-
-        logger.critical(
-            "Autopilot voice escalation: incident=%s sensor=%s tenant=%s",
-            incident.incident_id,
-            incident.sensor_id,
-            tenant.tenant_id,
-        )
 
         actions.append(
             {
@@ -239,8 +229,9 @@ def autopilot_sweep(
                 "sensor_id": incident.sensor_id,
                 "call_to": tenant.contact_phone,
                 "minutes_unacknowledged": incident.minutes_open(now),
-                "voice_script": script,
-                "voice_dispatch_source": source,
+                "voice_script": outcome["script"],
+                "voice_dispatch_source": outcome["source"],
+                "voice_delivery": outcome["delivery"],
             }
         )
 
