@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from automation import router as autopilot_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
+from hardware_bridge import router as bridge_router
 from licenses import router as license_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
@@ -59,6 +60,7 @@ app.include_router(telemetry_router)
 app.include_router(autopilot_router)
 app.include_router(voice_router)
 app.include_router(forecaster_router)
+app.include_router(bridge_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -66,6 +68,8 @@ MODULES_ACTIVE = [
     "autonomous_compliance_clerk",
     "ai_outbound_voice_escalator",
     "predictive_breakdown_forecaster",
+    "byod_hardware_bridge",
+    "sector_meeting_intelligence",
 ]
 
 

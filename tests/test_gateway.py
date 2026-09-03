@@ -1,19 +1,20 @@
 """Hub gateway and cross-module mounting."""
 
 
-def test_root_gateway_lists_all_five_modules(api):
+def test_root_gateway_lists_every_module(api):
     body = api.get("/").json()
     assert body["system"] == "CyberLogix AI Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
-    assert len(body["modules_active"]) == 5
-    assert "universal_iot_telemetry" in body["modules_active"]
+    assert len(body["modules_active"]) == 7
+    for module in ("universal_iot_telemetry", "byod_hardware_bridge"):
+        assert module in body["modules_active"]
 
 
 def test_health_reports_subsystem_state(api):
     body = api.get("/api/health").json()
     assert body["status"] == "online"
     assert body["active_profiles"] == 8
-    assert body["modules_active"] == 5
+    assert body["modules_active"] == 7
     assert body["plan_tiers"] == ["trial", "growth", "enterprise"]
 
 
@@ -25,6 +26,8 @@ def test_every_router_is_actually_mounted(api):
         "/api/autopilot/sweep",
         "/api/voice/pending",
         "/api/forecast/fleet",
+        "/api/v1/bridge/sensor-webhook-ingest",
+        "/api/v1/bridge/summarize-transcript",
     ):
         assert expected in paths, f"{expected} is not mounted"
 

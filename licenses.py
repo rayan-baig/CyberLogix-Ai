@@ -34,6 +34,14 @@ class SensorRegister(BaseModel):
     sensor_id: str = Field(..., min_length=1, max_length=80)
     industry_vertical: str = Field(..., min_length=1)
     location_name: str = Field(..., min_length=1, max_length=200)
+    external_device_sn: Optional[str] = Field(
+        None,
+        max_length=120,
+        description=(
+            "Serial or MAC of a third-party sensor that will report via the "
+            "BYOD webhook bridge."
+        ),
+    )
 
 
 def require_tenant(
@@ -188,6 +196,13 @@ def register_sensor(
             detail=f"Sensor '{sensor_id}' is already registered.",
         )
 
+    serial = (payload.external_device_sn or "").strip() or None
+    if serial and STORE.device_sn_taken(serial):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Device serial '{serial}' is already bound to a sensor.",
+        )
+
     seats_used = STORE.seat_count(tenant.tenant_id)
     cap = tenant.entitlements()["max_sensors"]
     if seats_used >= cap:
@@ -204,6 +219,7 @@ def register_sensor(
         tenant_id=tenant.tenant_id,
         industry_vertical=vertical,
         location_name=payload.location_name,
+        external_device_sn=serial,
     )
     return {
         "sensor": sensor.public(),

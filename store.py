@@ -209,8 +209,10 @@ class Sensor:
     industry_vertical: str
     location_name: str
     registered_at: datetime
+    external_device_sn: Optional[str] = None
     last_seen: Optional[datetime] = None
     last_temperature: Optional[float] = None
+    last_humidity: Optional[float] = None
 
     def offline(self, now: Optional[datetime] = None) -> bool:
         now = now or utc_now()
@@ -227,9 +229,11 @@ class Sensor:
             "industry_vertical": self.industry_vertical,
             "industry_name": profile["name"],
             "location_name": self.location_name,
+            "external_device_sn": self.external_device_sn,
             "registered_at": iso(self.registered_at),
             "last_seen": iso(self.last_seen),
             "last_temperature": self.last_temperature,
+            "last_humidity": self.last_humidity,
             "online": not self.offline(),
         }
 
@@ -323,6 +327,7 @@ class HubStore:
         self._tenants: Dict[str, Tenant] = {}
         self._keys: Dict[str, str] = {}
         self._sensors: Dict[str, Sensor] = {}
+        self._devices: Dict[str, str] = {}
         self._readings: Dict[str, Deque[Reading]] = {}
         self._incidents: Dict[str, Incident] = {}
         self._counter = 0
@@ -333,6 +338,7 @@ class HubStore:
             self._tenants.clear()
             self._keys.clear()
             self._sensors.clear()
+            self._devices.clear()
             self._readings.clear()
             self._incidents.clear()
             self._counter = 0
@@ -401,6 +407,7 @@ class HubStore:
         tenant_id: str,
         industry_vertical: str,
         location_name: str,
+        external_device_sn: Optional[str] = None,
     ) -> Sensor:
         with self._lock:
             sensor = Sensor(
@@ -409,8 +416,11 @@ class HubStore:
                 industry_vertical=industry_vertical,
                 location_name=location_name,
                 registered_at=utc_now(),
+                external_device_sn=external_device_sn,
             )
             self._sensors[sensor_id] = sensor
+            if external_device_sn:
+                self._devices[external_device_sn] = sensor_id
             self._readings.setdefault(
                 sensor_id, deque(maxlen=MAX_READINGS_PER_SENSOR)
             )
@@ -420,10 +430,29 @@ class HubStore:
         with self._lock:
             return self._sensors.get(sensor_id)
 
+    def sensor_by_device(self, device_sn: str) -> Optional[Sensor]:
+        """Resolve a third-party device serial to its licensed sensor.
+
+        Falls back to treating the serial as a sensor_id, so hardware whose
+        serial was used directly at registration still resolves.
+        """
+        with self._lock:
+            mapped = self._devices.get((device_sn or "").strip())
+            if mapped is not None:
+                return self._sensors.get(mapped)
+            return self._sensors.get((device_sn or "").strip())
+
+    def device_sn_taken(self, device_sn: str) -> bool:
+        with self._lock:
+            return (device_sn or "").strip() in self._devices
+
     def remove_sensor(self, sensor_id: str) -> bool:
         with self._lock:
             if sensor_id not in self._sensors:
                 return False
+            serial = self._sensors[sensor_id].external_device_sn
+            if serial:
+                self._devices.pop(serial, None)
             del self._sensors[sensor_id]
             self._readings.pop(sensor_id, None)
             return True
@@ -462,6 +491,8 @@ class HubStore:
             ).append(reading)
             sensor.last_seen = now
             sensor.last_temperature = temperature_fahrenheit
+            if humidity_percent is not None:
+                sensor.last_humidity = humidity_percent
             return reading
 
     def readings_for(

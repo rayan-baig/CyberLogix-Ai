@@ -19,6 +19,8 @@ ask for.
 | Autonomous Compliance Clerk | `/api/autopilot` | Compliance reports, unattended sweeps |
 | AI Outbound Voice Escalation | `/api/voice` | Escalation ladder, acknowledgement, resolution |
 | Predictive Breakdown Forecaster | `/api/forecast` | Trend fitting, time-to-breach projection |
+| BYOD Hardware Bridge | `/api/v1/bridge` | Webhook ingest from off-the-shelf sensors |
+| Sector Meeting Intelligence | `/api/v1/bridge` | Transcripts into structured action items |
 
 Interactive API docs are at `/docs`.
 
@@ -111,6 +113,65 @@ temperature log: readings logged, excursions, per-sensor min/max/mean,
 incident counts and mean response time. Add `narrate=true` for a
 Gemini-written executive summary.
 
+## BYOD: bring your own hardware
+
+Customers do not need proprietary hardware. Any commercial Wi-Fi or cellular
+sensor that can POST JSON — Elitech, Dickson, Monnit, SensorPush — reports
+straight into the platform.
+
+Bind the device's serial to a licensed seat at registration:
+
+```json
+{
+  "sensor_id": "STORE118-WALKIN",
+  "industry_vertical": "restaurant",
+  "location_name": "Store 118 / Walk-In",
+  "external_device_sn": "ELITECH-00:1B:44:11:3A:B7"
+}
+```
+
+Then point the vendor's webhook at
+`POST /api/v1/bridge/sensor-webhook-ingest`:
+
+```json
+{
+  "device_sn": "ELITECH-00:1B:44:11:3A:B7",
+  "api_key_token": "clx_...",
+  "reading_value": 7.0,
+  "metric_type": "temperature_c"
+}
+```
+
+The token travels in the body because most off-the-shelf sensors cannot set
+custom request headers; it is validated exactly as the header key is, with
+`401` for an unknown token and `402` for a lapsed license.
+
+Webhook readings run through the same engine as native pulses, so a BYOD
+estate gets incidents, escalation, forecasting history and compliance
+logging identically — a reading is scored against the industry profile of
+the sensor it is bound to, never a flat number. 45 °F is a catastrophe in a
+walk-in and unremarkable in a hangar.
+
+`temperature_c` is converted to Fahrenheit on arrival. `humidity_pct` is
+stored as context and passed to Gemini in alerts; humidity alone cannot
+breach a thermal threshold. A serial with no binding is refused with `404`
+rather than silently accepted.
+
+## Meeting intelligence
+
+`POST /api/v1/bridge/summarize-transcript` turns a staff meeting or voice
+memo into an executive summary, operational decisions, assigned action items
+and a sector compliance impact. Each vertical carries its own analytical
+directive — a restaurant transcript is read for spoilage liability and
+inspection prep, a medical lab's for chain-of-custody and audit readiness.
+`GET /api/v1/bridge/sectors` lists them.
+
+The model is asked for raw JSON; markdown fences and surrounding prose are
+stripped before parsing. If the reply cannot be parsed, or is missing
+required keys, the endpoint returns `TRANSCRIPT_PROCESSING_DEGRADED` with a
+null report. It never falls back to invented minutes — fabricated action
+items attributed to a real meeting are worse than no summary.
+
 ## Forecasting
 
 `GET /api/forecast/sensor/{id}` fits a least-squares trend to the sensor's
@@ -131,6 +192,11 @@ client is uninitialized, the API errors, or the model returns an empty body,
 the caller gets a deterministic template instead and the response reports
 `dispatch_source: "fallback_template"`. A credentials problem degrades the
 wording of an alert; it never suppresses one.
+
+Meeting intelligence is the deliberate exception. An alert with clumsier
+wording is still a true alert, but an invented meeting summary is a
+falsehood, so that endpoint reports degradation instead of substituting
+content.
 
 ## Configuration
 
@@ -168,7 +234,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-56 tests across the five modules. Gemini is stubbed, so the suite runs
+82 tests across the seven modules. Gemini is stubbed, so the suite runs
 without credentials and makes no network calls.
 
 ## Deploying to Cloud Run

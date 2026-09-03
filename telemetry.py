@@ -100,29 +100,25 @@ def build_emergency_sms(
     return safe_generate(prompt, fallback, purpose="emergency SMS")
 
 
-@router.post("/sensor-pulse")
-async def process_sensor_pulse(
-    reading: SensorReading, tenant: Tenant = Depends(require_tenant)
-):
-    """Ingest one telemetry packet from a registered sensor."""
-    sensor = STORE.get_sensor(reading.sensor_id.strip())
-    if sensor is None or sensor.tenant_id != tenant.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                f"Sensor '{reading.sensor_id}' is not registered to this tenant. "
-                "Claim a seat via POST /api/licenses/me/sensors first."
-            ),
-        )
+def process_reading(
+    tenant: Tenant,
+    sensor,
+    temperature: float,
+    humidity: Optional[float],
+) -> dict:
+    """Score one reading and drive the incident lifecycle.
 
+    Shared by native sensor pulses and third-party BYOD webhooks, so both
+    ingestion routes get identical breach detection, incident collapsing,
+    escalation, forecasting history and compliance logging.
+    """
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
-    temp = reading.temperature_fahrenheit
-    breach_reason = evaluate_breach(sensor.industry_vertical, temp)
+    breach_reason = evaluate_breach(sensor.industry_vertical, temperature)
 
     STORE.record_reading(
         sensor=sensor,
-        temperature_fahrenheit=temp,
-        humidity_percent=reading.humidity_percent,
+        temperature_fahrenheit=temperature,
+        humidity_percent=humidity,
         breached=breach_reason is not None,
     )
 
@@ -131,13 +127,13 @@ async def process_sensor_pulse(
             "Nominal pulse: sensor=%s vertical=%s temp=%s°F",
             sensor.sensor_id,
             sensor.industry_vertical,
-            temp,
+            temperature,
         )
         return {
             "status": "nominal",
             "industry": profile["name"],
             "sensor_id": sensor.sensor_id,
-            "current_temperature": temp,
+            "current_temperature": temperature,
             "message": "Telemetry parameters stable within safe operating bounds.",
         }
 
@@ -145,7 +141,7 @@ async def process_sensor_pulse(
         "Catastrophe breach: sensor=%s vertical=%s temp=%s°F reason=%s",
         sensor.sensor_id,
         sensor.industry_vertical,
-        temp,
+        temperature,
         breach_reason,
     )
 
@@ -153,7 +149,7 @@ async def process_sensor_pulse(
     # sensor. One failure produces one incident to acknowledge.
     existing = STORE.latest_open_incident(sensor.sensor_id)
     if existing is not None:
-        existing.temperature_fahrenheit = temp
+        existing.temperature_fahrenheit = temperature
         existing.breach_details = breach_reason
         return {
             "status": "CRITICAL_CATASTROPHE_ONGOING",
@@ -162,21 +158,21 @@ async def process_sensor_pulse(
             "catastrophe_type": existing.catastrophe,
             "sensor_id": sensor.sensor_id,
             "location": sensor.location_name,
-            "current_temperature": temp,
+            "current_temperature": temperature,
             "breach_details": breach_reason,
             "dispatched_sms_text": existing.sms_text,
             "sms_dispatch_source": existing.sms_dispatch_source,
             "minutes_open": existing.minutes_open(),
-            "message": "Breach ongoing; existing incident updated, no duplicate alert sent.",
+            "message": (
+                "Breach ongoing; existing incident updated, no duplicate alert sent."
+            ),
         }
 
-    sms_text, sms_source = build_emergency_sms(
-        sensor, temp, reading.humidity_percent
-    )
+    sms_text, sms_source = build_emergency_sms(sensor, temperature, humidity)
     incident = STORE.open_incident(
         tenant_id=tenant.tenant_id,
         sensor=sensor,
-        temperature_fahrenheit=temp,
+        temperature_fahrenheit=temperature,
         breach_details=breach_reason,
         sms_text=sms_text,
         sms_dispatch_source=sms_source,
@@ -185,5 +181,33 @@ async def process_sensor_pulse(
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"
     payload["location"] = sensor.location_name
-    payload["current_temperature"] = temp
+    payload["current_temperature"] = temperature
     return payload
+
+
+def resolve_owned_sensor(tenant: Tenant, sensor_id: str):
+    """Fetch a sensor, refusing one that belongs to another tenant."""
+    sensor = STORE.get_sensor((sensor_id or "").strip())
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Sensor '{sensor_id}' is not registered to this tenant. "
+                "Claim a seat via POST /api/licenses/me/sensors first."
+            ),
+        )
+    return sensor
+
+
+@router.post("/sensor-pulse")
+async def process_sensor_pulse(
+    reading: SensorReading, tenant: Tenant = Depends(require_tenant)
+):
+    """Ingest one telemetry packet from a registered sensor."""
+    sensor = resolve_owned_sensor(tenant, reading.sensor_id)
+    return process_reading(
+        tenant=tenant,
+        sensor=sensor,
+        temperature=reading.temperature_fahrenheit,
+        humidity=reading.humidity_percent,
+    )
