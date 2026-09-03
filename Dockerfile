@@ -1,4 +1,4 @@
-# CyberLogix AI — Universal Thermal & Catastrophe Engine
+# CyberLogix AI — Master Enterprise Hub
 # Production container image targeting Google Cloud Run.
 FROM python:3.11-slim
 
@@ -13,7 +13,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY main.py ./
+COPY main.py store.py gemini.py licenses.py telemetry.py \
+     automation.py voice_dispatch.py forecaster.py ./
 
 # Run as an unprivileged user.
 RUN useradd --create-home --shell /usr/sbin/nologin cyberlogix \

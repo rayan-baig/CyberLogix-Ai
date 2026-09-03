@@ -1,13 +1,26 @@
-# CyberLogix AI — Universal Thermal & Catastrophe Engine
+# CyberLogix AI — Master Enterprise Hub
 
-24/7 IoT sensor telemetry monitoring with automated Gemini AI emergency SMS
-dispatch, covering eight commercial industry verticals.
+Universal IoT telemetry, license control, autonomous operations, voice
+escalation and predictive forecasting, mounted behind one FastAPI service.
 
-Wireless thermal sensors POST their readings to the engine. Each reading is
-scored against the threshold profile for its vertical. A nominal reading is
-acknowledged and logged. A breach escalates immediately: the engine identifies
-the likely root-cause catastrophe for that sector and has Gemini draft an
-urgent SMS for the on-call facility director.
+Wireless thermal sensors report to the hub. Each reading is scored against
+the threshold profile for its industry. A breach opens an incident and sends
+a Gemini-drafted SMS; if nobody acknowledges it, the hub escalates to a
+spoken phone call. In the background the forecaster projects which sensors
+will fail next, and the compliance clerk assembles the paperwork inspectors
+ask for.
+
+## Modules
+
+| Module | Prefix | Responsibility |
+|---|---|---|
+| Universal IoT Telemetry | `/api` | Ingest pulses, detect breaches, open incidents |
+| Corporate License Management | `/api/licenses` | Tenants, API keys, plans, seat enforcement |
+| Autonomous Compliance Clerk | `/api/autopilot` | Compliance reports, unattended sweeps |
+| AI Outbound Voice Escalation | `/api/voice` | Escalation ladder, acknowledgement, resolution |
+| Predictive Breakdown Forecaster | `/api/forecast` | Trend fitting, time-to-breach projection |
+
+Interactive API docs are at `/docs`.
 
 ## Industry profiles
 
@@ -24,69 +37,120 @@ urgent SMS for the on-call facility director.
 
 Thresholds are exclusive: a reading exactly at the limit is nominal.
 
-## API
+## Plans
 
-### `GET /api/health`
-Liveness probe. Reports profile count and whether Gemini dispatch is live or
-running on the fallback template.
+| Plan | Seats | Term | Voice escalation | Forecasting |
+|---|---|---|---|---|
+| `trial` | 5 | 14 days | no | no |
+| `growth` | 50 | 365 days | yes | yes |
+| `enterprise` | 1000 | 365 days | yes | yes |
 
-### `GET /api/industries`
-Full vertical catalogue with names, catastrophes and thresholds — intended for
-populating a client-side sector selector.
+A seat is one registered sensor. Downgrades that would strand seats are
+refused with `409`; decommission sensors first.
 
-### `POST /api/sensor-pulse`
-Ingest one telemetry packet.
+## Authentication
 
-```json
-{
-  "sensor_id": "RACK-01",
-  "industry_vertical": "cybersecurity",
-  "location_name": "Austin DC / Hall B",
-  "temperature_fahrenheit": 94.0,
-  "humidity_percent": 61.5
-}
+Every endpoint except `/`, `/api/health`, `/api/industries`,
+`/api/licenses/plans` and `/api/licenses/tenants` requires the tenant's API
+key in an `X-CyberLogix-Key` header. The key is returned exactly once, when
+the tenant is onboarded, and is never echoed afterwards.
+
+Status codes distinguish the failure modes: `401` for a missing or unknown
+key, `402` for a suspended or expired license, `403` for a plan that lacks
+the requested feature. A billing lapse is never reported as a bad credential.
+
+## Quick start
+
+```bash
+# 1. Onboard, and keep the api_key from the response
+curl -X POST localhost:8080/api/licenses/tenants -H 'Content-Type: application/json' -d '{
+  "company_name": "Blue Harbor Yacht Club",
+  "contact_name": "Dana Reyes",
+  "contact_phone": "+1-555-0100",
+  "contact_email": "ops@blueharbor.example",
+  "plan": "growth"
+}'
+
+# 2. Claim a seat for a sensor
+curl -X POST localhost:8080/api/licenses/me/sensors \
+  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' -d '{
+  "sensor_id": "CLUB-WALKIN-1",
+  "industry_vertical": "country_club",
+  "location_name": "Clubhouse Kitchen / Walk-In"
+}'
+
+# 3. Pulse it
+curl -X POST localhost:8080/api/sensor-pulse \
+  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 47.0}'
 ```
 
-`humidity_percent` is optional (defaults to 50.0) and is passed to Gemini as
-additional context. `industry_vertical` is matched case-insensitively with
-surrounding whitespace trimmed. An unknown vertical returns `400`; a malformed
-packet returns `422`.
+## The escalation ladder
 
-A nominal response:
+1. A breach opens an incident and sends the SMS.
+2. A sustained breach **updates that incident** rather than opening another,
+   so a failing freezer produces one alert instead of a pager storm. Follow-up
+   pulses return `CRITICAL_CATASTROPHE_ONGOING`.
+3. After `VOICE_ESCALATION_GRACE_MINUTES` (10) with no acknowledgement, the
+   incident becomes eligible for a voice call. `GET /api/voice/pending` lists
+   them; `POST /api/voice/escalate/{id}` places one. Escalating early returns
+   `425` unless `force=true`.
+4. `POST /api/voice/acknowledge/{id}` halts the ladder;
+   `POST /api/voice/resolve/{id}` closes the incident.
 
-```json
-{
-  "status": "nominal",
-  "industry": "CyberTech Data Centers",
-  "sensor_id": "RACK-01",
-  "current_temperature": 68.4,
-  "message": "Telemetry parameters stable within safe operating bounds."
-}
-```
+## Autopilot
 
-A breach response carries `status: "CRITICAL_CATASTROPHE_TRIGGERED"`, the
-identified `catastrophe_type`, the `breach_details` explaining which bound was
-crossed, and the `dispatched_sms_text`. `dispatch_source` is `gemini` when the
-model drafted the alert and `fallback_template` when it did not.
+`POST /api/autopilot/sweep` is the unattended watchdog — point Cloud Scheduler
+at it every few minutes. One pass flags sensors that have gone silent for over
+30 minutes (a sensor that cannot report cannot warn you) and places voice calls
+for incidents past the grace window. Pass `auto_escalate=false` to report
+without calling.
 
-## Alerting is fail-open
+`GET /api/autopilot/compliance?days=7` assembles the inspector-ready
+temperature log: readings logged, excursions, per-sensor min/max/mean,
+incident counts and mean response time. Add `narrate=true` for a
+Gemini-written executive summary.
 
-A breach always produces an alert. If the Gemini client is uninitialized, the
-API call fails, or the model returns an empty body, the engine emits a
-deterministic SMS template instead and marks `dispatch_source` accordingly. A
-credentials problem degrades the wording of an alert — it never suppresses one.
+## Forecasting
+
+`GET /api/forecast/sensor/{id}` fits a least-squares trend to the sensor's
+recent history and projects when it crosses its threshold, returning
+`hours_until_breach`, the drift in °F/hour and an r-squared confidence.
+Risk bands: `critical` ≤ 1h, `high` ≤ 6h, `elevated` ≤ 24h, then `low`.
+Add `narrate=true` for a preventive-maintenance brief.
+
+`GET /api/forecast/fleet` ranks the whole estate riskiest-first.
+
+A forecast needs at least 3 readings spanning 5 minutes; below that it
+returns `insufficient_data` rather than guessing.
+
+## AI generation is fail-open
+
+Every Gemini call routes through `safe_generate`, which never raises. If the
+client is uninitialized, the API errors, or the model returns an empty body,
+the caller gets a deterministic template instead and the response reports
+`dispatch_source: "fallback_template"`. A credentials problem degrades the
+wording of an alert; it never suppresses one.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Google GenAI credentials, read by the SDK |
-| `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Dispatch model |
+| `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Model for all generated copy |
 | `CYBERLOGIX_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
 | `PORT` | `8080` | Listen port |
 
-Set real origins in `CYBERLOGIX_ALLOWED_ORIGINS` before going to production;
-the wildcard default disables credentialed CORS.
+Set real origins before production; browsers reject credentialed requests
+against a wildcard, so credentials switch on only once origins are named.
+
+## State
+
+State lives in memory behind a re-entrant lock (`store.py`), which is correct
+for a single Cloud Run instance. It does not survive a restart and is not
+shared across replicas — pin to one instance (`--max-instances 1`) or swap
+`HubStore` for a Firestore or Postgres adapter before scaling out. That class
+is the only file that has to change.
 
 ## Running locally
 
@@ -104,18 +168,16 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-The suite stubs the Gemini client, so it runs without credentials and never
-makes a network call.
+56 tests across the five modules. Gemini is stubbed, so the suite runs
+without credentials and makes no network calls.
 
 ## Deploying to Cloud Run
 
 ```bash
-gcloud run deploy cyberlogix-engine \
+gcloud run deploy cyberlogix-hub \
   --source . \
   --region us-central1 \
+  --max-instances 1 \
   --allow-unauthenticated \
   --set-env-vars GEMINI_API_KEY=your-key
 ```
-
-The container listens on `$PORT`, which Cloud Run injects, and runs as an
-unprivileged user.
