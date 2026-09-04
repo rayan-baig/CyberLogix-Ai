@@ -325,3 +325,31 @@ def test_sector_directives_are_listed(api):
     assert body["count"] == 8
     club = next(s for s in body["sectors"] if s["vertical"] == "country_club")
     assert club["name"] == "High-End Country Clubs"
+
+
+def test_webhook_accepts_a_bearer_token_from_a_first_party_client(
+    api, operator_factory, sensor_factory
+):
+    """The console simulator holds a session, not the tenant API key."""
+    headers, _, _ = operator_factory()
+    sensor_factory(headers, sensor_id="RACK-01")
+
+    resp = api.post(
+        "/api/v1/bridge/sensor-webhook-ingest",
+        headers=headers,
+        json={"device_sn": "RACK-01", "reading_value": 94.0,
+              "metric_type": "temperature_f"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["alert_triggered"] is True
+
+
+def test_webhook_still_refuses_no_credentials_at_all(api, operator_factory,
+                                                     sensor_factory):
+    headers, _, _ = operator_factory()
+    sensor_factory(headers, sensor_id="RACK-01")
+    resp = api.post(
+        "/api/v1/bridge/sensor-webhook-ingest",
+        json={"device_sn": "RACK-01", "reading_value": 94.0},
+    )
+    assert resp.status_code == 401

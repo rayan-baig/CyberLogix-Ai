@@ -23,7 +23,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends
 
 from auth import require_tenant
-from store import INDUSTRY_PROFILES, PLAN_TIERS, STORE, Tenant, iso, utc_now
+from store import (
+    INDUSTRY_PROFILES,
+    PLAN_TIERS,
+    STORE,
+    Tenant,
+    iso,
+    utc_now,
+)
 
 router = APIRouter(prefix="/api/billing", tags=["Pricing & Billing"])
 
@@ -150,11 +157,53 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
     tier = tenant.entitlements()
     billable = tenant.plan != "trial"
 
+    # A cluster contract supersedes the rate card: the chain is buying whole
+    # branches, and billing both models at once would double-charge it.
+    contract = STORE.active_contract(tenant.tenant_id)
+    if contract is not None:
+        return {
+            "tenant_id": tenant.tenant_id,
+            "company_name": tenant.company_name,
+            "plan": tenant.plan,
+            "plan_name": tier["name"],
+            "billing_model": "enterprise_volume",
+            "billable": billable,
+            "units_total": len(sensors),
+            "seats_total": tier["max_sensors"],
+            "contract": contract.public(),
+            "line_items": [
+                {
+                    "vertical": contract.industry_vertical,
+                    "industry": INDUSTRY_PROFILES[contract.industry_vertical]["name"],
+                    "unit": "branch",
+                    "units": contract.enrolled_branches,
+                    "unit_price_usd": contract.effective_rate_per_branch_usd,
+                    "line_total_usd": contract.monthly_usd,
+                    "description": (
+                        f"{contract.enrolled_branches} branches · "
+                        f"{contract.tier_label}"
+                    ),
+                }
+            ],
+            "monthly_total_usd": contract.monthly_usd,
+            "annual_total_usd": contract.annual_contract_value_usd,
+            "effective_monthly_usd": 0.0 if not billable else contract.monthly_usd,
+            "rate_card_equivalent_usd": mrr,
+            "currency": "USD",
+            "note": (
+                f"Billed on volume contract {contract.account_id} "
+                f"({contract.tier_label}); covers every sensor inside an "
+                "enrolled branch."
+            ),
+            "generated_at": iso(utc_now()),
+        }
+
     return {
         "tenant_id": tenant.tenant_id,
         "company_name": tenant.company_name,
         "plan": tenant.plan,
         "plan_name": tier["name"],
+        "billing_model": "per_unit",
         "billable": billable,
         "units_total": len(sensors),
         "seats_total": tier["max_sensors"],

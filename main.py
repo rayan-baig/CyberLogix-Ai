@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from accounts import router as accounts_router
 from automation import router as autopilot_router
 from console_api import router as console_router
+from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
 from costs import router as costs_router
 from forecaster import router as forecaster_router
@@ -74,6 +75,7 @@ app.include_router(accounts_router)
 app.include_router(costs_router)
 app.include_router(contacts_router)
 app.include_router(billing_router)
+app.include_router(enterprise_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -88,6 +90,7 @@ MODULES_ACTIVE = [
     "spend_controls",
     "on_call_roster",
     "per_unit_billing",
+    "enterprise_cluster_billing",
 ]
 
 

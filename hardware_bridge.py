@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from gemini import safe_generate
+from auth import optional_operator
 from licenses import require_tenant
 from store import INDUSTRY_PROFILES, STORE, Tenant, iso, utc_now
 from telemetry import process_reading
@@ -53,11 +54,11 @@ class GenericWebhookPayload(BaseModel):
         max_length=120,
         description="External device serial number or MAC address",
     )
-    api_key_token: str = Field(
-        ...,
-        min_length=1,
+    api_key_token: Optional[str] = Field(
+        None,
         description="Tenant API key. Carried in the body because most "
-        "off-the-shelf sensors cannot set custom request headers.",
+        "off-the-shelf sensors cannot set custom request headers. A "
+        "first-party client may send an Authorization bearer token instead.",
     )
     reading_value: float = Field(..., description="Raw metric value reported by hardware")
     metric_type: str = Field(
@@ -69,18 +70,34 @@ class GenericWebhookPayload(BaseModel):
     )
 
 
-def _authenticate_webhook(token: str) -> Tenant:
-    """Resolve the tenant from the in-body token.
+def _authenticate_webhook(
+    token: Optional[str], authorization: Optional[str] = None
+) -> Tenant:
+    """Resolve the tenant from the in-body token, or a bearer header.
 
-    Mirrors the header dependency's contract: 401 for an unknown token, 402
-    for a lapsed license, so a billing problem never masquerades as a bad
-    credential.
+    Hardware sends the token in the body because most off-the-shelf sensors
+    cannot set custom headers. A first-party client — the console's
+    simulator, say — already holds a session and sends that instead, so it
+    never has to keep a copy of the tenant API key around.
+
+    Mirrors the header dependency's contract: 401 for an unknown credential,
+    402 for a lapsed license, so a billing problem never masquerades as a
+    bad credential.
     """
-    tenant = STORE.tenant_by_key(token)
+    tenant = STORE.tenant_by_key(token) if token else None
+
+    if tenant is None and authorization:
+        session_tenant = optional_operator(authorization)
+        if session_tenant is not None:
+            tenant = STORE.get_tenant(session_tenant.tenant_id)
+
     if tenant is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unrecognised api_key_token.",
+            detail=(
+                "Unrecognised credentials. Send api_key_token in the body, or "
+                "an Authorization bearer token."
+            ),
         )
     if tenant.suspended:
         raise HTTPException(
@@ -104,6 +121,7 @@ def ingest_third_party_hardware_webhook(
     x_signature: Optional[str] = Header(
         None, description="Optional third-party webhook signature"
     ),
+    authorization: Optional[str] = Header(None),
 ):
     """Universal webhook endpoint for off-the-shelf sensors.
 
@@ -112,7 +130,7 @@ def ingest_third_party_hardware_webhook(
     profile of the sensor the device is bound to, not a flat number, so a
     freezer and a hangar are judged by their own rules.
     """
-    tenant = _authenticate_webhook(payload.api_key_token)
+    tenant = _authenticate_webhook(payload.api_key_token, authorization)
 
     metric = payload.metric_type.strip().lower()
     if metric not in SUPPORTED_METRICS:

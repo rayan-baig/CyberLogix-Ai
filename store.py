@@ -817,6 +817,161 @@ class ResetToken:
         )
 
 
+# Enterprise volume pricing brackets, by enrolled branch count.
+#
+# The brackets step rather than taper, so the marginal cost of one more
+# branch is large at a boundary. `next_volume_tier` exposes where the next
+# boundary is, so a quote can say so out loud instead of surprising a
+# customer on their next invoice.
+VOLUME_TIERS = (
+    (5, "1-5 branches", 5000.00),
+    (10, "6-10 branches", 7500.00),
+    (20, "11-20 branches", 12500.00),
+    (50, "21-50 branches", None),  # 12500 + 1000 per branch over 20
+    (None, "51+ branches, flat enterprise tier", 65000.00),
+)
+
+VOLUME_TIER_21_50_BASE = 12500.00
+VOLUME_TIER_21_50_PER_BRANCH = 1000.00
+VOLUME_TIER_FLAT_CAP = 65000.00
+
+
+def calculate_volume_tier_price(branches: int) -> float:
+    """Monthly price for an enrolled branch count."""
+    if branches <= 0:
+        return 0.0
+    if branches <= 5:
+        return 5000.00
+    if branches <= 10:
+        return 7500.00
+    if branches <= 20:
+        return 12500.00
+    if branches <= 50:
+        return VOLUME_TIER_21_50_BASE + (branches - 20) * VOLUME_TIER_21_50_PER_BRANCH
+    return VOLUME_TIER_FLAT_CAP
+
+
+def volume_tier_label(branches: int) -> str:
+    """Which bracket a branch count lands in."""
+    if branches <= 0:
+        return "no branches enrolled"
+    for ceiling, label, _ in VOLUME_TIERS:
+        if ceiling is None or branches <= ceiling:
+            return label
+    return VOLUME_TIERS[-1][1]
+
+
+def next_volume_tier(branches: int) -> Optional[Dict[str, Any]]:
+    """The next bracket boundary and what crossing it costs.
+
+    Returns None once a count is in the flat tier, where growth is free.
+    """
+    if branches <= 0 or branches > 50:
+        return None
+
+    for ceiling, _, _ in VOLUME_TIERS[:-1]:
+        if branches <= ceiling:
+            boundary = ceiling + 1
+            here = calculate_volume_tier_price(branches)
+            there = calculate_volume_tier_price(boundary)
+            return {
+                "branches_until_next_tier": boundary - branches,
+                "next_tier_at_branches": boundary,
+                "next_tier_label": volume_tier_label(boundary),
+                "next_tier_monthly_usd": there,
+                "monthly_increase_usd": round(there - here, 2),
+            }
+    return None
+
+
+@dataclass
+class EnterpriseContract:
+    """A volume contract billed by branch rather than by unit.
+
+    A single-site customer is billed per unit from the rate card. A chain
+    is billed on volume brackets by enrolled branch count, and the contract
+    covers every sensor inside those branches — which is what makes a
+    four-figure branch rate coherent against a single walk-in.
+    """
+
+    account_id: str
+    tenant_id: str
+    company_name: str
+    industry_vertical: str
+    enrolled_branches: int
+    billing_contact_email: str
+    provisioned_at: datetime
+    renews_at: datetime
+    active: bool = True
+
+    @property
+    def tier_label(self) -> str:
+        return volume_tier_label(self.enrolled_branches)
+
+    @property
+    def monthly_usd(self) -> float:
+        return round(calculate_volume_tier_price(self.enrolled_branches), 2)
+
+    @property
+    def annual_contract_value_usd(self) -> float:
+        return round(self.monthly_usd * 12, 2)
+
+    @property
+    def effective_rate_per_branch_usd(self) -> float:
+        return round(self.monthly_usd / self.enrolled_branches, 2)
+
+    @property
+    def next_tier(self) -> Optional[Dict[str, Any]]:
+        """Where the next bracket sits, so growth holds no surprises."""
+        return next_volume_tier(self.enrolled_branches)
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "account_id": self.account_id,
+            "tenant_id": self.tenant_id,
+            "company_name": self.company_name,
+            "industry_vertical": self.industry_vertical,
+            "enrolled_branches": self.enrolled_branches,
+            "billing_contact_email": self.billing_contact_email,
+            "provisioned_at": iso(self.provisioned_at),
+            "renews_at": iso(self.renews_at),
+            "active": self.active,
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "EnterpriseContract":
+        return cls(
+            account_id=row["account_id"],
+            tenant_id=row["tenant_id"],
+            company_name=row["company_name"],
+            industry_vertical=row["industry_vertical"],
+            enrolled_branches=row["enrolled_branches"],
+            billing_contact_email=row["billing_contact_email"],
+            provisioned_at=_parse(row["provisioned_at"]),
+            renews_at=_parse(row["renews_at"]),
+            active=row.get("active", True),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        return {
+            "account_id": self.account_id,
+            "tenant_id": self.tenant_id,
+            "company_name": self.company_name,
+            "industry_vertical": self.industry_vertical,
+            "industry": INDUSTRY_PROFILES[self.industry_vertical]["name"],
+            "enrolled_branches": self.enrolled_branches,
+            "pricing_tier_applied": self.tier_label,
+            "next_tier": self.next_tier,
+            "monthly_subscription_usd": self.monthly_usd,
+            "annual_contract_value_usd": self.annual_contract_value_usd,
+            "effective_monthly_rate_per_branch_usd": self.effective_rate_per_branch_usd,
+            "billing_contact_email": self.billing_contact_email,
+            "status": "active_enterprise_tier" if self.active else "cancelled",
+            "provisioned_at": iso(self.provisioned_at),
+            "contract_renew_date": self.renews_at.strftime("%Y-%m-%d"),
+        }
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -833,6 +988,7 @@ class HubStore:
         self._sessions: Dict[str, LoginSession] = {}
         self._audit: Dict[str, AuditEntry] = {}
         self._contacts: Dict[str, Contact] = {}
+        self._contracts: Dict[str, EnterpriseContract] = {}
         self._resets: Dict[str, ResetToken] = {}
         self._usage: Dict[str, UsageDay] = {}
         self._ai_cache: Dict[str, str] = {}
@@ -890,6 +1046,10 @@ class HubStore:
                 contact = Contact.from_row(row)
                 self._contacts[contact.contact_id] = contact
 
+            for row in self._db.all("contract"):
+                contract = EnterpriseContract.from_row(row)
+                self._contracts[contract.account_id] = contract
+
             for row in self._db.all("reset"):
                 reset = ResetToken.from_row(row)
                 if reset.spent:
@@ -940,6 +1100,7 @@ class HubStore:
             self._sessions.clear()
             self._audit.clear()
             self._contacts.clear()
+            self._contracts.clear()
             self._resets.clear()
             self._usage.clear()
             self._ai_cache.clear()
@@ -1584,6 +1745,62 @@ class HubStore:
             ]:
                 self.revoke_session(tok)
             return user
+
+    # ---- enterprise contracts -------------------------------------------
+
+    def provision_contract(
+        self,
+        tenant_id: str,
+        company_name: str,
+        industry_vertical: str,
+        enrolled_branches: int,
+        billing_contact_email: str,
+        term_days: int = 365,
+    ) -> EnterpriseContract:
+        """Open a cluster contract with a collision-proof account id.
+
+        The readable prefix is a convenience, not the identity: two clients
+        whose names share four letters in the same month would otherwise
+        overwrite each other's billing record.
+        """
+        with self._lock:
+            now = utc_now()
+            slug = "".join(c for c in company_name.upper() if c.isalnum())[:4] or "ACCT"
+            sequence = self._next_id("SEQ").rsplit("-", 1)[1]
+            contract = EnterpriseContract(
+                account_id=f"ENT-VOL-{slug}-{now.strftime('%m%Y')}-{sequence}",
+                tenant_id=tenant_id,
+                company_name=company_name,
+                industry_vertical=industry_vertical,
+                enrolled_branches=enrolled_branches,
+                billing_contact_email=billing_contact_email,
+                provisioned_at=now,
+                renews_at=now + timedelta(days=term_days),
+            )
+            self._contracts[contract.account_id] = contract
+            self._db.put("contract", contract.account_id, contract.to_row())
+            return contract
+
+    def get_contract(self, account_id: str) -> Optional[EnterpriseContract]:
+        with self._lock:
+            return self._contracts.get(account_id)
+
+    def contracts_for(self, tenant_id: str) -> List[EnterpriseContract]:
+        with self._lock:
+            rows = [c for c in self._contracts.values() if c.tenant_id == tenant_id]
+        return sorted(rows, key=lambda c: c.provisioned_at, reverse=True)
+
+    def active_contract(self, tenant_id: str) -> Optional[EnterpriseContract]:
+        """The contract that should drive this tenant's invoice, if any."""
+        for contract in self.contracts_for(tenant_id):
+            if contract.active:
+                return contract
+        return None
+
+    def save_contract(self, contract: EnterpriseContract) -> EnterpriseContract:
+        with self._lock:
+            self._db.put("contract", contract.account_id, contract.to_row())
+            return contract
 
 
 STORE = HubStore()

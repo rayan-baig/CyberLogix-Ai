@@ -6,26 +6,34 @@
 <title>CyberLogix AI — Operations Console</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%233987e5'/%3E%3Cpath d='M12 5v8M9 8h6' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='17' r='3.2' fill='none' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
   :root {
     color-scheme: dark;
-    --bg:        #0B0F19;
-    --surface:   #111726;
-    --surface-2: #161d2f;
-    --raised:    #1b2338;
-    --border:    rgba(255,255,255,0.09);
-    --border-lit:rgba(255,255,255,0.16);
-    --ink:       #ffffff;
+    --bg:        #090d16;
+    --surface:   #111827;
+    --surface-2: #0d1420;
+    --sunken:    #030712;
+    --raised:    #1b2333;
+    --border:    #1f2937;
+    --border-lit:#2c3a4f;
+    --ink:       #f3f4f6;
     --ink-2:     #b8c0d0;
-    --muted:     #7e8798;
-    --accent:    #3987e5;
-    --accent-dim:rgba(57,135,229,0.18);
+    --muted:     #6b7480;
+    --accent:    #38bdf8;
+    --accent-deep:#0284c7;
+    --accent-dim:rgba(56,189,248,0.16);
+    --telemetry: #38bdf8;
+    --commerce:  #34d399;
+    --intel:     #a78bfa;
     --good:      #0ca30c;
     --warning:   #fab219;
     --serious:   #ec835a;
     --critical:  #d03b3b;
-    --grid:      #232b3f;
-    --radius:    14px;
-    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --grid:      #1f2937;
+    --radius:    12px;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -71,16 +79,43 @@
     box-shadow: 0 0 18px rgba(57,135,229,0.45);
   }
   .brand-mark svg { width: 17px; height: 17px; display: block; }
-  .brand-name { font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand-name {
+    font-size: 17px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .brand-name em { font-style: normal; color: var(--accent); }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 5px;
+    color: var(--accent); background: rgba(56,189,248,0.10);
+    border: 1px solid rgba(56,189,248,0.35);
+  }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%; flex: none;
+    background: var(--good); box-shadow: 0 0 0 0 rgba(12,163,12,.7);
+    animation: ping 2.4s cubic-bezier(0,0,.2,1) infinite;
+  }
+  @keyframes ping {
+    70% { box-shadow: 0 0 0 7px rgba(12,163,12,0); }
+    100% { box-shadow: 0 0 0 0 rgba(12,163,12,0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  .status-line {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .status-line b { color: var(--good); font-weight: 600; }
   .gate-sub { color: var(--muted); margin: 14px 0 26px; font-size: 13px; }
   .field { margin-bottom: 14px; }
   .field label {
-    display: block; font-size: 12px; font-weight: 600;
-    color: var(--ink-2); margin-bottom: 6px;
+    display: block; font-family: var(--mono); font-size: 10.5px;
+    font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 6px;
   }
+  .field label span { text-transform: none; letter-spacing: 0; }
   .field input, .field textarea, .field select {
-    width: 100%; padding: 11px 13px;
-    background: rgba(11,15,25,0.65);
+    width: 100%; padding: 10px 12px;
+    background: var(--sunken);
     border: 1px solid var(--border);
     border-radius: 10px; color: var(--ink); outline: none;
   }
@@ -133,6 +168,16 @@
   main { padding: 22px; max-width: 1500px; margin: 0 auto; }
   .layout { display: grid; grid-template-columns: minmax(0,1fr) 372px; gap: 18px; }
   @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0,1fr); } }
+  .modules {
+    display: grid; gap: 18px; margin-bottom: 0;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .modules > .card { margin-bottom: 18px; display: flex; flex-direction: column; }
+  /* Fields sit under the description; only the action drops to the foot, so
+     three modules of different lengths still line their buttons up. */
+  .modules > .card form { display: flex; flex-direction: column; flex: 1; }
+  .modules > .card form .btn-primary { margin-top: auto; }
+  .modules > .card #calc-out { margin-top: auto; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .pair > .card { margin-bottom: 18px; }
   @media (max-width: 900px) { .pair { grid-template-columns: minmax(0,1fr); } }
@@ -148,6 +193,25 @@
     display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
   }
   .card-title { font-size: 14.5px; font-weight: 650; letter-spacing: -0.005em; }
+  .card.mod-telemetry { border-top: 2px solid var(--telemetry); }
+  .card.mod-commerce  { border-top: 2px solid var(--commerce); }
+  .card.mod-intel     { border-top: 2px solid var(--intel); }
+  .mod-chip {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 5px; margin-left: auto;
+    border: 1px solid currentColor;
+  }
+  .c-telemetry { color: var(--telemetry); }
+  .c-commerce  { color: var(--commerce); }
+  .c-intel     { color: var(--intel); }
+  .readout {
+    background: var(--sunken); border: 1px solid var(--border);
+    border-radius: 9px; padding: 11px 12px; margin-top: 10px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .readout div { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+  .readout .k { color: var(--muted); }
+  .readout .v { font-weight: 600; }
   .card-note { color: var(--muted); font-size: 12.5px; font-weight: 400; }
 
   /* ---------- stat tiles ---------- */
@@ -258,7 +322,29 @@
   .banner.warn { border-color: rgba(250,178,25,0.4); background: rgba(250,178,25,0.09); color: #f3d288; }
 
   /* ---------- toast ---------- */
-  #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: grid; gap: 8px; }
+  #terminal {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    margin: 0; padding: 10px 22px;
+    border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+    background: var(--sunken); border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--mono); font-size: 11.5px;
+    box-shadow: 0 -12px 34px rgba(0,0,0,.6);
+  }
+  /* Room for the drawer, so it never covers the last card. */
+  body.has-terminal main { padding-bottom: 132px; }
+  .term-head {
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
+    font-size: 10px; margin-bottom: 7px;
+  }
+  #term-body { max-height: 88px; overflow-y: auto; line-height: 1.7; }
+  #term-body .t { color: var(--muted); margin-right: 8px; }
+  #term-body .ok { color: var(--good); }
+  #term-body .err { color: var(--critical); }
+  #term-body .info { color: var(--accent); }
+
+  #toasts { position: fixed; right: 18px; bottom: 96px; z-index: 80; display: grid; gap: 8px; }
   .toast {
     background: var(--raised); border: 1px solid var(--border-lit);
     border-left: 3px solid var(--accent);
@@ -358,16 +444,13 @@
 <!-- ============================ APP ============================ -->
 <div id="app" hidden>
   <nav class="nav">
+    <span class="pulse" aria-hidden="true"></span>
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"
-             stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v10"/><circle cx="12" cy="17" r="4"/><path d="M9 6h6"/>
-        </svg>
-      </span>
-      <span class="brand-name">CyberLogix AI</span>
+      <span class="brand-name">CyberLogix <em>AI</em></span>
+      <span class="tag" id="version-tag">v3.5</span>
     </div>
     <span class="nav-spacer"></span>
+    <span class="status-line">System status: <b id="sys-status">online</b></span>
     <span class="chip" id="chip-user">—</span>
     <span class="chip" id="chip-company">—</span>
     <span class="chip" id="chip-plan">—</span>
@@ -402,6 +485,82 @@
           </div>
           <div id="incidents"></div>
         </section>
+
+        <div class="modules">
+          <section class="card mod-telemetry">
+          <div class="card-head">
+            <span class="card-title">BYOD sensor webhook</span>
+            <span class="mod-chip c-telemetry">3rd-party gateway</span>
+          </div>
+          <p class="card-note" style="margin:0 0 12px">
+            Push a payload as an off-the-shelf Elitech, Dickson or Monnit unit
+            would, through the real ingest endpoint.
+          </p>
+          <form id="byod-form">
+            <div class="field">
+              <label for="byod-sn">Device serial</label>
+              <input id="byod-sn" required placeholder="ELITECH-SN-9982"
+                     style="font-family:var(--mono)">
+            </div>
+            <div class="field">
+              <label for="byod-temp">Temperature (°F)</label>
+              <input id="byod-temp" type="number" step="0.1" value="84.5" required
+                     style="font-family:var(--mono)">
+            </div>
+            <button class="btn btn-primary" type="submit">Simulate hardware pulse</button>
+          </form>
+          <div id="byod-out"></div>
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer;font-size:12px;color:var(--muted)">
+              Wire real hardware to this endpoint</summary>
+            <pre class="snippet" id="byod-snippet" style="margin-top:8px"></pre>
+          </details>
+          </section>
+          <section class="card mod-commerce">
+          <div class="card-head">
+            <span class="card-title">Enterprise tier calculator</span>
+            <span class="mod-chip c-commerce">Volume matrix</span>
+          </div>
+          <p class="card-note" style="margin:0 0 12px">
+            Contract value by enrolled branch count. Brackets step, so the next
+            boundary is shown alongside.
+          </p>
+          <div class="field">
+            <label for="calc-branches">Total branches enrolled</label>
+            <input id="calc-branches" type="number" min="1" max="10000" value="10"
+                   style="font-family:var(--mono)">
+          </div>
+          <div class="field">
+            <label for="calc-vertical">Industry vertical</label>
+            <select id="calc-vertical"></select>
+          </div>
+          <div class="field">
+            <label for="calc-units">Units per branch</label>
+            <input id="calc-units" type="number" min="1" value="3"
+                   style="font-family:var(--mono)">
+          </div>
+          <div id="calc-out"></div>
+          </section>
+          <section class="card mod-intel">
+          <div class="card-head">
+            <span class="card-title">Meeting intelligence</span>
+            <span class="mod-chip c-intel">Gemini-powered</span>
+          </div>
+          <form id="tx-form">
+            <div class="field">
+              <label for="tx-vertical">Sector</label>
+              <select id="tx-vertical"></select>
+            </div>
+            <div class="field">
+              <label for="tx-text">Transcript or voice memo</label>
+              <textarea id="tx-text" rows="4" required
+                placeholder="Marco says the walk-in gasket is torn again…"></textarea>
+            </div>
+            <button class="btn btn-primary" type="submit">Extract action items</button>
+          </form>
+          <div id="tx-out" style="margin-top:12px"></div>
+          </section>
+        </div>
 
         <div class="pair">
           <section class="card">
@@ -445,6 +604,8 @@
             <button class="btn btn-primary" type="submit">Claim a seat</button>
           </form>
         </section>
+
+
 
         <section class="card">
           <div class="card-head">
@@ -498,40 +659,20 @@
           <div id="autopilot-out" style="margin-top:12px"></div>
         </section>
 
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">Meeting intelligence</span>
-          </div>
-          <form id="tx-form">
-            <div class="field">
-              <label for="tx-vertical">Sector</label>
-              <select id="tx-vertical"></select>
-            </div>
-            <div class="field">
-              <label for="tx-text">Transcript or voice memo</label>
-              <textarea id="tx-text" rows="4" required
-                placeholder="Marco says the walk-in gasket is torn again…"></textarea>
-            </div>
-            <button class="btn btn-primary" type="submit">Extract action items</button>
-          </form>
-          <div id="tx-out" style="margin-top:12px"></div>
-        </section>
 
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">BYOD webhook</span>
-            <span class="card-note">Any off-the-shelf sensor</span>
-          </div>
-          <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">
-            Point your existing Elitech, Dickson or Monnit hardware at this URL.
-            Bind its serial to a seat above first.
-          </p>
-          <pre class="snippet" id="byod-snippet"></pre>
-        </section>
+
       </aside>
     </div>
   </main>
 </div>
+
+<footer id="terminal" hidden>
+  <div class="term-head">
+    <span>// system terminal output log</span>
+    <button class="btn btn-sm" id="term-clear">Clear</button>
+  </div>
+  <div id="term-body" aria-live="polite"></div>
+</footer>
 
 <div id="tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
@@ -553,12 +694,27 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+function logToConsole(message, kind = "info") {
+  const body = $("term-body");
+  if (!body) return;
+  const line = document.createElement("div");
+  const stamp = new Date().toLocaleTimeString([], { hour12: false });
+  line.innerHTML = `<span class="t">${esc(stamp)}</span>`
+                 + `<span class="${esc(kind)}">&gt; ${esc(message)}</span>`;
+  body.appendChild(line);
+  // Keep the log bounded; an ops console can run for days.
+  while (body.childElementCount > 200) body.removeChild(body.firstChild);
+  body.scrollTop = body.scrollHeight;
+}
+
+/* A toast for the moment, a terminal line for the record. */
 function toast(message, kind = "") {
   const el = document.createElement("div");
   el.className = "toast " + kind;
   el.textContent = message;
   $("toasts").appendChild(el);
   setTimeout(() => el.remove(), 5200);
+  logToConsole(message, kind === "err" ? "err" : kind === "ok" ? "ok" : "info");
 }
 
 async function api(path, options = {}) {
@@ -675,6 +831,9 @@ async function enter(token, user) {
   try { localStorage.setItem(TOKEN_STORAGE, token); } catch (_) {}
   $("gate").hidden = true;
   $("app").hidden = false;
+  $("terminal").hidden = false;
+  document.body.classList.add("has-terminal");
+  logToConsole("Interface initialised. Awaiting operator input.", "info");
   await loadIndustries();
   startPolling();
 }
@@ -687,6 +846,8 @@ $("sign-out").addEventListener("click", async () => {
   state.user = null;
   state.data = null;
   $("app").hidden = true;
+  $("terminal").hidden = true;
+  document.body.classList.remove("has-terminal");
   $("gate").hidden = false;
   $("si-password").value = "";
 });
@@ -734,9 +895,12 @@ async function loadIndustries() {
     .map((i) => `<option value="${esc(i.vertical)}">`
       + `${esc(i.name)} — $${i.monthly_usd} / ${esc(i.billing_unit)}</option>`)
     .join("");
-  $("tx-vertical").innerHTML = body.industries
+  const plain = body.industries
     .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`)
     .join("");
+  $("tx-vertical").innerHTML = plain;
+  $("calc-vertical").innerHTML = plain;
+  calculateBilling();
 }
 
 async function refresh() {
@@ -780,6 +944,8 @@ function render(d, health) {
   const s = d.summary;
   const t = d.tenant;
 
+  $("version-tag").textContent = `STEALTH v${esc(health.version)}`;
+  $("sys-status").textContent = health.status === "online" ? "online" : health.status;
   $("chip-user").textContent = state.user
     ? `${state.user.full_name} · ${state.user.role}`
     : "—";
@@ -1342,6 +1508,104 @@ $("add-form").addEventListener("submit", (event) => {
     });
     event.target.reset();
   }, "Sensor registered.");
+});
+
+/* Posts through the real BYOD ingest route, so what the console shows is
+   what a vendor's webhook would actually get back. */
+$("byod-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = event.target.querySelector("button");
+  btn.disabled = true;
+  const serial = $("byod-sn").value.trim();
+  const temp = Number($("byod-temp").value);
+
+  try {
+    const body = await api("/api/v1/bridge/sensor-webhook-ingest", {
+      method: "POST",
+      body: JSON.stringify({
+        device_sn: serial,
+        reading_value: temp,
+        metric_type: "temperature_f",
+      }),
+    });
+
+    $("byod-out").innerHTML = `<div class="readout">
+        <div><span class="k">Bound sensor</span><span class="v">${esc(body.bound_sensor_id)}</span></div>
+        <div><span class="k">Reading</span><span class="v">${esc(body.processed_metric)} °F</span></div>
+        <div><span class="k">Alert</span><span class="v ${body.alert_triggered ? "s-critical" : "s-good"}">
+          ${body.alert_triggered ? "TRIGGERED" : "nominal"}</span></div>
+      </div>
+      <div class="card-note" style="margin-top:6px">${esc(body.action_taken_by_ai)}</div>`;
+    logToConsole(
+      `BYOD ${serial} @ ${temp}°F -> ${body.alert_triggered ? "ALERT" : "nominal"}`,
+      body.alert_triggered ? "err" : "ok"
+    );
+    await refresh();
+  } catch (err) {
+    $("byod-out").innerHTML =
+      `<div class="readout"><div><span class="k">Rejected</span>
+         <span class="v s-warning">${esc(err.message)}</span></div></div>`;
+    logToConsole(`BYOD ${serial}: ${err.message}`, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* Live contract value as the branch count is typed. */
+let calcTimer = null;
+async function calculateBilling() {
+  const branches = Number($("calc-branches").value);
+  const units = Number($("calc-units").value) || 1;
+  const vertical = $("calc-vertical").value;
+  if (!Number.isFinite(branches) || branches < 1) return;
+
+  try {
+    const q = await api(
+      `/api/v1/enterprise-billing/quote?industry_vertical=${encodeURIComponent(vertical)}`
+      + `&total_branch_locations=${branches}&units_per_branch=${units}`
+    );
+    const vol = q.enterprise_volume;
+    const per = q.per_unit;
+    const winner = q.cheaper_model === "enterprise_volume" ? "volume contract" : "rate card";
+
+    $("calc-out").innerHTML = `<div class="readout">
+        <div><span class="k">Tier</span><span class="v">${esc(vol.pricing_tier_applied)}</span></div>
+        <div><span class="k">Monthly</span>
+             <span class="v c-commerce">$${vol.monthly_usd.toLocaleString()}</span></div>
+        <div><span class="k">Annual contract</span>
+             <span class="v c-commerce">$${vol.annual_usd.toLocaleString()}</span></div>
+        <div><span class="k">Per branch</span>
+             <span class="v">$${vol.effective_rate_per_branch.toLocaleString()}</span></div>
+        <div><span class="k">Rate card would be</span>
+             <span class="v">$${per.monthly_usd.toLocaleString()}</span></div>
+        <div><span class="k">Cheaper</span><span class="v">${esc(winner)}</span></div>
+      </div>`
+      + (vol.next_tier
+        ? `<div class="card-note" style="margin-top:6px;color:var(--warning)">
+             +${vol.next_tier.branches_until_next_tier} branch reaches
+             ${esc(vol.next_tier.next_tier_label)} at
+             $${vol.next_tier.next_tier_monthly_usd.toLocaleString()}/mo —
+             a $${vol.next_tier.monthly_increase_usd.toLocaleString()} step.
+           </div>`
+        : `<div class="card-note" style="margin-top:6px">
+             Flat enterprise tier — further branches add nothing.
+           </div>`);
+  } catch (err) {
+    $("calc-out").innerHTML =
+      `<div class="card-note" style="color:var(--critical)">${esc(err.message)}</div>`;
+  }
+}
+
+["calc-branches", "calc-units", "calc-vertical"].forEach((id) => {
+  $(id).addEventListener("input", () => {
+    clearTimeout(calcTimer);
+    calcTimer = setTimeout(calculateBilling, 250);
+  });
+});
+
+$("term-clear").addEventListener("click", () => {
+  $("term-body").innerHTML = "";
+  logToConsole("Log cleared.", "info");
 });
 
 $("contact-form").addEventListener("submit", (event) => {
