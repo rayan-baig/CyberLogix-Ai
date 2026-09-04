@@ -24,6 +24,7 @@ ask for.
 | Operations Console | `/` | Browser UI over the whole platform |
 | Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
+| On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
 
 The console is at `/`, the machine-readable gateway at `/api`, and
 interactive API docs at `/docs`.
@@ -68,6 +69,46 @@ it only against a throwaway instance.
 | `country_club` | High-End Country Clubs | Clubhouse Kitchen Walk-In Compressor Failure | above 32 °F |
 
 Thresholds are exclusive: a reading exactly at the limit is nominal.
+
+## Who gets alerted
+
+Alerts go to an on-call roster, not one number. The text goes to **everyone**
+on it; the call walks the ladder in escalation order and stops at the first
+person actually reached, so a wrong number or a dead line doesn't end the
+escalation.
+
+```bash
+curl -X POST localhost:8080/api/contacts -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{
+  "full_name": "Night Engineer", "phone": "+15550001", "escalation_order": 1
+}'
+```
+
+Each entry can opt out of either channel and be muted while someone is on
+leave. `GET /api/contacts/preview` shows exactly who would be alerted right
+now without sending anything — worth checking after editing a rota, since an
+unverified rota is how an alert reaches an empty desk.
+
+A tenant with no roster is still alerted: the store falls back to the contact
+captured at onboarding, so alerting never depends on setup that hasn't
+happened yet.
+
+## Tuning a sensor's limits
+
+The industry profiles are defaults, not rules. A particular freezer may be
+held colder than its sector's rule of thumb, and a hangar in Phoenix is not a
+hangar in Anchorage:
+
+```bash
+curl -X POST localhost:8080/api/licenses/me/sensors/BLOOD-07/thresholds \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"danger_above": 42.0, "danger_below": 38.0}'
+```
+
+An override replaces that bound for that sensor everywhere — breach detection,
+the forecaster and the console all read the effective value. Sending `null`
+restores the sector default. A band where the floor sits above the ceiling is
+refused, since the sensor could never read in band.
 
 ## Plans
 
@@ -121,6 +162,17 @@ curl -X POST localhost:8080/api/accounts/bootstrap \
 curl -X POST localhost:8080/api/accounts/login -H 'Content-Type: application/json' \
   -d '{"email": "dana@blueharbor.example", "password": "a-long-passphrase"}'
 ```
+
+Someone locked out is recovered by an owner issuing a one-time reset
+(`POST /api/accounts/users/{id}/reset`), handing the token over out of band,
+and the user redeeming it at `POST /api/accounts/reset`. Only the token's hash
+is stored, so a copy of the database cannot replay it; it works once, expires
+in 24 hours, and redeeming it revokes that user's existing sessions, since a
+reset usually means the account was compromised.
+
+Repeated failed sign-ins for one account are throttled — eight attempts in
+five minutes, then `429` with a `Retry-After`. The limit is per account, so
+one address being attacked cannot lock the rest of the team out.
 
 Every state change a human causes is written to a durable audit trail with
 their name against it, readable at `GET /api/accounts/audit`. Acknowledging an
@@ -179,6 +231,10 @@ without calling.
 temperature log: readings logged, excursions, per-sensor min/max/mean,
 incident counts and mean response time. Add `narrate=true` for a
 Gemini-written executive summary.
+
+`GET /api/autopilot/compliance.csv` returns the same figures as a spreadsheet
+— one row per sensor plus a totals row — so it can go straight into an audit
+pack without anyone re-typing numbers.
 
 ## BYOD: bring your own hardware
 
@@ -355,7 +411,8 @@ container image defaults it to `/app/data/cyberlogix.db`.
 
 It is still single-writer: pin to one instance (`--max-instances 1`) or
 replace the `Database` class with a Postgres adapter before scaling out.
-`db.py` is the only file that has to change — nothing above it does SQL.
+`db.py` is the only file that has to change — nothing above it does SQL, so
+the adapter only needs `put`, `get`, `delete`, `all`, `count` and `clear`.
 
 Reading history is capped per sensor by a ring buffer, and the eviction is
 mirrored into the database, so the table cannot grow without bound.
@@ -376,9 +433,9 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-131 tests across the ten modules. Gemini and Twilio are both stubbed and the
-database is in-memory, so the suite runs without credentials, makes no network
-calls and touches no file on disk.
+160 tests across the eleven modules. Gemini and Twilio are both stubbed and
+the database is in-memory, so the suite runs without credentials, makes no
+network calls and touches no file on disk.
 
 ## Deploying to Cloud Run
 

@@ -436,12 +436,44 @@
 
         <section class="card">
           <div class="card-head">
+            <span class="card-title">On-call roster</span>
+            <span class="card-note" id="roster-note"></span>
+          </div>
+          <div id="roster-body"></div>
+          <form id="contact-form" style="margin-top:12px">
+            <div class="row" style="gap:8px">
+              <input id="ct-name" class="grow" placeholder="Name" required
+                     style="padding:9px 11px;background:rgba(11,15,25,.65);
+                            border:1px solid var(--border);border-radius:9px;
+                            color:var(--ink)">
+              <input id="ct-phone" placeholder="+15550100" required
+                     style="width:130px;padding:9px 11px;background:rgba(11,15,25,.65);
+                            border:1px solid var(--border);border-radius:9px;
+                            color:var(--ink)">
+            </div>
+            <button class="btn btn-sm" type="submit" style="margin-top:8px">
+              Add to roster
+            </button>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Team</span>
+            <span class="card-note" id="team-note"></span>
+          </div>
+          <div id="team-body"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
             <span class="card-title">Autopilot</span>
             <span class="card-note">Unattended watchdog</span>
           </div>
           <div class="row">
             <button class="btn btn-sm" id="run-sweep">Run sweep now</button>
             <button class="btn btn-sm" id="run-compliance">Compliance report</button>
+            <button class="btn btn-sm" id="download-csv">Export CSV</button>
           </div>
           <div id="autopilot-out" style="margin-top:12px"></div>
         </section>
@@ -659,18 +691,22 @@ async function loadIndustries() {
 }
 
 async function refresh() {
-  const [overview, health, costs, audit, me] = await Promise.all([
+  const [overview, health, costs, audit, me, roster, team] = await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
     api("/api/costs?days=30"),
     api("/api/accounts/audit?limit=8"),
     state.user ? Promise.resolve({ user: state.user }) : api("/api/accounts/me"),
+    api("/api/contacts"),
+    api("/api/accounts/users"),
   ]);
   state.data = overview;
   state.user = me.user;
   render(overview, health);
   renderCosts(costs);
   renderAudit(audit);
+  renderRoster(roster);
+  renderTeam(team);
 }
 
 /* ---------------- render ---------------- */
@@ -777,13 +813,17 @@ function renderFleet(sensors) {
       <div class="spark-wrap">${sparkline(s)}</div>
       <div class="sensor-meta">
         <span>${esc(bound)}</span>
-        <span>limit ${s.danger_below !== null ? esc(s.danger_below) + "–" : "&lt; "}${esc(s.danger_above)}°F</span>
+        <span>limit ${s.danger_below !== null ? esc(s.danger_below) + "–" : "&lt; "}${esc(s.danger_above)}°F${
+          s.uses_override ? ' <span style="color:var(--warning)">tuned</span>' : ""
+        }</span>
       </div>
       <div class="sensor-actions">
         <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
                 data-safe="1">Send safe pulse</button>
         <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
                 data-safe="0">Simulate failure</button>
+        <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Retune</button>
+        <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
       </div>
     </article>`;
   }).join("");
@@ -997,6 +1037,59 @@ function renderAudit(trail) {
   }).join("");
 }
 
+/* Who gets woken, in the order the ladder tries them. */
+function renderRoster(roster) {
+  $("roster-note").textContent = roster.using_fallback
+    ? "using fallback contact"
+    : `${roster.count} on call`;
+
+  if (!roster.contacts.length) {
+    $("roster-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         No roster yet, so alerts go to ${esc(roster.fallback.full_name)}
+         (${esc(roster.fallback.phone)}).
+       </div>`;
+    return;
+  }
+
+  $("roster-body").innerHTML = roster.contacts.map((c, index) => {
+    const channels = [c.receives_sms ? "SMS" : null, c.receives_voice ? "call" : null]
+      .filter(Boolean).join(" + ") || "muted";
+    return `<div style="display:flex;align-items:center;gap:9px;padding:7px 0;
+                        border-bottom:1px solid var(--border);
+                        ${c.active ? "" : "opacity:.5"}">
+      <span style="width:20px;color:var(--muted);font-size:12px;
+                   font-variant-numeric:tabular-nums">${index + 1}</span>
+      <span class="grow">
+        <span style="font-size:13px;font-weight:600">${esc(c.full_name)}</span>
+        <span style="display:block;font-size:11.5px;color:var(--muted)">
+          ${esc(c.phone)} · ${esc(channels)}${c.active ? "" : " · off duty"}
+        </span>
+      </span>
+      <button class="btn btn-sm" data-contact-toggle="${esc(c.contact_id)}"
+              data-active="${c.active ? "1" : "0"}">${c.active ? "Mute" : "Unmute"}</button>
+      <button class="btn btn-sm" data-contact-remove="${esc(c.contact_id)}">Remove</button>
+    </div>`;
+  }).join("");
+}
+
+function renderTeam(team) {
+  $("team-note").textContent = `${team.count} with access`;
+  $("team-body").innerHTML = team.users.map((u) => `
+    <div style="display:flex;align-items:center;gap:9px;padding:7px 0;
+                border-bottom:1px solid var(--border);${u.disabled ? "opacity:.5" : ""}">
+      <span class="grow">
+        <span style="font-size:13px;font-weight:600">${esc(u.full_name)}</span>
+        <span style="display:block;font-size:11.5px;color:var(--muted)">
+          ${esc(u.email)} · ${esc(u.role)}${u.disabled ? " · disabled" : ""}
+        </span>
+      </span>
+      ${u.disabled || u.user_id === (state.user && state.user.user_id)
+        ? ""
+        : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>`}
+    </div>`).join("");
+}
+
 function renderByod(sensors) {
   const bound = sensors.find((s) => s.external_device_sn);
   const serial = bound ? bound.external_device_sn : "YOUR-DEVICE-SERIAL";
@@ -1047,6 +1140,63 @@ document.addEventListener("click", (event) => {
     ), "Voice escalation dispatched.");
   }
 
+  if (btn.dataset.contactToggle) {
+    const active = btn.dataset.active !== "1";
+    act(() => api(`/api/contacts/${encodeURIComponent(btn.dataset.contactToggle)}`, {
+      method: "PATCH", body: JSON.stringify({ active }),
+    }), active ? "Back on call." : "Muted for now.");
+  }
+
+  if (btn.dataset.contactRemove) {
+    act(() => api(`/api/contacts/${encodeURIComponent(btn.dataset.contactRemove)}`, {
+      method: "DELETE",
+    }), "Removed from the roster.");
+  }
+
+  if (btn.dataset.resetUser) {
+    act(async () => {
+      const out = await api(
+        `/api/accounts/users/${encodeURIComponent(btn.dataset.resetUser)}/reset`,
+        { method: "POST" }
+      );
+      // Shown once, so it has to be readable rather than a toast that fades.
+      $("team-body").insertAdjacentHTML("afterbegin",
+        `<div class="quote"><div class="quote-label">One-time reset token for
+           ${esc(out.user.email)} — hand it over directly</div>
+         <code style="word-break:break-all">${esc(out.reset_token)}</code></div>`);
+    });
+  }
+
+  if (btn.dataset.retire) {
+    const id = btn.dataset.retire;
+    if (!confirm(`Retire ${id}? Its readings are deleted and the seat is freed.`)) return;
+    act(() => api(`/api/licenses/me/sensors/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }), `${id} retired.`);
+  }
+
+  if (btn.dataset.tune) {
+    const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.tune);
+    if (!sensor) return;
+    const current = sensor.danger_above === null ? "" : String(sensor.danger_above);
+    const answer = prompt(
+      `Upper limit for ${sensor.sensor_id} in °F.\n`
+      + `Blank restores the ${sensor.industry_name} default.`,
+      current
+    );
+    if (answer === null) return;
+    const value = answer.trim() === "" ? null : Number(answer);
+    if (value !== null && !Number.isFinite(value)) {
+      toast("That is not a number.", "err");
+      return;
+    }
+    act(() => api(
+      `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/thresholds`,
+      { method: "POST", body: JSON.stringify({
+          danger_above: value, danger_below: sensor.override_below ?? null }) }
+    ), value === null ? "Restored the industry default." : `Limit set to ${value}°F.`);
+  }
+
   if (btn.dataset.pulse) {
     const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.pulse);
     if (!sensor) return;
@@ -1084,6 +1234,41 @@ $("add-form").addEventListener("submit", (event) => {
     });
     event.target.reset();
   }, "Sensor registered.");
+});
+
+$("contact-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  act(async () => {
+    await api("/api/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        full_name: $("ct-name").value.trim(),
+        phone: $("ct-phone").value.trim(),
+      }),
+    });
+    event.target.reset();
+  }, "Added to the roster.");
+});
+
+/* The viewer sandbox blocks page-initiated downloads, so the CSV is opened
+   in a new tab rather than offered as a download link that would do nothing. */
+$("download-csv").addEventListener("click", async () => {
+  try {
+    const res = await fetch("/api/autopilot/compliance.csv?days=7", {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const text = await res.text();
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write(`<pre>${esc(text)}</pre>`);
+      win.document.close();
+    } else {
+      toast("Allow pop-ups to view the export.", "err");
+    }
+  } catch (err) {
+    toast(err.message, "err");
+  }
 });
 
 $("run-sweep").addEventListener("click", () => {

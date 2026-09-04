@@ -46,8 +46,6 @@ def console_overview(
 
         row = sensor.public()
         row["catastrophe"] = profile["catastrophe"]
-        row["danger_above"] = profile["danger_above"]
-        row["danger_below"] = profile["danger_below"]
         row["breaching"] = bool(history) and history[-1].breached
         row["spark"] = [r.temperature_fahrenheit for r in history]
         row["spark_breached"] = [r.breached for r in history]

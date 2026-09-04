@@ -116,17 +116,39 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
     routes record delivery identically.
     """
     script, source = build_voice_script(incident, tenant)
-    delivery = place_voice_call(tenant.contact_phone, script, tenant.tenant_id)
-    STORE.record_voice_escalation(incident, script, source, delivery)
+
+    # Walk the escalation ladder: stop at the first person actually reached,
+    # so a wrong number or a dead line does not end the escalation.
+    ladder = STORE.voice_ladder(tenant)
+    fanout = []
+    delivery = None
+    for contact in ladder:
+        attempt = dict(
+            place_voice_call(contact.phone, script, tenant.tenant_id),
+            contact_id=contact.contact_id,
+            contact_name=contact.full_name,
+        )
+        fanout.append(attempt)
+        delivery = attempt
+        if attempt["delivered"]:
+            break
+
+    STORE.record_voice_escalation(incident, script, source, delivery, fanout)
 
     logger.critical(
-        "Voice escalation: incident=%s sensor=%s tenant=%s delivered=%s",
+        "Voice escalation: incident=%s sensor=%s tenant=%s attempts=%d reached=%s",
         incident.incident_id,
         incident.sensor_id,
         tenant.tenant_id,
-        delivery["delivered"],
+        len(fanout),
+        delivery["delivered"] if delivery else False,
     )
-    return {"script": script, "source": source, "delivery": delivery}
+    return {
+        "script": script,
+        "source": source,
+        "delivery": delivery,
+        "fanout": fanout,
+    }
 
 
 @router.get("/pending")
@@ -203,8 +225,11 @@ def escalate_to_voice(
     return {
         "status": "VOICE_ESCALATION_DISPATCHED",
         "incident_id": incident.incident_id,
-        "call_to": tenant.contact_phone,
-        "call_recipient": tenant.contact_name,
+        "call_to": outcome["delivery"]["to"] if outcome["delivery"] else None,
+        "call_recipient": (
+            outcome["delivery"].get("contact_name") if outcome["delivery"] else None
+        ),
+        "escalation_attempts": outcome["fanout"],
         "minutes_unacknowledged": waited,
         "voice_script": outcome["script"],
         "voice_dispatch_source": outcome["source"],

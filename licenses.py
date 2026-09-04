@@ -31,6 +31,17 @@ class PlanChange(BaseModel):
     plan: str = Field(..., description="One of: trial, growth, enterprise")
 
 
+class ThresholdOverride(BaseModel):
+    """Null clears an override and restores the industry default."""
+
+    danger_above: Optional[float] = Field(
+        None, description="Upper bound in °F. Null restores the sector default."
+    )
+    danger_below: Optional[float] = Field(
+        None, description="Lower bound in °F. Null restores the sector default."
+    )
+
+
 class SensorRegister(BaseModel):
     sensor_id: str = Field(..., min_length=1, max_length=80)
     industry_vertical: str = Field(..., min_length=1)
@@ -179,6 +190,48 @@ def list_sensors(tenant: Tenant = Depends(require_tenant)):
         "count": len(sensors),
         "online": sum(1 for s in sensors if not s.offline()),
         "sensors": [s.public() for s in sensors],
+    }
+
+
+@router.post("/me/sensors/{sensor_id}/thresholds")
+def set_thresholds(
+    sensor_id: str,
+    payload: ThresholdOverride,
+    tenant: Tenant = Depends(require_tenant),
+):
+    """Tune one sensor's limits away from its industry defaults.
+
+    A particular freezer may be held colder than its sector's rule of thumb,
+    and a hangar in Phoenix is not a hangar in Anchorage.
+    """
+    sensor = STORE.get_sensor(sensor_id)
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
+        )
+
+    above, below = payload.danger_above, payload.danger_below
+    if above is not None and below is not None and below >= above:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"danger_below ({below}°F) must be under danger_above "
+                f"({above}°F), or the sensor can never read in band."
+            ),
+        )
+
+    STORE.set_sensor_overrides(sensor, above, below)
+    effective_above, effective_below = sensor.bounds()
+    return {
+        "sensor": sensor.public(),
+        "effective_above": effective_above,
+        "effective_below": effective_below,
+        "message": (
+            "Overrides cleared; the industry defaults apply."
+            if above is None and below is None
+            else "Overrides applied."
+        ),
     }
 
 

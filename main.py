@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from accounts import router as accounts_router
 from automation import router as autopilot_router
 from console_api import router as console_router
+from contacts import router as contacts_router
 from costs import router as costs_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
@@ -70,6 +71,7 @@ app.include_router(bridge_router)
 app.include_router(console_router)
 app.include_router(accounts_router)
 app.include_router(costs_router)
+app.include_router(contacts_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -82,6 +84,7 @@ MODULES_ACTIVE = [
     "operations_console",
     "operator_accounts_and_audit",
     "spend_controls",
+    "on_call_roster",
 ]
 
 

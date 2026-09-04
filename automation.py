@@ -13,7 +13,11 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, List
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 
 from gemini import safe_generate
 from licenses import require_tenant
@@ -152,6 +156,85 @@ def compliance_report(
     return report
 
 
+@router.get("/compliance.csv")
+def compliance_csv(
+    days: int = Query(7, ge=1, le=90),
+    tenant: Tenant = Depends(require_tenant),
+):
+    """The same report as a spreadsheet, because inspectors want a file.
+
+    One row per sensor plus a totals row, so it can be attached to an audit
+    pack or opened in Excel without anyone re-typing figures.
+    """
+    since = utc_now() - timedelta(days=days)
+    sensors = STORE.sensors_for(tenant.tenant_id)
+    rows = [_sensor_compliance(s, since) for s in sensors]
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "Sensor",
+            "Location",
+            "Industry",
+            "Readings logged",
+            "Readings in band",
+            "Excursions",
+            "Compliance %",
+            "Min °F",
+            "Mean °F",
+            "Max °F",
+            "Last seen (UTC)",
+            "Online",
+            "Compliant",
+        ]
+    )
+    for row in rows:
+        writer.writerow(
+            [
+                row["sensor_id"],
+                row["location_name"],
+                row["industry_name"],
+                row["readings_logged"],
+                row["readings_in_band"],
+                row["readings_breached"],
+                "" if row["compliance_percent"] is None else row["compliance_percent"],
+                "" if row["min_temperature"] is None else row["min_temperature"],
+                "" if row["mean_temperature"] is None else row["mean_temperature"],
+                "" if row["max_temperature"] is None else row["max_temperature"],
+                row["last_seen"] or "",
+                "yes" if row["currently_online"] else "no",
+                "yes" if row["compliant"] else "no",
+            ]
+        )
+
+    logged = sum(r["readings_logged"] for r in rows)
+    breached = sum(r["readings_breached"] for r in rows)
+    writer.writerow([])
+    writer.writerow(
+        [
+            "TOTAL",
+            tenant.company_name,
+            f"{days} days to {iso(utc_now())}",
+            logged,
+            logged - breached,
+            breached,
+            round((logged - breached) / logged * 100, 2) if logged else "",
+        ]
+    )
+
+    buffer.seek(0)
+    filename = (
+        f"cyberlogix-compliance-{tenant.tenant_id}-"
+        f"{utc_now().strftime('%Y%m%d')}.csv"
+    )
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/sweep")
 def autopilot_sweep(
     auto_escalate: bool = Query(
@@ -228,7 +311,9 @@ def autopilot_sweep(
                 "action": "voice_escalation_dispatched",
                 "incident_id": incident.incident_id,
                 "sensor_id": incident.sensor_id,
-                "call_to": tenant.contact_phone,
+                "call_to": (
+                    outcome["delivery"]["to"] if outcome["delivery"] else None
+                ),
                 "minutes_unacknowledged": incident.minutes_open(now),
                 "voice_script": outcome["script"],
                 "voice_dispatch_source": outcome["source"],

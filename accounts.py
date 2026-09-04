@@ -17,7 +17,9 @@ Endpoints that record who did something require the person.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import time
+from collections import defaultdict
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -29,6 +31,36 @@ logger = logging.getLogger("cyberlogix.accounts")
 router = APIRouter(prefix="/api/accounts", tags=["Operator Accounts"])
 
 MIN_PASSWORD_LENGTH = 10
+
+# Login throttling. A shared in-process window is enough for a single
+# instance and costs nothing; a distributed deployment would move this to
+# the same store the sessions live in.
+MAX_LOGIN_ATTEMPTS = 8
+LOGIN_WINDOW_SECONDS = 300
+_login_attempts: Dict[str, List[float]] = defaultdict(list)
+
+
+def _throttle(key: str) -> None:
+    """Reject a caller that has failed too often in the recent window."""
+    now = time.monotonic()
+    recent = [t for t in _login_attempts[key] if now - t < LOGIN_WINDOW_SECONDS]
+    _login_attempts[key] = recent
+    if len(recent) >= MAX_LOGIN_ATTEMPTS:
+        oldest = min(recent)
+        wait = int(LOGIN_WINDOW_SECONDS - (now - oldest)) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed sign-in attempts. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
+
+
+def _record_failure(key: str) -> None:
+    _login_attempts[key].append(time.monotonic())
+
+
+def _clear_failures(key: str) -> None:
+    _login_attempts.pop(key, None)
 
 
 class UserCreate(BaseModel):
@@ -49,6 +81,11 @@ class RoleChange(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=200)
+
+
+class ResetRedeem(BaseModel):
+    token: str = Field(..., min_length=1, max_length=200)
     new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=200)
 
 
@@ -190,6 +227,9 @@ def bootstrap_owner(payload: UserCreate, tenant: Tenant = Depends(require_tenant
 @router.post("/login")
 def login(payload: LoginRequest):
     """Exchange an email and password for a bearer session token."""
+    throttle_key = str(payload.email).strip().lower()
+    _throttle(throttle_key)
+
     user = STORE.user_by_email(str(payload.email))
 
     # Verify against a decoy hash when the user is unknown so a wrong email
@@ -198,11 +238,14 @@ def login(payload: LoginRequest):
     correct = verify_password(payload.password, stored)
 
     if user is None or not correct or user.disabled:
+        _record_failure(throttle_key)
         logger.warning("Failed login for %s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is incorrect.",
         )
+
+    _clear_failures(throttle_key)
 
     tenant = STORE.get_tenant(user.tenant_id)
     if tenant is None or not tenant.active:
@@ -332,6 +375,55 @@ def disable_user(user_id: str, owner: User = Depends(require_role("owner"))):
     STORE.set_user_disabled(target, True)
     audit(owner, "account.disabled", f"Disabled {target.email}.")
     return target.public()
+
+
+@router.post("/users/{user_id}/reset")
+def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
+    """Issue a one-time password reset for someone who is locked out.
+
+    The token is returned once, for the owner to hand over out of band. Only
+    its hash is stored, so a copy of the database cannot replay it.
+    """
+    target = STORE.get_user(user_id)
+    if target is None or target.tenant_id != owner.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No such user."
+        )
+
+    token = STORE.issue_reset(target)
+    audit(owner, "account.reset_issued", f"Issued a password reset for {target.email}.")
+    return {
+        "reset_token": token,
+        "user": target.public(),
+        "expires_in_hours": 24,
+        "message": (
+            "Give this token to the user out of band. It is shown once, works "
+            "once, and expires in 24 hours."
+        ),
+    }
+
+
+@router.post("/reset")
+def redeem_reset(payload: ResetRedeem):
+    """Set a new password with a reset token. No sign-in required."""
+    user = STORE.redeem_reset(payload.token, payload.new_password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That reset token is invalid, already used, or expired.",
+        )
+
+    STORE.record_audit(
+        tenant_id=user.tenant_id,
+        actor=f"{user.full_name} <{user.email}>",
+        actor_role=user.role,
+        action="account.password_reset",
+        detail="Password set with a reset token; existing sessions revoked.",
+    )
+    return {
+        "message": "Password updated. Sign in with your new password.",
+        "user": user.public(),
+    }
 
 
 @router.get("/audit")

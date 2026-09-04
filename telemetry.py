@@ -22,7 +22,7 @@ from store import (
     INDUSTRY_PROFILES,
     STORE,
     Tenant,
-    evaluate_breach,
+    evaluate_sensor_breach,
     iso,
     resolve_vertical,
     utc_now,
@@ -116,7 +116,7 @@ def process_reading(
     escalation, forecasting history and compliance logging.
     """
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
-    breach_reason = evaluate_breach(sensor.industry_vertical, temperature)
+    breach_reason = evaluate_sensor_breach(sensor, temperature)
 
     STORE.record_reading(
         sensor=sensor,
@@ -181,9 +181,17 @@ def process_reading(
         sms_text=sms_text,
         sms_dispatch_source=sms_source,
     )
-    STORE.record_sms_delivery(
-        incident, send_sms(tenant.contact_phone, sms_text, tenant.tenant_id)
-    )
+    # Everyone on the roster gets the text, not just one number on file.
+    recipients = STORE.sms_recipients(tenant)
+    fanout = [
+        dict(
+            send_sms(contact.phone, sms_text, tenant.tenant_id),
+            contact_id=contact.contact_id,
+            contact_name=contact.full_name,
+        )
+        for contact in recipients
+    ]
+    STORE.record_sms_delivery(incident, fanout[0] if fanout else None, fanout)
 
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"

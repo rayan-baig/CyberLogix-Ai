@@ -85,6 +85,9 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
     """Build the forecast payload for one sensor."""
     sensor = STORE.get_sensor(sensor_id)
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
+    # Effective bounds, so a sensor with a tuned threshold is forecast
+    # against the threshold it will actually breach.
+    danger_above, danger_below = sensor.bounds()
     since = utc_now() - timedelta(hours=window_hours)
     readings = STORE.readings_for(sensor_id, since=since)
 
@@ -95,8 +98,8 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
         "industry_name": profile["name"],
         "likely_catastrophe": profile["catastrophe"],
         "current_temperature": sensor.last_temperature,
-        "danger_above": profile["danger_above"],
-        "danger_below": profile["danger_below"],
+        "danger_above": danger_above,
+        "danger_below": danger_below,
         "window_hours": window_hours,
         "readings_analysed": len(readings),
     }
@@ -125,9 +128,9 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
     # Pick the bound this trend is actually heading toward.
     target: Optional[float] = None
     if slope > NEGLIGIBLE_SLOPE_F_PER_HOUR:
-        target = profile["danger_above"]
+        target = danger_above
     elif slope < -NEGLIGIBLE_SLOPE_F_PER_HOUR:
-        target = profile["danger_below"]
+        target = danger_below
 
     hours_until: Optional[float] = None
     if target is not None:
@@ -136,10 +139,8 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
         if (remaining > 0) == (slope > 0):
             hours_until = round(abs(remaining / slope), 2)
 
-    already_breached = (
-        profile["danger_above"] is not None and current > profile["danger_above"]
-    ) or (
-        profile["danger_below"] is not None and current < profile["danger_below"]
+    already_breached = (danger_above is not None and current > danger_above) or (
+        danger_below is not None and current < danger_below
     )
 
     if already_breached:
