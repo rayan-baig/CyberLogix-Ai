@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 from google import genai
+
+from store import STORE
 
 logger = logging.getLogger("cyberlogix.gemini")
 
@@ -36,12 +38,35 @@ def dispatch_ready() -> bool:
     return client is not None
 
 
-def safe_generate(prompt: str, fallback: str, purpose: str) -> Tuple[str, str]:
+def safe_generate(
+    prompt: str,
+    fallback: str,
+    purpose: str,
+    tenant_id: Optional[str] = None,
+) -> Tuple[str, str]:
     """Generate text, degrading to `fallback` instead of raising.
 
-    Returns a (text, source) pair where source is "gemini" or
-    "fallback_template".
+    Returns a (text, source) pair where source is "gemini", "cache" or
+    "fallback_template". Passing `tenant_id` meters the call and subjects it
+    to that tenant's daily budget; omitting it skips both.
     """
+    # Imported here because costs.py depends on the store, which must not be
+    # pulled in at gemini import time.
+    from costs import allow_ai_call, cache_key, record
+
+    key = cache_key(prompt, purpose)
+    cached = STORE.cache_get(key)
+    if cached is not None:
+        record(tenant_id, "ai_cache_hits")
+        logger.info("Cache hit for %s; no model call made.", purpose)
+        return cached, "cache"
+
+    allowed, reason = allow_ai_call(tenant_id)
+    if not allowed:
+        record(tenant_id, "ai_suppressed")
+        logger.warning("%s not generated: %s", purpose, reason)
+        return fallback, "fallback_template"
+
     if client is None:
         logger.error(
             "Gemini unavailable for %s; using deterministic template. "
@@ -58,6 +83,8 @@ def safe_generate(prompt: str, fallback: str, purpose: str) -> Tuple[str, str]:
         text = (response.text or "").strip()
         if not text:
             raise ValueError("Gemini returned an empty body.")
+        record(tenant_id, "ai_calls")
+        STORE.cache_put(key, text)
         return text, "gemini"
     except Exception as exc:  # noqa: BLE001 - an alert must always go out
         logger.exception("Gemini %s failed (%s); falling back.", purpose, exc)

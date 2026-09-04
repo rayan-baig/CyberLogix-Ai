@@ -15,7 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from gemini import safe_generate
-from licenses import require_entitlement, require_tenant
+from auth import (
+    actor_label,
+    optional_operator,
+    require_entitlement,
+    require_tenant,
+    write_audit,
+)
 from notifications import place_voice_call
 from store import (
     INDUSTRY_PROFILES,
@@ -23,6 +29,7 @@ from store import (
     VOICE_ESCALATION_GRACE_MINUTES,
     Incident,
     Tenant,
+    User,
     utc_now,
 )
 
@@ -32,13 +39,18 @@ router = APIRouter(prefix="/api/voice", tags=["AI Outbound Voice Escalation"])
 
 
 class Acknowledgement(BaseModel):
-    acknowledged_by: str = Field(
-        ..., min_length=1, max_length=120, description="Who is taking the call"
+    acknowledged_by: Optional[str] = Field(
+        None,
+        max_length=120,
+        description=(
+            "Who is taking the call. Ignored when a signed-in operator makes "
+            "the request — their own name is recorded instead."
+        ),
     )
 
 
 class ResolutionNote(BaseModel):
-    resolved_by: str = Field(..., min_length=1, max_length=120)
+    resolved_by: Optional[str] = Field(None, max_length=120)
 
 
 def _load_incident(incident_id: str, tenant: Tenant) -> Incident:
@@ -89,7 +101,12 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     stage directions, no bullet points, no speaker labels.
     """
 
-    return safe_generate(prompt, fallback, purpose="voice escalation script")
+    return safe_generate(
+        prompt,
+        fallback,
+        purpose="voice escalation script",
+        tenant_id=tenant.tenant_id,
+    )
 
 
 def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
@@ -99,12 +116,8 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
     routes record delivery identically.
     """
     script, source = build_voice_script(incident, tenant)
-    delivery = place_voice_call(tenant.contact_phone, script)
-
-    incident.voice_escalated_at = utc_now()
-    incident.voice_script = script
-    incident.voice_dispatch_source = source
-    incident.voice_delivery = delivery
+    delivery = place_voice_call(tenant.contact_phone, script, tenant.tenant_id)
+    STORE.record_voice_escalation(incident, script, source, delivery)
 
     logger.critical(
         "Voice escalation: incident=%s sensor=%s tenant=%s delivered=%s",
@@ -142,6 +155,7 @@ def escalate_to_voice(
     incident_id: str,
     force: bool = False,
     tenant: Tenant = Depends(require_entitlement("voice_escalation")),
+    operator: Optional[User] = Depends(optional_operator),
 ):
     """Draft and dispatch the voice call for one unacknowledged incident.
 
@@ -178,6 +192,13 @@ def escalate_to_voice(
         )
 
     outcome = dispatch_voice_call(incident, tenant)
+    write_audit(
+        tenant,
+        operator,
+        "incident.escalated",
+        f"{incident.incident_id} escalated to a voice call"
+        + (" (forced)." if force else "."),
+    )
 
     return {
         "status": "VOICE_ESCALATION_DISPATCHED",
@@ -197,13 +218,20 @@ def acknowledge_incident(
     incident_id: str,
     payload: Acknowledgement,
     tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
 ):
     """Stop the escalation ladder: a human has the incident."""
     incident = _load_incident(incident_id, tenant)
 
-    if incident.acknowledged_at is None:
-        incident.acknowledged_at = utc_now()
-        incident.acknowledged_by = payload.acknowledged_by
+    actor = actor_label(operator, payload.acknowledged_by or "API key")
+    STORE.acknowledge_incident(incident, actor)
+    write_audit(
+        tenant,
+        operator,
+        "incident.acknowledged",
+        f"{incident.incident_id} on {incident.sensor_id}.",
+        fallback_actor=actor,
+    )
 
     return {
         "status": "ACKNOWLEDGED",
@@ -217,20 +245,24 @@ def resolve_incident(
     incident_id: str,
     payload: ResolutionNote,
     tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
 ):
     """Close an incident once the physical fault is fixed."""
     incident = _load_incident(incident_id, tenant)
 
-    if incident.resolved_at is None:
-        now = utc_now()
-        if incident.acknowledged_at is None:
-            incident.acknowledged_at = now
-            incident.acknowledged_by = payload.resolved_by
-        incident.resolved_at = now
+    actor = actor_label(operator, payload.resolved_by or "API key")
+    STORE.resolve_incident(incident, actor)
+    write_audit(
+        tenant,
+        operator,
+        "incident.resolved",
+        f"{incident.incident_id} on {incident.sensor_id}.",
+        fallback_actor=actor,
+    )
 
     return {
         "status": "RESOLVED",
-        "resolved_by": payload.resolved_by,
+        "resolved_by": actor,
         "incident": incident.public(),
     }
 

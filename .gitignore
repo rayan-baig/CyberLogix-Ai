@@ -4,3 +4,6 @@ __pycache__/
 venv/
 .env
 .pytest_cache/
+cyberlogix.db
+cyberlogix.db-wal
+cyberlogix.db-shm

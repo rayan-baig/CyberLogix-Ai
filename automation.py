@@ -143,7 +143,8 @@ def compliance_report(
         directly. No markdown, no bullet points. Return only the summary.
         """
         summary, source = safe_generate(
-            prompt, fallback, purpose="compliance summary"
+            prompt, fallback, purpose="compliance summary",
+            tenant_id=tenant.tenant_id,
         )
         report["executive_summary"] = summary
         report["summary_source"] = source

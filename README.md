@@ -22,14 +22,17 @@ ask for.
 | BYOD Hardware Bridge | `/api/v1/bridge` | Webhook ingest from off-the-shelf sensors |
 | Sector Meeting Intelligence | `/api/v1/bridge` | Transcripts into structured action items |
 | Operations Console | `/` | Browser UI over the whole platform |
+| Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
+| Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 
 The console is at `/`, the machine-readable gateway at `/api`, and
 interactive API docs at `/docs`.
 
 ## The console
 
-Open `/` in a browser and sign in with a tenant API key (or onboard a company
-from the same card). The console shows the fleet with a 12-point sparkline per
+Open `/` in a browser and sign in with your email and password (or onboard a
+company from the same card, which creates the tenant, its first owner and
+signs you in). The console shows the fleet with a 12-point sparkline per
 sensor, headline counts, the incident feed with the exact SMS and voice text
 that went out and whether each was delivered, and controls to acknowledge,
 resolve or escalate. It polls every 10 seconds.
@@ -47,8 +50,9 @@ To see it with something on it:
 
 That seeds six sensors across six verticals with backdated history — one
 walk-in already failed, a data hall and an engine bay drifting toward their
-limits — then serves the console on :8080. It resets the store, so run it only
-against a throwaway instance.
+limits — then serves the console on :8080. It prints a login
+(`dana@blueharbor.example` / `harbor-demo-2026`). It resets the store, so run
+it only against a throwaway instance.
 
 ## Industry profiles
 
@@ -78,14 +82,51 @@ refused with `409`; decommission sensors first.
 
 ## Authentication
 
-Every endpoint except `/`, `/api/health`, `/api/industries`,
-`/api/licenses/plans` and `/api/licenses/tenants` requires the tenant's API
-key in an `X-CyberLogix-Key` header. The key is returned exactly once, when
-the tenant is onboarded, and is never echoed afterwards.
+Two credentials reach the same endpoints:
+
+* a **tenant API key** in `X-CyberLogix-Key` identifies a machine — sensors,
+  webhooks, the autopilot scheduler — and carries no human identity. It is
+  returned exactly once, when the tenant is onboarded, and never echoed again;
+* a **bearer session token** in `Authorization` identifies a signed-in person,
+  and is what the console uses.
+
+Public endpoints are `/`, `/api`, `/api/health`, `/api/industries`,
+`/api/licenses/plans`, `/api/licenses/tenants` and `/api/accounts/login`.
 
 Status codes distinguish the failure modes: `401` for a missing or unknown
-key, `402` for a suspended or expired license, `403` for a plan that lacks
-the requested feature. A billing lapse is never reported as a bad credential.
+credential, `402` for a suspended or expired license, `403` for a plan or role
+that lacks the permission. A billing lapse is never reported as a bad
+credential, and a wrong password and an unknown email return identical
+wording so the endpoint cannot be used to enumerate accounts.
+
+### Operators, roles and the audit trail
+
+People sign in as themselves. Roles are `owner` > `operator` > `viewer`; each
+implies the ones below it. Only owners invite users, change roles or disable
+accounts, and an owner can neither demote nor disable themselves, so a tenant
+is never left without one. Disabling someone revokes their live sessions
+immediately rather than waiting for expiry. Passwords are scrypt hashes with
+per-user salts and never leave the server.
+
+Bootstrap the first owner with the tenant API key, then invite the rest:
+
+```bash
+curl -X POST localhost:8080/api/accounts/bootstrap \
+  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' -d '{
+  "email": "dana@blueharbor.example",
+  "full_name": "Dana Reyes",
+  "password": "a-long-passphrase"
+}'
+
+curl -X POST localhost:8080/api/accounts/login -H 'Content-Type: application/json' \
+  -d '{"email": "dana@blueharbor.example", "password": "a-long-passphrase"}'
+```
+
+Every state change a human causes is written to a durable audit trail with
+their name against it, readable at `GET /api/accounts/audit`. Acknowledging an
+incident while signed in records *you*, not a generic label; the same action
+performed with a machine key is recorded with `actor_role: "machine"`. A
+compliance report is only as good as its provenance.
 
 ## Quick start
 
@@ -245,6 +286,39 @@ wording is still a true alert, but an invented meeting summary is a
 falsehood, so that endpoint reports degradation instead of substituting
 content.
 
+## Cutting the running costs
+
+Three levers, in order of how much they save:
+
+1. **Generated copy is cached.** A walk-in that fails on Monday and again on
+   Friday produces the same prompt, so the second alert is served from cache
+   for nothing. Alerts are highly repetitive by nature — same sensor, same
+   catastrophe, same severity band — so the hit rate climbs with use. The
+   cache is persisted, so a redeploy does not throw away generations you have
+   already paid for.
+2. **Daily spend is capped per tenant.** A sensor stuck in a breach loop, or a
+   leaked key, cannot run up an unbounded bill. Past the cap an alert falls
+   back to the deterministic template — still sent, just not model-written —
+   and extra messages are suppressed with a recorded reason. The incident
+   still opens and still needs answering; only the spend stops.
+3. **Everything is metered.** `GET /api/costs` reports usage, estimated spend,
+   what the cache saved and what the caps prevented, before any of it reaches
+   an invoice. The console shows the same figures.
+
+Two smaller ones: a sustained breach updates its open incident instead of
+opening a new one, so one failure costs one generation and one SMS however
+long it lasts; and the console polls every 20 seconds rather than continuously,
+because each poll keeps a Cloud Run instance warm and billing.
+
+Set caps with `CYBERLOGIX_MAX_AI_CALLS_PER_DAY`, `CYBERLOGIX_MAX_SMS_PER_DAY`
+and `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY`; `0` means unlimited. Unit rates for
+the estimate are configurable and are list prices for capacity planning, not a
+bill.
+
+On the infrastructure side, deploy with `--min-instances 0` so an idle
+deployment costs nothing but storage; SQLite on the instance disk avoids a
+managed database entirely at this scale.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -256,17 +330,35 @@ content.
 | `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Model for all generated copy |
 | `CYBERLOGIX_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
 | `PORT` | `8080` | Listen port |
+| `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
+| `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
+| `CYBERLOGIX_MAX_SMS_PER_DAY` | `100` | Per-tenant daily cap; `0` = unlimited |
+| `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY` | `30` | Per-tenant daily cap; `0` = unlimited |
+| `CYBERLOGIX_RATE_AI_CALL` | `0.0012` | USD per model call, for the estimate |
+| `CYBERLOGIX_RATE_SMS` | `0.0079` | USD per SMS, for the estimate |
+| `CYBERLOGIX_RATE_VOICE_CALL` | `0.0140` | USD per voice call, for the estimate |
 
 Set real origins before production; browsers reject credentialed requests
 against a wildcard, so credentials switch on only once origins are named.
 
 ## State
 
-State lives in memory behind a re-entrant lock (`store.py`), which is correct
-for a single Cloud Run instance. It does not survive a restart and is not
-shared across replicas — pin to one instance (`--max-instances 1`) or swap
-`HubStore` for a Firestore or Postgres adapter before scaling out. That class
-is the only file that has to change.
+State is durable. `store.py` keeps a fast in-memory working set and writes
+through to SQLite (`db.py`) on every change, reloading it at startup, so
+tenants, sensors, readings, incidents, users, the audit trail and metered
+usage all survive a restart. Because the queries are small per-tenant scans
+rather than SQL, entities are stored as JSON documents keyed by `(kind, id)`
+— durability without a migration burden.
+
+Set `CYBERLOGIX_DB_PATH` to a mounted volume to outlive the container. The
+container image defaults it to `/app/data/cyberlogix.db`.
+
+It is still single-writer: pin to one instance (`--max-instances 1`) or
+replace the `Database` class with a Postgres adapter before scaling out.
+`db.py` is the only file that has to change — nothing above it does SQL.
+
+Reading history is capped per sensor by a ring buffer, and the eviction is
+mirrored into the database, so the table cannot grow without bound.
 
 ## Running locally
 
@@ -284,8 +376,9 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-97 tests across the eight modules. Gemini and Twilio are both stubbed, so
-the suite runs without credentials and makes no network calls.
+131 tests across the ten modules. Gemini and Twilio are both stubbed and the
+database is in-memory, so the suite runs without credentials, makes no network
+calls and touches no file on disk.
 
 ## Deploying to Cloud Run
 
@@ -294,6 +387,7 @@ gcloud run deploy cyberlogix-hub \
   --source . \
   --region us-central1 \
   --max-instances 1 \
+  --min-instances 0 \
   --allow-unauthenticated \
   --set-env-vars GEMINI_API_KEY=your-key,TWILIO_ACCOUNT_SID=AC...,TWILIO_AUTH_TOKEN=...,TWILIO_FROM_NUMBER=+15550100
 ```

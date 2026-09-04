@@ -135,7 +135,7 @@ def ingest_third_party_hardware_webhook(
     # Keep the operator's site tag current if the device reports a better one.
     label = (payload.location_label or "").strip()
     if label and label != "Remote Facility Node":
-        sensor.location_name = label
+        STORE.update_sensor_location(sensor, label)
 
     if metric == "humidity_pct":
         # Humidity alone cannot breach a thermal threshold, but it is stored
@@ -145,8 +145,7 @@ def ingest_third_party_hardware_webhook(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="humidity_pct must be between 0 and 100.",
             )
-        sensor.last_humidity = payload.reading_value
-        sensor.last_seen = utc_now()
+        STORE.record_humidity(sensor, payload.reading_value)
         return {
             "status": "INGESTION_SUCCESS",
             "byod_architecture": "Active - Zero proprietary hardware required",
@@ -339,9 +338,12 @@ def process_voice_meeting_summarizer(
     # degraded read, because inventing meeting minutes nobody agreed to is
     # worse than admitting the transcript could not be processed.
     raw_text, source = safe_generate(
-        prompt, fallback="", purpose="meeting intelligence"
+        prompt, fallback="", purpose="meeting intelligence",
+        tenant_id=tenant.tenant_id,
     )
-    parsed_json = _parse_intelligence_json(raw_text) if source == "gemini" else None
+    parsed_json = (
+        _parse_intelligence_json(raw_text) if source in {"gemini", "cache"} else None
+    )
 
     if parsed_json is None:
         logger.error(

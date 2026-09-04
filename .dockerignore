@@ -7,3 +7,6 @@ venv/
 .env
 tests/
 README.md
+cyberlogix.db
+cyberlogix.db-wal
+cyberlogix.db-shm

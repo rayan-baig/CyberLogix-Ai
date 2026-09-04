@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import timedelta
+from typing import Dict
 
 from store import STORE, evaluate_breach, utc_now
 
@@ -49,9 +50,12 @@ FLEET = [
 
 SPACING_MINUTES = 10
 
+DEMO_EMAIL = "dana@blueharbor.example"
+DEMO_PASSWORD = "harbor-demo-2026"
 
-def seed() -> str:
-    """Build the demo tenant and its history. Returns the API key."""
+
+def seed() -> Dict[str, str]:
+    """Build the demo tenant, its operator and its history."""
     STORE.reset()
 
     tenant = STORE.create_tenant(
@@ -76,20 +80,18 @@ def seed() -> str:
         breach_reason = None
         for index, temp in enumerate(temps):
             reason = evaluate_breach(vertical, temp)
-            reading = STORE.record_reading(
+            # Backdate at write time so the forecaster sees a real slope
+            # rather than a column of samples stamped at the same instant.
+            STORE.record_reading(
                 sensor=sensor,
                 temperature_fahrenheit=temp,
                 humidity_percent=52.0,
                 breached=reason is not None,
-            )
-            # Backdate so the forecaster sees a real slope rather than a
-            # column of samples all stamped at the same instant.
-            reading.recorded_at = now - timedelta(
-                minutes=(len(temps) - 1 - index) * SPACING_MINUTES
+                at=now - timedelta(
+                    minutes=(len(temps) - 1 - index) * SPACING_MINUTES
+                ),
             )
             breach_reason = reason
-
-        sensor.last_seen = now
 
         if breach_reason is not None:
             incident = STORE.open_incident(
@@ -103,19 +105,69 @@ def seed() -> str:
                     "inspection required."
                 ),
                 sms_dispatch_source="fallback_template",
+                # Open long enough that the console shows it as escalation-due.
+                opened_at=now - timedelta(minutes=18),
             )
-            # Open long enough that the console shows it as escalation-due.
-            incident.opened_at = now - timedelta(minutes=18)
-            incident.sms_delivery = {
-                "channel": "sms",
-                "to": tenant.contact_phone,
-                "delivered": False,
-                "status": "not_configured",
-                "provider_sid": None,
-                "detail": "Twilio is not configured in this demo environment.",
-            }
+            STORE.record_sms_delivery(
+                incident,
+                {
+                    "channel": "sms",
+                    "to": tenant.contact_phone,
+                    "delivered": False,
+                    "status": "not_configured",
+                    "provider_sid": None,
+                    "detail": "Twilio is not configured in this demo environment.",
+                },
+            )
 
-    return tenant.api_key
+    owner = STORE.create_user(
+        tenant_id=tenant.tenant_id,
+        email=DEMO_EMAIL,
+        full_name="Dana Reyes",
+        role="owner",
+        password=DEMO_PASSWORD,
+    )
+    STORE.create_user(
+        tenant_id=tenant.tenant_id,
+        email="sam@blueharbor.example",
+        full_name="Sam Cole",
+        role="operator",
+        password="harbor-demo-2026",
+    )
+
+    # A little history so the audit trail and cost panel are not empty.
+    actor = f"{owner.full_name} <{owner.email}>"
+    STORE.record_audit(
+        tenant.tenant_id, actor, "owner", "account.bootstrap",
+        "First owner created with the tenant API key.",
+    )
+    STORE.record_audit(
+        tenant.tenant_id, actor, "owner", "account.invited",
+        "Added sam@blueharbor.example as operator.",
+    )
+    STORE.record_audit(
+        tenant.tenant_id, "Sam Cole <sam@blueharbor.example>", "operator",
+        "incident.resolved", "INC-000004 on REEFER-118.",
+    )
+    STORE.record_audit(
+        tenant.tenant_id, "Autopilot", "machine", "sensor.registered",
+        "MY-AURELIA-ENG bound to MONNIT-4C:11:AE:90.",
+    )
+
+    for field, amount in (
+        ("ai_calls", 14),
+        ("ai_cache_hits", 22),
+        ("sms_sent", 9),
+        ("voice_calls", 2),
+        ("sms_suppressed", 1),
+    ):
+        STORE.bump_usage(tenant.tenant_id, field, amount)
+
+    return {
+        "api_key": tenant.api_key,
+        "email": DEMO_EMAIL,
+        "password": DEMO_PASSWORD,
+    }
 
 
 def main() -> None:
@@ -128,10 +180,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    api_key = seed()
+    credentials = seed()
     print(f"Demo estate seeded: {len(FLEET)} sensors across 6 verticals.")
+    print(f"Sign in: {credentials['email']} / {credentials['password']}")
     if args.print_key:
-        print(f"API key: {api_key}")
+        print(f"API key: {credentials['api_key']}")
     if args.seed_only:
         return
 

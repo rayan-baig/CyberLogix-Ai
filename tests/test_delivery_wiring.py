@@ -10,8 +10,8 @@ def sent(monkeypatch):
     """Capture what the platform tries to deliver."""
     log = {"sms": [], "voice": []}
 
-    def _sms(to, body):
-        log["sms"].append({"to": to, "body": body})
+    def _sms(to, body, tenant_id=None):
+        log["sms"].append({"to": to, "body": body, "tenant_id": tenant_id})
         return {
             "channel": "sms",
             "to": to,
@@ -21,8 +21,8 @@ def sent(monkeypatch):
             "detail": "ok",
         }
 
-    def _call(to, spoken):
-        log["voice"].append({"to": to, "spoken": spoken})
+    def _call(to, spoken, tenant_id=None):
+        log["voice"].append({"to": to, "spoken": spoken, "tenant_id": tenant_id})
         return {
             "channel": "voice",
             "to": to,
@@ -54,6 +54,8 @@ def test_breach_sends_the_sms_to_the_tenant(api, tenant_factory, sensor_factory,
     assert body["sms_delivery"]["provider_sid"] == "SM1"
     assert sent["sms"][0]["to"] == "+1-555-0100"
     assert sent["sms"][0]["body"] == body["dispatched_sms_text"]
+    # Usage is attributed, so the cost report can bill it to someone.
+    assert sent["sms"][0]["tenant_id"].startswith("TEN-")
 
 
 def test_sustained_breach_does_not_resend(

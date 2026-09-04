@@ -16,14 +16,12 @@ def seed_readings():
         now = utc_now()
         count = len(temps)
         for index, temp in enumerate(temps):
-            reading = STORE.record_reading(
+            STORE.record_reading(
                 sensor=sensor,
                 temperature_fahrenheit=temp,
                 humidity_percent=50.0,
                 breached=evaluate_breach(sensor.industry_vertical, temp) is not None,
-            )
-            reading.recorded_at = now - timedelta(
-                minutes=(count - 1 - index) * spacing_minutes
+                at=now - timedelta(minutes=(count - 1 - index) * spacing_minutes),
             )
 
     return _seed

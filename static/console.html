@@ -133,6 +133,9 @@
   main { padding: 22px; max-width: 1500px; margin: 0 auto; }
   .layout { display: grid; grid-template-columns: minmax(0,1fr) 372px; gap: 18px; }
   @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0,1fr); } }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .pair > .card { margin-bottom: 18px; }
+  @media (max-width: 900px) { .pair { grid-template-columns: minmax(0,1fr); } }
 
   .card {
     background: var(--surface);
@@ -288,11 +291,16 @@
 
     <form id="signin-form">
       <div class="field">
-        <label for="key-input">Corporate API key</label>
-        <input id="key-input" type="password" autocomplete="off" spellcheck="false"
-               placeholder="clx_…" required>
+        <label for="si-email">Work email</label>
+        <input id="si-email" type="email" autocomplete="username"
+               placeholder="dana@blueharbor.example" required>
       </div>
-      <button class="btn btn-primary" type="submit">Enter console</button>
+      <div class="field">
+        <label for="si-password">Password</label>
+        <input id="si-password" type="password" autocomplete="current-password"
+               placeholder="••••••••••" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Sign in</button>
     </form>
 
     <form id="onboard-form" hidden>
@@ -311,6 +319,12 @@
       <div class="field">
         <label for="ob-email">Email</label>
         <input id="ob-email" type="email" required placeholder="ops@example.com">
+      </div>
+      <div class="field">
+        <label for="ob-password">Password
+          <span style="color:var(--muted);font-weight:400">(10+ characters)</span></label>
+        <input id="ob-password" type="password" autocomplete="new-password"
+               minlength="10" required>
       </div>
       <div class="field">
         <label for="ob-plan">Plan</label>
@@ -343,6 +357,7 @@
       <span class="brand-name">CyberLogix AI</span>
     </div>
     <span class="nav-spacer"></span>
+    <span class="chip" id="chip-user">—</span>
     <span class="chip" id="chip-company">—</span>
     <span class="chip" id="chip-plan">—</span>
     <span class="chip" id="chip-seats">—</span>
@@ -375,6 +390,24 @@
           </div>
           <div id="incidents"></div>
         </section>
+
+        <div class="pair">
+          <section class="card">
+            <div class="card-head">
+              <span class="card-title">Spend controls</span>
+              <span class="card-note" id="cost-note"></span>
+            </div>
+            <div id="cost-body"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <span class="card-title">Audit trail</span>
+              <span class="card-note">Who did what</span>
+            </div>
+            <div id="audit-body"></div>
+          </section>
+        </div>
       </div>
 
       <aside>
@@ -454,10 +487,15 @@
 <script>
 "use strict";
 
-const KEY_STORAGE = "cyberlogix.apiKey";
-const POLL_MS = 10000;
+const TOKEN_STORAGE = "cyberlogix.session";
+// A longer interval than a live dashboard strictly wants, because every poll
+// is a request that keeps a Cloud Run instance warm and billing.
+const POLL_MS = 20000;
 
-const state = { key: null, data: null, timer: null, tableView: false, industries: [] };
+const state = {
+  token: null, user: null, data: null,
+  timer: null, tableView: false, industries: [],
+};
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -473,7 +511,7 @@ function toast(message, kind = "") {
 
 async function api(path, options = {}) {
   const headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
-  if (state.key) headers["X-CyberLogix-Key"] = state.key;
+  if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
 
   const res = await fetch(path, Object.assign({}, options, { headers }));
   const text = await res.text();
@@ -505,26 +543,17 @@ $("switch-btn").addEventListener("click", () => {
 
 $("signin-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await enter($("key-input").value.trim());
-});
-
-$("onboard-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
   const btn = event.target.querySelector("button");
   btn.disabled = true;
   try {
-    const created = await api("/api/licenses/tenants", {
+    const body = await api("/api/accounts/login", {
       method: "POST",
       body: JSON.stringify({
-        company_name: $("ob-company").value.trim(),
-        contact_name: $("ob-name").value.trim(),
-        contact_phone: $("ob-phone").value.trim(),
-        contact_email: $("ob-email").value.trim(),
-        plan: $("ob-plan").value,
+        email: $("si-email").value.trim(),
+        password: $("si-password").value,
       }),
     });
-    toast("Account created. Your API key is saved in this browser.", "ok");
-    await enter(created.api_key);
+    await enter(body.token, body.user);
   } catch (err) {
     toast(err.message, "err");
   } finally {
@@ -532,31 +561,82 @@ $("onboard-form").addEventListener("submit", async (event) => {
   }
 });
 
-async function enter(key) {
-  if (!key) return;
-  state.key = key;
+$("onboard-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = event.target.querySelector("button");
+  btn.disabled = true;
+  try {
+    const email = $("ob-email").value.trim();
+    const password = $("ob-password").value;
+
+    // Three steps: create the tenant, promote its first owner with the
+    // machine key, then sign that owner in.
+    const created = await api("/api/licenses/tenants", {
+      method: "POST",
+      body: JSON.stringify({
+        company_name: $("ob-company").value.trim(),
+        contact_name: $("ob-name").value.trim(),
+        contact_phone: $("ob-phone").value.trim(),
+        contact_email: email,
+        plan: $("ob-plan").value,
+      }),
+    });
+
+    await api("/api/accounts/bootstrap", {
+      method: "POST",
+      headers: { "X-CyberLogix-Key": created.api_key },
+      body: JSON.stringify({
+        email,
+        full_name: $("ob-name").value.trim(),
+        password,
+        role: "owner",
+      }),
+    });
+
+    const signedIn = await api("/api/accounts/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+
+    toast("Account created. Keep your API key for sensors and webhooks.", "ok");
+    console.info("Tenant API key (for hardware and webhooks):", created.api_key);
+    await enter(signedIn.token, signedIn.user);
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function enter(token, user) {
+  if (!token) return;
+  state.token = token;
+  state.user = user || null;
   try {
     await refresh();
   } catch (err) {
-    state.key = null;
+    state.token = null;
+    state.user = null;
     toast(err.message, "err");
     return;
   }
-  localStorage.setItem(KEY_STORAGE, key);
+  try { localStorage.setItem(TOKEN_STORAGE, token); } catch (_) {}
   $("gate").hidden = true;
   $("app").hidden = false;
   await loadIndustries();
   startPolling();
 }
 
-$("sign-out").addEventListener("click", () => {
-  localStorage.removeItem(KEY_STORAGE);
+$("sign-out").addEventListener("click", async () => {
+  try { await api("/api/accounts/logout", { method: "POST" }); } catch (_) {}
+  try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
   clearInterval(state.timer);
-  state.key = null;
+  state.token = null;
+  state.user = null;
   state.data = null;
   $("app").hidden = true;
   $("gate").hidden = false;
-  $("key-input").value = "";
+  $("si-password").value = "";
 });
 
 function startPolling() {
@@ -579,12 +659,18 @@ async function loadIndustries() {
 }
 
 async function refresh() {
-  const [overview, health] = await Promise.all([
+  const [overview, health, costs, audit, me] = await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
+    api("/api/costs?days=30"),
+    api("/api/accounts/audit?limit=8"),
+    state.user ? Promise.resolve({ user: state.user }) : api("/api/accounts/me"),
   ]);
   state.data = overview;
+  state.user = me.user;
   render(overview, health);
+  renderCosts(costs);
+  renderAudit(audit);
 }
 
 /* ---------------- render ---------------- */
@@ -608,6 +694,9 @@ function render(d, health) {
   const s = d.summary;
   const t = d.tenant;
 
+  $("chip-user").textContent = state.user
+    ? `${state.user.full_name} · ${state.user.role}`
+    : "—";
   $("chip-company").textContent = t.company_name;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} seats`;
@@ -841,6 +930,73 @@ function renderIncidents(incidents, entitlements) {
   }).join("");
 }
 
+/* Spend controls: what was spent, and what the controls kept off the bill. */
+function renderCosts(report) {
+  const totals = report.totals;
+  const saved = report.estimated_saved_usd;
+  const spent = report.estimated_spend_usd;
+
+  $("cost-note").textContent = `last ${report.period_days} days`;
+
+  const bar = (() => {
+    if (!(spent + saved)) return "";
+    const pct = Math.round((saved / (spent + saved)) * 100);
+    return `<div style="margin:10px 0 4px">
+      <div style="height:8px;border-radius:999px;background:#1d2740;overflow:hidden;display:flex">
+        <div style="width:${pct}%;background:var(--good)"></div>
+        <div style="width:${100 - pct}%;background:var(--accent);margin-left:2px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;
+                  color:var(--muted);margin-top:5px">
+        <span>● avoided $${saved.toFixed(2)}</span>
+        <span>spent $${spent.toFixed(2)} ●</span>
+      </div>
+    </div>`;
+  })();
+
+  const line = (label, value, note) =>
+    `<div style="display:flex;justify-content:space-between;gap:10px;
+                 padding:5px 0;font-size:12.5px">
+       <span style="color:var(--ink-2)">${esc(label)}</span>
+       <span style="font-variant-numeric:tabular-nums">${esc(value)}${
+         note ? ` <span style="color:var(--muted)">${esc(note)}</span>` : ""
+       }</span>
+     </div>`;
+
+  $("cost-body").innerHTML = bar
+    + line("Model calls", totals.ai_calls,
+           report.ai_cache_hit_rate_percent !== null
+             ? `${report.ai_cache_hit_rate_percent}% from cache` : "")
+    + line("Cache hits", totals.ai_cache_hits, "no charge")
+    + line("SMS sent", totals.sms_sent,
+           totals.sms_suppressed ? `${totals.sms_suppressed} capped` : "")
+    + line("Voice calls", totals.voice_calls,
+           totals.voice_suppressed ? `${totals.voice_suppressed} capped` : "")
+    + `<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+         ${line("Estimated spend", "$" + spent.toFixed(2), "list rates")}
+       </div>`;
+}
+
+function renderAudit(trail) {
+  if (!trail.entries.length) {
+    $("audit-body").innerHTML = `<div class="empty">No activity recorded yet.</div>`;
+    return;
+  }
+  $("audit-body").innerHTML = trail.entries.map((e) => {
+    const when = new Date(e.at).toLocaleString([], {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;gap:8px;justify-content:space-between">
+        <span style="font-size:12.5px;font-weight:600">${esc(e.action)}</span>
+        <span style="font-size:11.5px;color:var(--muted);white-space:nowrap">${esc(when)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-2);margin-top:2px">${esc(e.detail)}</div>
+      <div style="font-size:11.5px;color:var(--muted)">${esc(e.actor)}</div>
+    </div>`;
+  }).join("");
+}
+
 function renderByod(sensors) {
   const bound = sensors.find((s) => s.external_device_sn);
   const serial = bound ? bound.external_device_sn : "YOUR-DEVICE-SERIAL";
@@ -874,13 +1030,13 @@ document.addEventListener("click", (event) => {
 
   if (btn.dataset.ack) {
     act(() => api(`/api/voice/acknowledge/${encodeURIComponent(btn.dataset.ack)}`, {
-      method: "POST", body: JSON.stringify({ acknowledged_by: "Console operator" }),
+      method: "POST", body: JSON.stringify({}),
     }), "Acknowledged. Escalation halted.");
   }
 
   if (btn.dataset.resolve) {
     act(() => api(`/api/voice/resolve/${encodeURIComponent(btn.dataset.resolve)}`, {
-      method: "POST", body: JSON.stringify({ resolved_by: "Console operator" }),
+      method: "POST", body: JSON.stringify({}),
     }), "Incident resolved.");
   }
 
@@ -984,10 +1140,11 @@ $("tx-form").addEventListener("submit", (event) => {
 
 /* ---------------- boot ---------------- */
 
-const saved = localStorage.getItem(KEY_STORAGE);
+let saved = null;
+try { saved = localStorage.getItem(TOKEN_STORAGE); } catch (_) {}
 if (saved) {
   enter(saved).catch(() => {
-    localStorage.removeItem(KEY_STORAGE);
+    try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
   });
 }
 </script>

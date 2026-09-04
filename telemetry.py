@@ -67,7 +67,7 @@ def list_industries():
 
 
 def build_emergency_sms(
-    sensor, temperature: float, humidity: Optional[float]
+    sensor, temperature: float, humidity: Optional[float], tenant_id: str
 ) -> tuple[str, str]:
     """Draft the emergency SMS for a breach, returning (text, source)."""
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
@@ -98,7 +98,9 @@ def build_emergency_sms(
     emergency SMS text string.
     """
 
-    return safe_generate(prompt, fallback, purpose="emergency SMS")
+    return safe_generate(
+        prompt, fallback, purpose="emergency SMS", tenant_id=tenant_id
+    )
 
 
 def process_reading(
@@ -150,8 +152,7 @@ def process_reading(
     # sensor. One failure produces one incident to acknowledge.
     existing = STORE.latest_open_incident(sensor.sensor_id)
     if existing is not None:
-        existing.temperature_fahrenheit = temperature
-        existing.breach_details = breach_reason
+        STORE.update_incident_breach(existing, temperature, breach_reason)
         return {
             "status": "CRITICAL_CATASTROPHE_ONGOING",
             "incident_id": existing.incident_id,
@@ -169,7 +170,9 @@ def process_reading(
             ),
         }
 
-    sms_text, sms_source = build_emergency_sms(sensor, temperature, humidity)
+    sms_text, sms_source = build_emergency_sms(
+        sensor, temperature, humidity, tenant.tenant_id
+    )
     incident = STORE.open_incident(
         tenant_id=tenant.tenant_id,
         sensor=sensor,
@@ -178,7 +181,9 @@ def process_reading(
         sms_text=sms_text,
         sms_dispatch_source=sms_source,
     )
-    incident.sms_delivery = send_sms(tenant.contact_phone, sms_text)
+    STORE.record_sms_delivery(
+        incident, send_sms(tenant.contact_phone, sms_text, tenant.tenant_id)
+    )
 
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"

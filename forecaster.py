@@ -214,7 +214,8 @@ def sensor_forecast(
         only the brief.
         """
         narrative, source = safe_generate(
-            prompt, fallback, purpose="maintenance brief"
+            prompt, fallback, purpose="maintenance brief",
+            tenant_id=tenant.tenant_id,
         )
         result["maintenance_brief"] = narrative
         result["brief_source"] = source

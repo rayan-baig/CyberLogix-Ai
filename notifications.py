@@ -116,8 +116,18 @@ def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def send_sms(to: str, body: str) -> Dict[str, Any]:
+def send_sms(
+    to: str, body: str, tenant_id: Optional[str] = None
+) -> Dict[str, Any]:
     """Send an SMS, returning a delivery record instead of raising."""
+    from costs import allow_message, record
+
+    allowed, reason = allow_message(tenant_id, "sms")
+    if not allowed:
+        record(tenant_id, "sms_suppressed")
+        logger.warning("SMS to %s suppressed: %s", to, reason)
+        return _undelivered("sms", to, "budget_exceeded", reason)
+
     blocked = _precheck("sms", to)
     if blocked is not None:
         return blocked
@@ -128,6 +138,7 @@ def send_sms(to: str, body: str) -> Dict[str, Any]:
         message = _get_client().messages.create(
             to=to, from_=TWILIO_FROM_NUMBER, body=text
         )
+        record(tenant_id, "sms_sent")
         logger.info("SMS delivered to %s (sid=%s).", to, message.sid)
         return {
             "channel": "sms",
@@ -159,8 +170,18 @@ def build_twiml(spoken_text: str) -> str:
     )
 
 
-def place_voice_call(to: str, spoken_text: str) -> Dict[str, Any]:
+def place_voice_call(
+    to: str, spoken_text: str, tenant_id: Optional[str] = None
+) -> Dict[str, Any]:
     """Place an outbound call that speaks `spoken_text`, twice."""
+    from costs import allow_message, record
+
+    allowed, reason = allow_message(tenant_id, "voice")
+    if not allowed:
+        record(tenant_id, "voice_suppressed")
+        logger.warning("Voice call to %s suppressed: %s", to, reason)
+        return _undelivered("voice", to, "budget_exceeded", reason)
+
     blocked = _precheck("voice", to)
     if blocked is not None:
         return blocked
@@ -169,6 +190,7 @@ def place_voice_call(to: str, spoken_text: str) -> Dict[str, Any]:
         call = _get_client().calls.create(
             to=to, from_=TWILIO_FROM_NUMBER, twiml=build_twiml(spoken_text)
         )
+        record(tenant_id, "voice_calls")
         logger.info("Voice call placed to %s (sid=%s).", to, call.sid)
         return {
             "channel": "voice",

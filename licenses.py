@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
+from auth import require_entitlement, require_tenant  # noqa: F401 - re-exported
 from store import PLAN_TIERS, STORE, Tenant, resolve_vertical
 
 router = APIRouter(prefix="/api/licenses", tags=["Corporate License Management"])
@@ -42,64 +43,6 @@ class SensorRegister(BaseModel):
             "BYOD webhook bridge."
         ),
     )
-
-
-def require_tenant(
-    x_cyberlogix_key: Optional[str] = Header(
-        None, description="Tenant API key issued at onboarding."
-    ),
-) -> Tenant:
-    """Resolve the calling tenant from its API key.
-
-    Rejects unknown keys with 401 and inactive licenses with 402, so a
-    billing lapse is distinguishable from a bad credential.
-    """
-    if not x_cyberlogix_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-CyberLogix-Key header.",
-        )
-
-    tenant = STORE.tenant_by_key(x_cyberlogix_key)
-    if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unrecognised API key.",
-        )
-
-    if tenant.suspended:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"License for {tenant.company_name} is suspended.",
-        )
-
-    if tenant.expired:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"License for {tenant.company_name} expired on "
-                f"{tenant.expires_at.date()}."
-            ),
-        )
-
-    return tenant
-
-
-def require_entitlement(feature: str):
-    """Build a dependency asserting the tenant's plan includes `feature`."""
-
-    def _dependency(tenant: Tenant = Depends(require_tenant)) -> Tenant:
-        if not tenant.entitlements().get(feature, False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"The {tenant.entitlements()['name']} plan does not include "
-                    f"'{feature}'. Upgrade to unlock it."
-                ),
-            )
-        return tenant
-
-    return _dependency
 
 
 def _validate_plan(plan: str) -> str:

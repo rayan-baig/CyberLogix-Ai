@@ -5,7 +5,7 @@ def test_root_gateway_lists_every_module(api):
     body = api.get("/api").json()
     assert body["system"] == "CyberLogix AI Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
-    assert len(body["modules_active"]) == 8
+    assert len(body["modules_active"]) == 10
     for module in ("universal_iot_telemetry", "byod_hardware_bridge"):
         assert module in body["modules_active"]
 
@@ -14,7 +14,7 @@ def test_health_reports_subsystem_state(api):
     body = api.get("/api/health").json()
     assert body["status"] == "online"
     assert body["active_profiles"] == 8
-    assert body["modules_active"] == 8
+    assert body["modules_active"] == 10
     assert body["plan_tiers"] == ["trial", "growth", "enterprise"]
 
 
@@ -29,6 +29,8 @@ def test_every_router_is_actually_mounted(api):
         "/api/v1/bridge/sensor-webhook-ingest",
         "/api/v1/bridge/summarize-transcript",
         "/api/console/overview",
+        "/api/accounts/login",
+        "/api/costs",
     ):
         assert expected in paths, f"{expected} is not mounted"
 

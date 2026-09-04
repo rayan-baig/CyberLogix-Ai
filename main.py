@@ -15,8 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 # Import all modular system routers
+from accounts import router as accounts_router
 from automation import router as autopilot_router
 from console_api import router as console_router
+from costs import router as costs_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
@@ -66,6 +68,8 @@ app.include_router(voice_router)
 app.include_router(forecaster_router)
 app.include_router(bridge_router)
 app.include_router(console_router)
+app.include_router(accounts_router)
+app.include_router(costs_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -76,6 +80,8 @@ MODULES_ACTIVE = [
     "byod_hardware_bridge",
     "sector_meeting_intelligence",
     "operations_console",
+    "operator_accounts_and_audit",
+    "spend_controls",
 ]
 
 

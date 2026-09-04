@@ -13,10 +13,15 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY main.py store.py gemini.py notifications.py licenses.py telemetry.py \
-     automation.py voice_dispatch.py forecaster.py hardware_bridge.py \
-     console_api.py ./
+COPY main.py store.py db.py auth.py gemini.py notifications.py costs.py \
+     licenses.py accounts.py telemetry.py automation.py voice_dispatch.py \
+     forecaster.py hardware_bridge.py console_api.py ./
 COPY static/ ./static/
+
+# The SQLite file lives here; mount a volume at /data to outlive the
+# container, or leave it ephemeral for a stateless deployment.
+ENV CYBERLOGIX_DB_PATH=/app/data/cyberlogix.db
+RUN mkdir -p /app/data
 
 # Run as an unprivileged user.
 RUN useradd --create-home --shell /usr/sbin/nologin cyberlogix \

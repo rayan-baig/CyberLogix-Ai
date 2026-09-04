@@ -1,5 +1,6 @@
 """Shared fixtures. Every test runs against a freshly emptied store."""
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -8,6 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Must be set before the store module builds its Database at import time, so
+# the suite never touches a real file on disk.
+os.environ["CYBERLOGIX_DB_PATH"] = ":memory:"
 
 import gemini  # noqa: E402
 from main import app  # noqa: E402
@@ -61,6 +66,43 @@ def break_gemini(monkeypatch):
         return models
 
     return _apply
+
+
+@pytest.fixture()
+def operator_factory(api, tenant_factory):
+    """Onboard a tenant, bootstrap its owner, and sign in.
+
+    Returns (bearer headers, tenant payload, user payload).
+    """
+
+    def _make(plan="enterprise", company_name="Acme Cold Storage",
+              email="dana@example.com", full_name="Dana Reyes",
+              password="correct-horse-battery"):
+        key_headers, tenant = tenant_factory(plan=plan, company_name=company_name)
+        created = api.post(
+            "/api/accounts/bootstrap",
+            headers=key_headers,
+            json={
+                "email": email,
+                "full_name": full_name,
+                "password": password,
+                "role": "owner",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+        signed_in = api.post(
+            "/api/accounts/login", json={"email": email, "password": password}
+        )
+        assert signed_in.status_code == 200, signed_in.text
+        body = signed_in.json()
+        return (
+            {"Authorization": f"Bearer {body['token']}"},
+            tenant,
+            body["user"],
+        )
+
+    return _make
 
 
 @pytest.fixture()
@@ -120,3 +162,28 @@ def age_incident():
         return incident
 
     return _age
+
+
+@pytest.fixture()
+def configured_twilio(monkeypatch):
+    """Present Twilio credentials backed by a fake client that always sends."""
+    import notifications
+
+    class _Result:
+        sid = "SM-TEST"
+        status = "queued"
+
+    class _Endpoint:
+        def create(self, **kwargs):
+            return _Result()
+
+    class _Client:
+        messages = _Endpoint()
+        calls = _Endpoint()
+
+    monkeypatch.setattr(notifications, "TWILIO_ACCOUNT_SID", "AC-test")
+    monkeypatch.setattr(notifications, "TWILIO_AUTH_TOKEN", "token")
+    monkeypatch.setattr(notifications, "TWILIO_FROM_NUMBER", "+15550000")
+    monkeypatch.setattr(notifications, "_client", _Client())
+    monkeypatch.setattr(notifications, "_client_error", None)
+    return _Client
