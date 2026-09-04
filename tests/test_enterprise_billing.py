@@ -28,8 +28,8 @@ def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",
         (20, 12500.0, "11-20 branches"),
         (21, 13500.0, "21-50 branches"),
         (50, 42500.0, "21-50 branches"),
-        (51, 65000.0, "51+ branches, flat enterprise tier"),
-        (500, 65000.0, "51+ branches, flat enterprise tier"),
+        (51, 45000.0, "51+ branches, flat enterprise tier"),
+        (500, 45000.0, "51+ branches, flat enterprise tier"),
     ],
 )
 def test_volume_brackets(api, operator_factory, branches, monthly, tier):
@@ -49,15 +49,38 @@ def test_the_next_boundary_is_stated_up_front(api, operator_factory):
 
     step = body["next_tier"]
     assert step["branches_until_next_tier"] == 1
-    assert step["next_tier_monthly_usd"] == 65000.0
-    # The 50 -> 51 boundary is a $22,500 jump; it must not be a surprise.
-    assert step["monthly_increase_usd"] == 22500.0
+    assert step["next_tier_monthly_usd"] == 45000.0
+    # The September 2026 adjustment cut the top tier from $65k to $45k,
+    # turning a $22,500 cliff at this boundary into a $2,500 step.
+    assert step["monthly_increase_usd"] == 2500.0
 
 
 def test_flat_tier_has_no_next_boundary(api, operator_factory):
     headers, _, _ = operator_factory()
     body = provision(api, headers, branches=80).json()["financial_summary"]
     assert body["next_tier"] is None
+
+
+def test_rate_card_matches_the_published_table(api):
+    """The four published tiers and their ACVs, exactly as quoted to clients."""
+    rows = {r["tier"]: r for r in api.get("/api/v1/enterprise-billing/tiers").json()["tiers"]}
+    published = {
+        "1-5 branches": (5000.0, 60000.0),
+        "6-10 branches": (7500.0, 90000.0),
+        "11-20 branches": (12500.0, 150000.0),
+        "51+ branches, flat enterprise tier": (45000.0, 540000.0),
+    }
+    for tier, (monthly, acv) in published.items():
+        assert rows[tier]["monthly_usd"] == monthly, tier
+        assert rows[tier]["annual_contract_value_usd"] == acv, tier
+
+
+def test_boundary_steps_are_published(api):
+    steps = {
+        s["from_branches"]: s["monthly_increase_usd"]
+        for s in api.get("/api/v1/enterprise-billing/tiers").json()["boundary_steps"]
+    }
+    assert steps == {5: 2500.0, 10: 5000.0, 20: 1000.0, 50: 2500.0}
 
 
 def test_pricing_is_monotonic_across_the_whole_range():

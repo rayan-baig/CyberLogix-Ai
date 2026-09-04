@@ -820,20 +820,25 @@ class ResetToken:
 # Enterprise volume pricing brackets, by enrolled branch count.
 #
 # The brackets step rather than taper, so the marginal cost of one more
-# branch is large at a boundary. `next_volume_tier` exposes where the next
-# boundary is, so a quote can say so out loud instead of surprising a
-# customer on their next invoice.
+# branch is largest at a boundary. `next_volume_tier` exposes where the next
+# boundary is, so a quote says so out loud instead of surprising a customer
+# on their next invoice.
+#
+# `previous_usd` is the rate each tier carried before the September 2026
+# adjustment, kept for sales conversations. It is never billed.
 VOLUME_TIERS = (
-    (5, "1-5 branches", 5000.00),
-    (10, "6-10 branches", 7500.00),
-    (20, "11-20 branches", 12500.00),
-    (50, "21-50 branches", None),  # 12500 + 1000 per branch over 20
-    (None, "51+ branches, flat enterprise tier", 65000.00),
+    (5, "1-5 branches", 5000.00, 4000.00),
+    (10, "6-10 branches", 7500.00, 6000.00),
+    (20, "11-20 branches", 12500.00, 10000.00),
+    # The 21-50 band is a formula, not a flat rate: it climbs from $13,500 to
+    # $42,500 so the step into the flat tier is $2,500 rather than a cliff.
+    (50, "21-50 branches", None, None),
+    (None, "51+ branches, flat enterprise tier", 45000.00, 52000.00),
 )
 
 VOLUME_TIER_21_50_BASE = 12500.00
 VOLUME_TIER_21_50_PER_BRANCH = 1000.00
-VOLUME_TIER_FLAT_CAP = 65000.00
+VOLUME_TIER_FLAT_CAP = 45000.00
 
 
 def calculate_volume_tier_price(branches: int) -> float:
@@ -855,7 +860,7 @@ def volume_tier_label(branches: int) -> str:
     """Which bracket a branch count lands in."""
     if branches <= 0:
         return "no branches enrolled"
-    for ceiling, label, _ in VOLUME_TIERS:
+    for ceiling, label, _, _ in VOLUME_TIERS:
         if ceiling is None or branches <= ceiling:
             return label
     return VOLUME_TIERS[-1][1]
@@ -869,7 +874,7 @@ def next_volume_tier(branches: int) -> Optional[Dict[str, Any]]:
     if branches <= 0 or branches > 50:
         return None
 
-    for ceiling, _, _ in VOLUME_TIERS[:-1]:
+    for ceiling, _, _, _ in VOLUME_TIERS[:-1]:
         if branches <= ceiling:
             boundary = ceiling + 1
             here = calculate_volume_tier_price(branches)

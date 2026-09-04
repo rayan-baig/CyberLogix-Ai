@@ -151,13 +151,16 @@ real fleet would cost. Downgrades that would strand units are refused with
 A chain is billed by enrolled branch count rather than per unit, and the
 contract covers every sensor inside those branches:
 
-| Branches | Monthly | Per branch |
-|---|---|---|
-| 1–5 | $5,000 | $1,000 |
-| 6–10 | $7,500 | $750 |
-| 11–20 | $12,500 | $625 |
-| 21–50 | $12,500 + $1,000 per branch over 20 | $643 → $850 |
-| 51+ | $65,000 flat | falls with scale |
+| Branches | Monthly | Annual contract | Per branch |
+|---|---|---|---|
+| 1–5 | $5,000 | $60,000 | $1,000 |
+| 6–10 | $7,500 | $90,000 | $750 |
+| 11–20 | $12,500 | $150,000 | $625 |
+| 21–50 | $12,500 + $1,000 per branch over 20 | up to $510,000 | $643 → $850 |
+| 51+ | $45,000 flat | $540,000 | falls with scale |
+
+`GET /api/v1/enterprise-billing/tiers` publishes this table with the cost of
+each boundary step.
 
 `POST /api/v1/enterprise-billing/provision-cluster` opens a contract;
 `/quote` prices both models side by side before anyone signs, since volume
@@ -165,8 +168,10 @@ billing wins on multi-sensor sites and loses badly on single ones. An active
 contract supersedes the rate card, and the rate-card figure is kept alongside
 for comparison rather than charged.
 
-**The brackets step, they do not taper.** Crossing 50 branches adds $22,500
-for one branch, and the marginal rate in the 21–50 band ($1,000) is above the
+**The brackets step, they do not taper.** The September 2026 adjustment cut
+the top tier from $65,000 to $45,000, which turned the 50→51 boundary from a
+$22,500 cliff into a $2,500 step. The largest remaining jump is 10→11 at
+$5,000, and the marginal rate in the 21–50 band ($1,000) still sits above the
 $625 you pay at 20, so per-branch cost rises through part of the range. That
 is a pricing decision, not a bug, but every quote and contract carries a
 `next_tier` block naming the boundary and its cost so nobody meets it on an
@@ -497,7 +502,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-203 tests across the thirteen modules. Gemini and Twilio are both stubbed and
+205 tests across the thirteen modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 
