@@ -49,7 +49,9 @@ class SensorReading(BaseModel):
 
 @router.get("/industries")
 def list_industries():
-    """Full vertical catalogue, for populating a sector selector."""
+    """Full vertical catalogue with pricing, for a sector selector."""
+    from pricing import PRICE_BOOK
+
     return {
         "count": len(INDUSTRY_PROFILES),
         "industries": [
@@ -60,6 +62,13 @@ def list_industries():
                 "danger_above": profile["danger_above"],
                 "danger_below": profile["danger_below"],
                 "unit": profile["unit"],
+                "billing_unit": PRICE_BOOK[key]["unit"],
+                "monthly_usd": PRICE_BOOK[key]["monthly_usd"],
+                "price_label": (
+                    f"${PRICE_BOOK[key]['monthly_usd']:,.0f} / "
+                    f"{PRICE_BOOK[key]['unit']} / month"
+                ),
+                "pitch": PRICE_BOOK[key]["pitch"],
             }
             for key, profile in INDUSTRY_PROFILES.items()
         ],

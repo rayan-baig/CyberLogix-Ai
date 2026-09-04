@@ -86,9 +86,16 @@ def console_overview(
         if s["risk_level"] in {"critical", "high", "elevated"}
     )
 
+    from pricing import build_roi, build_subscription
+
+    subscription = build_subscription(tenant)
+    roi = build_roi(tenant, 30)
+
     return {
         "generated_at": iso(now),
         "tenant": tenant.public(sensor_count=len(sensors)),
+        "subscription": subscription,
+        "roi": roi,
         "entitlements": {
             "voice_escalation": entitlements["voice_escalation"],
             "predictive_forecasting": forecasting,

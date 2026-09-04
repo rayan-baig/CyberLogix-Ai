@@ -46,7 +46,15 @@ FLEET = [
         "HANGAR-4", "private_aviation", "Teterboro / Bay 4", None,
         [61.0, 61.5, 62.0, 61.8, 62.4, 62.1, 62.8, 63.0, 62.6, 63.2, 63.5, 63.1],
     ),
+    (
+        "STORE118-WALKIN", "restaurant", "Store 118 / Walk-In", "DICKSON-7A:2C:19",
+        [28.1, 28.4, 28.0, 29.2, 31.5, 34.0, 37.8, 41.2, 43.0, 40.1, 34.2, 29.8],
+    ),
 ]
+
+# Incidents on these sensors are seeded already answered, so the ROI panel
+# shows a real save rather than an empty period.
+ANSWERED = {"STORE118-WALKIN"}
 
 SPACING_MINUTES = 10
 
@@ -78,6 +86,7 @@ def seed() -> Dict[str, str]:
         )
 
         breach_reason = None
+        peak_temp = temps[-1]
         for index, temp in enumerate(temps):
             reason = evaluate_breach(vertical, temp)
             # Backdate at write time so the forecaster sees a real slope
@@ -91,17 +100,21 @@ def seed() -> Dict[str, str]:
                     minutes=(len(temps) - 1 - index) * SPACING_MINUTES
                 ),
             )
-            breach_reason = reason
+            if reason is not None:
+                # Keep the worst excursion, so a run that recovers still
+                # leaves the incident it caused on the books.
+                breach_reason = reason
+                peak_temp = temp
 
         if breach_reason is not None:
             incident = STORE.open_incident(
                 tenant_id=tenant.tenant_id,
                 sensor=sensor,
-                temperature_fahrenheit=temps[-1],
+                temperature_fahrenheit=peak_temp,
                 breach_details=breach_reason,
                 sms_text=(
                     f"EMERGENCY ALERT: {location} sensor {sensor_id} reported "
-                    f"critical temperature {temps[-1]}F. Immediate physical "
+                    f"critical temperature {peak_temp}F. Immediate physical "
                     "inspection required."
                 ),
                 sms_dispatch_source="fallback_template",
@@ -119,6 +132,10 @@ def seed() -> Dict[str, str]:
                     "detail": "Twilio is not configured in this demo environment.",
                 },
             )
+            if sensor_id in ANSWERED:
+                STORE.acknowledge_incident(
+                    incident, "Marco Diaz <marco@blueharbor.example>"
+                )
 
     owner = STORE.create_user(
         tenant_id=tenant.tenant_id,
@@ -181,7 +198,7 @@ def main() -> None:
     args = parser.parse_args()
 
     credentials = seed()
-    print(f"Demo estate seeded: {len(FLEET)} sensors across 6 verticals.")
+    print(f"Demo estate seeded: {len(FLEET)} sensors across 7 verticals.")
     print(f"Sign in: {credentials['email']} / {credentials['password']}")
     if args.print_key:
         print(f"API key: {credentials['api_key']}")

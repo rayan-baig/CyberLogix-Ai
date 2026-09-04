@@ -25,6 +25,7 @@ ask for.
 | Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 | On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
+| Pricing & Billing | `/api/billing` | Per-unit rate card, invoice, ROI |
 
 The console is at `/`, the machine-readable gateway at `/api`, and
 interactive API docs at `/docs`.
@@ -110,16 +111,52 @@ the forecaster and the console all read the effective value. Sending `null`
 restores the sector default. A band where the floor sits above the ceiling is
 refused, since the sensor could never read in band.
 
-## Plans
+## Pricing
 
-| Plan | Seats | Term | Voice escalation | Forecasting |
-|---|---|---|---|---|
-| `trial` | 5 | 14 days | no | no |
-| `growth` | 50 | 365 days | yes | yes |
-| `enterprise` | 1000 | 365 days | yes | yes |
+Priced per unit, per month, by vertical — a rack is not a reefer truck and
+is not billed like one. The invoice is derived from the sensors actually
+registered, so a customer with three racks and two hangar bays pays
+3 × $499 + 2 × $349 = $2,195 a month.
 
-A seat is one registered sensor. Downgrades that would strand seats are
-refused with `409`; decommission sensors first.
+| Sector | Price | Protects against |
+|---|---|---|
+| CyberTech Data Centers | **$499** / rack / month | $50,000+ server meltdowns and SLA contract breaches |
+| Luxury Superyachts | **$399** / vessel / month | Engine-room thermal fires; $150k charter guest freezers at sea |
+| Private Aviation Hangars | **$349** / bay / month | Moisture corrosion of multi-million-dollar avionics |
+| Solar Infrastructure | **$299** / enclosure / month | Battery-bank thermal runaway and fire liability |
+| Medical Labs & Blood Banks | **$199** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
+| High-End Country Clubs | **$199** / kitchen / month | Holiday dining inventory lost to compressor failure |
+| Cold-Chain Logistics | **$129** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
+| Franchise Restaurants | **$99** / location / month | $15,000 walk-in spoilage; health department logs |
+
+The rate card is public at `GET /api/billing/pricing` and on the sign-in
+screen. `GET /api/billing` itemises a tenant's own estate; registering or
+decommissioning a sensor reports what it adds to or removes from the bill.
+
+### Plans are about contract, not price
+
+| Plan | Unit ceiling | Term | Charged |
+|---|---|---|---|
+| `trial` | 5 | 14 days | no |
+| `growth` | 50 | 365 days | yes |
+| `enterprise` | 1000 | 365 days | yes |
+
+A trial estate is priced but not charged, so a prospect can see what their
+real fleet would cost. Downgrades that would strand units are refused with
+`409`; decommission sensors first.
+
+### Return on the subscription
+
+`GET /api/billing/roi?days=30` weighs loss avoided against what the
+subscription cost over the period.
+
+Two rules keep that number honest. Only an incident **a person answered**
+counts — an alert nobody acted on is a warning that went unheeded, not a
+save. And only verticals with a **supplied** loss figure contribute: data
+centres ($50,000), superyachts ($150,000) and restaurants ($15,000).
+Incidents in the other five are listed and counted separately as
+`unquantified_saves`, never folded into the total with an invented number.
+Give me figures for those five and they'll count too.
 
 ## Authentication
 
@@ -433,7 +470,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-160 tests across the eleven modules. Gemini and Twilio are both stubbed and
+175 tests across the twelve modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 

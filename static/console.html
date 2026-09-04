@@ -340,7 +340,18 @@
     <div class="gate-switch">
       <span id="switch-text">No account yet?</span>
       <button class="linkish" id="switch-btn" type="button">Onboard a company</button>
+      <span style="color:var(--border-lit)"> · </span>
+      <button class="linkish" id="pricing-btn" type="button">Pricing</button>
     </div>
+  </div>
+
+  <div class="gate-card" id="pricing-card" hidden
+       style="max-width:640px;margin-top:18px">
+    <div class="card-head">
+      <span class="card-title">What it costs</span>
+      <span class="card-note">Per unit, per month</span>
+    </div>
+    <div id="pricing-rows"></div>
   </div>
 </div>
 
@@ -361,6 +372,7 @@
     <span class="chip" id="chip-company">—</span>
     <span class="chip" id="chip-plan">—</span>
     <span class="chip" id="chip-seats">—</span>
+    <span class="chip" id="chip-spend">—</span>
     <span class="chip" id="chip-delivery">—</span>
     <button class="btn btn-sm" id="sign-out">Sign out</button>
   </nav>
@@ -432,6 +444,14 @@
             </div>
             <button class="btn btn-primary" type="submit">Claim a seat</button>
           </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Subscription</span>
+            <span class="card-note" id="bill-note"></span>
+          </div>
+          <div id="bill-body"></div>
         </section>
 
         <section class="card">
@@ -678,16 +698,45 @@ function startPolling() {
   }, POLL_MS);
 }
 
+$("pricing-btn").addEventListener("click", async () => {
+  const card = $("pricing-card");
+  if (!card.hidden) { card.hidden = true; return; }
+
+  try {
+    const book = await api("/api/billing/pricing");
+    $("pricing-rows").innerHTML = book.pricing.map((row) => `
+      <div style="display:flex;gap:14px;align-items:baseline;padding:10px 0;
+                  border-bottom:1px solid var(--border)">
+        <span class="grow">
+          <span style="font-size:13.5px;font-weight:650">${esc(row.industry)}</span>
+          <span style="display:block;font-size:12px;color:var(--muted);
+                       margin-top:2px;max-width:52ch">${esc(row.pitch)}</span>
+        </span>
+        <span style="white-space:nowrap;font-size:13.5px;font-weight:650;
+                     font-variant-numeric:tabular-nums">
+          $${row.monthly_usd.toLocaleString()}
+          <span style="color:var(--muted);font-weight:400;font-size:12px">
+            / ${esc(row.unit)} / mo</span>
+        </span>
+      </div>`).join("");
+    card.hidden = false;
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
 /* ---------------- data ---------------- */
 
 async function loadIndustries() {
   const body = await api("/api/industries");
   state.industries = body.industries;
-  const options = body.industries
+  $("add-vertical").innerHTML = body.industries
+    .map((i) => `<option value="${esc(i.vertical)}">`
+      + `${esc(i.name)} — $${i.monthly_usd} / ${esc(i.billing_unit)}</option>`)
+    .join("");
+  $("tx-vertical").innerHTML = body.industries
     .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`)
     .join("");
-  $("add-vertical").innerHTML = options;
-  $("tx-vertical").innerHTML = options;
 }
 
 async function refresh() {
@@ -707,6 +756,7 @@ async function refresh() {
   renderAudit(audit);
   renderRoster(roster);
   renderTeam(team);
+  renderBilling(overview.subscription, overview.roi);
 }
 
 /* ---------------- render ---------------- */
@@ -735,7 +785,10 @@ function render(d, health) {
     : "—";
   $("chip-company").textContent = t.company_name;
   $("chip-plan").textContent = t.plan_name + " plan";
-  $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} seats`;
+  $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
+  $("chip-spend").textContent = d.subscription
+    ? `$${d.subscription.monthly_total_usd.toLocaleString()}/mo`
+    : "—";
   $("chip-delivery").textContent =
     health.message_delivery === "twilio" ? "SMS + voice live" : "Delivery: dry run";
 
@@ -1038,6 +1091,61 @@ function renderAudit(trail) {
 }
 
 /* Who gets woken, in the order the ladder tries them. */
+/* What the estate costs, and what answering alerts has been worth. */
+function renderBilling(subscription, roi) {
+  $("bill-note").textContent = subscription.billable
+    ? `${subscription.units_total} billable units`
+    : "trial — not charged";
+
+  if (!subscription.line_items.length) {
+    $("bill-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         No units registered, so nothing to bill.
+       </div>`;
+    return;
+  }
+
+  const lines = subscription.line_items.map((l) => `
+    <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;
+                font-size:12.5px">
+      <span style="color:var(--ink-2)">${esc(l.industry)}
+        <span style="color:var(--muted)">· ${esc(l.description)}
+          @ $${l.unit_price_usd}</span></span>
+      <span style="font-variant-numeric:tabular-nums">$${l.line_total_usd.toLocaleString()}</span>
+    </div>`).join("");
+
+  const saved = roi && roi.loss_avoided_usd
+    ? `<div style="border-top:1px solid var(--border);margin-top:9px;padding-top:9px">
+         <div style="display:flex;justify-content:space-between;font-size:12.5px">
+           <span style="color:var(--ink-2)">Loss avoided · 30 days</span>
+           <span class="s-good" style="font-weight:650;
+                 font-variant-numeric:tabular-nums">
+             $${roi.loss_avoided_usd.toLocaleString()}</span>
+         </div>
+         <div style="font-size:11.5px;color:var(--muted);margin-top:3px">
+           ${roi.quantified_saves} answered incident${roi.quantified_saves === 1 ? "" : "s"}
+           in verticals with a published loss figure${
+             roi.return_multiple ? ` · ${roi.return_multiple}× the subscription` : ""
+           }
+         </div>
+       </div>`
+    : `<div style="border-top:1px solid var(--border);margin-top:9px;padding-top:9px;
+                   font-size:11.5px;color:var(--muted)">
+         No quantified saves yet this period.
+       </div>`;
+
+  $("bill-body").innerHTML = lines
+    + `<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;
+                   display:flex;justify-content:space-between;align-items:baseline">
+         <span style="font-size:12.5px;color:var(--ink-2)">Monthly</span>
+         <span style="font-size:20px;font-weight:650;letter-spacing:-.01em">
+           $${subscription.monthly_total_usd.toLocaleString()}</span>
+       </div>`
+    + `<div style="text-align:right;font-size:11.5px;color:var(--muted)">
+         $${subscription.annual_total_usd.toLocaleString()} a year</div>`
+    + saved;
+}
+
 function renderRoster(roster) {
   $("roster-note").textContent = roster.using_fallback
     ? "using fallback contact"

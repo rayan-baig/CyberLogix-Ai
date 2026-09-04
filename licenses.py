@@ -175,10 +175,18 @@ def register_sensor(
         location_name=payload.location_name,
         external_device_sn=serial,
     )
+    from pricing import PRICE_BOOK, build_subscription
+
+    entry = PRICE_BOOK[vertical]
     return {
         "sensor": sensor.public(),
         "seats_used": seats_used + 1,
         "seats_total": cap,
+        "billing": {
+            "unit": entry["unit"],
+            "adds_monthly_usd": entry["monthly_usd"],
+            "new_monthly_total_usd": build_subscription(tenant)["monthly_total_usd"],
+        },
     }
 
 
@@ -246,10 +254,17 @@ def decommission_sensor(sensor_id: str, tenant: Tenant = Depends(require_tenant)
         )
 
     STORE.remove_sensor(sensor_id)
+    from pricing import PRICE_BOOK, build_subscription
+
+    entry = PRICE_BOOK[sensor.industry_vertical]
     return {
         "message": f"Sensor '{sensor_id}' decommissioned.",
         "seats_used": STORE.seat_count(tenant.tenant_id),
         "seats_total": tenant.entitlements()["max_sensors"],
+        "billing": {
+            "removes_monthly_usd": entry["monthly_usd"],
+            "new_monthly_total_usd": build_subscription(tenant)["monthly_total_usd"],
+        },
     }
 
 
