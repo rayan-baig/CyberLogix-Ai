@@ -217,7 +217,7 @@ def provision_enterprise_cluster(
         "status": "ENTERPRISE_VOLUME_ACCOUNT_PROVISIONED",
         "account_id": contract.account_id,
         "pricing_model_applied": "Custom Enterprise Volume Bracket",
-        "pricing_tier_applied": contract.tier_label,
+        "pricing_bracket": contract.tier_label,
         "financial_summary": contract.public(),
     }
 

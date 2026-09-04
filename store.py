@@ -960,13 +960,16 @@ class EnterpriseContract:
             "industry_vertical": self.industry_vertical,
             "industry": INDUSTRY_PROFILES[self.industry_vertical]["name"],
             "enrolled_branches": self.enrolled_branches,
-            "pricing_tier_applied": self.tier_label,
+            "pricing_tier_applied": "Custom Enterprise Volume Bracket",
+            # The specific bracket, alongside the contract label, so the
+            # figure can be traced to the row of the table that produced it.
+            "pricing_bracket": self.tier_label,
             "next_tier": self.next_tier,
             "monthly_subscription_usd": self.monthly_usd,
             "annual_contract_value_usd": self.annual_contract_value_usd,
             "effective_monthly_rate_per_branch_usd": self.effective_rate_per_branch_usd,
             "billing_contact_email": self.billing_contact_email,
-            "status": "active_enterprise_tier" if self.active else "cancelled",
+            "status": "active" if self.active else "cancelled",
             "provisioned_at": iso(self.provisioned_at),
             "contract_renew_date": self.renews_at.strftime("%Y-%m-%d"),
         }

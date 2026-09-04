@@ -37,7 +37,8 @@ def test_volume_brackets(api, operator_factory, branches, monthly, tier):
     body = provision(api, headers, branches=branches).json()["financial_summary"]
     assert body["monthly_subscription_usd"] == monthly
     assert body["annual_contract_value_usd"] == monthly * 12
-    assert body["pricing_tier_applied"] == tier
+    assert body["pricing_tier_applied"] == "Custom Enterprise Volume Bracket"
+    assert body["pricing_bracket"] == tier
 
 
 def test_the_next_boundary_is_stated_up_front(api, operator_factory):
@@ -73,7 +74,7 @@ def test_provisioning_returns_the_agreed_shape(api, operator_factory):
     assert body["status"] == "ENTERPRISE_VOLUME_ACCOUNT_PROVISIONED"
     assert body["pricing_model_applied"] == "Custom Enterprise Volume Bracket"
     summary = body["financial_summary"]
-    assert summary["status"] == "active_enterprise_tier"
+    assert summary["status"] == "active"
     assert summary["enrolled_branches"] == 6
     assert len(summary["contract_renew_date"]) == 10
 
