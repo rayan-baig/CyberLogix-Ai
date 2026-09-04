@@ -826,18 +826,22 @@ class ResetToken:
 #
 # `previous_usd` is the rate each tier carried before the September 2026
 # adjustment, kept for sales conversations. It is never billed.
+#
+# The published card names four tiers: up to 5, up to 10, up to 20, and over
+# 50. It names no price above $12,500 until "over 50", so 21-50 branches are
+# billed at the last rate the card actually commits to. A customer with 35
+# branches is not "over 50", and a published rate card is a promise — billing
+# them above the highest figure printed below 50 would not survive the
+# conversation. Adding an explicit 21-50 row to the card is the fix; until
+# then this is the only defensible reading.
 VOLUME_TIERS = (
-    (5, "1-5 branches", 5000.00, 4000.00),
-    (10, "6-10 branches", 7500.00, 6000.00),
-    (20, "11-20 branches", 12500.00, 10000.00),
-    # The 21-50 band is a formula, not a flat rate: it climbs from $13,500 to
-    # $42,500 so the step into the flat tier is $2,500 rather than a cliff.
-    (50, "21-50 branches", None, None),
-    (None, "51+ branches, flat enterprise tier", 45000.00, 52000.00),
+    (5, "Up to 5 branches", 5000.00, 4000.00),
+    (10, "Up to 10 branches", 7500.00, 6000.00),
+    (20, "Up to 20 branches", 12500.00, 10000.00),
+    (50, "21-50 branches (card names no higher rate below 50)", 12500.00, None),
+    (None, "Over 50 branches, flat", 45000.00, 52000.00),
 )
 
-VOLUME_TIER_21_50_BASE = 12500.00
-VOLUME_TIER_21_50_PER_BRANCH = 1000.00
 VOLUME_TIER_FLAT_CAP = 45000.00
 
 
@@ -849,10 +853,9 @@ def calculate_volume_tier_price(branches: int) -> float:
         return 5000.00
     if branches <= 10:
         return 7500.00
-    if branches <= 20:
-        return 12500.00
     if branches <= 50:
-        return VOLUME_TIER_21_50_BASE + (branches - 20) * VOLUME_TIER_21_50_PER_BRANCH
+        # The card's last named rate below "over 50".
+        return 12500.00
     return VOLUME_TIER_FLAT_CAP
 
 

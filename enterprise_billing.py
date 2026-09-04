@@ -100,36 +100,18 @@ def _load(account_id: str, tenant: Tenant) -> EnterpriseContract:
 @router.get("/tiers")
 def volume_tiers():
     """The enterprise rate card, with the boundary cost of each step."""
-    from store import (
-        VOLUME_TIER_21_50_BASE,
-        VOLUME_TIER_21_50_PER_BRANCH,
-        VOLUME_TIERS,
-    )
+    from store import VOLUME_TIERS
 
-    rows = []
-    for ceiling, label, flat, previous in VOLUME_TIERS:
-        example = ceiling if ceiling is not None else 51
-        monthly = flat if flat is not None else calculate_volume_tier_price(example)
-        rows.append(
-            {
-                "tier": label,
-                "up_to_branches": ceiling,
-                "monthly_usd": monthly,
-                "annual_contract_value_usd": round(monthly * 12, 2),
-                "previous_rate_usd": previous,
-                "flat_rate": flat is not None,
-                "formula": (
-                    None
-                    if flat is not None
-                    else (
-                        f"${VOLUME_TIER_21_50_BASE:,.0f} + "
-                        f"${VOLUME_TIER_21_50_PER_BRANCH:,.0f} per branch over 20 "
-                        f"(${calculate_volume_tier_price(21):,.0f} at 21 rising to "
-                        f"${calculate_volume_tier_price(50):,.0f} at 50)"
-                    )
-                ),
-            }
-        )
+    rows = [
+        {
+            "tier": label,
+            "up_to_branches": ceiling,
+            "monthly_usd": flat,
+            "annual_contract_value_usd": round(flat * 12, 2),
+            "previous_rate_usd": previous,
+        }
+        for ceiling, label, flat, previous in VOLUME_TIERS
+    ]
 
     return {
         "currency": "USD",
@@ -150,7 +132,8 @@ def volume_tiers():
         "note": (
             "previous_rate_usd is the rate each tier carried before the "
             "September 2026 adjustment. It is shown for reference and never "
-            "billed."
+            "billed. The card names no rate between 21 and 50 branches, so "
+            "that range bills at the last rate it does name."
         ),
     }
 

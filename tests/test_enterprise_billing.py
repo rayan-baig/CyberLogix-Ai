@@ -20,16 +20,17 @@ def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",
 @pytest.mark.parametrize(
     "branches,monthly,tier",
     [
-        (1, 5000.0, "1-5 branches"),
-        (5, 5000.0, "1-5 branches"),
-        (6, 7500.0, "6-10 branches"),
-        (10, 7500.0, "6-10 branches"),
-        (11, 12500.0, "11-20 branches"),
-        (20, 12500.0, "11-20 branches"),
-        (21, 13500.0, "21-50 branches"),
-        (50, 42500.0, "21-50 branches"),
-        (51, 45000.0, "51+ branches, flat enterprise tier"),
-        (500, 45000.0, "51+ branches, flat enterprise tier"),
+        (1, 5000.0, "Up to 5 branches"),
+        (5, 5000.0, "Up to 5 branches"),
+        (6, 7500.0, "Up to 10 branches"),
+        (10, 7500.0, "Up to 10 branches"),
+        (11, 12500.0, "Up to 20 branches"),
+        (20, 12500.0, "Up to 20 branches"),
+        # The card names no rate between 21 and 50, so the last named one holds.
+        (21, 12500.0, "21-50 branches (card names no higher rate below 50)"),
+        (50, 12500.0, "21-50 branches (card names no higher rate below 50)"),
+        (51, 45000.0, "Over 50 branches, flat"),
+        (500, 45000.0, "Over 50 branches, flat"),
     ],
 )
 def test_volume_brackets(api, operator_factory, branches, monthly, tier):
@@ -45,14 +46,14 @@ def test_the_next_boundary_is_stated_up_front(api, operator_factory):
     """Brackets step, so a quote must name what the next branch costs."""
     headers, _, _ = operator_factory()
     body = provision(api, headers, branches=50).json()["financial_summary"]
-    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(850.0)
+    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(250.0)
 
     step = body["next_tier"]
     assert step["branches_until_next_tier"] == 1
     assert step["next_tier_monthly_usd"] == 45000.0
-    # The September 2026 adjustment cut the top tier from $65k to $45k,
-    # turning a $22,500 cliff at this boundary into a $2,500 step.
-    assert step["monthly_increase_usd"] == 2500.0
+    # Following the published card literally, 50 -> 51 is a $32,500 step.
+    # Adding an explicit 21-50 row to the card is what would soften it.
+    assert step["monthly_increase_usd"] == 32500.0
 
 
 def test_flat_tier_has_no_next_boundary(api, operator_factory):
@@ -65,10 +66,10 @@ def test_rate_card_matches_the_published_table(api):
     """The four published tiers and their ACVs, exactly as quoted to clients."""
     rows = {r["tier"]: r for r in api.get("/api/v1/enterprise-billing/tiers").json()["tiers"]}
     published = {
-        "1-5 branches": (5000.0, 60000.0),
-        "6-10 branches": (7500.0, 90000.0),
-        "11-20 branches": (12500.0, 150000.0),
-        "51+ branches, flat enterprise tier": (45000.0, 540000.0),
+        "Up to 5 branches": (5000.0, 60000.0),
+        "Up to 10 branches": (7500.0, 90000.0),
+        "Up to 20 branches": (12500.0, 150000.0),
+        "Over 50 branches, flat": (45000.0, 540000.0),
     }
     for tier, (monthly, acv) in published.items():
         assert rows[tier]["monthly_usd"] == monthly, tier
@@ -80,7 +81,7 @@ def test_boundary_steps_are_published(api):
         s["from_branches"]: s["monthly_increase_usd"]
         for s in api.get("/api/v1/enterprise-billing/tiers").json()["boundary_steps"]
     }
-    assert steps == {5: 2500.0, 10: 5000.0, 20: 1000.0, 50: 2500.0}
+    assert steps == {5: 2500.0, 10: 5000.0, 20: 0.0, 50: 32500.0}
 
 
 def test_pricing_is_monotonic_across_the_whole_range():
@@ -160,7 +161,7 @@ def test_contract_supersedes_the_per_unit_rate_card(
     assert after["monthly_total_usd"] == 7500.0
     # The rate-card figure is kept for comparison, not charged.
     assert after["rate_card_equivalent_usd"] == pytest.approx(297.0)
-    assert after["line_items"][0]["description"] == "6 branches · 6-10 branches"
+    assert after["line_items"][0]["description"] == "6 branches · Up to 10 branches"
 
 
 def test_cancelling_reverts_to_per_unit(api, operator_factory, sensor_factory):
