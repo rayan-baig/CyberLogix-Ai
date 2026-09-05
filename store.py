@@ -865,6 +865,11 @@ BRANCH_BAND_SIZE = 10
 # Branch count at which the rate reaches its floor.
 FLOOR_REACHED_AT = 80
 
+# Ceiling on an enterprise contract, whatever the branch count. The
+# per-branch rates above still apply underneath it; this only caps the
+# monthly total, so a chain large enough to reach it stops paying more.
+ENTERPRISE_MONTHLY_CAP = 50000.00
+
 
 def branch_rate(branches: int) -> float:
     """The per-branch rate for an estate of this size."""
@@ -891,7 +896,8 @@ def calculate_volume_tier_price(branches: int) -> float:
     if branches <= 0:
         return 0.0
     horizon = branches + 2 * BRANCH_BAND_SIZE
-    return round(min(_raw_total(n) for n in range(branches, horizon + 1)), 2)
+    best = min(_raw_total(n) for n in range(branches, horizon + 1))
+    return round(min(best, ENTERPRISE_MONTHLY_CAP), 2)
 
 
 def volume_band(branches: int) -> tuple:
@@ -958,6 +964,8 @@ def volume_band_table() -> List[Dict[str, Any]]:
                 "example_annual_usd": round(
                     calculate_volume_tier_price(example) * 12, 2
                 ),
+                "at_monthly_cap": calculate_volume_tier_price(example)
+                >= ENTERPRISE_MONTHLY_CAP,
             }
         )
     return rows

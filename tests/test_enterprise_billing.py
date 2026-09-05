@@ -27,9 +27,9 @@ def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",
         (20, 19000.0, "20-29 branches @ $950/branch"),
         (29, 27550.0, "20-29 branches @ $950/branch"),
         (30, 27750.0, "30-39 branches @ $925/branch"),
-        (60, 51000.0, "60-69 branches @ $850/branch"),
-        (80, 64000.0, "80+ branches @ $800/branch"),
-        (250, 200000.0, "80+ branches @ $800/branch"),
+        (56, 49000.0, "50-59 branches @ $875/branch"),
+        (80, 50000.0, "80+ branches @ $800/branch"),
+        (250, 50000.0, "80+ branches @ $800/branch"),
     ],
 )
 def test_volume_brackets(api, operator_factory, branches, monthly, tier):
@@ -56,14 +56,19 @@ def test_the_next_boundary_is_stated_up_front(api, operator_factory):
 
 
 def test_rate_floor_has_no_further_discount(api, operator_factory):
-    """Past 80 branches the rate is at its floor, so growth earns nothing."""
+    """Past 80 branches the rate is at its floor, so growth earns nothing.
+
+    The effective per-branch figure keeps falling anyway, because the
+    $50,000 monthly ceiling has already taken over by then.
+    """
     headers, _, _ = operator_factory()
     body = provision(api, headers, branches=80).json()["financial_summary"]
     assert body["next_tier"] is None
-    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(800.0)
+    assert body["monthly_subscription_usd"] == 50000.0
+    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(625.0)
 
 
-@pytest.mark.parametrize("smaller,larger", [(39, 40), (49, 50), (59, 60), (69, 70), (79, 80)])
+@pytest.mark.parametrize("smaller,larger", [(39, 40), (49, 50)])
 def test_a_smaller_estate_never_pays_more_than_a_larger_one(smaller, larger):
     """The rate steps a whole band at once, which alone would invert the bill.
 
@@ -76,6 +81,20 @@ def test_a_smaller_estate_never_pays_more_than_a_larger_one(smaller, larger):
     naive_larger = larger * branch_rate(larger)
     assert naive_larger < naive_smaller, "expected the raw card to invert here"
     assert price(smaller) == price(larger) == naive_larger
+
+
+def test_the_monthly_cap_holds_however_large_the_chain():
+    """Past the ceiling, more branches cost nothing further."""
+    from store import ENTERPRISE_MONTHLY_CAP, calculate_volume_tier_price as price
+
+    assert ENTERPRISE_MONTHLY_CAP == 50000.0
+    first_capped = next(
+        n for n in range(1, 500) if price(n) >= ENTERPRISE_MONTHLY_CAP
+    )
+    assert first_capped == 58
+    assert price(57) == 49875.0
+    for branches in (58, 80, 250, 1000):
+        assert price(branches) == ENTERPRISE_MONTHLY_CAP, branches
 
 
 def test_rate_card_matches_the_published_bands(api):
@@ -171,14 +190,14 @@ def test_contract_supersedes_the_per_unit_rate_card(
 
     before = api.get("/api/billing", headers=headers).json()
     assert before["billing_model"] == "per_unit"
-    assert before["monthly_total_usd"] == pytest.approx(3 * 99.0)
+    assert before["monthly_total_usd"] == pytest.approx(3 * 450.0)
 
     provision(api, headers, branches=6)
     after = api.get("/api/billing", headers=headers).json()
     assert after["billing_model"] == "enterprise_volume"
     assert after["monthly_total_usd"] == 6000.0
     # The rate-card figure is kept for comparison, not charged.
-    assert after["rate_card_equivalent_usd"] == pytest.approx(297.0)
+    assert after["rate_card_equivalent_usd"] == pytest.approx(1350.0)
     assert after["line_items"][0]["description"] == (
         "6 branches · 1-9 branches @ $1,000/branch"
     )
@@ -219,7 +238,7 @@ def test_quote_compares_both_models(api, operator_factory):
         "?industry_vertical=restaurant&total_branch_locations=5&units_per_branch=1",
         headers=headers,
     ).json()
-    assert single["per_unit"]["monthly_usd"] == pytest.approx(495.0)
+    assert single["per_unit"]["monthly_usd"] == pytest.approx(2250.0)
     assert single["enterprise_volume"]["monthly_usd"] == 5000.0
     assert single["cheaper_model"] == "per_unit"
 

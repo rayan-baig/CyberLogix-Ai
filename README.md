@@ -154,7 +154,7 @@ registered, so a customer with three racks and two hangar bays pays
 | Medical Labs & Blood Banks | **$199** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
 | High-End Country Clubs | **$199** / kitchen / month | Holiday dining inventory lost to compressor failure |
 | Cold-Chain Logistics | **$129** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
-| Franchise Restaurants | **$99** / location / month | $15,000 walk-in spoilage; health department logs |
+| Franchise Restaurants | **$450** / location / month | $15,000 walk-in spoilage; health department logs |
 
 The rate card is public at `GET /api/billing/pricing` and on the sign-in
 screen. `GET /api/billing` itemises a tenant's own estate; registering or
@@ -184,13 +184,18 @@ contract covers every sensor inside those branches:
 | 20–29 | $950 | 29 | $27,550 |
 | 30–39 | $925 | 39 | $36,000 |
 | 40–49 | $900 | 49 | $43,750 |
-| 50–59 | $875 | 59 | $51,000 |
-| 60–69 | $850 | 69 | $57,750 |
-| 70–79 | $825 | 79 | $64,000 |
-| 80+ | $800 (floor) | 100 | $80,000 |
+| 50–59 | $875 | 59 | $50,000 (capped) |
+| 60–69 | $850 | 69 | $50,000 (capped) |
+| 70–79 | $825 | 79 | $50,000 (capped) |
+| 80+ | $800 (floor) | 100 | $50,000 (capped) |
 
 The rate drops $25 every ten branches until it floors at $800, which it
 reaches at 80 branches.
+
+**A contract is capped at $50,000 a month**, whatever the branch count. The
+per-branch rates apply underneath it; the ceiling first bites at 58 branches
+($50,000 rather than $50,750), and beyond that a chain pays no more however
+far it grows — 200 branches is still $50,000, an effective $250 a branch.
 
 **No estate is charged more than a larger estate would pay.** The rate steps
 a whole band at a time, so the card on its own would make 40 branches
@@ -536,7 +541,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-220 tests across the fourteen modules. Gemini and Twilio are both stubbed and
+218 tests across the fourteen modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 
