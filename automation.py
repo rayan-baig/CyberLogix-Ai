@@ -235,18 +235,12 @@ def compliance_csv(
     )
 
 
-@router.post("/sweep")
-def autopilot_sweep(
-    auto_escalate: bool = Query(
-        True, description="Place voice calls for incidents past the grace window."
-    ),
-    tenant: Tenant = Depends(require_tenant),
-):
-    """Run one unattended operations pass over the tenant's estate.
+def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
+    """One unattended operations pass over a tenant's estate.
 
-    Intended to be called on a schedule (Cloud Scheduler hitting this
-    endpoint every few minutes). Reports offline sensors and answers
-    incidents that have gone unacknowledged.
+    Reports offline sensors and answers incidents that have gone
+    unacknowledged. Shared by the endpoint and the in-process scheduler, so
+    a sweep run on a timer behaves exactly like one an operator triggered.
     """
     now = utc_now()
     actions: List[Dict[str, Any]] = []
@@ -332,3 +326,19 @@ def autopilot_sweep(
         "actions_taken": len(actions),
         "actions": actions,
     }
+
+
+@router.post("/sweep")
+def autopilot_sweep(
+    auto_escalate: bool = Query(
+        True, description="Place voice calls for incidents past the grace window."
+    ),
+    tenant: Tenant = Depends(require_tenant),
+):
+    """Run one sweep now, on demand.
+
+    The same pass the built-in scheduler runs on a timer; exposed so an
+    operator can force one, and so an external scheduler can drive it
+    instead.
+    """
+    return sweep_tenant(tenant, auto_escalate)

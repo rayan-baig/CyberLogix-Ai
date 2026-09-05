@@ -15,7 +15,7 @@ def sent(monkeypatch):
         return {"channel": "sms", "to": to, "delivered": True, "status": "queued",
                 "provider_sid": f"SM{len(log['sms'])}", "detail": "ok"}
 
-    def _call(to, spoken, tenant_id=None):
+    def _call(to, spoken, tenant_id=None, action_url=None):
         log["voice"].append(to)
         # Only the last number on the ladder answers.
         reached = to.endswith("0003")

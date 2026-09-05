@@ -21,8 +21,9 @@ def sent(monkeypatch):
             "detail": "ok",
         }
 
-    def _call(to, spoken, tenant_id=None):
-        log["voice"].append({"to": to, "spoken": spoken, "tenant_id": tenant_id})
+    def _call(to, spoken, tenant_id=None, action_url=None):
+        log["voice"].append({"to": to, "spoken": spoken, "tenant_id": tenant_id,
+                            "action_url": action_url})
         return {
             "channel": "voice",
             "to": to,

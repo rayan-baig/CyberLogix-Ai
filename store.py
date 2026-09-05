@@ -694,6 +694,7 @@ class Incident:
     voice_script: Optional[str] = None
     voice_dispatch_source: Optional[str] = None
     resolved_at: Optional[datetime] = None
+    ack_token: Optional[str] = None
 
     @property
     def open(self) -> bool:
@@ -726,6 +727,7 @@ class Incident:
             "voice_script": self.voice_script,
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
+            "ack_token": self.ack_token,
         }
 
     @classmethod
@@ -751,6 +753,7 @@ class Incident:
             voice_script=row.get("voice_script"),
             voice_dispatch_source=row.get("voice_dispatch_source"),
             resolved_at=_parse(row.get("resolved_at")),
+            ack_token=row.get("ack_token"),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1614,6 +1617,19 @@ class HubStore:
                 [delivery] if delivery else []
             )
             return self._save_incident(incident)
+
+    def issue_ack_token(self, incident: Incident) -> str:
+        """A one-incident secret for the keypress callback.
+
+        Incident IDs run in sequence, so without a secret in the URL anyone
+        who can guess INC-000007 could silence somebody else's escalation.
+        Reused across retries of the same call so a redial still works.
+        """
+        with self._lock:
+            if not incident.ack_token:
+                incident.ack_token = secrets.token_urlsafe(24)
+                self._save_incident(incident)
+            return incident.ack_token
 
     def record_voice_escalation(
         self,

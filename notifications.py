@@ -24,6 +24,11 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
 
+# Where Twilio should send the keypress when the callee presses 1. Without
+# a reachable base URL the call still goes out, it just cannot be
+# acknowledged from the handset, so this is optional rather than required.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+
 # Twilio caps a single SMS body; longer text is segmented and billed per
 # segment, so the alert is trimmed rather than silently fragmented.
 MAX_SMS_CHARACTERS = 1500
@@ -153,25 +158,82 @@ def send_sms(
         return _undelivered("sms", to, "send_failed", f"Twilio rejected the send: {exc}")
 
 
-def build_twiml(spoken_text: str) -> str:
+def build_twiml(spoken_text: str, action_url: Optional[str] = None) -> str:
     """Wrap spoken words in TwiML, escaping them so any text is safe.
 
     The script is model-authored, so an ampersand or angle bracket in it
     would otherwise produce malformed XML and a failed call.
+
+    With an `action_url` the words are wrapped in a `<Gather>`, so the
+    script's closing "press 1 to acknowledge" actually reaches something.
+    Without one the call is read out twice and hangs up, which is the old
+    behaviour and all that is possible when the service has no public URL.
     """
     safe = xml_escape((spoken_text or "").strip()[:MAX_SPOKEN_CHARACTERS])
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        "<Response>"
+    body = (
         f'<Say voice="alice">{safe}</Say>'
         '<Pause length="1"/>'
         f'<Say voice="alice">{safe}</Say>'
+    )
+    if action_url:
+        inner = (
+            f'<Gather numDigits="1" timeout="8" method="POST" '
+            f'action="{xml_escape(action_url, {chr(34): "&quot;"})}">'
+            f"{body}"
+            "</Gather>"
+            '<Say voice="alice">No acknowledgement received. '
+            "The escalation stays open.</Say>"
+        )
+    else:
+        inner = body
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        f"{inner}"
         "</Response>"
     )
 
 
+def build_gather_reply(spoken_text: str) -> str:
+    """A one-line spoken reply to a keypress."""
+    safe = xml_escape((spoken_text or "").strip()[:MAX_SPOKEN_CHARACTERS])
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response><Say voice="alice">{safe}</Say><Hangup/></Response>'
+    )
+
+
+def acknowledgement_url(incident_id: str, token: str) -> Optional[str]:
+    """Where Twilio should post a keypress for this call, if reachable."""
+    if not PUBLIC_BASE_URL:
+        return None
+    return f"{PUBLIC_BASE_URL}/api/voice/keypress/{incident_id}/{token}"
+
+
+def verify_twilio_signature(url: str, form: Dict[str, Any], signature: str) -> bool:
+    """Check that a callback really came from Twilio.
+
+    The keypress endpoint cannot carry a bearer token — Twilio is the
+    caller — so the signature is the only thing standing between a stranger
+    and silencing somebody else's escalation. No auth token configured
+    means no way to verify, so nothing is trusted.
+    """
+    if not TWILIO_AUTH_TOKEN or not signature:
+        return False
+    try:
+        from twilio.request_validator import RequestValidator
+
+        return RequestValidator(TWILIO_AUTH_TOKEN).validate(url, form, signature)
+    except Exception as exc:  # noqa: BLE001 - an unverifiable callback is refused
+        logger.error("Twilio signature could not be validated (%s).", exc)
+        return False
+
+
 def place_voice_call(
-    to: str, spoken_text: str, tenant_id: Optional[str] = None
+    to: str,
+    spoken_text: str,
+    tenant_id: Optional[str] = None,
+    action_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place an outbound call that speaks `spoken_text`, twice."""
     from costs import allow_message, record
@@ -188,7 +250,9 @@ def place_voice_call(
 
     try:
         call = _get_client().calls.create(
-            to=to, from_=TWILIO_FROM_NUMBER, twiml=build_twiml(spoken_text)
+            to=to,
+            from_=TWILIO_FROM_NUMBER,
+            twiml=build_twiml(spoken_text, action_url),
         )
         record(tenant_id, "voice_calls")
         logger.info("Voice call placed to %s (sid=%s).", to, call.sid)

@@ -14,6 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # the suite never touches a real file on disk.
 os.environ["CYBERLOGIX_DB_PATH"] = ":memory:"
 
+# The unattended sweep loop must not run under the suite: a background task
+# placing calls between tests is exactly the kind of flake that takes a day
+# to track down. The scheduler is tested directly instead.
+os.environ["CYBERLOGIX_SWEEP_SECONDS"] = "0"
+
 import gemini  # noqa: E402
 from main import app  # noqa: E402
 from store import STORE  # noqa: E402

@@ -8,6 +8,7 @@ forecasting.
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from notifications import delivery_ready
+import scheduler
 from licenses import router as license_router
 from pricing import router as billing_router
 from shortcuts import router as shortcuts_router
@@ -38,7 +40,23 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Run the unattended watchdog for as long as the API is up.
+
+    Escalation is the product's promise: a text nobody reads becomes a
+    phone call. Something has to run the sweep for that to be true at 3am,
+    and an in-process loop is the cheapest thing that can.
+    """
+    scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="CyberLogix AI Master Enterprise Hub",
     description=(
         "Universal IoT Telemetry, License Control, Autonomous Operations, "
@@ -96,6 +114,7 @@ MODULES_ACTIVE = [
     "per_unit_billing",
     "sector_shortcuts",
     "site_management",
+    "unattended_autopilot_scheduler",
     "enterprise_cluster_billing",
 ]
 
@@ -134,6 +153,7 @@ def health_check():
         "gemini_model": GEMINI_MODEL,
         "gemini_dispatch": "ready" if dispatch_ready() else "fallback_template",
         "message_delivery": "twilio" if delivery_ready() else "dry_run",
+        "autopilot_scheduler": scheduler.status(),
         "timestamp": iso(utc_now()),
     }
 

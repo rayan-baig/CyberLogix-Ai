@@ -9,9 +9,11 @@ speech and the response hands it to a telephony provider to place.
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Optional
+from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from gemini import safe_generate
@@ -22,7 +24,12 @@ from auth import (
     require_tenant,
     write_audit,
 )
-from notifications import place_voice_call
+from notifications import (
+    acknowledgement_url,
+    build_gather_reply,
+    place_voice_call,
+    verify_twilio_signature,
+)
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -125,11 +132,15 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
     # so a wrong number or a dead line does not end the escalation.
     sensor = STORE.get_sensor(incident.sensor_id)
     ladder = STORE.voice_ladder(tenant, sensor.site_id if sensor else None)
+    # So the script's closing "press 1 to acknowledge" reaches something.
+    action_url = acknowledgement_url(
+        incident.incident_id, STORE.issue_ack_token(incident)
+    )
     fanout = []
     delivery = None
     for contact in ladder:
         attempt = dict(
-            place_voice_call(contact.phone, script, tenant.tenant_id),
+            place_voice_call(contact.phone, script, tenant.tenant_id, action_url),
             contact_id=contact.contact_id,
             contact_name=contact.full_name,
         )
@@ -154,6 +165,77 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
         "delivery": delivery,
         "fanout": fanout,
     }
+
+
+@router.post("/keypress/{incident_id}/{token}", include_in_schema=False)
+async def voice_keypress(
+    incident_id: str, token: str, request: Request
+) -> Response:
+    """Twilio posts the digit the callee pressed. 1 acknowledges.
+
+    Called by Twilio, not by an operator, so there is no bearer token to
+    check: the request is trusted only if it carries a valid Twilio
+    signature *and* the per-incident secret in the URL. Replies are TwiML
+    whatever happens — an error page would be read aloud as noise.
+    """
+    # Parsed by hand rather than via request.form(): Twilio always posts
+    # url-encoded, and this keeps python-multipart off the dependency list.
+    body = (await request.body()).decode("utf-8", "replace")
+    form = dict(parse_qsl(body, keep_blank_values=True))
+    if not verify_twilio_signature(str(request.url), form, request.headers.get("X-Twilio-Signature", "")):
+        logger.warning(
+            "Rejected an unverified keypress callback for %s.", incident_id
+        )
+        return Response(
+            content=build_gather_reply(
+                "This call could not be verified. Goodbye."
+            ),
+            media_type="application/xml",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    incident = STORE.get_incident(incident_id)
+    if (
+        incident is None
+        or not incident.ack_token
+        or not secrets.compare_digest(incident.ack_token, token)
+    ):
+        logger.warning("Keypress callback for unknown incident %s.", incident_id)
+        return Response(
+            content=build_gather_reply("That alert is no longer active. Goodbye."),
+            media_type="application/xml",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if (form.get("Digits") or "").strip() != "1":
+        return Response(
+            content=build_gather_reply(
+                "No acknowledgement received. The escalation stays open."
+            ),
+            media_type="application/xml",
+        )
+
+    caller = (form.get("To") or "the handset").strip()
+    already = incident.acknowledged_at is not None
+    STORE.acknowledge_incident(incident, f"phone keypad ({caller})")
+    tenant = STORE.get_tenant(incident.tenant_id)
+    if tenant is not None and not already:
+        write_audit(
+            tenant,
+            None,
+            "incident.acknowledged",
+            f"{incident.incident_id} acknowledged by keypad from {caller}.",
+        )
+    logger.info(
+        "Incident %s acknowledged from the handset (%s).", incident_id, caller
+    )
+    return Response(
+        content=build_gather_reply(
+            "Acknowledged. No further calls will be placed for this alert. "
+            "Thank you."
+        ),
+        media_type="application/xml",
+    )
 
 
 @router.get("/pending")

@@ -5,8 +5,17 @@ def test_root_gateway_lists_every_module(api):
     body = api.get("/api").json()
     assert body["system"] == "CyberLogix AI Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
-    assert len(body["modules_active"]) == 15
-    for module in ("universal_iot_telemetry", "byod_hardware_bridge"):
+    # Asserted against the app's own list rather than a hard-coded count,
+    # so mounting a new subsystem does not fail an unrelated test.
+    from main import MODULES_ACTIVE
+
+    assert body["modules_active"] == MODULES_ACTIVE
+    for module in (
+        "universal_iot_telemetry",
+        "byod_hardware_bridge",
+        "site_management",
+        "unattended_autopilot_scheduler",
+    ):
         assert module in body["modules_active"]
 
 
@@ -14,7 +23,9 @@ def test_health_reports_subsystem_state(api):
     body = api.get("/api/health").json()
     assert body["status"] == "online"
     assert body["active_profiles"] == 8
-    assert body["modules_active"] == 15
+    from main import MODULES_ACTIVE
+
+    assert body["modules_active"] == len(MODULES_ACTIVE)
     assert body["plan_tiers"] == ["trial", "growth", "enterprise"]
 
 
