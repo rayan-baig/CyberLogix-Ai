@@ -26,7 +26,8 @@ ask for.
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 | On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
 | Pricing & Billing | `/api/billing` | Per-unit rate card, invoice, ROI |
-| Enterprise Volume Billing | `/api/v1/enterprise-billing` | Bracket pricing for chains |
+| Enterprise Volume Billing | `/api/v1/enterprise-billing` | Per-branch pricing for chains |
+| Sector Shortcuts | `/api/shortcuts` | The one document each industry must produce |
 
 The console is at `/`, the machine-readable gateway at `/api`, and
 interactive API docs at `/docs`.
@@ -71,6 +72,31 @@ it only against a throwaway instance.
 | `country_club` | High-End Country Clubs | Clubhouse Kitchen Walk-In Compressor Failure | above 32 °F |
 
 Thresholds are exclusive: a reading exactly at the limit is nominal.
+
+## Sector shortcuts
+
+Every vertical has a piece of paperwork its operators dread, and the platform
+already holds the readings it is made of:
+
+| Sector | Document |
+|---|---|
+| CyberTech Data Centers | Automated CISO Incident Briefing |
+| Franchise Restaurants | Health Inspector Log Formatter |
+| Cold-Chain Logistics | Reefer Cargo Handover Pass |
+| Solar Infrastructure | Grid Thermal Yield Report |
+| Medical Labs & Blood Banks | OSHA Cold-Storage Specimen Audit |
+| Private Aviation Hangars | Hangar Avionics Humidity Log |
+| Luxury Superyachts | Charter Guest Galley Safety Memo |
+| High-End Country Clubs | Clubhouse Kitchen Inventory Safe-Guard |
+
+`POST /api/shortcuts/{vertical}?days=30` writes the document from that
+tenant's own telemetry. The model is handed the real per-sensor figures and
+told that inventing a reading makes the document worthless as evidence; the
+response carries the same `evidence` block the document was built from, so
+any line can be checked against it.
+
+A tenant with no sensors in that vertical gets `409`, not an empty document —
+a compliance sheet with nothing behind it reads as an attestation.
 
 ## Who gets alerted
 
@@ -510,7 +536,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-209 tests across the thirteen modules. Gemini and Twilio are both stubbed and
+220 tests across the fourteen modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 

@@ -91,6 +91,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 78.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Automated CISO Incident Briefing",
+        "shortcut_description": (
+            "Compiles raw server-log alerts into an executive-ready compliance summary for board reviews."
+        ),
     },
     "restaurant": {
         "name": "Franchise Restaurants",
@@ -98,6 +102,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Health Inspector Log Formatter",
+        "shortcut_description": (
+            "Formats temperature logs into official local health department audit sheets."
+        ),
     },
     "logistics": {
         "name": "High-Stakes Cold-Chain Transport",
@@ -105,6 +113,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 40.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Reefer Cargo Handover Pass",
+        "shortcut_description": (
+            "Generates a transit temperature guarantee certificate for delivery dock receivers."
+        ),
     },
     "solar_infrastructure": {
         "name": "Solar Infrastructure & Storage",
@@ -112,6 +124,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 115.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Grid Thermal Yield Report",
+        "shortcut_description": (
+            "Calculates battery thermal efficiency loss and maps preventative cleaning schedules."
+        ),
     },
     "medical_lab": {
         "name": "Medical Labs & Blood Banks",
@@ -119,6 +135,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 46.0,
         "danger_below": 36.0,
         "unit": "°F",
+        "shortcut_name": "OSHA Cold-Storage Specimen Audit",
+        "shortcut_description": (
+            "Creates chain-of-custody temperature validation logs for vaccine and plasma vaults."
+        ),
     },
     "private_aviation": {
         "name": "Private Aviation Hangars",
@@ -126,6 +146,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 85.0,  # Heat/humidity proxy
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Hangar Avionics Humidity Log",
+        "shortcut_description": (
+            "Generates FAA-compliant environmental storage logs for sensitive flight computer components."
+        ),
     },
     "superyacht": {
         "name": "Luxury Superyacht Engine Bays",
@@ -133,6 +157,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 90.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Charter Guest Galley Safety Memo",
+        "shortcut_description": (
+            "Compiles engine room thermal safety logs into a digital report for yacht captains and owners."
+        ),
     },
     "country_club": {
         "name": "High-End Country Clubs",
@@ -140,6 +168,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",
+        "shortcut_name": "Clubhouse Kitchen Inventory Safe-Guard",
+        "shortcut_description": (
+            "Calculates potential food loss prevention savings for executive club managers."
+        ),
     },
 }
 

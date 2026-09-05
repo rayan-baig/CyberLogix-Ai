@@ -27,6 +27,7 @@ from hardware_bridge import router as bridge_router
 from notifications import delivery_ready
 from licenses import router as license_router
 from pricing import router as billing_router
+from shortcuts import router as shortcuts_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
 from voice_dispatch import router as voice_router
@@ -75,6 +76,7 @@ app.include_router(accounts_router)
 app.include_router(costs_router)
 app.include_router(contacts_router)
 app.include_router(billing_router)
+app.include_router(shortcuts_router)
 app.include_router(enterprise_router)
 
 MODULES_ACTIVE = [
@@ -90,6 +92,7 @@ MODULES_ACTIVE = [
     "spend_controls",
     "on_call_roster",
     "per_unit_billing",
+    "sector_shortcuts",
     "enterprise_cluster_billing",
 ]
 

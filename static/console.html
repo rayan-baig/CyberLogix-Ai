@@ -26,6 +26,7 @@
     --telemetry: #38bdf8;
     --commerce:  #34d399;
     --intel:     #a78bfa;
+    --paperwork: #f0a868;
     --good:      #0ca30c;
     --warning:   #fab219;
     --serious:   #ec835a;
@@ -196,6 +197,7 @@
   .card.mod-telemetry { border-top: 2px solid var(--telemetry); }
   .card.mod-commerce  { border-top: 2px solid var(--commerce); }
   .card.mod-intel     { border-top: 2px solid var(--intel); }
+  .card.mod-paperwork { border-top: 2px solid var(--paperwork); }
   .mod-chip {
     font-family: var(--mono); font-size: 10px; letter-spacing: .05em;
     padding: 2px 7px; border-radius: 5px; margin-left: auto;
@@ -204,6 +206,7 @@
   .c-telemetry { color: var(--telemetry); }
   .c-commerce  { color: var(--commerce); }
   .c-intel     { color: var(--intel); }
+  .c-paperwork { color: var(--paperwork); }
   .readout {
     background: var(--sunken); border: 1px solid var(--border);
     border-radius: 9px; padding: 11px 12px; margin-top: 10px;
@@ -541,6 +544,19 @@
           </div>
           <div id="calc-out"></div>
           </section>
+          <section class="card mod-paperwork">
+            <div class="card-head">
+              <span class="card-title">Sector shortcuts</span>
+              <span class="mod-chip c-paperwork">Paperwork</span>
+            </div>
+            <p class="card-note" style="margin:0 0 12px">
+              The one document your sector has to produce, written from the
+              readings already on file.
+            </p>
+            <div id="shortcut-list"></div>
+            <div id="shortcut-out"></div>
+          </section>
+
           <section class="card mod-intel">
           <div class="card-head">
             <span class="card-title">Meeting intelligence</span>
@@ -904,7 +920,8 @@ async function loadIndustries() {
 }
 
 async function refresh() {
-  const [overview, health, costs, audit, me, roster, team] = await Promise.all([
+  const [overview, health, costs, audit, me, roster, team, catalogue] =
+    await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
     api("/api/costs?days=30"),
@@ -912,7 +929,11 @@ async function refresh() {
     state.user ? Promise.resolve({ user: state.user }) : api("/api/accounts/me"),
     api("/api/contacts"),
     api("/api/accounts/users"),
+    state.shortcutCatalogue
+      ? Promise.resolve(state.shortcutCatalogue)
+      : api("/api/shortcuts"),
   ]);
+  state.shortcutCatalogue = catalogue;
   state.data = overview;
   state.user = me.user;
   render(overview, health);
@@ -921,6 +942,7 @@ async function refresh() {
   renderRoster(roster);
   renderTeam(team);
   renderBilling(overview.subscription, overview.roi);
+  renderShortcuts(overview.sensors, catalogue);
 }
 
 /* ---------------- render ---------------- */
@@ -1364,6 +1386,33 @@ function renderTeam(team) {
     </div>`).join("");
 }
 
+/* Only the sectors this estate actually has sensors in: a health inspector
+   sheet for a company with no restaurants is noise. */
+function renderShortcuts(sensors, catalogue) {
+  const owned = [...new Set(sensors.map((s) => s.industry_vertical))];
+  const rows = catalogue.shortcuts.filter((s) => owned.includes(s.vertical));
+
+  if (!rows.length) {
+    $("shortcut-list").innerHTML =
+      `<div class="empty" style="padding:14px">
+         Register a sensor and its sector's document appears here.
+       </div>`;
+    return;
+  }
+
+  $("shortcut-list").innerHTML = rows.map((s) => `
+    <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;gap:9px;align-items:center">
+        <span class="grow" style="font-size:13px;font-weight:600">
+          ${esc(s.shortcut_name)}</span>
+        <button class="btn btn-sm" data-shortcut="${esc(s.vertical)}">Generate</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:3px">
+        ${esc(s.description)}
+      </div>
+    </div>`).join("");
+}
+
 function renderByod(sensors) {
   const bound = sensors.find((s) => s.external_device_sn);
   const serial = bound ? bound.external_device_sn : "YOUR-DEVICE-SERIAL";
@@ -1469,6 +1518,30 @@ document.addEventListener("click", (event) => {
       { method: "POST", body: JSON.stringify({
           danger_above: value, danger_below: sensor.override_below ?? null }) }
     ), value === null ? "Restored the industry default." : `Limit set to ${value}°F.`);
+  }
+
+  if (btn.dataset.shortcut) {
+    const vertical = btn.dataset.shortcut;
+    btn.disabled = true;
+    act(async () => {
+      const out = await api(`/api/shortcuts/${encodeURIComponent(vertical)}?days=30`, {
+        method: "POST",
+      });
+      const ev = out.evidence;
+      $("shortcut-out").innerHTML =
+        `<div class="quote" style="margin-top:12px">
+           <div class="quote-label">${esc(out.shortcut_name)} · last
+             ${out.period_days} days · ${ev.sensor_count} sensor(s),
+             ${ev.total_readings} readings, ${ev.total_excursions} excursion(s)${
+               out.document_source === "fallback_template"
+                 ? " · model unavailable, figures only" : ""
+             }</div>
+           <pre style="white-space:pre-wrap;margin:0;font-family:inherit;
+                       font-size:12.5px;max-height:260px;overflow:auto">${
+             esc(out.document)}</pre>
+         </div>`;
+      logToConsole(`${out.shortcut_name} generated from ${ev.total_readings} readings.`, "ok");
+    }).finally(() => { btn.disabled = false; });
   }
 
   if (btn.dataset.pulse) {
