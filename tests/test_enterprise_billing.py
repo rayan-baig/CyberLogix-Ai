@@ -190,14 +190,14 @@ def test_contract_supersedes_the_per_unit_rate_card(
 
     before = api.get("/api/billing", headers=headers).json()
     assert before["billing_model"] == "per_unit"
-    assert before["monthly_total_usd"] == pytest.approx(3 * 450.0)
+    assert before["monthly_total_usd"] == pytest.approx(3 * 1000.0)
 
     provision(api, headers, branches=6)
     after = api.get("/api/billing", headers=headers).json()
     assert after["billing_model"] == "enterprise_volume"
     assert after["monthly_total_usd"] == 6000.0
     # The rate-card figure is kept for comparison, not charged.
-    assert after["rate_card_equivalent_usd"] == pytest.approx(1350.0)
+    assert after["rate_card_equivalent_usd"] == pytest.approx(3000.0)
     assert after["line_items"][0]["description"] == (
         "6 branches · 1-9 branches @ $1,000/branch"
     )
@@ -238,8 +238,10 @@ def test_quote_compares_both_models(api, operator_factory):
         "?industry_vertical=restaurant&total_branch_locations=5&units_per_branch=1",
         headers=headers,
     ).json()
-    assert single["per_unit"]["monthly_usd"] == pytest.approx(2250.0)
+    assert single["per_unit"]["monthly_usd"] == pytest.approx(5000.0)
     assert single["enterprise_volume"]["monthly_usd"] == 5000.0
+    # At one unit per branch the two models now agree exactly, since the
+    # location rate is the branch ladder's opening rate.
     assert single["cheaper_model"] == "per_unit"
 
     # A dense site flips it.

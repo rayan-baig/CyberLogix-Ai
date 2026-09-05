@@ -25,7 +25,7 @@ def test_price_book_matches_the_agreed_rate_card(api):
         "medical_lab": (199.0, "vault"),
         "country_club": (199.0, "kitchen"),
         "logistics": (129.0, "reefer truck"),
-        "restaurant": (450.0, "location"),
+        "restaurant": (1000.0, "location"),
     }
     for vertical, (price, unit) in expected.items():
         assert rows[vertical]["monthly_usd"] == price, vertical
@@ -84,7 +84,7 @@ def test_trial_is_priced_but_not_charged(api, tenant_factory, sensor_factory):
 
     invoice = api.get("/api/billing", headers=headers).json()
     assert invoice["billable"] is False
-    assert invoice["monthly_total_usd"] == 450.0
+    assert invoice["monthly_total_usd"] == 1000.0
     assert invoice["effective_monthly_usd"] == 0.0
     assert "not charged" in invoice["note"]
 
@@ -113,7 +113,7 @@ def test_decommissioning_reports_what_it_removes(
 
     resp = api.delete("/api/licenses/me/sensors/RACK-01", headers=headers).json()
     assert resp["billing"]["removes_monthly_usd"] == 499.0
-    assert resp["billing"]["new_monthly_total_usd"] == 450.0
+    assert resp["billing"]["new_monthly_total_usd"] == 1000.0
 
 
 def test_industry_picker_carries_the_price(api):
@@ -142,8 +142,8 @@ def test_roi_counts_only_answered_incidents(
     answered = api.get("/api/billing/roi", headers=headers).json()
     assert answered["quantified_saves"] == 1
     assert answered["loss_avoided_usd"] == 15000.0
-    assert answered["subscription_cost_usd"] == 450.0
-    assert answered["return_multiple"] == pytest.approx(33.3, abs=0.1)
+    assert answered["subscription_cost_usd"] == 1000.0
+    assert answered["return_multiple"] == pytest.approx(15.0, abs=0.1)
 
 
 def test_roi_never_invents_a_figure(api, tenant_factory, sensor_factory):

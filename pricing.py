@@ -100,7 +100,8 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "restaurant": {
         "unit": "location",
-        "monthly_usd": 450.0,
+        # Priced off the branch ladder's opening rate, not a separate figure.
+        "monthly_usd": 1000.0,
         "pitch": (
             "Prevents $15,000 walk-in freezer meat/seafood spoilage and "
             "automates health department logs."

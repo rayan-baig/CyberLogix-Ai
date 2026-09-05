@@ -154,7 +154,7 @@ registered, so a customer with three racks and two hangar bays pays
 | Medical Labs & Blood Banks | **$199** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
 | High-End Country Clubs | **$199** / kitchen / month | Holiday dining inventory lost to compressor failure |
 | Cold-Chain Logistics | **$129** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
-| Franchise Restaurants | **$450** / location / month | $15,000 walk-in spoilage; health department logs |
+| Franchise Restaurants | **$1,000** / location / month | $15,000 walk-in spoilage; health department logs |
 
 The rate card is public at `GET /api/billing/pricing` and on the sign-in
 screen. `GET /api/billing` itemises a tenant's own estate; registering or
