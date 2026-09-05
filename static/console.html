@@ -360,6 +360,126 @@
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
+
+  /* ---------- fleet toolbar ---------- */
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 12px;
+  }
+  .toolbar input[type="search"], .toolbar select {
+    padding: 7px 11px; background: var(--sunken); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 9px; outline: none;
+  }
+  .toolbar input[type="search"] { flex: 1; min-width: 150px; }
+  .toolbar input:focus, .toolbar select:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .btn[aria-pressed="true"] { border-color: var(--accent); background: #1b2a44; }
+  .group-head {
+    display: flex; align-items: baseline; gap: 8px;
+    margin: 16px 0 8px; font-size: 12px;
+    font-family: var(--mono); letter-spacing: .05em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .group-head:first-child { margin-top: 0; }
+  .group-head .count { color: var(--ink-2); }
+
+  /* ---------- sensor health ---------- */
+  .health { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em;
+    padding: 2px 7px; border-radius: 6px;
+    border: 1px solid var(--border); color: var(--muted);
+    background: var(--sunken);
+  }
+  .pill.warn { color: var(--warning); border-color: rgba(250,178,25,0.45); }
+  .pill.bad  { color: var(--critical); border-color: rgba(208,59,59,0.5); }
+  .pill.site { color: var(--accent); border-color: rgba(56,189,248,0.4); }
+  .meter { width: 30px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .meter > i { display: block; height: 100%; background: currentColor; }
+  .sensor-id.clickable { cursor: pointer; text-decoration: underline dotted var(--muted); }
+  .sensor-id.clickable:hover { color: var(--accent); }
+
+  /* ---------- drill-down drawer ---------- */
+  #scrim {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(3,7,18,.68); backdrop-filter: blur(2px);
+  }
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 61;
+    width: min(560px, 100%); overflow-y: auto;
+    background: var(--surface); border-left: 1px solid var(--border-lit);
+    box-shadow: -24px 0 60px rgba(0,0,0,.6);
+    padding: 20px;
+  }
+  .drawer-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+  .drawer-title { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
+  .drawer-sub { color: var(--muted); font-size: 12.5px; }
+  .history { width: 100%; height: 150px; display: block; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
+  .kv .k { color: var(--muted); }
+
+  /* ---------- incident timeline ---------- */
+  .timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 16px;
+              border-left: 1px solid var(--border-lit); }
+  .timeline li { position: relative; padding: 0 0 12px 12px; font-size: 12.5px; }
+  .timeline li::before {
+    content: ""; position: absolute; left: -21px; top: 5px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--muted);
+  }
+  .timeline li.hit::before   { border-color: var(--critical); background: var(--critical); }
+  .timeline li.call::before  { border-color: var(--warning); }
+  .timeline li.ack::before   { border-color: var(--accent); }
+  .timeline li.done::before  { border-color: var(--good); background: var(--good); }
+  .timeline .when { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  /* ---------- wall display ---------- */
+  body.wall .nav, body.wall .layout > aside, body.wall #terminal,
+  body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !important; }
+  body.wall main { padding: 22px; max-width: none; }
+  body.wall .layout { grid-template-columns: minmax(0, 1fr); }
+  body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
+  body.wall .tile-value { font-size: 46px; }
+  body.wall .tile-label { font-size: 15px; }
+  body.wall .sensor { font-size: 16px; }
+  body.wall .sensor-temp { font-size: 34px; }
+  body.wall .sensor-actions, body.wall .toolbar { display: none; }
+  body.wall .fleet { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  #wall-exit {
+    position: fixed; right: 16px; top: 16px; z-index: 70; display: none;
+  }
+  body.wall #wall-exit { display: inline-flex; }
+  /* A wall screen is read from across the room; breaching must be obvious. */
+  body.wall .sensor.is-breaching {
+    border-color: var(--critical); background: rgba(208,59,59,0.16);
+  }
+
+  /* ---------- narrow screens ---------- */
+  @media (max-width: 720px) {
+    main { padding: 14px; }
+    .nav { gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+    .nav-spacer { display: none; }
+    .nav .chip { font-size: 11px; padding: 3px 8px; }
+    /* Seven identity chips is four rows of nav before any data. Keep the
+       two that change — who you are signed in as is not one of them. */
+    .nav .status-line, #chip-user, #chip-plan, #chip-seats, #chip-spend {
+      display: none;
+    }
+    .brand-name { font-size: 15px; }
+    #version-tag { display: none; }
+    .card { padding: 14px; }
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
+    .tile { padding: 11px 12px; }
+    .tile-value { font-size: 22px; }
+    .fleet { grid-template-columns: minmax(0, 1fr); }
+    #drawer { width: 100%; border-left: none; }
+    /* A phone-sized table has to scroll sideways rather than squash. */
+    #fleet-table, .scrollx { overflow-x: auto; }
+    #toasts { right: 10px; left: 10px; bottom: 88px; }
+    .toast { max-width: none; }
+  }
 </style>
 </head>
 <body>
@@ -460,6 +580,10 @@
     <span class="chip" id="chip-seats">—</span>
     <span class="chip" id="chip-spend">—</span>
     <span class="chip" id="chip-delivery">—</span>
+    <button class="btn btn-sm" id="unit-toggle"
+            title="Show every reading in Fahrenheit or Celsius">°F</button>
+    <button class="btn btn-sm" id="wall-mode"
+            title="Full-screen board for a wall display">Wall</button>
     <button class="btn btn-sm" id="sign-out">Sign out</button>
   </nav>
 
@@ -476,6 +600,23 @@
             <span class="card-note" id="fleet-note"></span>
             <span class="nav-spacer"></span>
             <button class="btn btn-sm" id="toggle-table" aria-pressed="false">Table view</button>
+          </div>
+          <div class="toolbar">
+            <label class="sr" for="fleet-search">Search the fleet</label>
+            <input id="fleet-search" type="search" autocomplete="off"
+                   placeholder="Search sensor, location or site">
+            <label class="sr" for="fleet-filter">Filter</label>
+            <select id="fleet-filter">
+              <option value="all">All sensors</option>
+              <option value="breaching">Breaching</option>
+              <option value="offline">Offline</option>
+              <option value="battery">Low battery</option>
+              <option value="unplaced">Not at a site</option>
+            </select>
+            <label class="sr" for="fleet-site">Site</label>
+            <select id="fleet-site"><option value="all">Every site</option></select>
+            <button class="btn btn-sm" id="group-sites" aria-pressed="false"
+                    title="Group the fleet by location">Group by site</button>
           </div>
           <div id="fleet" class="fleet"></div>
           <div id="fleet-table" hidden></div>
@@ -664,6 +805,46 @@
 
         <section class="card">
           <div class="card-head">
+            <span class="card-title">Sites</span>
+            <span class="card-note" id="site-note"></span>
+          </div>
+          <div id="site-body"></div>
+          <form id="site-form" style="margin-top:12px">
+            <div class="row">
+              <input id="site-name" class="grow" placeholder="Store 118 Boca Raton"
+                     required style="padding:9px 11px;background:var(--sunken);
+                     border:1px solid var(--border);border-radius:9px;color:var(--ink)">
+              <button class="btn btn-sm" type="submit">Add site</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Alert channels</span>
+            <span class="card-note" id="hook-note"></span>
+          </div>
+          <div id="hook-body"></div>
+          <form id="hook-form" style="margin-top:12px">
+            <div class="row">
+              <select id="hook-kind" style="padding:9px 11px;background:var(--sunken);
+                      border:1px solid var(--border);border-radius:9px;color:var(--ink)">
+                <option value="slack">Slack</option>
+                <option value="teams">Teams</option>
+                <option value="pagerduty">PagerDuty</option>
+                <option value="generic">Generic JSON</option>
+              </select>
+              <input id="hook-target" class="grow" required
+                     placeholder="https://hooks.slack.com/services/..."
+                     style="padding:9px 11px;background:var(--sunken);
+                     border:1px solid var(--border);border-radius:9px;color:var(--ink)">
+              <button class="btn btn-sm" type="submit">Add</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
             <span class="card-title">Autopilot</span>
             <span class="card-note">Unattended watchdog</span>
           </div>
@@ -690,6 +871,12 @@
   <div id="term-body" aria-live="polite"></div>
 </footer>
 
+<button class="btn btn-sm" id="wall-exit">Leave wall mode</button>
+
+<div id="scrim" hidden></div>
+<aside id="drawer" hidden role="dialog" aria-modal="true"
+       aria-labelledby="drawer-title"></aside>
+
 <div id="tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
 
@@ -704,6 +891,10 @@ const POLL_MS = 20000;
 const state = {
   token: null, user: null, data: null,
   timer: null, tableView: false, industries: [],
+  // Fleet view controls. Held here rather than read from the DOM on every
+  // render, so a poll landing mid-search does not reset what was typed.
+  search: "", filter: "all", site: "all", groupBySite: false,
+  unit: "F", drawerSensor: null, wall: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -920,7 +1111,7 @@ async function loadIndustries() {
 }
 
 async function refresh() {
-  const [overview, health, costs, audit, me, roster, team, catalogue] =
+  const [overview, health, costs, audit, me, roster, team, catalogue, hooks] =
     await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
@@ -932,11 +1123,16 @@ async function refresh() {
     state.shortcutCatalogue
       ? Promise.resolve(state.shortcutCatalogue)
       : api("/api/shortcuts"),
+    api("/api/webhooks"),
   ]);
   state.shortcutCatalogue = catalogue;
   state.data = overview;
   state.user = me.user;
+  state.unit = overview.temperature_unit || "F";
   render(overview, health);
+  renderSites(overview);
+  renderHooks(hooks);
+  if (state.drawerSensor) openDrawer(state.drawerSensor, { quiet: true });
   renderCosts(costs);
   renderAudit(audit);
   renderRoster(roster);
@@ -979,6 +1175,10 @@ function render(d, health) {
     : "—";
   $("chip-delivery").textContent =
     health.message_delivery === "twilio" ? "SMS + voice live" : "Delivery: dry run";
+  $("unit-toggle").textContent = `°${state.unit}`;
+  $("unit-toggle").title = state.unit === "C"
+    ? "Showing Celsius. Click for Fahrenheit."
+    : "Showing Fahrenheit. Click for Celsius.";
 
   const banner = $("delivery-banner");
   if (health.message_delivery !== "twilio") {
@@ -1000,13 +1200,31 @@ function render(d, health) {
          d.entitlements.predictive_forecasting ? "projected to breach" : "upgrade to unlock"),
     tile("Compliance", s.compliance_percent === null ? "—" : `${s.compliance_percent}%`,
          `last ${s.compliance_days} days`),
+    tile("Flat batteries", `${s.low_battery ?? 0}`,
+         s.low_battery ? "replace before they go dark" : "all healthy"),
     tile("Readings logged", `${s.readings_logged}`,
          `${s.readings_breached} out of band`),
   ].join("");
 
-  $("fleet-note").textContent = `${d.sensors.length} registered`;
-  renderFleet(d.sensors);
-  renderTable(d.sensors);
+  // Rebuilt on every poll because a site can be added from the sidebar.
+  const siteSelect = $("fleet-site");
+  const chosen = state.site;
+  siteSelect.innerHTML = [`<option value="all">Every site</option>`]
+    .concat((d.sites || []).map((site) =>
+      `<option value="${esc(site.site_id)}">${esc(site.name)}</option>`))
+    .concat(s.unplaced_sensors
+      ? [`<option value="none">Not at a site</option>`] : [])
+    .join("");
+  siteSelect.value = (d.sites || []).some((x) => x.site_id === chosen)
+    || chosen === "none" ? chosen : "all";
+  state.site = siteSelect.value;
+
+  const shown = visibleSensors(d.sensors);
+  $("fleet-note").textContent = shown.length === d.sensors.length
+    ? `${d.sensors.length} registered`
+    : `${shown.length} of ${d.sensors.length} shown`;
+  renderFleet(shown);
+  renderTable(shown);
 
   const open = d.incidents.filter((i) => i.state !== "resolved").length;
   $("incident-note").textContent =
@@ -1021,44 +1239,130 @@ function tile(label, value, foot) {
        + `<div class="tile-foot">${esc(foot)}</div></div>`;
 }
 
+/* An estate of two hundred freezers is a list nobody can read. Search,
+   filter and grouping are what turn it back into something answerable. */
+function visibleSensors(sensors) {
+  const needle = state.search.trim().toLowerCase();
+  return sensors.filter((s) => {
+    if (needle) {
+      const hay = [s.sensor_id, s.location_name, s.site_name, s.industry_name]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    if (state.site === "none" && s.site_id) return false;
+    if (state.site !== "all" && state.site !== "none"
+        && s.site_id !== state.site) return false;
+
+    switch (state.filter) {
+      case "breaching": return !!s.breaching;
+      case "offline":   return !s.online;
+      case "battery":   return !!s.battery_low;
+      case "unplaced":  return !s.site_id;
+      default:          return true;
+    }
+  });
+}
+
 function renderFleet(sensors) {
   if (!sensors.length) {
-    $("fleet").innerHTML =
-      `<div class="empty">No sensors yet. Register one to start monitoring.</div>`;
+    const filtered = state.search || state.filter !== "all" || state.site !== "all";
+    $("fleet").innerHTML = `<div class="empty">${
+      filtered
+        ? "Nothing matches that. Clear the search or filter to see the fleet."
+        : "No sensors yet. Register one to start monitoring."
+    }</div>`;
     return;
   }
 
-  $("fleet").innerHTML = sensors.map((s) => {
+  if (state.groupBySite) {
+    const groups = new Map();
+    sensors.forEach((s) => {
+      const key = s.site_name || "Not at a site";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s);
+    });
+    // "Not at a site" sits last: it is the leftovers, not a location.
+    const names = [...groups.keys()].sort((a, b) =>
+      a === "Not at a site" ? 1 : b === "Not at a site" ? -1 : a.localeCompare(b));
+    $("fleet").style.display = "block";
+    $("fleet").innerHTML = names.map((name) => {
+      const rows = groups.get(name);
+      const bad = rows.filter((s) => s.breaching).length;
+      return `<div class="group-head">
+          <span>${esc(name)}</span>
+          <span class="count">${rows.length} sensor${rows.length === 1 ? "" : "s"}${
+            bad ? ` · ${bad} breaching` : ""
+          }</span>
+        </div>
+        <div class="fleet">${rows.map(sensorCard).join("")}</div>`;
+    }).join("");
+    return;
+  }
+
+  $("fleet").style.display = "";
+  $("fleet").innerHTML = sensors.map(sensorCard).join("");
+}
+
+function healthPills(s) {
+  const bits = [];
+  if (s.site_name) {
+    bits.push(`<span class="pill site">${esc(s.site_name)}</span>`);
+  }
+  if (s.battery_percent !== null && s.battery_percent !== undefined) {
+    const cls = s.battery_low ? "bad" : s.battery_percent <= 40 ? "warn" : "";
+    bits.push(`<span class="pill ${cls}">battery ${esc(Math.round(s.battery_percent))}%`
+      + `<span class="meter"><i style="width:${Math.max(2, Math.min(100, s.battery_percent))}%"></i></span>`
+      + `</span>`);
+  }
+  if (s.signal_percent !== null && s.signal_percent !== undefined) {
+    const cls = s.signal_percent <= 25 ? "warn" : "";
+    bits.push(`<span class="pill ${cls}">signal ${esc(Math.round(s.signal_percent))}%`
+      + `<span class="meter"><i style="width:${Math.max(2, Math.min(100, s.signal_percent))}%"></i></span>`
+      + `</span>`);
+  }
+  return bits.length ? `<div class="health">${bits.join("")}</div>` : "";
+}
+
+function sensorCard(s) {
+  {
     const risk = s.risk_level || "unknown";
     const label = s.risk_level
       ? (s.hours_until_breach !== null && s.hours_until_breach > 0
           ? `${risk} · ${s.hours_until_breach}h`
           : risk)
       : "no forecast";
-    const temp = s.last_temperature === null ? "—" : s.last_temperature.toFixed(1);
+    const unit = s.temperature_unit || state.unit;
+    const reading = s.last_temperature_display;
+    const temp = (reading === null || reading === undefined)
+      ? "—" : reading.toFixed(1);
+    const above = s.danger_above_display, below = s.danger_below_display;
     const bound = s.external_device_sn
       ? `BYOD ${esc(s.external_device_sn)}` : "Native pulse";
 
     return `<article class="sensor ${s.breaching ? "is-breaching" : ""}">
       <div class="sensor-top">
-        <span class="sensor-id grow">${esc(s.sensor_id)}</span>
+        <span class="sensor-id grow clickable" data-detail="${esc(s.sensor_id)}"
+              role="button" tabindex="0">${esc(s.sensor_id)}</span>
         ${badge(s.breaching ? "critical" : risk, s.breaching ? "breaching" : label)}
       </div>
       <div class="sensor-loc">${esc(s.location_name)} · ${esc(s.industry_name)}</div>
       <div class="sensor-read">
         <span class="sensor-temp">${esc(temp)}</span>
-        <span class="sensor-unit">°F</span>
+        <span class="sensor-unit">°${esc(unit)}</span>
         <span class="nav-spacer"></span>
         ${badge(s.online ? "low" : "unknown", s.online ? "online" : "offline")}
       </div>
       <div class="spark-wrap">${sparkline(s)}</div>
+      ${healthPills(s)}
       <div class="sensor-meta">
         <span>${esc(bound)}</span>
-        <span>limit ${s.danger_below !== null ? esc(s.danger_below) + "–" : "&lt; "}${esc(s.danger_above)}°F${
+        <span>limit ${below !== null && below !== undefined
+            ? esc(below) + "–" : "&lt; "}${esc(above)}°${esc(unit)}${
           s.uses_override ? ' <span style="color:var(--warning)">tuned</span>' : ""
         }</span>
       </div>
       <div class="sensor-actions">
+        <button class="btn btn-sm" data-detail="${esc(s.sensor_id)}">History</button>
         <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
                 data-safe="1">Send safe pulse</button>
         <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
@@ -1067,7 +1371,7 @@ function renderFleet(sensors) {
         <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
       </div>
     </article>`;
-  }).join("");
+  }
 }
 
 /* 12-point sparkline: recessive line, current point in the accent. */
@@ -1114,7 +1418,7 @@ document.addEventListener("mouseover", (event) => {
   const at = hit.dataset.at
     ? new Date(hit.dataset.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "";
-  tip.innerHTML = `<div class="tip-v">${esc(hit.dataset.v)} °F</div>`
+  tip.innerHTML = `<div class="tip-v">${esc(hit.dataset.v)} °${esc(state.unit)}</div>`
                 + (at ? `<div class="tip-t">${esc(at)}</div>` : "");
   tip.hidden = false;
 });
@@ -1132,21 +1436,100 @@ function renderTable(sensors) {
   if (!sensors.length) { $("fleet-table").innerHTML = ""; return; }
   const rows = sensors.map((s) => `<tr>
       <td>${esc(s.sensor_id)}</td>
+      <td>${esc(s.site_name || "—")}</td>
       <td>${esc(s.location_name)}</td>
-      <td>${esc(s.industry_name)}</td>
-      <td class="num">${s.last_temperature === null ? "—" : esc(s.last_temperature.toFixed(1))}</td>
+      <td class="num">${s.last_temperature_display === null
+          || s.last_temperature_display === undefined
+          ? "—" : esc(s.last_temperature_display.toFixed(1))}</td>
+      <td class="num">${s.battery_percent === null || s.battery_percent === undefined
+          ? "—" : esc(Math.round(s.battery_percent)) + "%"}</td>
       <td>${esc(s.online ? "online" : "offline")}</td>
       <td>${esc(s.breaching ? "breaching" : (s.risk_level || "—"))}</td>
       <td class="num">${s.hours_until_breach === null || s.hours_until_breach === undefined
           ? "—" : esc(s.hours_until_breach)}</td>
     </tr>`).join("");
-  $("fleet-table").innerHTML = `<table>
+  $("fleet-table").innerHTML = `<div class="scrollx"><table>
       <caption class="sr">Sensor fleet, as a table</caption>
       <thead><tr>
-        <th>Sensor</th><th>Location</th><th>Industry</th><th class="num">°F</th>
+        <th>Sensor</th><th>Site</th><th>Location</th><th class="num">°${esc(state.unit)}</th>
+        <th class="num">Battery</th>
         <th>Link</th><th>Risk</th><th class="num">Hours to breach</th>
-      </tr></thead><tbody>${rows}</tbody></table>`;
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+
+/* ---------------- fleet controls ---------------- */
+
+/* Re-render from the data already in hand. A filter that waits for the
+   next poll to take effect feels broken. */
+function reapplyFleet() {
+  if (!state.data) return;
+  const shown = visibleSensors(state.data.sensors);
+  $("fleet-note").textContent = shown.length === state.data.sensors.length
+    ? `${state.data.sensors.length} registered`
+    : `${shown.length} of ${state.data.sensors.length} shown`;
+  renderFleet(shown);
+  renderTable(shown);
+}
+
+$("fleet-search").addEventListener("input", (event) => {
+  state.search = event.target.value;
+  reapplyFleet();
+});
+$("fleet-filter").addEventListener("change", (event) => {
+  state.filter = event.target.value;
+  reapplyFleet();
+});
+$("fleet-site").addEventListener("change", (event) => {
+  state.site = event.target.value;
+  reapplyFleet();
+});
+$("group-sites").addEventListener("click", () => {
+  state.groupBySite = !state.groupBySite;
+  $("group-sites").setAttribute("aria-pressed", String(state.groupBySite));
+  reapplyFleet();
+});
+
+/* ---------------- unit ---------------- */
+
+$("unit-toggle").addEventListener("click", async () => {
+  const next = state.unit === "C" ? "F" : "C";
+  try {
+    await api("/api/licenses/me/temperature-unit", {
+      method: "POST", body: JSON.stringify({ temperature_unit: next }),
+    });
+    state.unit = next;
+    toast(next === "C" ? "Showing Celsius." : "Showing Fahrenheit.", "ok");
+    await refresh();
+  } catch (err) { toast(err.message, "err"); }
+});
+
+/* ---------------- wall display ---------------- */
+
+/* A screen in the back office nobody is sitting at. Big numbers, no
+   controls, and nothing that can be clicked by a passing elbow. */
+function setWall(on) {
+  state.wall = on;
+  document.body.classList.toggle("wall", on);
+  if (on) closeDrawer();
+}
+$("wall-mode").addEventListener("click", () => setWall(true));
+$("wall-exit").addEventListener("click", () => setWall(false));
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (state.wall) { setWall(false); return; }
+  if (!$("drawer").hidden) closeDrawer();
+});
+$("scrim").addEventListener("click", closeDrawer);
+
+/* A sensor id is a button for keyboard users too. */
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const target = event.target.closest("[data-detail]");
+  if (!target || target.tagName === "BUTTON") return;
+  event.preventDefault();
+  openDrawer(target.dataset.detail);
+});
 
 $("toggle-table").addEventListener("click", () => {
   state.tableView = !state.tableView;
@@ -1164,6 +1547,53 @@ function deliveryLine(record, channel) {
   }
   return `<span class="badge s-warning"><span class="dot"></span>`
        + `${channel} not sent · ${esc(record.status)}</span>`;
+}
+
+/* What happened, in order. A stack of timestamps buried in JSON is not an
+   answer to "why did nobody pick this up", and that is the question asked
+   after every incident that goes wrong. */
+function incidentTimeline(i) {
+  const when = (iso) => iso
+    ? new Date(iso).toLocaleString([], { month: "short", day: "numeric",
+        hour: "2-digit", minute: "2-digit" })
+    : "";
+  const steps = [];
+
+  steps.push({ cls: "hit", when: i.opened_at,
+    text: `Breach detected at ${i.temperature_display ?? i.temperature_fahrenheit}°`
+        + `${i.temperature_unit || state.unit}` });
+
+  const texted = (i.sms_fanout || []).length || (i.sms_delivery ? 1 : 0);
+  if (texted) {
+    const landed = (i.sms_fanout || []).filter((f) => f.delivered).length
+      || (i.sms_delivery && i.sms_delivery.delivered ? 1 : 0);
+    steps.push({ cls: "hit", when: i.opened_at,
+      text: `Texted ${texted} on the roster · ${landed} delivered` });
+  }
+
+  if (i.voice_escalated_at) {
+    const reached = (i.voice_fanout || []).find((f) => f.delivered);
+    steps.push({ cls: "call", when: i.voice_escalated_at,
+      text: reached
+        ? `Called ${reached.contact_name || reached.to}`
+        : "Called the ladder — nobody answered" });
+  }
+  if (i.acknowledged_at) {
+    steps.push({ cls: "ack", when: i.acknowledged_at,
+      text: `Acknowledged by ${i.acknowledged_by || "someone"}` });
+  }
+  if (i.resolved_at) {
+    steps.push({ cls: "done", when: i.resolved_at, text: "Resolved" });
+  }
+  if (!i.acknowledged_at && !i.resolved_at) {
+    steps.push({ cls: "", when: null,
+      text: `Still open after ${Math.round(i.minutes_open)} minutes` });
+  }
+
+  return `<ul class="timeline">${steps.map((s) =>
+    `<li class="${s.cls}">${esc(s.text)}`
+    + (s.when ? ` <span class="when">${esc(when(s.when))}</span>` : "")
+    + `</li>`).join("")}</ul>`;
 }
 
 function renderIncidents(incidents, entitlements) {
@@ -1185,6 +1615,7 @@ function renderIncidents(incidents, entitlements) {
         <span class="card-note">${esc(i.sensor_id)} · ${esc(i.minutes_open)} min</span>
       </div>
       <div class="card-note">${esc(i.breach_details)}</div>
+      ${incidentTimeline(i)}
 
       <div class="quote">
         <div class="quote-label">SMS dispatched${i.sms_dispatch_source === "fallback_template"
@@ -1369,6 +1800,229 @@ function renderRoster(roster) {
   }).join("");
 }
 
+
+/* ---------------- sites ---------------- */
+
+function renderSites(d) {
+  const sites = d.sites || [];
+  const unplaced = d.summary.unplaced_sensors || 0;
+  $("site-note").textContent = sites.length
+    ? `${sites.length} location${sites.length === 1 ? "" : "s"}`
+    : "none yet";
+
+  if (!sites.length) {
+    $("site-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         No sites yet. Group sensors by location and alerts reach the manager
+         who can actually walk to the freezer.
+       </div>`;
+    return;
+  }
+
+  const rows = sites.map((site) => {
+    const breaching = (d.sensors || []).filter(
+      (s) => s.site_id === site.site_id && s.breaching).length;
+    return `<div style="display:flex;align-items:center;gap:9px;padding:7px 0;
+                        border-bottom:1px solid var(--border)">
+      <span class="grow">
+        <span style="font-size:13px;font-weight:600">${esc(site.name)}</span>
+        <span style="display:block;font-size:11.5px;color:var(--muted)">
+          ${esc(site.sensor_count)} sensor${site.sensor_count === 1 ? "" : "s"} ·
+          ${esc(site.online)} online${breaching ? ` · ${breaching} breaching` : ""}
+        </span>
+      </span>
+      <button class="btn btn-sm" data-site-view="${esc(site.site_id)}">View</button>
+      <button class="btn btn-sm" data-site-remove="${esc(site.site_id)}">Remove</button>
+    </div>`;
+  }).join("");
+
+  $("site-body").innerHTML = rows + (unplaced
+    ? `<div class="card-note" style="margin-top:9px">
+         ${unplaced} sensor${unplaced === 1 ? " is" : "s are"} not at a site yet.
+         Billing counts them; a per-store report does not.
+       </div>`
+    : "");
+}
+
+/* ---------------- alert channels ---------------- */
+
+const HOOK_NAMES = { slack: "Slack", teams: "Teams",
+                     pagerduty: "PagerDuty", generic: "JSON" };
+
+function renderHooks(hooks) {
+  $("hook-note").textContent = hooks.count
+    ? `${hooks.count} connected` : "none yet";
+
+  if (!hooks.webhooks.length) {
+    $("hook-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         Nothing connected. A breach that only shows up on a dashboard is a
+         breach nobody sees until morning.
+       </div>`;
+    return;
+  }
+
+  $("hook-body").innerHTML = hooks.webhooks.map((h) => {
+    const failing = h.consecutive_failures >= 3;
+    const last = h.last_status
+      ? `${h.last_status}${failing ? ` · failing (${h.consecutive_failures})` : ""}`
+      : "never fired";
+    return `<div style="display:flex;align-items:center;gap:9px;padding:7px 0;
+                        border-bottom:1px solid var(--border);
+                        ${h.active ? "" : "opacity:.5"}">
+      <span class="grow">
+        <span style="font-size:13px;font-weight:600">
+          ${esc(HOOK_NAMES[h.kind] || h.kind)}${h.label ? " · " + esc(h.label) : ""}
+        </span>
+        <span style="display:block;font-size:11.5px;
+                     color:var(${failing ? "--critical" : "--muted"})">
+          ${esc(h.target)} · ${esc(last)}${h.active ? "" : " · paused"}
+        </span>
+      </span>
+      <button class="btn btn-sm" data-hook-test="${esc(h.webhook_id)}">Test</button>
+      <button class="btn btn-sm" data-hook-remove="${esc(h.webhook_id)}">Remove</button>
+    </div>`;
+  }).join("");
+}
+
+/* ---------------- sensor drill-down ---------------- */
+
+async function openDrawer(sensorId, options = {}) {
+  let detail;
+  try {
+    detail = await api(`/api/console/sensor/${encodeURIComponent(sensorId)}`);
+  } catch (err) {
+    // A quiet refresh of a sensor that has since been retired must not
+    // shout at the operator; an explicit click must.
+    if (!options.quiet) toast(err.message, "err");
+    closeDrawer();
+    return;
+  }
+
+  state.drawerSensor = sensorId;
+  const s = detail.sensor;
+  const unit = detail.temperature_unit;
+  const f = detail.forecast;
+
+  const rows = detail.readings.slice().reverse().slice(0, 24).map((r) => `<tr>
+      <td>${esc(new Date(r.at).toLocaleString([], { month: "short", day: "numeric",
+              hour: "2-digit", minute: "2-digit" }))}</td>
+      <td class="num" style="${r.breached ? "color:var(--critical);font-weight:650" : ""}">
+        ${esc(r.temperature)}°${esc(unit)}</td>
+      <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
+      <td>${r.breached ? "out of band" : "in band"}</td>
+    </tr>`).join("");
+
+  $("drawer").innerHTML = `
+    <div class="drawer-head">
+      <div class="grow">
+        <div class="drawer-title" id="drawer-title">${esc(s.sensor_id)}</div>
+        <div class="drawer-sub">${esc(s.location_name)}${
+          s.site_name ? " · " + esc(s.site_name) : ""} · ${esc(s.industry_name)}</div>
+      </div>
+      <button class="btn btn-sm" id="drawer-close">Close</button>
+    </div>
+
+    <div class="readout">
+      <div><span class="k">Now</span><span class="v">${
+        s.last_temperature_display === null || s.last_temperature_display === undefined
+          ? "—" : esc(s.last_temperature_display) + "°" + esc(unit)}</span></div>
+      <div><span class="k">Safe band</span><span class="v">${
+        s.danger_below_display !== null && s.danger_below_display !== undefined
+          ? esc(s.danger_below_display) + " to " : "under "}${
+        esc(s.danger_above_display)}°${esc(unit)}</span></div>
+      <div><span class="k">Link</span><span class="v">${
+        esc(s.online ? "online" : "offline")}</span></div>
+      <div><span class="k">Battery</span><span class="v">${
+        s.battery_percent === null || s.battery_percent === undefined
+          ? "not reported" : esc(s.battery_percent) + "%"
+            + (s.battery_low ? " — replace it" : "")}</span></div>
+      <div><span class="k">Signal</span><span class="v">${
+        s.signal_percent === null || s.signal_percent === undefined
+          ? "not reported" : esc(s.signal_percent) + "%"}</span></div>
+      <div><span class="k">Readings held</span><span class="v">${
+        esc(detail.readings_total)}</span></div>
+      ${f ? `<div><span class="k">Forecast</span><span class="v">${
+        esc(f.risk_level)}${f.hours_until_breach ? ` · ${esc(f.hours_until_breach)}h`
+        : ""}</span></div>` : ""}
+    </div>
+
+    <div class="card-head" style="margin-top:18px">
+      <span class="card-title">Recent history</span>
+      <span class="card-note">${esc(detail.readings.length)} points ·
+        ${esc(detail.breached_count)} out of band</span>
+    </div>
+    ${historyChart(detail)}
+    <div class="scrollx"><table>
+      <thead><tr><th>When</th><th class="num">Reading</th>
+        <th class="num">Humidity</th><th>State</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="4">No readings yet.</td></tr>`}</tbody>
+    </table></div>
+
+    <div class="card-head" style="margin-top:18px">
+      <span class="card-title">Incidents</span>
+      <span class="card-note">${esc(detail.incidents.length)} total ·
+        ${esc(detail.open_incidents)} open</span>
+    </div>
+    ${detail.incidents.length
+      ? detail.incidents.map((i) => `<article class="incident st-${esc(i.state)}">
+          <div class="incident-top">
+            <span class="incident-title grow">${esc(i.catastrophe_type)}</span>
+            <span class="card-note">${esc(i.state)}</span>
+          </div>
+          ${incidentTimeline(i)}
+        </article>`).join("")
+      : `<div class="empty">No incidents on this sensor.</div>`}
+  `;
+
+  $("drawer").hidden = false;
+  $("scrim").hidden = false;
+  $("drawer-close").addEventListener("click", closeDrawer);
+}
+
+function closeDrawer() {
+  state.drawerSensor = null;
+  $("drawer").hidden = true;
+  $("scrim").hidden = true;
+}
+
+/* A full-width line of the last hundred-odd readings, with the safe band
+   drawn behind it: a number out of band is obvious, a list of them is not. */
+function historyChart(detail) {
+  const values = detail.readings.map((r) => r.temperature);
+  if (values.length < 2) {
+    return `<div class="empty">Not enough readings to plot yet.</div>`;
+  }
+
+  const W = 520, H = 150, PAD = 8;
+  const above = detail.sensor.danger_above_display;
+  const below = detail.sensor.danger_below_display;
+  const candidates = values.concat(
+    [above, below].filter((v) => v !== null && v !== undefined));
+  const min = Math.min(...candidates), max = Math.max(...candidates);
+  const span = (max - min) || 1;
+  const x = (i) => PAD + (i * (W - PAD * 2)) / (values.length - 1);
+  const y = (v) => H - PAD - ((v - min) / span) * (H - PAD * 2);
+
+  const bandTop = above !== null && above !== undefined ? y(above) : PAD;
+  const bandBottom = below !== null && below !== undefined ? y(below) : H - PAD;
+
+  const line = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const dots = detail.readings.map((r, i) => r.breached
+    ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r.temperature).toFixed(1)}" r="2.6"
+               fill="var(--critical)"/>` : "").join("");
+
+  return `<svg class="history" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+       role="img" aria-label="Reading history for ${esc(detail.sensor.sensor_id)}">
+    <rect x="0" y="${bandTop.toFixed(1)}" width="${W}"
+          height="${Math.max(0, bandBottom - bandTop).toFixed(1)}"
+          fill="rgba(12,163,12,0.10)"/>
+    <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+  </svg>`;
+}
+
 function renderTeam(team) {
   $("team-note").textContent = `${team.count} with access`;
   $("team-body").innerHTML = team.users.map((u) => `
@@ -1441,8 +2095,44 @@ async function act(fn, okMessage) {
 }
 
 document.addEventListener("click", (event) => {
+  // The sensor id itself opens the drawer, and it is a span, not a button.
+  const opener = event.target.closest("[data-detail]");
+  if (opener) {
+    openDrawer(opener.dataset.detail);
+    return;
+  }
+
   const btn = event.target.closest("button");
   if (!btn) return;
+
+  if (btn.dataset.siteView) {
+    state.site = btn.dataset.siteView;
+    $("fleet-site").value = state.site;
+    reapplyFleet();
+    $("fleet").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  if (btn.dataset.siteRemove) {
+    act(() => api(`/api/sites/${encodeURIComponent(btn.dataset.siteRemove)}`, {
+      method: "DELETE",
+    }), "Site removed. Its sensors are still registered.");
+  }
+
+  if (btn.dataset.hookTest) {
+    act(async () => {
+      const out = await api(
+        `/api/webhooks/${encodeURIComponent(btn.dataset.hookTest)}/test`,
+        { method: "POST" });
+      if (!out.delivered) throw new Error(out.message);
+      return out;
+    }, "Test posted. Check the channel.");
+  }
+
+  if (btn.dataset.hookRemove) {
+    act(() => api(`/api/webhooks/${encodeURIComponent(btn.dataset.hookRemove)}`, {
+      method: "DELETE",
+    }), "Alert channel removed.");
+  }
 
   if (btn.dataset.ack) {
     act(() => api(`/api/voice/acknowledge/${encodeURIComponent(btn.dataset.ack)}`, {
@@ -1655,8 +2345,9 @@ async function calculateBilling() {
       </div>`
       + (vol.next_tier
         ? `<div class="card-note" style="margin-top:6px;color:var(--warning)">
-             +${vol.next_tier.branches_until_next_tier} branch reaches
-             ${esc(vol.next_tier.next_tier_label)} at
+             ${vol.next_tier.units_until_next_discount} more unit${
+               vol.next_tier.units_until_next_discount === 1 ? "" : "s"} reaches
+             ${esc(vol.next_tier.next_discount_label)} at
              $${vol.next_tier.next_tier_monthly_usd.toLocaleString()}/mo —
              a $${vol.next_tier.monthly_increase_usd.toLocaleString()} step.
            </div>`
@@ -1693,6 +2384,39 @@ $("contact-form").addEventListener("submit", (event) => {
     });
     event.target.reset();
   }, "Added to the roster.");
+});
+
+$("site-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  act(async () => {
+    await api("/api/sites", {
+      method: "POST",
+      body: JSON.stringify({ name: $("site-name").value.trim() }),
+    });
+    event.target.reset();
+  }, "Site added.");
+});
+
+$("hook-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  act(async () => {
+    await api("/api/webhooks", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: $("hook-kind").value,
+        target: $("hook-target").value.trim(),
+      }),
+    });
+    event.target.reset();
+  }, "Alert channel connected. Send it a test.");
+});
+
+/* PagerDuty takes a routing key rather than a URL, and typing a URL into
+   that box is the mistake everybody makes once. */
+$("hook-kind").addEventListener("change", () => {
+  $("hook-target").placeholder = $("hook-kind").value === "pagerduty"
+    ? "Events API v2 routing key"
+    : "https://hooks.slack.com/services/...";
 });
 
 /* The viewer sandbox blocks page-initiated downloads, so the CSV is opened

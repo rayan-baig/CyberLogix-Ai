@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forecaster import forecast_sensor
 from licenses import require_tenant
@@ -19,6 +19,7 @@ from store import (
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
+    display_temperature,
     iso,
     utc_now,
 )
@@ -38,18 +39,26 @@ def console_overview(
     now = utc_now()
     entitlements = tenant.entitlements()
     forecasting = entitlements["predictive_forecasting"]
+    unit = tenant.temperature_unit
+    sites = {s.site_id: s for s in STORE.sites_for(tenant.tenant_id)}
 
     sensors: List[Dict[str, Any]] = []
     for sensor in sorted(STORE.sensors_for(tenant.tenant_id), key=lambda s: s.sensor_id):
         history = STORE.readings_for(sensor.sensor_id)[-SPARKLINE_POINTS:]
         profile = INDUSTRY_PROFILES[sensor.industry_vertical]
 
-        row = sensor.public()
+        row = sensor.public(unit)
         row["catastrophe"] = profile["catastrophe"]
         row["breaching"] = bool(history) and history[-1].breached
-        row["spark"] = [r.temperature_fahrenheit for r in history]
+        # The sparkline is drawn in the tenant's unit; mixing units on one
+        # chart is how somebody reads 4° as safe when it is 4°F.
+        row["spark"] = [
+            display_temperature(r.temperature_fahrenheit, unit) for r in history
+        ]
         row["spark_breached"] = [r.breached for r in history]
         row["spark_at"] = [iso(r.recorded_at) for r in history]
+        site = sites.get(sensor.site_id) if sensor.site_id else None
+        row["site_name"] = site.name if site else None
 
         if forecasting:
             projection = forecast_sensor(sensor.sensor_id, window_hours=12.0)
@@ -63,7 +72,14 @@ def console_overview(
 
         sensors.append(row)
 
-    incidents = [i.public() for i in STORE.incidents_for(tenant.tenant_id)]
+    incidents = []
+    for incident in STORE.incidents_for(tenant.tenant_id):
+        row = incident.public()
+        row["temperature_display"] = display_temperature(
+            incident.temperature_fahrenheit, unit
+        )
+        row["temperature_unit"] = unit
+        incidents.append(row)
     open_incidents = STORE.open_incidents(tenant.tenant_id)
     escalation_due = sum(
         1
@@ -100,10 +116,26 @@ def console_overview(
             "voice_escalation": entitlements["voice_escalation"],
             "predictive_forecasting": forecasting,
         },
+        "temperature_unit": unit,
+        "sites": [
+            site.public(
+                sensor_count=sum(
+                    1 for s in sensors if s["site_id"] == site.site_id
+                ),
+                online=sum(
+                    1
+                    for s in sensors
+                    if s["site_id"] == site.site_id and s["online"]
+                ),
+            )
+            for site in sites.values()
+        ],
         "summary": {
             "sensors_total": len(sensors),
             "sensors_online": sum(1 for s in sensors if s["online"]),
             "sensors_breaching": sum(1 for s in sensors if s["breaching"]),
+            "low_battery": sum(1 for s in sensors if s["battery_low"]),
+            "unplaced_sensors": sum(1 for s in sensors if not s["site_id"]),
             "open_incidents": len(open_incidents),
             "escalation_due": escalation_due,
             "at_risk": at_risk,
@@ -117,4 +149,64 @@ def console_overview(
         "sensors": sensors,
         "incidents": incidents,
         "grace_window_minutes": VOICE_ESCALATION_GRACE_MINUTES,
+    }
+
+
+# Readings shown on a sensor's own page. Twelve points is enough for a card
+# and useless for working out what actually happened overnight.
+DETAIL_POINTS = 120
+
+
+@router.get("/sensor/{sensor_id}")
+def sensor_detail(
+    sensor_id: str,
+    tenant: Tenant = Depends(require_tenant),
+) -> Dict[str, Any]:
+    """One sensor in full: history, incidents, forecast and health.
+
+    The fleet card answers "is this thing alright". This answers "what
+    happened", which is the question anyone asks the moment it is not.
+    """
+    sensor = STORE.get_sensor((sensor_id or "").strip())
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
+        )
+
+    unit = tenant.temperature_unit
+    history = STORE.readings_for(sensor.sensor_id)[-DETAIL_POINTS:]
+    site = STORE.get_site(sensor.site_id) if sensor.site_id else None
+
+    incidents = [
+        i.public()
+        for i in STORE.incidents_for(tenant.tenant_id)
+        if i.sensor_id == sensor.sensor_id
+    ]
+
+    row = sensor.public(unit)
+    row["catastrophe"] = INDUSTRY_PROFILES[sensor.industry_vertical]["catastrophe"]
+    row["site_name"] = site.name if site else None
+
+    forecast = None
+    if tenant.entitlements()["predictive_forecasting"]:
+        forecast = forecast_sensor(sensor.sensor_id, window_hours=12.0)
+
+    return {
+        "sensor": row,
+        "temperature_unit": unit,
+        "readings": [
+            {
+                "at": iso(r.recorded_at),
+                "temperature": display_temperature(r.temperature_fahrenheit, unit),
+                "humidity": r.humidity_percent,
+                "breached": r.breached,
+            }
+            for r in history
+        ],
+        "readings_total": len(STORE.readings_for(sensor.sensor_id)),
+        "breached_count": sum(1 for r in history if r.breached),
+        "incidents": incidents,
+        "open_incidents": sum(1 for i in incidents if i["state"] == "open"),
+        "forecast": forecast,
     }

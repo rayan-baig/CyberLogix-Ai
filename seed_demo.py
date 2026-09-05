@@ -17,6 +17,26 @@ from typing import Dict
 
 from store import STORE, evaluate_breach, utc_now
 
+# Sites the demo estate is spread across, and which sensors sit at each.
+# A flat list of seven thermometers is not what a chain actually looks at.
+SITES = {
+    "Blue Harbor Clubhouse": ("Palm Beach, FL", ["CLUB-WALKIN-1", "BLOOD-07"]),
+    "Austin Data Hall": ("Austin, TX", ["RACK-A7"]),
+    "Store 118 Boca Raton": ("Boca Raton, FL", ["STORE118-WALKIN"]),
+    "Teterboro Hangar": ("Teterboro, NJ", ["HANGAR-4", "MY-AURELIA-ENG"]),
+}
+
+# Battery and signal, so the fleet shows a sensor about to go dark as well
+# as one that is too warm. REEFER-118 is left unreported on purpose.
+HEALTH = {
+    "CLUB-WALKIN-1": (86.0, 71.0),
+    "RACK-A7": (94.0, 88.0),
+    "BLOOD-07": (12.0, 64.0),
+    "MY-AURELIA-ENG": (38.0, 22.0),
+    "HANGAR-4": (77.0, 90.0),
+    "STORE118-WALKIN": (61.0, 55.0),
+}
+
 # Each row: sensor, vertical, location, optional BYOD serial, temperature run.
 # The runs are shaped to show every state the console can render: a walk-in
 # that has already failed, a data hall and an engine bay drifting toward
@@ -136,6 +156,37 @@ def seed() -> Dict[str, str]:
                 STORE.acknowledge_incident(
                     incident, "Marco Diaz <marco@blueharbor.example>"
                 )
+
+    for name, (address, sensor_ids) in SITES.items():
+        site = STORE.create_site(tenant.tenant_id, name, address)
+        for sensor_id in sensor_ids:
+            sensor = STORE.get_sensor(sensor_id)
+            if sensor is not None:
+                STORE.assign_sensor_to_site(sensor, site.site_id)
+
+    for sensor_id, (battery, signal) in HEALTH.items():
+        sensor = STORE.get_sensor(sensor_id)
+        if sensor is not None:
+            STORE.record_sensor_health(sensor, battery, signal)
+
+    # An on-call roster, including one manager scoped to a single store, so
+    # the site-scoped alerting is visible rather than theoretical.
+    boca = next(
+        (s for s in STORE.sites_for(tenant.tenant_id)
+         if s.name == "Store 118 Boca Raton"),
+        None,
+    )
+    STORE.add_contact(
+        tenant.tenant_id, "Dana Reyes", "+15550100", escalation_order=1
+    )
+    STORE.add_contact(
+        tenant.tenant_id, "Marco Diaz", "+15550102", escalation_order=2
+    )
+    if boca is not None:
+        STORE.add_contact(
+            tenant.tenant_id, "Priya Raman", "+15550103",
+            escalation_order=1, site_id=boca.site_id,
+        )
 
     owner = STORE.create_user(
         tenant_id=tenant.tenant_id,
