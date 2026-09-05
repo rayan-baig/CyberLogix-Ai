@@ -27,6 +27,12 @@ class TenantCreate(BaseModel):
     plan: str = Field("trial", description="One of: trial, growth, enterprise")
 
 
+class UnitPreference(BaseModel):
+    temperature_unit: str = Field(
+        ..., description="F or C. Readings are stored in F and converted for display."
+    )
+
+
 class PlanChange(BaseModel):
     plan: str = Field(..., description="One of: trial, growth, enterprise")
 
@@ -125,6 +131,34 @@ def change_plan(payload: PlanChange, tenant: Tenant = Depends(require_tenant)):
     return tenant.public(sensor_count=seats_used)
 
 
+@router.post("/me/temperature-unit")
+def set_temperature_unit(
+    payload: UnitPreference, tenant: Tenant = Depends(require_tenant)
+):
+    """Choose Fahrenheit or Celsius for everything this tenant is shown.
+
+    Readings are stored in Fahrenheit regardless, so switching units never
+    rewrites history and never loses precision on data already collected.
+    """
+    from store import TEMPERATURE_UNITS
+
+    unit = (payload.temperature_unit or "").strip().upper()
+    if unit not in TEMPERATURE_UNITS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"temperature_unit must be one of {list(TEMPERATURE_UNITS)}.",
+        )
+
+    STORE.set_temperature_unit(tenant, unit)
+    return {
+        "temperature_unit": unit,
+        "message": (
+            "Readings will be shown in "
+            + ("Celsius." if unit == "C" else "Fahrenheit.")
+        ),
+    }
+
+
 @router.post("/me/sensors", status_code=status.HTTP_201_CREATED)
 def register_sensor(
     payload: SensorRegister, tenant: Tenant = Depends(require_tenant)
@@ -197,7 +231,9 @@ def list_sensors(tenant: Tenant = Depends(require_tenant)):
     return {
         "count": len(sensors),
         "online": sum(1 for s in sensors if not s.offline()),
-        "sensors": [s.public() for s in sensors],
+        "low_battery": sum(1 for s in sensors if s.battery_low),
+        "temperature_unit": tenant.temperature_unit,
+        "sensors": [s.public(tenant.temperature_unit) for s in sensors],
     }
 
 

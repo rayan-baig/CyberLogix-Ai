@@ -13,7 +13,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from gemini import safe_generate
 from licenses import require_tenant
@@ -23,6 +23,9 @@ from store import (
     STORE,
     Tenant,
     evaluate_sensor_breach,
+    display_temperature,
+    format_temperature,
+    to_fahrenheit,
     iso,
     resolve_vertical,
     utc_now,
@@ -34,17 +37,52 @@ router = APIRouter(prefix="/api", tags=["Universal IoT Telemetry"])
 
 
 class SensorReading(BaseModel):
-    """Incoming IoT wireless sensor telemetry packet."""
+    """Incoming IoT wireless sensor telemetry packet.
+
+    Send exactly one of `temperature_fahrenheit` or `temperature_celsius`.
+    Readings are stored in Fahrenheit and rendered in the tenant's unit, so
+    a European fleet reports in Celsius without a second storage format.
+    """
 
     sensor_id: str = Field(
         ..., min_length=1, description="Unique hardware sensor identifier, e.g. RACK-01"
     )
-    temperature_fahrenheit: float = Field(
-        ..., description="Current ambient temperature reading"
+    temperature_fahrenheit: Optional[float] = Field(
+        None, description="Current ambient temperature reading, in Fahrenheit"
+    )
+    temperature_celsius: Optional[float] = Field(
+        None, description="Current ambient temperature reading, in Celsius"
     )
     humidity_percent: Optional[float] = Field(
         50.0, ge=0.0, le=100.0, description="Optional relative humidity percentage"
     )
+    battery_percent: Optional[float] = Field(
+        None, ge=0.0, le=100.0, description="Sensor battery level"
+    )
+    signal_percent: Optional[float] = Field(
+        None, ge=0.0, le=100.0, description="Sensor signal strength"
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_unit(self) -> "SensorReading":
+        """Reject a packet carrying no temperature, or two of them.
+
+        Validated here rather than at use, so a malformed packet fails as a
+        422 before the sensor is ever looked up.
+        """
+        if (self.temperature_fahrenheit is None) == (
+            self.temperature_celsius is None
+        ):
+            raise ValueError(
+                "Send exactly one of temperature_fahrenheit or temperature_celsius."
+            )
+        return self
+
+    def resolved_fahrenheit(self) -> float:
+        """The reading in Fahrenheit, whichever unit it arrived in."""
+        if self.temperature_celsius is not None:
+            return to_fahrenheit(self.temperature_celsius)
+        return self.temperature_fahrenheit
 
 
 @router.get("/industries")
@@ -76,15 +114,25 @@ def list_industries():
 
 
 def build_emergency_sms(
-    sensor, temperature: float, humidity: Optional[float], tenant_id: str
+    sensor,
+    temperature: float,
+    humidity: Optional[float],
+    tenant_id: str,
+    unit: str = "F",
 ) -> tuple[str, str]:
-    """Draft the emergency SMS for a breach, returning (text, source)."""
+    """Draft the emergency SMS for a breach, returning (text, source).
+
+    The reading is written in the tenant's unit: a manager in Lyon woken at
+    3am should not have to convert Fahrenheit before deciding whether to
+    drive in.
+    """
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
     humidity_text = f"{humidity}%" if humidity is not None else "not reported"
+    reading = format_temperature(temperature, unit)
 
     fallback = (
         f"EMERGENCY ALERT: {profile['name']} sensor {sensor.sensor_id} at "
-        f"{sensor.location_name} reported critical temperature {temperature}°F. "
+        f"{sensor.location_name} reported critical temperature {reading}. "
         "Immediate physical inspection required."
     )
 
@@ -96,7 +144,7 @@ def build_emergency_sms(
     Suspected Root Cause Catastrophe: {profile['catastrophe']}
     Sensor Node ID: {sensor.sensor_id}
     Facility Location Tag: {sensor.location_name}
-    Telemetry Reading: {temperature}°F
+    Telemetry Reading: {reading}
     Relative Humidity: {humidity_text}
     Event Timestamp: {iso(utc_now())}
 
@@ -125,7 +173,8 @@ def process_reading(
     escalation, forecasting history and compliance logging.
     """
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
-    breach_reason = evaluate_sensor_breach(sensor, temperature)
+    unit = tenant.temperature_unit
+    breach_reason = evaluate_sensor_breach(sensor, temperature, unit)
 
     STORE.record_reading(
         sensor=sensor,
@@ -145,7 +194,8 @@ def process_reading(
             "status": "nominal",
             "industry": profile["name"],
             "sensor_id": sensor.sensor_id,
-            "current_temperature": temperature,
+            "current_temperature": display_temperature(temperature, unit),
+            "temperature_unit": unit,
             "message": "Telemetry parameters stable within safe operating bounds.",
         }
 
@@ -169,7 +219,8 @@ def process_reading(
             "catastrophe_type": existing.catastrophe,
             "sensor_id": sensor.sensor_id,
             "location": sensor.location_name,
-            "current_temperature": temperature,
+            "current_temperature": display_temperature(temperature, unit),
+            "temperature_unit": unit,
             "breach_details": breach_reason,
             "dispatched_sms_text": existing.sms_text,
             "sms_dispatch_source": existing.sms_dispatch_source,
@@ -180,7 +231,7 @@ def process_reading(
         }
 
     sms_text, sms_source = build_emergency_sms(
-        sensor, temperature, humidity, tenant.tenant_id
+        sensor, temperature, humidity, tenant.tenant_id, unit
     )
     incident = STORE.open_incident(
         tenant_id=tenant.tenant_id,
@@ -191,7 +242,7 @@ def process_reading(
         sms_dispatch_source=sms_source,
     )
     # Everyone on the roster gets the text, not just one number on file.
-    recipients = STORE.sms_recipients(tenant)
+    recipients = STORE.sms_recipients(tenant, sensor.site_id)
     fanout = [
         dict(
             send_sms(contact.phone, sms_text, tenant.tenant_id),
@@ -205,7 +256,8 @@ def process_reading(
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"
     payload["location"] = sensor.location_name
-    payload["current_temperature"] = temperature
+    payload["current_temperature"] = display_temperature(temperature, unit)
+    payload["temperature_unit"] = unit
     return payload
 
 
@@ -229,9 +281,13 @@ async def process_sensor_pulse(
 ):
     """Ingest one telemetry packet from a registered sensor."""
     sensor = resolve_owned_sensor(tenant, reading.sensor_id)
+    if reading.battery_percent is not None or reading.signal_percent is not None:
+        STORE.record_sensor_health(
+            sensor, reading.battery_percent, reading.signal_percent
+        )
     return process_reading(
         tenant=tenant,
         sensor=sensor,
-        temperature=reading.temperature_fahrenheit,
+        temperature=reading.resolved_fahrenheit(),
         humidity=reading.humidity_percent,
     )

@@ -32,6 +32,14 @@ class ContactCreate(BaseModel):
     escalation_order: int = Field(
         1, ge=1, le=99, description="Lower numbers are called first."
     )
+    site_id: Optional[str] = Field(
+        None,
+        description=(
+            "Restrict this person to one site. Left empty they cover the "
+            "whole estate and are the fallback for any site with nobody of "
+            "its own."
+        ),
+    )
 
 
 class ContactUpdate(BaseModel):
@@ -41,6 +49,25 @@ class ContactUpdate(BaseModel):
     receives_voice: Optional[bool] = None
     escalation_order: Optional[int] = Field(None, ge=1, le=99)
     active: Optional[bool] = None
+    site_id: Optional[str] = None
+
+
+def _own_site(site_id: Optional[str], tenant: Tenant) -> Optional[str]:
+    """Resolve a site reference, refusing another tenant's sites.
+
+    Silently dropping an unknown site would leave the contact covering the
+    whole estate, which is the opposite of what was asked for.
+    """
+    site_id = (site_id or "").strip() or None
+    if site_id is None:
+        return None
+    site = STORE.get_site(site_id)
+    if site is None or site.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Site '{site_id}' not found for this tenant.",
+        )
+    return site_id
 
 
 def _load(contact_id: str, tenant: Tenant) -> Contact:
@@ -86,10 +113,16 @@ def add_contact(
         receives_sms=payload.receives_sms,
         receives_voice=payload.receives_voice,
         escalation_order=payload.escalation_order,
+        site_id=_own_site(payload.site_id, tenant),
     )
+    scope = "estate-wide"
+    if contact.site_id:
+        site = STORE.get_site(contact.site_id)
+        scope = site.name if site else contact.site_id
     write_audit(
         tenant, operator, "contact.added",
-        f"{contact.full_name} ({contact.phone}) at position {contact.escalation_order}.",
+        f"{contact.full_name} ({contact.phone}) at position "
+        f"{contact.escalation_order}, covering {scope}.",
     )
     return contact.public()
 
@@ -108,6 +141,9 @@ def update_contact(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update."
         )
+
+    if "site_id" in changes:
+        changes["site_id"] = _own_site(changes["site_id"], tenant)
 
     for field, value in changes.items():
         setattr(contact, field, value)

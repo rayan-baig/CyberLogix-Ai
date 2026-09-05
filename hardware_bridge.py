@@ -37,7 +37,13 @@ router = APIRouter(
 )
 
 # Metrics a third-party device may report.
-SUPPORTED_METRICS = ("temperature_f", "temperature_c", "humidity_pct")
+SUPPORTED_METRICS = (
+    "temperature_f",
+    "temperature_c",
+    "humidity_pct",
+    "battery_pct",
+    "signal_pct",
+)
 
 
 # ==============================================================================
@@ -154,6 +160,40 @@ def ingest_third_party_hardware_webhook(
     label = (payload.location_label or "").strip()
     if label and label != "Remote Facility Node":
         STORE.update_sensor_location(sensor, label)
+
+    if metric in ("battery_pct", "signal_pct"):
+        # A battery reported before it dies is a sensor that never goes dark.
+        if not 0.0 <= payload.reading_value <= 100.0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{metric} must be between 0 and 100.",
+            )
+        STORE.record_sensor_health(
+            sensor,
+            battery_percent=(
+                payload.reading_value if metric == "battery_pct" else None
+            ),
+            signal_percent=(
+                payload.reading_value if metric == "signal_pct" else None
+            ),
+        )
+        return {
+            "status": "INGESTION_SUCCESS",
+            "byod_architecture": "Active - Zero proprietary hardware required",
+            "device_serial": payload.device_sn,
+            "bound_sensor_id": sensor.sensor_id,
+            "processed_metric": payload.reading_value,
+            "metric_unit": metric,
+            "alert_triggered": False,
+            "battery_low": sensor.battery_low,
+            "action_taken_by_ai": (
+                "Battery is low; replace it before the sensor goes dark."
+                if sensor.battery_low
+                else "Sensor health recorded."
+            ),
+            "signature_present": x_signature is not None,
+            "ingested_at": iso(utc_now()),
+        }
 
     if metric == "humidity_pct":
         # Humidity alone cannot breach a thermal threshold, but it is stored

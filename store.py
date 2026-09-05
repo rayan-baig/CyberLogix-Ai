@@ -53,6 +53,50 @@ def _parse(value: Optional[str]) -> Optional[datetime]:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+# Readings are stored in Fahrenheit throughout and converted only for
+# display, so a tenant switching units never rewrites its own history.
+TEMPERATURE_UNITS = ("F", "C")
+
+
+def to_celsius(fahrenheit: Optional[float]) -> Optional[float]:
+    if fahrenheit is None:
+        return None
+    return round((fahrenheit - 32.0) * 5.0 / 9.0, 2)
+
+
+def to_fahrenheit(celsius: Optional[float]) -> Optional[float]:
+    if celsius is None:
+        return None
+    return round(celsius * 9.0 / 5.0 + 32.0, 2)
+
+
+def display_temperature(fahrenheit: Optional[float], unit: str) -> Optional[float]:
+    """Render a stored Fahrenheit reading in the tenant's chosen unit."""
+    if fahrenheit is None:
+        return None
+    return to_celsius(fahrenheit) if unit == "C" else round(fahrenheit, 2)
+
+
+def format_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
+    """A reading written the way the customer reads it: "4.44°C"."""
+    value = display_temperature(fahrenheit, unit)
+    if value is None:
+        return "not reported"
+    return f"{value}°{unit}"
+
+
+def spoken_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
+    """A reading a text-to-speech engine can say out loud.
+
+    "4.44°C" is read back as gibberish by Twilio's voice, so the emergency
+    call spells the unit out.
+    """
+    value = display_temperature(fahrenheit, unit)
+    if value is None:
+        return "an unreported temperature"
+    return f"{value} degrees {'Celsius' if unit == 'C' else 'Fahrenheit'}"
+
+
 def hash_password(password: str) -> str:
     """Hash a password with scrypt and a fresh random salt."""
     salt = secrets.token_bytes(16)
@@ -212,11 +256,14 @@ def evaluate_breach(
     temperature: float,
     above: Optional[float] = None,
     below: Optional[float] = None,
+    unit: str = "F",
 ) -> Optional[str]:
     """Return a human-readable breach reason, or None when nominal.
 
     `above` and `below` override the industry defaults for one sensor — a
     particular freezer may be held colder than its sector's rule of thumb.
+    Thresholds are held in Fahrenheit and written in `unit`, so a German
+    kitchen reads a limit it recognises without a second stored copy.
     """
     profile = INDUSTRY_PROFILES[vertical]
     if above is None:
@@ -226,19 +273,27 @@ def evaluate_breach(
 
     if above is not None and temperature > above:
         return (
-            f"Thermal high threshold breached: {temperature}°F > {above}°F limit."
+            f"Thermal high threshold breached: "
+            f"{format_temperature(temperature, unit)} > "
+            f"{format_temperature(above, unit)} limit."
         )
     if below is not None and temperature < below:
         return (
-            f"Thermal low threshold breached: {temperature}°F < {below}°F limit."
+            f"Thermal low threshold breached: "
+            f"{format_temperature(temperature, unit)} < "
+            f"{format_temperature(below, unit)} limit."
         )
     return None
 
 
-def evaluate_sensor_breach(sensor: "Sensor", temperature: float) -> Optional[str]:
+def evaluate_sensor_breach(
+    sensor: "Sensor", temperature: float, unit: str = "F"
+) -> Optional[str]:
     """Score a reading against the sensor's own effective bounds."""
     above, below = sensor.bounds()
-    return evaluate_breach(sensor.industry_vertical, temperature, above, below)
+    return evaluate_breach(
+        sensor.industry_vertical, temperature, above, below, unit
+    )
 
 
 # Enterprise volume pricing.
@@ -379,6 +434,7 @@ class Tenant:
     activated_at: datetime
     expires_at: datetime
     suspended: bool = False
+    temperature_unit: str = "F"
 
     @property
     def expired(self) -> bool:
@@ -403,6 +459,7 @@ class Tenant:
             "activated_at": iso(self.activated_at),
             "expires_at": iso(self.expires_at),
             "suspended": self.suspended,
+            "temperature_unit": self.temperature_unit,
         }
 
     @classmethod
@@ -418,6 +475,7 @@ class Tenant:
             activated_at=_parse(row["activated_at"]),
             expires_at=_parse(row["expires_at"]),
             suspended=row.get("suspended", False),
+            temperature_unit=row.get("temperature_unit", "F"),
         )
 
     def public(self, sensor_count: int) -> Dict[str, Any]:
@@ -435,6 +493,7 @@ class Tenant:
             "expired": self.expired,
             "activated_at": iso(self.activated_at),
             "expires_at": iso(self.expires_at),
+            "temperature_unit": self.temperature_unit,
             "seats_used": sensor_count,
             "seats_total": tier["max_sensors"],
             "seats_remaining": max(0, tier["max_sensors"] - sensor_count),
@@ -453,6 +512,9 @@ class Sensor:
     location_name: str
     registered_at: datetime
     external_device_sn: Optional[str] = None
+    site_id: Optional[str] = None
+    battery_percent: Optional[float] = None
+    signal_percent: Optional[float] = None
     override_above: Optional[float] = None
     override_below: Optional[float] = None
     last_seen: Optional[datetime] = None
@@ -493,6 +555,9 @@ class Sensor:
             "location_name": self.location_name,
             "registered_at": iso(self.registered_at),
             "external_device_sn": self.external_device_sn,
+            "site_id": self.site_id,
+            "battery_percent": self.battery_percent,
+            "signal_percent": self.signal_percent,
             "override_above": self.override_above,
             "override_below": self.override_below,
             "last_seen": iso(self.last_seen),
@@ -509,6 +574,9 @@ class Sensor:
             location_name=row["location_name"],
             registered_at=_parse(row["registered_at"]),
             external_device_sn=row.get("external_device_sn"),
+            site_id=row.get("site_id"),
+            battery_percent=row.get("battery_percent"),
+            signal_percent=row.get("signal_percent"),
             override_above=row.get("override_above"),
             override_below=row.get("override_below"),
             last_seen=_parse(row.get("last_seen")),
@@ -516,10 +584,30 @@ class Sensor:
             last_humidity=row.get("last_humidity"),
         )
 
-    def public(self) -> Dict[str, Any]:
+    LOW_BATTERY_PERCENT = 20.0
+
+    @property
+    def battery_low(self) -> bool:
+        """A battery this low will go dark before anyone notices."""
+        return (
+            self.battery_percent is not None
+            and self.battery_percent <= self.LOW_BATTERY_PERCENT
+        )
+
+    def public(self, unit: str = "F") -> Dict[str, Any]:
         profile = INDUSTRY_PROFILES[self.industry_vertical]
         above, below = self.bounds()
         return {
+            "site_id": self.site_id,
+            "battery_percent": self.battery_percent,
+            "battery_low": self.battery_low,
+            "signal_percent": self.signal_percent,
+            "temperature_unit": unit,
+            "last_temperature_display": display_temperature(
+                self.last_temperature, unit
+            ),
+            "danger_above_display": display_temperature(above, unit),
+            "danger_below_display": display_temperature(below, unit),
             "sensor_id": self.sensor_id,
             "tenant_id": self.tenant_id,
             "danger_above": above,
@@ -894,6 +982,54 @@ class UsageDay:
 
 
 @dataclass
+class Site:
+    """A physical location: one restaurant, one hangar, one data hall.
+
+    Sensors hang off a site rather than floating in a flat list. Without it
+    a chain's compliance report cannot be produced per store — which is the
+    only way an inspector ever wants it — and an enterprise contract's
+    branch count is a number somebody typed rather than something the fleet
+    can be checked against.
+    """
+
+    site_id: str
+    tenant_id: str
+    name: str
+    address: str = ""
+    created_at: Optional[datetime] = None
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "site_id": self.site_id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "address": self.address,
+            "created_at": iso(self.created_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "Site":
+        return cls(
+            site_id=row["site_id"],
+            tenant_id=row["tenant_id"],
+            name=row["name"],
+            address=row.get("address", ""),
+            created_at=_parse(row.get("created_at")),
+        )
+
+    def public(self, sensor_count: int = 0, online: int = 0) -> Dict[str, Any]:
+        return {
+            "site_id": self.site_id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "address": self.address,
+            "created_at": iso(self.created_at),
+            "sensor_count": sensor_count,
+            "sensors_online": online,
+        }
+
+
+@dataclass
 class Contact:
     """Someone who gets woken when an asset is failing.
 
@@ -911,11 +1047,13 @@ class Contact:
     receives_voice: bool = True
     escalation_order: int = 1
     active: bool = True
+    site_id: Optional[str] = None
 
     def to_row(self) -> Dict[str, Any]:
         return {
             "contact_id": self.contact_id,
             "tenant_id": self.tenant_id,
+            "site_id": self.site_id,
             "full_name": self.full_name,
             "phone": self.phone,
             "receives_sms": self.receives_sms,
@@ -1092,6 +1230,7 @@ class HubStore:
         self._emails: Dict[str, str] = {}
         self._sessions: Dict[str, LoginSession] = {}
         self._audit: Dict[str, AuditEntry] = {}
+        self._sites: Dict[str, Site] = {}
         self._contacts: Dict[str, Contact] = {}
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._resets: Dict[str, ResetToken] = {}
@@ -1147,6 +1286,10 @@ class HubStore:
                 entry = AuditEntry.from_row(row)
                 self._audit[entry.entry_id] = entry
 
+            for row in self._db.all("site"):
+                site = Site.from_row(row)
+                self._sites[site.site_id] = site
+
             for row in self._db.all("contact"):
                 contact = Contact.from_row(row)
                 self._contacts[contact.contact_id] = contact
@@ -1177,6 +1320,7 @@ class HubStore:
                     + list(self._incidents)
                     + list(self._users)
                     + list(self._contacts)
+                    + list(self._sites)
                 )
                 if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
             ]
@@ -1204,6 +1348,7 @@ class HubStore:
             self._emails.clear()
             self._sessions.clear()
             self._audit.clear()
+            self._sites.clear()
             self._contacts.clear()
             self._contracts.clear()
             self._resets.clear()
@@ -1710,6 +1855,92 @@ class HubStore:
         with self._lock:
             return len(self._ai_cache)
 
+    # ---- sites -----------------------------------------------------------
+
+    def create_site(self, tenant_id: str, name: str, address: str = "") -> Site:
+        with self._lock:
+            site = Site(
+                site_id=self._next_id("SITE"),
+                tenant_id=tenant_id,
+                name=name,
+                address=address,
+                created_at=utc_now(),
+            )
+            self._sites[site.site_id] = site
+            self._db.put("site", site.site_id, site.to_row())
+            return site
+
+    def get_site(self, site_id: str) -> Optional[Site]:
+        with self._lock:
+            return self._sites.get(site_id)
+
+    def sites_for(self, tenant_id: str) -> List[Site]:
+        with self._lock:
+            rows = [s for s in self._sites.values() if s.tenant_id == tenant_id]
+        return sorted(rows, key=lambda s: s.name.lower())
+
+    def save_site(self, site: Site) -> Site:
+        with self._lock:
+            self._db.put("site", site.site_id, site.to_row())
+            return site
+
+    def remove_site(self, site_id: str) -> bool:
+        """Delete a site, releasing its sensors rather than deleting them."""
+        with self._lock:
+            if site_id not in self._sites:
+                return False
+            for sensor in list(self._sensors.values()):
+                if sensor.site_id == site_id:
+                    sensor.site_id = None
+                    self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+            del self._sites[site_id]
+            self._db.delete("site", site_id)
+            return True
+
+    def sensors_at_site(self, site_id: str) -> List[Sensor]:
+        with self._lock:
+            return sorted(
+                (s for s in self._sensors.values() if s.site_id == site_id),
+                key=lambda s: s.sensor_id,
+            )
+
+    def unassigned_sensors(self, tenant_id: str) -> List[Sensor]:
+        return [s for s in self.sensors_for(tenant_id) if s.site_id is None]
+
+    def assign_sensor_to_site(
+        self, sensor: Sensor, site_id: Optional[str]
+    ) -> Sensor:
+        with self._lock:
+            sensor.site_id = site_id
+            self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+            return sensor
+
+    # ---- sensor health ---------------------------------------------------
+
+    def record_sensor_health(
+        self,
+        sensor: Sensor,
+        battery_percent: Optional[float] = None,
+        signal_percent: Optional[float] = None,
+    ) -> Sensor:
+        """A battery reported before it dies is a sensor that never goes dark."""
+        with self._lock:
+            if battery_percent is not None:
+                sensor.battery_percent = battery_percent
+            if signal_percent is not None:
+                sensor.signal_percent = signal_percent
+            sensor.last_seen = utc_now()
+            self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+            return sensor
+
+    # ---- display unit ----------------------------------------------------
+
+    def set_temperature_unit(self, tenant: Tenant, unit: str) -> Tenant:
+        with self._lock:
+            tenant.temperature_unit = unit
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+            return tenant
+
     # ---- on-call roster --------------------------------------------------
 
     def add_contact(
@@ -1720,6 +1951,7 @@ class HubStore:
         receives_sms: bool = True,
         receives_voice: bool = True,
         escalation_order: int = 1,
+        site_id: Optional[str] = None,
     ) -> Contact:
         with self._lock:
             contact = Contact(
@@ -1730,6 +1962,7 @@ class HubStore:
                 receives_sms=receives_sms,
                 receives_voice=receives_voice,
                 escalation_order=escalation_order,
+                site_id=site_id,
             )
             self._contacts[contact.contact_id] = contact
             self._db.put("contact", contact.contact_id, contact.to_row())
@@ -1757,15 +1990,34 @@ class HubStore:
             self._db.delete("contact", contact_id)
             return True
 
-    def sms_recipients(self, tenant: Tenant) -> List[Contact]:
+    def _roster_for_site(
+        self, tenant: Tenant, site_id: Optional[str], channel: str
+    ) -> List[Contact]:
+        """Contacts covering a site: its own, else the tenant-wide ones.
+
+        A manager in Boca Raton should not be woken for a Boynton Beach
+        freezer, so a site's own contacts take precedence when it has any.
+        """
+        everyone = [
+            c
+            for c in self.contacts_for(tenant.tenant_id)
+            if c.active and getattr(c, f"receives_{channel}")
+        ]
+        if site_id is not None:
+            local = [c for c in everyone if c.site_id == site_id]
+            if local:
+                return local
+        return [c for c in everyone if c.site_id is None]
+
+    def sms_recipients(
+        self, tenant: Tenant, site_id: Optional[str] = None
+    ) -> List[Contact]:
         """Everyone who should get the text, in escalation order.
 
         Falls back to the tenant's own contact so a customer who never built
         a roster is still reachable.
         """
-        roster = [
-            c for c in self.contacts_for(tenant.tenant_id) if c.active and c.receives_sms
-        ]
+        roster = self._roster_for_site(tenant, site_id, "sms")
         if roster:
             return roster
         return [
@@ -1777,13 +2029,11 @@ class HubStore:
             )
         ]
 
-    def voice_ladder(self, tenant: Tenant) -> List[Contact]:
+    def voice_ladder(
+        self, tenant: Tenant, site_id: Optional[str] = None
+    ) -> List[Contact]:
         """Who to phone, in the order to try them."""
-        roster = [
-            c
-            for c in self.contacts_for(tenant.tenant_id)
-            if c.active and c.receives_voice
-        ]
+        roster = self._roster_for_site(tenant, site_id, "voice")
         if roster:
             return roster
         return [

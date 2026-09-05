@@ -30,6 +30,8 @@ from store import (
     Incident,
     Tenant,
     User,
+    format_temperature,
+    spoken_temperature,
     utc_now,
 )
 
@@ -69,12 +71,14 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     sensor = STORE.get_sensor(incident.sensor_id)
     location = sensor.location_name if sensor else "the monitored facility"
     minutes = int(incident.minutes_open())
+    unit = tenant.temperature_unit
+    spoken = spoken_temperature(incident.temperature_fahrenheit, unit)
 
     fallback = (
         f"This is an automated emergency call from CyberLogix AI for "
         f"{tenant.company_name}. Sensor {incident.sensor_id} at {location} has "
         f"been reporting a critical temperature of "
-        f"{incident.temperature_fahrenheit} degrees Fahrenheit for {minutes} "
+        f"{spoken} for {minutes} "
         f"minutes, and the likely cause is {profile['catastrophe']}. Please go "
         f"to the site immediately. This message will repeat."
     )
@@ -89,7 +93,7 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     Suspected Root Cause Catastrophe: {profile['catastrophe']}
     Sensor Node ID: {incident.sensor_id}
     Facility Location Tag: {location}
-    Current Reading: {incident.temperature_fahrenheit}°F
+    Current Reading: {format_temperature(incident.temperature_fahrenheit, unit)}
     Breach Detail: {incident.breach_details}
     Minutes Unacknowledged: {minutes}
 
@@ -119,7 +123,8 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
 
     # Walk the escalation ladder: stop at the first person actually reached,
     # so a wrong number or a dead line does not end the escalation.
-    ladder = STORE.voice_ladder(tenant)
+    sensor = STORE.get_sensor(incident.sensor_id)
+    ladder = STORE.voice_ladder(tenant, sensor.site_id if sensor else None)
     fanout = []
     delivery = None
     for contact in ladder:
