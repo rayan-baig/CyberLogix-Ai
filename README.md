@@ -151,23 +151,31 @@ real fleet would cost. Downgrades that would strand units are refused with
 A chain is billed by enrolled branch count rather than per unit, and the
 contract covers every sensor inside those branches:
 
-| Enrolled corporate tier | Monthly | Annual contract | Previous rate |
+| Branches | Rate per branch | Example | Monthly |
 |---|---|---|---|
-| Up to 5 branches | $5,000 | $60,000 | $4,000 |
-| Up to 10 branches | $7,500 | $90,000 | $6,000 |
-| Up to 20 branches | $12,500 | $150,000 | $10,000 |
-| Over 50 branches | $45,000 flat | $540,000 | $52,000 |
+| 1–9 | $1,000 | 9 | $9,000 |
+| 10–19 | $975 | 19 | $18,525 |
+| 20–29 | $950 | 29 | $27,550 |
+| 30–39 | $925 | 39 | $36,000 |
+| 40–49 | $900 | 49 | $43,750 |
+| 50–59 | $875 | 59 | $51,000 |
+| 60–69 | $850 | 69 | $57,750 |
+| 70–79 | $825 | 79 | $64,000 |
+| 80+ | $800 (floor) | 100 | $80,000 |
 
-**The card names no rate between 21 and 50 branches**, so that range bills at
-$12,500 — the last rate the card actually commits to. A customer with 35
-branches is not "over 50", and a published rate card is a promise: billing
-them above the highest figure printed below 50 would not survive the
-conversation. The consequence is that 21–50 branches are effectively free
-growth, and the 50→51 boundary is a $32,500 step. Adding an explicit 21–50
-row to the card is the fix, and is a one-line change here.
+The rate drops $25 every ten branches until it floors at $800, which it
+reaches at 80 branches.
 
-`GET /api/v1/enterprise-billing/tiers` publishes this table with the cost of
-each boundary step.
+**No estate is charged more than a larger estate would pay.** The rate steps
+a whole band at a time, so the card on its own would make 40 branches
+($36,000 at $900) cheaper than 39 ($36,075 at $925). The same inversion sits
+at 49→50, 59→60, 69→70 and 79→80. Rather than hand a customer that
+arithmetic, the smaller estate is billed the lower figure — which is why 39
+branches shows $36,000 above, not $36,075. A test asserts the whole curve
+never falls as branches rise.
+
+`GET /api/v1/enterprise-billing/tiers` publishes the bands, and every quote
+carries a `next_tier` block naming where the next discount lands.
 
 `POST /api/v1/enterprise-billing/provision-cluster` opens a contract;
 `/quote` prices both models side by side before anyone signs, since volume
@@ -175,10 +183,7 @@ billing wins on multi-sensor sites and loses badly on single ones. An active
 contract supersedes the rate card, and the rate-card figure is kept alongside
 for comparison rather than charged.
 
-**The brackets step, they do not taper.** Boundary costs are $2,500 at 5→6,
-$5,000 at 10→11, nothing at 20→21, and $32,500 at 50→51. Every quote and
-contract carries a `next_tier` block naming the boundary and its cost, so
-nobody meets one on an invoice.
+
 
 ### Return on the subscription
 
@@ -505,7 +510,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-205 tests across the thirteen modules. Gemini and Twilio are both stubbed and
+209 tests across the thirteen modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 

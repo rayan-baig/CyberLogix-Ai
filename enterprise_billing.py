@@ -99,41 +99,36 @@ def _load(account_id: str, tenant: Tenant) -> EnterpriseContract:
 
 @router.get("/tiers")
 def volume_tiers():
-    """The enterprise rate card, with the boundary cost of each step."""
-    from store import VOLUME_TIERS
-
-    rows = [
-        {
-            "tier": label,
-            "up_to_branches": ceiling,
-            "monthly_usd": flat,
-            "annual_contract_value_usd": round(flat * 12, 2),
-            "previous_rate_usd": previous,
-        }
-        for ceiling, label, flat, previous in VOLUME_TIERS
-    ]
+    """The enterprise rate card: a per-branch rate that steps down by band."""
+    from store import (
+        FLOOR_REACHED_AT,
+        PER_BRANCH_BASE,
+        PER_BRANCH_FLOOR,
+        PER_BRANCH_STEP,
+        volume_band_table,
+    )
 
     return {
         "currency": "USD",
-        "billing": "By enrolled branch count; covers every sensor in a branch.",
-        "tiers": rows,
-        "boundary_steps": [
-            {
-                "from_branches": b,
-                "to_branches": b + 1,
-                "monthly_increase_usd": round(
-                    calculate_volume_tier_price(b + 1)
-                    - calculate_volume_tier_price(b),
-                    2,
-                ),
-            }
-            for b in (5, 10, 20, 50)
-        ],
+        "billing": (
+            "Per branch, per month. The rate steps down "
+            f"${PER_BRANCH_STEP:,.0f} every 10 branches, from "
+            f"${PER_BRANCH_BASE:,.0f} to a ${PER_BRANCH_FLOOR:,.0f} floor. "
+            "A contract covers every sensor inside an enrolled branch."
+        ),
+        "rate_per_branch": {
+            "starts_at_usd": PER_BRANCH_BASE,
+            "step_usd": PER_BRANCH_STEP,
+            "every_branches": 10,
+            "floor_usd": PER_BRANCH_FLOOR,
+            "floor_reached_at_branches": FLOOR_REACHED_AT,
+        },
+        "bands": volume_band_table(),
         "note": (
-            "previous_rate_usd is the rate each tier carried before the "
-            "September 2026 adjustment. It is shown for reference and never "
-            "billed. The card names no rate between 21 and 50 branches, so "
-            "that range bills at the last rate it does name."
+            "No estate is charged more than a larger estate would pay. The "
+            "rate steps a whole band at a time, so the card alone would make "
+            "40 branches cheaper than 39; the smaller estate gets the lower "
+            "figure instead."
         ),
     }
 
@@ -191,7 +186,7 @@ def quote(
             "annual_usd": round(per_unit_monthly * 12, 2),
         },
         "enterprise_volume": {
-            "model": "Volume bracket by enrolled branch count",
+            "model": "Per branch, stepping down every 10 branches",
             "branches": total_branch_locations,
             "pricing_tier_applied": volume_tier_label(total_branch_locations),
             "next_tier": next_volume_tier(total_branch_locations),
@@ -207,8 +202,8 @@ def quote(
         "note": (
             "Volume billing covers every sensor inside an enrolled branch, so "
             "it pays off on multi-sensor sites and costs more on single ones. "
-            "Brackets step rather than taper: check next_tier before enrolling "
-            "a count that sits just under a boundary."
+            "The per-branch rate steps down every 10 branches; next_tier shows "
+            "where the next discount lands."
         ),
     }
 
