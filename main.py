@@ -34,6 +34,7 @@ from sites import router as sites_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
 from voice_dispatch import router as voice_router
+from webhooks import router as webhooks_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,6 +98,7 @@ app.include_router(contacts_router)
 app.include_router(billing_router)
 app.include_router(shortcuts_router)
 app.include_router(sites_router)
+app.include_router(webhooks_router)
 app.include_router(enterprise_router)
 
 MODULES_ACTIVE = [
@@ -115,6 +117,7 @@ MODULES_ACTIVE = [
     "sector_shortcuts",
     "site_management",
     "unattended_autopilot_scheduler",
+    "outbound_alert_webhooks",
     "enterprise_cluster_billing",
 ]
 

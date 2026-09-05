@@ -1032,6 +1032,72 @@ class Site:
         }
 
 
+WEBHOOK_KINDS = ("slack", "teams", "pagerduty", "generic")
+
+
+@dataclass
+class AlertWebhook:
+    """An outbound hook so a breach lands where the team already is.
+
+    Most operations teams do not live in another vendor's console. They
+    live in a Slack channel or a PagerDuty rotation, and an alert that
+    needs somebody to log in to see it is an alert that waits.
+
+    `target` is a webhook URL, or a routing key for PagerDuty. Either way
+    it is a credential, so it is never returned whole.
+    """
+
+    webhook_id: str
+    tenant_id: str
+    kind: str
+    target: str
+    label: str = ""
+    active: bool = True
+    site_id: Optional[str] = None
+    last_status: Optional[str] = None
+    last_attempt_at: Optional[datetime] = None
+    consecutive_failures: int = 0
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "webhook_id": self.webhook_id,
+            "tenant_id": self.tenant_id,
+            "kind": self.kind,
+            "target": self.target,
+            "label": self.label,
+            "active": self.active,
+            "site_id": self.site_id,
+            "last_status": self.last_status,
+            "last_attempt_at": iso(self.last_attempt_at),
+            "consecutive_failures": self.consecutive_failures,
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "AlertWebhook":
+        return cls(
+            webhook_id=row["webhook_id"],
+            tenant_id=row["tenant_id"],
+            kind=row["kind"],
+            target=row["target"],
+            label=row.get("label", ""),
+            active=row.get("active", True),
+            site_id=row.get("site_id"),
+            last_status=row.get("last_status"),
+            last_attempt_at=_parse(row.get("last_attempt_at")),
+            consecutive_failures=row.get("consecutive_failures", 0),
+        )
+
+    def masked_target(self) -> str:
+        """The tail of the credential: enough to tell two apart, no more."""
+        tail = self.target[-6:] if len(self.target) > 6 else "******"
+        return f"...{tail}"
+
+    def public(self) -> Dict[str, Any]:
+        row = self.to_row()
+        row["target"] = self.masked_target()
+        return row
+
+
 @dataclass
 class Contact:
     """Someone who gets woken when an asset is failing.
@@ -1237,6 +1303,7 @@ class HubStore:
         self._contacts: Dict[str, Contact] = {}
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._resets: Dict[str, ResetToken] = {}
+        self._webhooks: Dict[str, AlertWebhook] = {}
         self._usage: Dict[str, UsageDay] = {}
         self._ai_cache: Dict[str, str] = {}
         self._counter = 0
@@ -1293,6 +1360,10 @@ class HubStore:
                 site = Site.from_row(row)
                 self._sites[site.site_id] = site
 
+            for row in self._db.all("webhook"):
+                hook = AlertWebhook.from_row(row)
+                self._webhooks[hook.webhook_id] = hook
+
             for row in self._db.all("contact"):
                 contact = Contact.from_row(row)
                 self._contacts[contact.contact_id] = contact
@@ -1324,6 +1395,7 @@ class HubStore:
                     + list(self._users)
                     + list(self._contacts)
                     + list(self._sites)
+                    + list(self._webhooks)
                 )
                 if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
             ]
@@ -1353,6 +1425,7 @@ class HubStore:
             self._audit.clear()
             self._sites.clear()
             self._contacts.clear()
+            self._webhooks.clear()
             self._contracts.clear()
             self._resets.clear()
             self._usage.clear()
@@ -2005,6 +2078,80 @@ class HubStore:
             del self._contacts[contact_id]
             self._db.delete("contact", contact_id)
             return True
+
+    # ---- outbound webhooks -----------------------------------------------
+
+    def add_webhook(
+        self,
+        tenant_id: str,
+        kind: str,
+        target: str,
+        label: str = "",
+        site_id: Optional[str] = None,
+    ) -> AlertWebhook:
+        with self._lock:
+            hook = AlertWebhook(
+                webhook_id=self._next_id("HOOK"),
+                tenant_id=tenant_id,
+                kind=kind,
+                target=target,
+                label=label,
+                site_id=site_id,
+            )
+            self._webhooks[hook.webhook_id] = hook
+            self._db.put("webhook", hook.webhook_id, hook.to_row())
+            return hook
+
+    def get_webhook(self, webhook_id: str) -> Optional[AlertWebhook]:
+        with self._lock:
+            return self._webhooks.get(webhook_id)
+
+    def webhooks_for(self, tenant_id: str) -> List[AlertWebhook]:
+        with self._lock:
+            rows = [h for h in self._webhooks.values() if h.tenant_id == tenant_id]
+        return sorted(rows, key=lambda h: h.webhook_id)
+
+    def webhooks_for_site(
+        self, tenant_id: str, site_id: Optional[str]
+    ) -> List[AlertWebhook]:
+        """Hooks covering a site: its own plus every estate-wide one.
+
+        Unlike the phone roster this does not narrow to the site. A text
+        wakes a person, so waking the wrong one matters; a channel post
+        costs nothing, and a head office that stops seeing branch alerts
+        because somebody added a branch channel is the worse failure.
+        """
+        return [
+            h
+            for h in self.webhooks_for(tenant_id)
+            if h.active and h.site_id in (None, site_id)
+        ]
+
+    def save_webhook(self, hook: AlertWebhook) -> AlertWebhook:
+        with self._lock:
+            self._db.put("webhook", hook.webhook_id, hook.to_row())
+            return hook
+
+    def remove_webhook(self, webhook_id: str) -> bool:
+        with self._lock:
+            if webhook_id not in self._webhooks:
+                return False
+            del self._webhooks[webhook_id]
+            self._db.delete("webhook", webhook_id)
+            return True
+
+    def record_webhook_attempt(
+        self, hook: AlertWebhook, delivered: bool, status: str
+    ) -> AlertWebhook:
+        """Remember how the last post went, so a dead hook is visible."""
+        with self._lock:
+            hook.last_status = status
+            hook.last_attempt_at = utc_now()
+            hook.consecutive_failures = (
+                0 if delivered else hook.consecutive_failures + 1
+            )
+            self._db.put("webhook", hook.webhook_id, hook.to_row())
+            return hook
 
     def _roster_for_site(
         self, tenant: Tenant, site_id: Optional[str], channel: str

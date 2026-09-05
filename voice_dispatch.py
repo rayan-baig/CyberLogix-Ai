@@ -120,6 +120,21 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     )
 
 
+def _notify_hooks(
+    tenant: Tenant, incident: Incident, state: str, note: str = ""
+) -> None:
+    """Tell the chat channels and the rotation what changed.
+
+    Imported inside the call: webhooks imports the store and auth helpers,
+    and a module-level import would close the cycle.
+    """
+    from webhooks import dispatch_event
+
+    dispatch_event(
+        tenant, incident, STORE.get_sensor(incident.sensor_id), state, note
+    )
+
+
 def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
     """Draft the script, place the call and stamp the incident.
 
@@ -150,6 +165,14 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
             break
 
     STORE.record_voice_escalation(incident, script, source, delivery, fanout)
+
+    _notify_hooks(
+        tenant,
+        incident,
+        "escalated",
+        f"No acknowledgement after {int(incident.minutes_open())} minutes; "
+        "a voice call has been placed.",
+    )
 
     logger.critical(
         "Voice escalation: incident=%s sensor=%s tenant=%s attempts=%d reached=%s",
@@ -225,6 +248,10 @@ async def voice_keypress(
             None,
             "incident.acknowledged",
             f"{incident.incident_id} acknowledged by keypad from {caller}.",
+        )
+    if tenant is not None and not already:
+        _notify_hooks(
+            tenant, incident, "acknowledged", f"Acknowledged from {caller}."
         )
     logger.info(
         "Incident %s acknowledged from the handset (%s).", incident_id, caller
@@ -337,6 +364,7 @@ def acknowledge_incident(
 
     actor = actor_label(operator, payload.acknowledged_by or "API key")
     STORE.acknowledge_incident(incident, actor)
+    _notify_hooks(tenant, incident, "acknowledged", f"{actor} has the incident.")
     write_audit(
         tenant,
         operator,
@@ -364,6 +392,7 @@ def resolve_incident(
 
     actor = actor_label(operator, payload.resolved_by or "API key")
     STORE.resolve_incident(incident, actor)
+    _notify_hooks(tenant, incident, "resolved", f"Closed out by {actor}.")
     write_audit(
         tenant,
         operator,

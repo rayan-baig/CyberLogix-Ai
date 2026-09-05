@@ -253,11 +253,19 @@ def process_reading(
     ]
     STORE.record_sms_delivery(incident, fanout[0] if fanout else None, fanout)
 
+    # Push a copy into whatever the team already has open. Imported here
+    # rather than at module scope: webhooks imports the store and the auth
+    # helpers, and a top-level import would close the cycle.
+    from webhooks import dispatch_event
+
+    webhook_results = dispatch_event(tenant, incident, sensor, "opened")
+
     payload = incident.public()
     payload["status"] = "CRITICAL_CATASTROPHE_TRIGGERED"
     payload["location"] = sensor.location_name
     payload["current_temperature"] = display_temperature(temperature, unit)
     payload["temperature_unit"] = unit
+    payload["webhook_fanout"] = webhook_results
     return payload
 
 
