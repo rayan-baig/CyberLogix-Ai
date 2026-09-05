@@ -241,731 +241,125 @@ def evaluate_sensor_breach(sensor: "Sensor", temperature: float) -> Optional[str
     return evaluate_breach(sensor.industry_vertical, temperature, above, below)
 
 
-@dataclass
-class Tenant:
-    """A paying customer organisation."""
-
-    tenant_id: str
-    company_name: str
-    contact_name: str
-    contact_phone: str
-    contact_email: str
-    plan: str
-    api_key: str
-    activated_at: datetime
-    expires_at: datetime
-    suspended: bool = False
-
-    @property
-    def expired(self) -> bool:
-        return utc_now() >= self.expires_at
-
-    @property
-    def active(self) -> bool:
-        return not self.suspended and not self.expired
-
-    def entitlements(self) -> Dict[str, Any]:
-        return PLAN_TIERS[self.plan]
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "tenant_id": self.tenant_id,
-            "company_name": self.company_name,
-            "contact_name": self.contact_name,
-            "contact_phone": self.contact_phone,
-            "contact_email": self.contact_email,
-            "plan": self.plan,
-            "api_key": self.api_key,
-            "activated_at": iso(self.activated_at),
-            "expires_at": iso(self.expires_at),
-            "suspended": self.suspended,
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "Tenant":
-        return cls(
-            tenant_id=row["tenant_id"],
-            company_name=row["company_name"],
-            contact_name=row["contact_name"],
-            contact_phone=row["contact_phone"],
-            contact_email=row["contact_email"],
-            plan=row["plan"],
-            api_key=row["api_key"],
-            activated_at=_parse(row["activated_at"]),
-            expires_at=_parse(row["expires_at"]),
-            suspended=row.get("suspended", False),
-        )
-
-    def public(self, sensor_count: int) -> Dict[str, Any]:
-        tier = self.entitlements()
-        return {
-            "tenant_id": self.tenant_id,
-            "company_name": self.company_name,
-            "contact_name": self.contact_name,
-            "contact_phone": self.contact_phone,
-            "contact_email": self.contact_email,
-            "plan": self.plan,
-            "plan_name": tier["name"],
-            "license_active": self.active,
-            "suspended": self.suspended,
-            "expired": self.expired,
-            "activated_at": iso(self.activated_at),
-            "expires_at": iso(self.expires_at),
-            "seats_used": sensor_count,
-            "seats_total": tier["max_sensors"],
-            "seats_remaining": max(0, tier["max_sensors"] - sensor_count),
-            "voice_escalation": tier["voice_escalation"],
-            "predictive_forecasting": tier["predictive_forecasting"],
-        }
-
-
-@dataclass
-class Sensor:
-    """A registered physical sensor node, occupying one license seat."""
-
-    sensor_id: str
-    tenant_id: str
-    industry_vertical: str
-    location_name: str
-    registered_at: datetime
-    external_device_sn: Optional[str] = None
-    override_above: Optional[float] = None
-    override_below: Optional[float] = None
-    last_seen: Optional[datetime] = None
-    last_temperature: Optional[float] = None
-    last_humidity: Optional[float] = None
-
-    def bounds(self) -> tuple:
-        """The thresholds actually applied to this sensor.
-
-        An override replaces the industry default; where none is set the
-        sector's own limit stands.
-        """
-        profile = INDUSTRY_PROFILES[self.industry_vertical]
-        above = (
-            self.override_above
-            if self.override_above is not None
-            else profile["danger_above"]
-        )
-        below = (
-            self.override_below
-            if self.override_below is not None
-            else profile["danger_below"]
-        )
-        return above, below
-
-    def offline(self, now: Optional[datetime] = None) -> bool:
-        now = now or utc_now()
-        if self.last_seen is None:
-            return True
-        age = (now - self.last_seen).total_seconds() / 60.0
-        return age > SENSOR_OFFLINE_AFTER_MINUTES
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "sensor_id": self.sensor_id,
-            "tenant_id": self.tenant_id,
-            "industry_vertical": self.industry_vertical,
-            "location_name": self.location_name,
-            "registered_at": iso(self.registered_at),
-            "external_device_sn": self.external_device_sn,
-            "override_above": self.override_above,
-            "override_below": self.override_below,
-            "last_seen": iso(self.last_seen),
-            "last_temperature": self.last_temperature,
-            "last_humidity": self.last_humidity,
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "Sensor":
-        return cls(
-            sensor_id=row["sensor_id"],
-            tenant_id=row["tenant_id"],
-            industry_vertical=row["industry_vertical"],
-            location_name=row["location_name"],
-            registered_at=_parse(row["registered_at"]),
-            external_device_sn=row.get("external_device_sn"),
-            override_above=row.get("override_above"),
-            override_below=row.get("override_below"),
-            last_seen=_parse(row.get("last_seen")),
-            last_temperature=row.get("last_temperature"),
-            last_humidity=row.get("last_humidity"),
-        )
-
-    def public(self) -> Dict[str, Any]:
-        profile = INDUSTRY_PROFILES[self.industry_vertical]
-        above, below = self.bounds()
-        return {
-            "sensor_id": self.sensor_id,
-            "tenant_id": self.tenant_id,
-            "danger_above": above,
-            "danger_below": below,
-            "override_above": self.override_above,
-            "override_below": self.override_below,
-            "uses_override": self.override_above is not None
-            or self.override_below is not None,
-            "industry_vertical": self.industry_vertical,
-            "industry_name": profile["name"],
-            "location_name": self.location_name,
-            "external_device_sn": self.external_device_sn,
-            "registered_at": iso(self.registered_at),
-            "last_seen": iso(self.last_seen),
-            "last_temperature": self.last_temperature,
-            "last_humidity": self.last_humidity,
-            "online": not self.offline(),
-        }
-
-
-@dataclass
-class Reading:
-    """One telemetry sample."""
-
-    sensor_id: str
-    temperature_fahrenheit: float
-    humidity_percent: Optional[float]
-    breached: bool
-    recorded_at: datetime
-    reading_id: str = ""
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "reading_id": self.reading_id,
-            "sensor_id": self.sensor_id,
-            "temperature_fahrenheit": self.temperature_fahrenheit,
-            "humidity_percent": self.humidity_percent,
-            "breached": self.breached,
-            "recorded_at": iso(self.recorded_at),
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "Reading":
-        return cls(
-            sensor_id=row["sensor_id"],
-            temperature_fahrenheit=row["temperature_fahrenheit"],
-            humidity_percent=row.get("humidity_percent"),
-            breached=row["breached"],
-            recorded_at=_parse(row["recorded_at"]),
-            reading_id=row.get("reading_id", ""),
-        )
-
-    def public(self) -> Dict[str, Any]:
-        return {
-            "sensor_id": self.sensor_id,
-            "temperature_fahrenheit": self.temperature_fahrenheit,
-            "humidity_percent": self.humidity_percent,
-            "breached": self.breached,
-            "recorded_at": iso(self.recorded_at),
-        }
-
-
-@dataclass
-class Incident:
-    """An open or historical catastrophe event."""
-
-    incident_id: str
-    tenant_id: str
-    sensor_id: str
-    industry_vertical: str
-    catastrophe: str
-    temperature_fahrenheit: float
-    breach_details: str
-    sms_text: str
-    sms_dispatch_source: str
-    opened_at: datetime
-    sms_delivery: Optional[Dict[str, Any]] = None
-    voice_delivery: Optional[Dict[str, Any]] = None
-    sms_fanout: List[Dict[str, Any]] = field(default_factory=list)
-    voice_fanout: List[Dict[str, Any]] = field(default_factory=list)
-    acknowledged_at: Optional[datetime] = None
-    acknowledged_by: Optional[str] = None
-    voice_escalated_at: Optional[datetime] = None
-    voice_script: Optional[str] = None
-    voice_dispatch_source: Optional[str] = None
-    resolved_at: Optional[datetime] = None
-
-    @property
-    def open(self) -> bool:
-        return self.resolved_at is None and self.acknowledged_at is None
-
-    def minutes_open(self, now: Optional[datetime] = None) -> float:
-        now = now or utc_now()
-        end = self.acknowledged_at or self.resolved_at or now
-        return round((end - self.opened_at).total_seconds() / 60.0, 2)
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "incident_id": self.incident_id,
-            "tenant_id": self.tenant_id,
-            "sensor_id": self.sensor_id,
-            "industry_vertical": self.industry_vertical,
-            "catastrophe": self.catastrophe,
-            "temperature_fahrenheit": self.temperature_fahrenheit,
-            "breach_details": self.breach_details,
-            "sms_text": self.sms_text,
-            "sms_dispatch_source": self.sms_dispatch_source,
-            "opened_at": iso(self.opened_at),
-            "sms_delivery": self.sms_delivery,
-            "voice_delivery": self.voice_delivery,
-            "sms_fanout": self.sms_fanout,
-            "voice_fanout": self.voice_fanout,
-            "acknowledged_at": iso(self.acknowledged_at),
-            "acknowledged_by": self.acknowledged_by,
-            "voice_escalated_at": iso(self.voice_escalated_at),
-            "voice_script": self.voice_script,
-            "voice_dispatch_source": self.voice_dispatch_source,
-            "resolved_at": iso(self.resolved_at),
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "Incident":
-        return cls(
-            incident_id=row["incident_id"],
-            tenant_id=row["tenant_id"],
-            sensor_id=row["sensor_id"],
-            industry_vertical=row["industry_vertical"],
-            catastrophe=row["catastrophe"],
-            temperature_fahrenheit=row["temperature_fahrenheit"],
-            breach_details=row["breach_details"],
-            sms_text=row["sms_text"],
-            sms_dispatch_source=row["sms_dispatch_source"],
-            opened_at=_parse(row["opened_at"]),
-            sms_delivery=row.get("sms_delivery"),
-            voice_delivery=row.get("voice_delivery"),
-            sms_fanout=row.get("sms_fanout") or [],
-            voice_fanout=row.get("voice_fanout") or [],
-            acknowledged_at=_parse(row.get("acknowledged_at")),
-            acknowledged_by=row.get("acknowledged_by"),
-            voice_escalated_at=_parse(row.get("voice_escalated_at")),
-            voice_script=row.get("voice_script"),
-            voice_dispatch_source=row.get("voice_dispatch_source"),
-            resolved_at=_parse(row.get("resolved_at")),
-        )
-
-    def public(self) -> Dict[str, Any]:
-        profile = INDUSTRY_PROFILES[self.industry_vertical]
-        return {
-            "incident_id": self.incident_id,
-            "tenant_id": self.tenant_id,
-            "sensor_id": self.sensor_id,
-            "industry_vertical": self.industry_vertical,
-            "industry_name": profile["name"],
-            "catastrophe_type": self.catastrophe,
-            "temperature_fahrenheit": self.temperature_fahrenheit,
-            "breach_details": self.breach_details,
-            "dispatched_sms_text": self.sms_text,
-            "sms_dispatch_source": self.sms_dispatch_source,
-            "sms_delivery": self.sms_delivery,
-            "voice_delivery": self.voice_delivery,
-            "sms_fanout": self.sms_fanout,
-            "voice_fanout": self.voice_fanout,
-            "notified_count": len(self.sms_fanout) or (1 if self.sms_delivery else 0),
-            "opened_at": iso(self.opened_at),
-            "acknowledged_at": iso(self.acknowledged_at),
-            "acknowledged_by": self.acknowledged_by,
-            "voice_escalated_at": iso(self.voice_escalated_at),
-            "voice_script": self.voice_script,
-            "voice_dispatch_source": self.voice_dispatch_source,
-            "resolved_at": iso(self.resolved_at),
-            "minutes_open": self.minutes_open(),
-            "state": (
-                "resolved"
-                if self.resolved_at
-                else "acknowledged"
-                if self.acknowledged_at
-                else "open"
-            ),
-        }
-
-
-# Operator roles, most privileged first. Each role implies the ones below it.
-ROLES = ("owner", "operator", "viewer")
-ROLE_RANK = {role: index for index, role in enumerate(ROLES)}
-
-SESSION_TTL_HOURS = 12
-
-
-@dataclass
-class User:
-    """A named human operator inside a tenant."""
-
-    user_id: str
-    tenant_id: str
-    email: str
-    full_name: str
-    role: str
-    password_hash: str
-    created_at: datetime
-    last_login_at: Optional[datetime] = None
-    disabled: bool = False
-
-    def can(self, required: str) -> bool:
-        """True when this user's role is at least `required`."""
-        return ROLE_RANK[self.role] <= ROLE_RANK[required]
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "user_id": self.user_id,
-            "tenant_id": self.tenant_id,
-            "email": self.email,
-            "full_name": self.full_name,
-            "role": self.role,
-            "password_hash": self.password_hash,
-            "created_at": iso(self.created_at),
-            "last_login_at": iso(self.last_login_at),
-            "disabled": self.disabled,
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "User":
-        return cls(
-            user_id=row["user_id"],
-            tenant_id=row["tenant_id"],
-            email=row["email"],
-            full_name=row["full_name"],
-            role=row["role"],
-            password_hash=row["password_hash"],
-            created_at=_parse(row["created_at"]),
-            last_login_at=_parse(row.get("last_login_at")),
-            disabled=row.get("disabled", False),
-        )
-
-    def public(self) -> Dict[str, Any]:
-        """Never includes the password hash."""
-        return {
-            "user_id": self.user_id,
-            "tenant_id": self.tenant_id,
-            "email": self.email,
-            "full_name": self.full_name,
-            "role": self.role,
-            "created_at": iso(self.created_at),
-            "last_login_at": iso(self.last_login_at),
-            "disabled": self.disabled,
-        }
-
-
-@dataclass
-class LoginSession:
-    """A bearer token issued at login."""
-
-    token: str
-    user_id: str
-    tenant_id: str
-    issued_at: datetime
-    expires_at: datetime
-
-    @property
-    def expired(self) -> bool:
-        return utc_now() >= self.expires_at
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "token": self.token,
-            "user_id": self.user_id,
-            "tenant_id": self.tenant_id,
-            "issued_at": iso(self.issued_at),
-            "expires_at": iso(self.expires_at),
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "LoginSession":
-        return cls(
-            token=row["token"],
-            user_id=row["user_id"],
-            tenant_id=row["tenant_id"],
-            issued_at=_parse(row["issued_at"]),
-            expires_at=_parse(row["expires_at"]),
-        )
-
-
-@dataclass
-class AuditEntry:
-    """One durable record of who did what.
-
-    Compliance reports are only as good as their provenance, so every state
-    change a human causes is written here with the operator's name.
-    """
-
-    entry_id: str
-    tenant_id: str
-    actor: str
-    actor_role: str
-    action: str
-    detail: str
-    at: datetime
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "entry_id": self.entry_id,
-            "tenant_id": self.tenant_id,
-            "actor": self.actor,
-            "actor_role": self.actor_role,
-            "action": self.action,
-            "detail": self.detail,
-            "at": iso(self.at),
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "AuditEntry":
-        return cls(
-            entry_id=row["entry_id"],
-            tenant_id=row["tenant_id"],
-            actor=row["actor"],
-            actor_role=row["actor_role"],
-            action=row["action"],
-            detail=row["detail"],
-            at=_parse(row["at"]),
-        )
-
-    def public(self) -> Dict[str, Any]:
-        return {
-            "entry_id": self.entry_id,
-            "actor": self.actor,
-            "actor_role": self.actor_role,
-            "action": self.action,
-            "detail": self.detail,
-            "at": iso(self.at),
-        }
-
-
-@dataclass
-class UsageDay:
-    """Metered usage for one tenant on one UTC day.
-
-    Drives both the cost report and the daily spend caps.
-    """
-
-    tenant_id: str
-    day: str
-    ai_calls: int = 0
-    ai_cache_hits: int = 0
-    ai_suppressed: int = 0
-    sms_sent: int = 0
-    sms_suppressed: int = 0
-    voice_calls: int = 0
-    voice_suppressed: int = 0
-
-    @property
-    def key(self) -> str:
-        return f"{self.tenant_id}|{self.day}"
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "tenant_id": self.tenant_id,
-            "day": self.day,
-            "ai_calls": self.ai_calls,
-            "ai_cache_hits": self.ai_cache_hits,
-            "ai_suppressed": self.ai_suppressed,
-            "sms_sent": self.sms_sent,
-            "sms_suppressed": self.sms_suppressed,
-            "voice_calls": self.voice_calls,
-            "voice_suppressed": self.voice_suppressed,
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "UsageDay":
-        return cls(**row)
-
-    def public(self) -> Dict[str, Any]:
-        return self.to_row()
-
-
-@dataclass
-class Contact:
-    """Someone who gets woken when an asset is failing.
-
-    Alerts used to go to one number on the tenant record, which is fine for
-    a single-site customer and useless for anyone with a night shift. A
-    roster fans SMS out to everyone on it and walks the voice ladder in
-    escalation order.
-    """
-
-    contact_id: str
-    tenant_id: str
-    full_name: str
-    phone: str
-    receives_sms: bool = True
-    receives_voice: bool = True
-    escalation_order: int = 1
-    active: bool = True
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "contact_id": self.contact_id,
-            "tenant_id": self.tenant_id,
-            "full_name": self.full_name,
-            "phone": self.phone,
-            "receives_sms": self.receives_sms,
-            "receives_voice": self.receives_voice,
-            "escalation_order": self.escalation_order,
-            "active": self.active,
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "Contact":
-        return cls(**row)
-
-    def public(self) -> Dict[str, Any]:
-        return self.to_row()
-
-
-@dataclass
-class ResetToken:
-    """A one-time password reset, issued by an owner.
-
-    The token is shown to the owner once so they can hand it over out of
-    band; only its hash is stored, so a database copy cannot be replayed.
-    """
-
-    token_hash: str
-    user_id: str
-    tenant_id: str
-    issued_at: datetime
-    expires_at: datetime
-    used_at: Optional[datetime] = None
-
-    @property
-    def spent(self) -> bool:
-        return self.used_at is not None or utc_now() >= self.expires_at
-
-    def to_row(self) -> Dict[str, Any]:
-        return {
-            "token_hash": self.token_hash,
-            "user_id": self.user_id,
-            "tenant_id": self.tenant_id,
-            "issued_at": iso(self.issued_at),
-            "expires_at": iso(self.expires_at),
-            "used_at": iso(self.used_at),
-        }
-
-    @classmethod
-    def from_row(cls, row: Dict[str, Any]) -> "ResetToken":
-        return cls(
-            token_hash=row["token_hash"],
-            user_id=row["user_id"],
-            tenant_id=row["tenant_id"],
-            issued_at=_parse(row["issued_at"]),
-            expires_at=_parse(row["expires_at"]),
-            used_at=_parse(row.get("used_at")),
-        )
-
-
-# Enterprise volume pricing: a per-branch rate that steps down every ten
-# branches, from $1,000 to a $800 floor.
+# Enterprise volume pricing.
 #
-#   1-9   $1,000/branch      50-59  $875/branch
-#   10-19   $975/branch      60-69  $850/branch
-#   20-29   $950/branch      70-79  $825/branch
-#   30-39   $925/branch      80+    $800/branch (floor)
-#   40-49   $900/branch
-PER_BRANCH_BASE = 1000.00
-PER_BRANCH_STEP = 25.00
-PER_BRANCH_FLOOR = 800.00
-BRANCH_BAND_SIZE = 10
+# A contract is the vertical's own unit price times the enrolled count, less
+# a volume discount that deepens every ten units. The discount is a
+# percentage rather than a fixed dollar step, so one ladder serves all eight
+# verticals whatever their rate.
+#
+# The cap is deliberately shallow. At the top of a market a deep discount
+# reads as eagerness, and every point of it comes straight off the largest
+# accounts — the ones worth the most.
+VOLUME_DISCOUNT_STEP_PERCENT = 2.5
+VOLUME_DISCOUNT_EVERY_UNITS = 10
+MAX_VOLUME_DISCOUNT_PERCENT = 10.0
 
-# Branch count at which the rate reaches its floor.
-FLOOR_REACHED_AT = 80
-
-# Ceiling on an enterprise contract, whatever the branch count. The
-# per-branch rates above still apply underneath it; this only caps the
-# monthly total, so a chain large enough to reach it stops paying more.
-ENTERPRISE_MONTHLY_CAP = 50000.00
+# A flat ceiling on a contract, or None for no ceiling. A cap is a hard stop
+# on revenue from exactly the accounts worth most: at these rates a chain of
+# eleven vessels would hit $50,000 and every vessel after that would be free.
+ENTERPRISE_MONTHLY_CAP: Optional[float] = None
 
 
-def branch_rate(branches: int) -> float:
-    """The per-branch rate for an estate of this size."""
-    if branches <= 0:
+def volume_discount_percent(units: int) -> float:
+    """The volume discount an estate of this size earns."""
+    if units <= 0:
         return 0.0
-    step_downs = branches // BRANCH_BAND_SIZE
-    return max(PER_BRANCH_FLOOR, PER_BRANCH_BASE - step_downs * PER_BRANCH_STEP)
+    steps = units // VOLUME_DISCOUNT_EVERY_UNITS
+    return min(MAX_VOLUME_DISCOUNT_PERCENT, VOLUME_DISCOUNT_STEP_PERCENT * steps)
 
 
-def _raw_total(branches: int) -> float:
-    return branches * branch_rate(branches)
+def _raw_total(units: int, unit_price: float) -> float:
+    return units * unit_price * (1 - volume_discount_percent(units) / 100.0)
 
 
-def calculate_volume_tier_price(branches: int) -> float:
-    """Monthly price for an enrolled branch count.
+def calculate_volume_tier_price(units: int, unit_price: float) -> float:
+    """Monthly price for an enrolled unit count at a vertical's rate.
 
-    The rate card alone is not monotonic: because the rate steps down a
-    whole band at once, 40 branches at $900 ($36,000) undercuts 39 at $925
-    ($36,075). A customer would spot that and rightly demand the lower
-    figure, so no estate is ever charged more than a larger estate would
-    pay. Two bands of lookahead is ample — the rate only steps at a band
-    edge, and beyond the floor the total climbs strictly.
+    The discount deepens a whole band at a time, so the ladder alone is not
+    monotonic: 40 units at 10% off can undercut 39 at 7.5% off. A customer
+    would find that and rightly demand the lower figure, so no estate is
+    charged more than a larger estate would pay.
     """
-    if branches <= 0:
+    if units <= 0:
         return 0.0
-    horizon = branches + 2 * BRANCH_BAND_SIZE
-    best = min(_raw_total(n) for n in range(branches, horizon + 1))
-    return round(min(best, ENTERPRISE_MONTHLY_CAP), 2)
+    horizon = units + 2 * VOLUME_DISCOUNT_EVERY_UNITS
+    best = min(_raw_total(n, unit_price) for n in range(units, horizon + 1))
+    if ENTERPRISE_MONTHLY_CAP is not None:
+        best = min(best, ENTERPRISE_MONTHLY_CAP)
+    return round(best, 2)
 
 
-def volume_band(branches: int) -> tuple:
-    """The (low, high) branch counts sharing this estate's rate."""
-    if branches <= 0:
+def volume_band(units: int) -> tuple:
+    """The (low, high) unit counts sharing this estate's discount."""
+    if units <= 0:
         return (0, 0)
-    if branches >= FLOOR_REACHED_AT:
-        return (FLOOR_REACHED_AT, None)
-    index = branches // BRANCH_BAND_SIZE
-    low = 1 if index == 0 else index * BRANCH_BAND_SIZE
-    return (low, index * BRANCH_BAND_SIZE + 9)
+    plateau = int(
+        MAX_VOLUME_DISCOUNT_PERCENT / VOLUME_DISCOUNT_STEP_PERCENT
+    ) * VOLUME_DISCOUNT_EVERY_UNITS
+    if units >= plateau:
+        return (plateau, None)
+    index = units // VOLUME_DISCOUNT_EVERY_UNITS
+    low = 1 if index == 0 else index * VOLUME_DISCOUNT_EVERY_UNITS
+    return (low, index * VOLUME_DISCOUNT_EVERY_UNITS + 9)
 
 
-def volume_tier_label(branches: int) -> str:
-    """Which band a branch count lands in."""
-    if branches <= 0:
-        return "no branches enrolled"
-    low, high = volume_band(branches)
-    rate = branch_rate(branches)
+def volume_tier_label(units: int) -> str:
+    """Which discount band a unit count lands in."""
+    if units <= 0:
+        return "no units enrolled"
+    low, high = volume_band(units)
+    discount = volume_discount_percent(units)
     span = f"{low}+" if high is None else f"{low}-{high}"
-    return f"{span} branches @ ${rate:,.0f}/branch"
+    if discount == 0:
+        return f"{span} units at list"
+    return f"{span} units, {discount:g}% volume discount"
 
 
-def next_volume_tier(branches: int) -> Optional[Dict[str, Any]]:
-    """The next rate step down, and what the estate would pay there.
-
-    Returns None once the rate is at its floor, where growth no longer
-    earns a discount.
-    """
-    if branches <= 0 or branches >= FLOOR_REACHED_AT:
+def next_volume_tier(units: int, unit_price: float) -> Optional[Dict[str, Any]]:
+    """The next discount step, and what the estate would pay there."""
+    if units <= 0 or volume_discount_percent(units) >= MAX_VOLUME_DISCOUNT_PERCENT:
         return None
 
-    _, high = volume_band(branches)
+    _, high = volume_band(units)
     boundary = high + 1
-    here = calculate_volume_tier_price(branches)
-    there = calculate_volume_tier_price(boundary)
+    here = calculate_volume_tier_price(units, unit_price)
+    there = calculate_volume_tier_price(boundary, unit_price)
     return {
-        "branches_until_next_rate": boundary - branches,
-        "next_rate_at_branches": boundary,
-        "next_rate_label": volume_tier_label(boundary),
-        "next_rate_per_branch_usd": branch_rate(boundary),
+        "units_until_next_discount": boundary - units,
+        "next_discount_at_units": boundary,
+        "next_discount_label": volume_tier_label(boundary),
+        "next_discount_percent": volume_discount_percent(boundary),
         "next_tier_monthly_usd": there,
         "monthly_increase_usd": round(there - here, 2),
     }
 
 
-def volume_band_table() -> List[Dict[str, Any]]:
-    """The published rate card, one row per band."""
+def volume_band_table(unit_price: float) -> List[Dict[str, Any]]:
+    """The discount ladder, priced against one vertical's rate."""
+    bands = int(MAX_VOLUME_DISCOUNT_PERCENT / VOLUME_DISCOUNT_STEP_PERCENT) + 1
     rows = []
-    for index in range(0, 9):
-        low = 1 if index == 0 else index * BRANCH_BAND_SIZE
-        high = None if low >= FLOOR_REACHED_AT else index * BRANCH_BAND_SIZE + 9
-        rate = branch_rate(low)
-        example = high if high is not None else FLOOR_REACHED_AT
+    for index in range(bands):
+        low = 1 if index == 0 else index * VOLUME_DISCOUNT_EVERY_UNITS
+        plateau = index * VOLUME_DISCOUNT_STEP_PERCENT >= MAX_VOLUME_DISCOUNT_PERCENT
+        high = None if plateau else index * VOLUME_DISCOUNT_EVERY_UNITS + 9
+        example = high if high is not None else low
         rows.append(
             {
                 "band": f"{low}+" if high is None else f"{low}-{high}",
-                "from_branches": low,
-                "to_branches": high,
-                "rate_per_branch_usd": rate,
-                "at_band_floor": rate == PER_BRANCH_FLOOR,
-                "example_branches": example,
-                "example_monthly_usd": calculate_volume_tier_price(example),
-                "example_annual_usd": round(
-                    calculate_volume_tier_price(example) * 12, 2
+                "from_units": low,
+                "to_units": high,
+                "discount_percent": volume_discount_percent(low),
+                "effective_unit_price_usd": round(
+                    unit_price * (1 - volume_discount_percent(low) / 100.0), 2
                 ),
-                "at_monthly_cap": calculate_volume_tier_price(example)
-                >= ENTERPRISE_MONTHLY_CAP,
+                "example_units": example,
+                "example_monthly_usd": calculate_volume_tier_price(
+                    example, unit_price
+                ),
+                "example_annual_usd": round(
+                    calculate_volume_tier_price(example, unit_price) * 12, 2
+                ),
             }
         )
     return rows
@@ -1604,8 +998,17 @@ class EnterpriseContract:
         return volume_tier_label(self.enrolled_branches)
 
     @property
+    def unit_price_usd(self) -> float:
+        # Imported late: pricing.py depends on this module.
+        from pricing import PRICE_BOOK
+
+        return PRICE_BOOK[self.industry_vertical]["monthly_usd"]
+
+    @property
     def monthly_usd(self) -> float:
-        return round(calculate_volume_tier_price(self.enrolled_branches), 2)
+        return calculate_volume_tier_price(
+            self.enrolled_branches, self.unit_price_usd
+        )
 
     @property
     def annual_contract_value_usd(self) -> float:
@@ -1617,8 +1020,8 @@ class EnterpriseContract:
 
     @property
     def next_tier(self) -> Optional[Dict[str, Any]]:
-        """Where the next bracket sits, so growth holds no surprises."""
-        return next_volume_tier(self.enrolled_branches)
+        """Where the next discount sits, so growth holds no surprises."""
+        return next_volume_tier(self.enrolled_branches, self.unit_price_usd)
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -1656,6 +1059,10 @@ class EnterpriseContract:
             "industry": INDUSTRY_PROFILES[self.industry_vertical]["name"],
             "enrolled_branches": self.enrolled_branches,
             "pricing_tier_applied": "Custom Enterprise Volume Bracket",
+            "unit_price_usd": self.unit_price_usd,
+            "volume_discount_percent": volume_discount_percent(
+                self.enrolled_branches
+            ),
             # The specific bracket, alongside the contract label, so the
             # figure can be traced to the row of the table that produced it.
             "pricing_bracket": self.tier_label,

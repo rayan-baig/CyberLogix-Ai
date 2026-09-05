@@ -147,14 +147,18 @@ registered, so a customer with three racks and two hangar bays pays
 
 | Sector | Price | Protects against |
 |---|---|---|
-| CyberTech Data Centers | **$499** / rack / month | $50,000+ server meltdowns and SLA contract breaches |
-| Luxury Superyachts | **$399** / vessel / month | Engine-room thermal fires; $150k charter guest freezers at sea |
-| Private Aviation Hangars | **$349** / bay / month | Moisture corrosion of multi-million-dollar avionics |
-| Solar Infrastructure | **$299** / enclosure / month | Battery-bank thermal runaway and fire liability |
-| Medical Labs & Blood Banks | **$199** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
-| High-End Country Clubs | **$199** / kitchen / month | Holiday dining inventory lost to compressor failure |
-| Cold-Chain Logistics | **$129** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
-| Franchise Restaurants | **$1,000** / location / month | $15,000 walk-in spoilage; health department logs |
+| Luxury Superyachts | **$4,999** / vessel / month | Engine-room thermal fires; $150k charter guest freezers at sea |
+| Private Aviation Hangars | **$1,999** / bay / month | Moisture corrosion of multi-million-dollar avionics |
+| Medical Labs & Blood Banks | **$1,499** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
+| High-End Country Clubs | **$1,499** / kitchen / month | Holiday dining inventory lost to compressor failure |
+| Franchise Restaurants | **$999** / location / month | $15,000 walk-in spoilage; health department logs |
+| CyberTech Data Centers | **$899** / rack / month | $50,000+ server meltdowns and SLA contract breaches |
+| Solar Infrastructure | **$899** / enclosure / month | Battery-bank thermal runaway and fire liability |
+| Cold-Chain Logistics | **$749** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
+
+Rates are set for the pinnacle of each market rather than its volume. An
+owner who spends millions a year on a vessel reads a $399 service as a toy,
+and a price below the value at risk attracts exactly the buyer who haggles.
 
 The rate card is public at `GET /api/billing/pricing` and on the sign-in
 screen. `GET /api/billing` itemises a tenant's own estate; registering or
@@ -177,33 +181,27 @@ real fleet would cost. Downgrades that would strand units are refused with
 A chain is billed by enrolled branch count rather than per unit, and the
 contract covers every sensor inside those branches:
 
-| Branches | Rate per branch | Example | Monthly |
+| Units | Volume discount | Restaurant @ $999 | Vessel @ $4,999 |
 |---|---|---|---|
-| 1–9 | $1,000 | 9 | $9,000 |
-| 10–19 | $975 | 19 | $18,525 |
-| 20–29 | $950 | 29 | $27,550 |
-| 30–39 | $925 | 39 | $36,000 |
-| 40–49 | $900 | 49 | $43,750 |
-| 50–59 | $875 | 59 | $50,000 (capped) |
-| 60–69 | $850 | 69 | $50,000 (capped) |
-| 70–79 | $825 | 79 | $50,000 (capped) |
-| 80+ | $800 (floor) | 100 | $50,000 (capped) |
+| 1–9 | list | $999 | $4,999 |
+| 10–19 | −2.5% | $974 | $4,874 |
+| 20–29 | −5% | $949 | $4,749 |
+| 30–39 | −7.5% | $924 | $4,624 |
+| 40+ | −10% | $899 | $4,499 |
 
-The rate drops $25 every ten branches until it floors at $800, which it
-reaches at 80 branches.
+One ladder serves all eight verticals: the discount is a percentage of that
+vertical's own rate, not a fixed dollar step. It caps at 10% deliberately —
+at the top of a market a deep discount reads as eagerness, and every point of
+it comes off the largest accounts.
 
-**A contract is capped at $50,000 a month**, whatever the branch count. The
-per-branch rates apply underneath it; the ceiling first bites at 58 branches
-($50,000 rather than $50,750), and beyond that a chain pays no more however
-far it grows — 200 branches is still $50,000, an effective $250 a branch.
+There is **no ceiling on a contract**. A cap is a hard stop on revenue from
+exactly the accounts worth the most; at these rates a chain of eleven vessels
+would have hit a $50,000 cap and every vessel after that would be free.
 
-**No estate is charged more than a larger estate would pay.** The rate steps
-a whole band at a time, so the card on its own would make 40 branches
-($36,000 at $900) cheaper than 39 ($36,075 at $925). The same inversion sits
-at 49→50, 59→60, 69→70 and 79→80. Rather than hand a customer that
-arithmetic, the smaller estate is billed the lower figure — which is why 39
-branches shows $36,000 above, not $36,075. A test asserts the whole curve
-never falls as branches rise.
+**No estate is charged more than a larger estate would pay.** The discount
+deepens a whole band at a time, so the ladder alone would make 40 units
+cheaper than 39; the smaller estate gets the lower figure instead. A test
+walks every vertical from 1 to 200 units asserting the bill never falls.
 
 `GET /api/v1/enterprise-billing/tiers` publishes the bands, and every quote
 carries a `next_tier` block naming where the next discount lands.
@@ -541,7 +539,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-218 tests across the fourteen modules. Gemini and Twilio are both stubbed and
+216 tests across the fourteen modules. Gemini and Twilio are both stubbed and
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 

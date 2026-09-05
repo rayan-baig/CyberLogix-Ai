@@ -18,19 +18,19 @@ def test_every_vertical_is_priced():
 def test_price_book_matches_the_agreed_rate_card(api):
     rows = {r["vertical"]: r for r in api.get("/api/billing/pricing").json()["pricing"]}
     expected = {
-        "cybersecurity": (499.0, "rack"),
-        "private_aviation": (349.0, "bay"),
-        "superyacht": (399.0, "vessel"),
-        "solar_infrastructure": (299.0, "enclosure"),
-        "medical_lab": (199.0, "vault"),
-        "country_club": (199.0, "kitchen"),
-        "logistics": (129.0, "reefer truck"),
-        "restaurant": (1000.0, "location"),
+        "superyacht": (4999.0, "vessel"),
+        "private_aviation": (1999.0, "bay"),
+        "medical_lab": (1499.0, "vault"),
+        "country_club": (1499.0, "kitchen"),
+        "restaurant": (999.0, "location"),
+        "cybersecurity": (899.0, "rack"),
+        "solar_infrastructure": (899.0, "enclosure"),
+        "logistics": (749.0, "reefer truck"),
     }
     for vertical, (price, unit) in expected.items():
         assert rows[vertical]["monthly_usd"] == price, vertical
         assert rows[vertical]["unit"] == unit, vertical
-    assert rows["cybersecurity"]["price_label"] == "$499 / rack / month"
+    assert rows["cybersecurity"]["price_label"] == "$899 / rack / month"
 
 
 def test_price_list_is_public_and_ordered_by_value(api):
@@ -49,13 +49,15 @@ def test_a_mixed_estate_is_billed_per_unit(api, tenant_factory, sensor_factory):
         sensor_factory(headers, sensor_id=f"BAY-{index}", vertical="private_aviation")
 
     invoice = api.get("/api/billing", headers=headers).json()
-    assert invoice["monthly_total_usd"] == pytest.approx(3 * 499.0 + 2 * 349.0)
-    assert invoice["annual_total_usd"] == pytest.approx((3 * 499.0 + 2 * 349.0) * 12)
+    assert invoice["monthly_total_usd"] == pytest.approx(3 * 899.0 + 2 * 1999.0)
+    assert invoice["annual_total_usd"] == pytest.approx(
+        (3 * 899.0 + 2 * 1999.0) * 12
+    )
     assert invoice["units_total"] == 5
 
     lines = {l["vertical"]: l for l in invoice["line_items"]}
     assert lines["cybersecurity"]["units"] == 3
-    assert lines["cybersecurity"]["line_total_usd"] == pytest.approx(1497.0)
+    assert lines["cybersecurity"]["line_total_usd"] == pytest.approx(2697.0)
     assert lines["cybersecurity"]["description"] == "3 racks"
     assert lines["private_aviation"]["description"] == "2 bays"
 
@@ -84,7 +86,7 @@ def test_trial_is_priced_but_not_charged(api, tenant_factory, sensor_factory):
 
     invoice = api.get("/api/billing", headers=headers).json()
     assert invoice["billable"] is False
-    assert invoice["monthly_total_usd"] == 1000.0
+    assert invoice["monthly_total_usd"] == 999.0
     assert invoice["effective_monthly_usd"] == 0.0
     assert "not charged" in invoice["note"]
 
@@ -100,8 +102,8 @@ def test_registering_a_sensor_reports_what_it_adds(api, tenant_factory):
             "location_name": "Hall B",
         },
     ).json()
-    assert resp["billing"]["adds_monthly_usd"] == 499.0
-    assert resp["billing"]["new_monthly_total_usd"] == 499.0
+    assert resp["billing"]["adds_monthly_usd"] == 899.0
+    assert resp["billing"]["new_monthly_total_usd"] == 899.0
 
 
 def test_decommissioning_reports_what_it_removes(
@@ -112,13 +114,13 @@ def test_decommissioning_reports_what_it_removes(
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
 
     resp = api.delete("/api/licenses/me/sensors/RACK-01", headers=headers).json()
-    assert resp["billing"]["removes_monthly_usd"] == 499.0
-    assert resp["billing"]["new_monthly_total_usd"] == 1000.0
+    assert resp["billing"]["removes_monthly_usd"] == 899.0
+    assert resp["billing"]["new_monthly_total_usd"] == 999.0
 
 
 def test_industry_picker_carries_the_price(api):
     rows = {r["vertical"]: r for r in api.get("/api/industries").json()["industries"]}
-    assert rows["logistics"]["price_label"] == "$129 / reefer truck / month"
+    assert rows["logistics"]["price_label"] == "$749 / reefer truck / month"
     assert "cargo rejection" in rows["logistics"]["pitch"]
 
 
@@ -142,7 +144,7 @@ def test_roi_counts_only_answered_incidents(
     answered = api.get("/api/billing/roi", headers=headers).json()
     assert answered["quantified_saves"] == 1
     assert answered["loss_avoided_usd"] == 15000.0
-    assert answered["subscription_cost_usd"] == 1000.0
+    assert answered["subscription_cost_usd"] == 999.0
     assert answered["return_multiple"] == pytest.approx(15.0, abs=0.1)
 
 
@@ -170,7 +172,7 @@ def test_console_overview_carries_the_commercials(
     headers, _ = tenant_factory()
     sensor_factory(headers, sensor_id="RACK-01", vertical="cybersecurity")
     body = api.get("/api/console/overview", headers=headers).json()
-    assert body["subscription"]["monthly_total_usd"] == 499.0
+    assert body["subscription"]["monthly_total_usd"] == 899.0
     assert "roi" in body
 
 
@@ -179,7 +181,7 @@ def test_billing_is_scoped_to_the_tenant(api, tenant_factory, sensor_factory):
     bob, _ = tenant_factory(company_name="Bob")
     sensor_factory(alice, sensor_id="RACK-01", vertical="cybersecurity")
 
-    assert api.get("/api/billing", headers=alice).json()["monthly_total_usd"] == 499.0
+    assert api.get("/api/billing", headers=alice).json()["monthly_total_usd"] == 899.0
     assert api.get("/api/billing", headers=bob).json()["monthly_total_usd"] == 0
 
 

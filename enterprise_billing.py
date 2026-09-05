@@ -33,6 +33,7 @@ from store import (
     calculate_volume_tier_price,
     next_volume_tier,
     resolve_vertical,
+    volume_discount_percent,
     volume_tier_label,
 )
 
@@ -68,8 +69,8 @@ class BranchChange(BaseModel):
     total_branch_locations: int = Field(..., gt=0, le=MAX_BRANCHES)
 
 
-def cluster_monthly(branches: int) -> float:
-    return round(calculate_volume_tier_price(branches), 2)
+def cluster_monthly(branches: int, unit_price: float) -> float:
+    return calculate_volume_tier_price(branches, unit_price)
 
 
 def _validate_vertical(raw: str) -> str:
@@ -98,37 +99,42 @@ def _load(account_id: str, tenant: Tenant) -> EnterpriseContract:
 
 
 @router.get("/tiers")
-def volume_tiers():
-    """The enterprise rate card: a per-branch rate that steps down by band."""
+def volume_tiers(industry_vertical: str = "restaurant"):
+    """The volume discount ladder, priced against one vertical's rate."""
+    from pricing import PRICE_BOOK
     from store import (
-        FLOOR_REACHED_AT,
-        PER_BRANCH_BASE,
-        PER_BRANCH_FLOOR,
-        PER_BRANCH_STEP,
+        MAX_VOLUME_DISCOUNT_PERCENT,
+        VOLUME_DISCOUNT_EVERY_UNITS,
+        VOLUME_DISCOUNT_STEP_PERCENT,
         volume_band_table,
     )
 
+    key = _validate_vertical(industry_vertical)
+    entry = PRICE_BOOK[key]
+
     return {
         "currency": "USD",
+        "industry_vertical": key,
+        "unit": entry["unit"],
+        "list_price_usd": entry["monthly_usd"],
         "billing": (
-            "Per branch, per month. The rate steps down "
-            f"${PER_BRANCH_STEP:,.0f} every 10 branches, from "
-            f"${PER_BRANCH_BASE:,.0f} to a ${PER_BRANCH_FLOOR:,.0f} floor. "
-            "A contract covers every sensor inside an enrolled branch."
+            f"${entry['monthly_usd']:,.0f} per {entry['unit']} per month, less a "
+            f"{VOLUME_DISCOUNT_STEP_PERCENT:g}% volume discount for every "
+            f"{VOLUME_DISCOUNT_EVERY_UNITS} units, to a "
+            f"{MAX_VOLUME_DISCOUNT_PERCENT:g}% maximum. A contract covers every "
+            "sensor inside an enrolled unit."
         ),
-        "rate_per_branch": {
-            "starts_at_usd": PER_BRANCH_BASE,
-            "step_usd": PER_BRANCH_STEP,
-            "every_branches": 10,
-            "floor_usd": PER_BRANCH_FLOOR,
-            "floor_reached_at_branches": FLOOR_REACHED_AT,
+        "discount_ladder": {
+            "step_percent": VOLUME_DISCOUNT_STEP_PERCENT,
+            "every_units": VOLUME_DISCOUNT_EVERY_UNITS,
+            "max_percent": MAX_VOLUME_DISCOUNT_PERCENT,
         },
-        "bands": volume_band_table(),
+        "bands": volume_band_table(entry["monthly_usd"]),
         "note": (
             "No estate is charged more than a larger estate would pay. The "
-            "rate steps a whole band at a time, so the card alone would make "
-            "40 branches cheaper than 39; the smaller estate gets the lower "
-            "figure instead."
+            "discount deepens a whole band at a time, so the ladder alone "
+            "would make 40 units cheaper than 39; the smaller estate gets the "
+            "lower figure instead."
         ),
     }
 
@@ -162,7 +168,7 @@ def quote(
     entry = PRICE_BOOK[vertical]
     units = total_branch_locations * units_per_branch
     per_unit_monthly = round(entry["monthly_usd"] * units, 2)
-    cluster_total = cluster_monthly(total_branch_locations)
+    cluster_total = cluster_monthly(total_branch_locations, entry["monthly_usd"])
 
     cheaper = "per_unit" if per_unit_monthly <= cluster_total else "enterprise_volume"
     # Units per branch at which the volume contract starts winning.
@@ -186,10 +192,18 @@ def quote(
             "annual_usd": round(per_unit_monthly * 12, 2),
         },
         "enterprise_volume": {
-            "model": "Per branch, stepping down every 10 branches",
+            "model": (
+                f"${entry['monthly_usd']:,.0f} per {entry['unit']}, less a "
+                "volume discount every 10 units"
+            ),
             "branches": total_branch_locations,
             "pricing_tier_applied": volume_tier_label(total_branch_locations),
-            "next_tier": next_volume_tier(total_branch_locations),
+            "volume_discount_percent": volume_discount_percent(
+                total_branch_locations
+            ),
+            "next_tier": next_volume_tier(
+                total_branch_locations, entry["monthly_usd"]
+            ),
             "monthly_usd": cluster_total,
             "annual_usd": round(cluster_total * 12, 2),
             "effective_rate_per_branch": round(
@@ -202,8 +216,8 @@ def quote(
         "note": (
             "Volume billing covers every sensor inside an enrolled branch, so "
             "it pays off on multi-sensor sites and costs more on single ones. "
-            "The per-branch rate steps down every 10 branches; next_tier shows "
-            "where the next discount lands."
+            "The volume discount deepens every 10 units; next_tier shows where "
+            "the next step lands."
         ),
     }
 

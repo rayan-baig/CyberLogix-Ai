@@ -9,6 +9,10 @@ Plan tiers still exist, but they are about evaluation versus a paid
 contract and the seat ceiling that comes with it — they are not what sets
 the price.
 
+Rates are set for the pinnacle of each market rather than its volume: an
+owner who spends millions a year on a vessel reads a $399 service as a toy,
+and prices below the value at risk invite exactly the buyer who will haggle.
+
 `loss_avoided_usd` is the figure the product is sold on: the loss a single
 prevented failure represents. Only the verticals where a concrete number
 was supplied carry one; the rest are deliberately null rather than guessed,
@@ -37,7 +41,7 @@ router = APIRouter(prefix="/api/billing", tags=["Pricing & Billing"])
 PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "cybersecurity": {
         "unit": "rack",
-        "monthly_usd": 499.0,
+        "monthly_usd": 899.0,
         "pitch": (
             "Prevents $50,000+ server meltdowns and SLA contract breaches with "
             "predictive forecasting."
@@ -46,7 +50,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "private_aviation": {
         "unit": "bay",
-        "monthly_usd": 349.0,
+        "monthly_usd": 1999.0,
         "pitch": (
             "Protects multi-million-dollar avionics and jet components from "
             "high-humidity moisture corrosion."
@@ -55,7 +59,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "superyacht": {
         "unit": "vessel",
-        "monthly_usd": 399.0,
+        "monthly_usd": 4999.0,
         "pitch": (
             "Guards engine rooms against thermal fires and secures $150k charter "
             "guest food freezers at sea."
@@ -64,7 +68,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "solar_infrastructure": {
         "unit": "enclosure",
-        "monthly_usd": 299.0,
+        "monthly_usd": 899.0,
         "pitch": (
             "Monitors thermal runaway in commercial battery banks to protect "
             "against catastrophic fire liability."
@@ -73,7 +77,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "medical_lab": {
         "unit": "vault",
-        "monthly_usd": 199.0,
+        "monthly_usd": 1499.0,
         "pitch": (
             "Mandated by strict OSHA/FDA chain-of-custody rules; includes "
             "automated audit report generation."
@@ -82,7 +86,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "country_club": {
         "unit": "kitchen",
-        "monthly_usd": 199.0,
+        "monthly_usd": 1499.0,
         "pitch": (
             "Safeguards high-revenue holiday dining inventory (Thanksgiving, "
             "Mother's Day) from compressor failure."
@@ -91,7 +95,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "logistics": {
         "unit": "reefer truck",
-        "monthly_usd": 129.0,
+        "monthly_usd": 749.0,
         "pitch": (
             "Generates tamper-proof transit handover temperature passes to "
             "eliminate dock cargo rejection disputes."
@@ -100,8 +104,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "restaurant": {
         "unit": "location",
-        # Priced off the branch ladder's opening rate, not a separate figure.
-        "monthly_usd": 1000.0,
+        "monthly_usd": 999.0,
         "pitch": (
             "Prevents $15,000 walk-in freezer meat/seafood spoilage and "
             "automates health department logs."
