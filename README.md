@@ -28,9 +28,17 @@ ask for.
 | Pricing & Billing | `/api/billing` | Per-unit rate card, invoice, ROI |
 | Enterprise Volume Billing | `/api/v1/enterprise-billing` | Per-branch pricing for chains |
 | Sector Shortcuts | `/api/shortcuts` | The one document each industry must produce |
+| Sites | `/api/sites` | Locations, so an estate is not a flat list of thermometers |
+| Outbound Alert Webhooks | `/api/webhooks` | Slack, Teams, PagerDuty, generic JSON |
+| Compliance Vault | `/api/vault` | Hash-chained readings and verifiable attestations |
+| Insurance Claim Packets | `/api/claims` | Everything an adjuster asks for, assembled |
+| Loss Assurance | `/api/assurance` | The guarantee, and what would void it |
+| Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
+| Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
+| Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
 
-The console is at `/`, the machine-readable gateway at `/api`, and
-interactive API docs at `/docs`.
+The console is at `/`, the reseller portal at `/partners`, the
+machine-readable gateway at `/api`, and interactive API docs at `/docs`.
 
 ## The console
 
@@ -70,8 +78,56 @@ it only against a throwaway instance.
 | `private_aviation` | Private Aviation Hangars | Hangar Bay Humidity Moisture Infiltration | above 85 °F |
 | `superyacht` | Luxury Superyacht Engine Bays | Engine Room Ventilation Airflow Blockage | above 90 °F |
 | `country_club` | High-End Country Clubs | Clubhouse Kitchen Walk-In Compressor Failure | above 32 °F |
+| `pharmacy` | Retail & Hospital Pharmacies | Vaccine Refrigerator Compressor Failure | above 46 °F or below 36 °F |
+| `wine_and_art` | Fine Wine & Art Storage | Cellar Climate Control Failure | above 60 °F or below 50 °F |
+| `cannabis` | Licensed Cannabis Cultivation | Drying Room Climate Excursion | above 72 °F or below 58 °F |
 
 Thresholds are exclusive: a reading exactly at the limit is nominal.
+
+Each profile also names what that sector calls the thing being watched —
+engine bays, racks, walk-ins, cellars — and the console uses that word
+throughout, down to the search placeholder. A customer paying $4,999 a
+vessel never reads the word "sensor" on their own screen.
+
+## Fahrenheit or Celsius
+
+Readings are stored in Fahrenheit and rendered in whichever unit the tenant
+chose, so switching never rewrites history or loses precision on data
+already collected:
+
+```bash
+curl -X POST localhost:8080/api/licenses/me/temperature-unit \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"temperature_unit": "C"}'
+```
+
+A sensor can report in either unit (`temperature_celsius` or
+`temperature_fahrenheit` — exactly one, or the packet is refused), and the
+choice follows all the way out to the alert: the breach reason, the
+emergency SMS, the prompt handed to the model, the charts, the compliance
+documents and the spoken escalation call all render in the customer's unit.
+The call spells the unit out, because a text-to-speech engine reads
+"21.0°C" as gibberish.
+
+## Sites
+
+A chain does not experience its estate as a flat list of thermometers. It
+has stores, and a health inspector visits one of them.
+
+```bash
+curl -X POST localhost:8080/api/sites -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Store 118 Boca Raton", "address": "Boca Raton, FL"}'
+```
+
+Sensors are placed at a site, and the on-call roster is scoped the same way:
+a contact attached to a site is the only one woken for it, and contacts with
+no site cover the whole estate as the fallback. The Boca Raton manager stops
+getting a 3am call about a Boynton Beach freezer.
+
+`GET /api/sites/{id}/reconciliation` flags a site that is being billed but
+has no working sensor at it — the failure nobody notices until a claim is
+denied.
 
 ## Sector shortcuts
 
@@ -88,6 +144,9 @@ already holds the readings it is made of:
 | Private Aviation Hangars | Hangar Avionics Humidity Log |
 | Luxury Superyachts | Charter Guest Galley Safety Memo |
 | High-End Country Clubs | Clubhouse Kitchen Inventory Safe-Guard |
+| Retail & Hospital Pharmacies | VFC Storage & Handling Record |
+| Fine Wine & Art Storage | Provenance Climate Certificate |
+| Licensed Cannabis Cultivation | State Compliance Cultivation Log |
 
 `POST /api/shortcuts/{vertical}?days=30` writes the document from that
 tenant's own telemetry. The model is handed the real per-sensor figures and
@@ -143,14 +202,17 @@ refused, since the sensor could never read in band.
 Priced per unit, per month, by vertical — a rack is not a reefer truck and
 is not billed like one. The invoice is derived from the sensors actually
 registered, so a customer with three racks and two hangar bays pays
-3 × $499 + 2 × $349 = $2,195 a month.
+3 × $899 + 2 × $1,999 = $6,695 a month.
 
 | Sector | Price | Protects against |
 |---|---|---|
 | Luxury Superyachts | **$4,999** / vessel / month | Engine-room thermal fires; $150k charter guest freezers at sea |
+| Fine Wine & Art Storage | **$2,499** / cellar / month | Provenance, which is most of what the collection is worth |
 | Private Aviation Hangars | **$1,999** / bay / month | Moisture corrosion of multi-million-dollar avionics |
 | Medical Labs & Blood Banks | **$1,499** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
 | High-End Country Clubs | **$1,499** / kitchen / month | Holiday dining inventory lost to compressor failure |
+| Retail & Hospital Pharmacies | **$1,299** / pharmacy / month | The continuous-monitoring requirement for vaccine storage |
+| Licensed Cannabis Cultivation | **$1,199** / room / month | Environmental control a licence renewal is judged against |
 | Franchise Restaurants | **$999** / location / month | $15,000 walk-in spoilage; health department logs |
 | CyberTech Data Centers | **$899** / rack / month | $50,000+ server meltdowns and SLA contract breaches |
 | Solar Infrastructure | **$899** / enclosure / month | Battery-bank thermal runaway and fire liability |
@@ -213,6 +275,38 @@ contract supersedes the rate card, and the rate-card figure is kept alongside
 for comparison rather than charged.
 
 
+
+### Add-ons, and why none of them is a share of savings
+
+| Add-on | Basis | Price |
+|---|---|---|
+| Loss Assurance | per covered unit | $149 / month |
+| Certified Compliance Vault | per estate | $499 / month |
+| Sector Benchmarks | per estate | $299 / month |
+| Equipment Intelligence | per estate | $399 / month |
+
+Every one is a fixed fee. A percentage of what a customer saved sounds
+aligned and is not: a quiet year pays nothing for the same standing
+obligation, and on a marginal claim it puts the vendor on the wrong side of
+the customer. A test asserts no add-on can be priced any other way.
+
+### The terms that decide the other half
+
+The rate card is half of what an estate is worth.
+
+- **$1,500 per site at commissioning**, once. It funds acquisition on the
+  day of signature rather than eleven months later, and a customer who paid
+  to be installed does not churn casually.
+- **10% for annual prepay.** Worth more than it costs: it removes the
+  collections problem and fixes the customer for twelve months.
+- **A 5% annual escalator** on multi-year contracts. Uncontroversial at
+  signature and compounding — three years is 5.1% more contract value for
+  no additional delivery.
+
+`GET /api/billing/deal?years=3&annual_prepay=true&include_add_ons=assurance,vault`
+returns the whole thing in one figure, so nobody discovers a setup fee or an
+escalator afterwards. That is the only way those terms survive a renewal
+conversation.
 
 ### Return on the subscription
 
@@ -325,13 +419,71 @@ curl -X POST localhost:8080/api/sensor-pulse \
 4. `POST /api/voice/acknowledge/{id}` halts the ladder;
    `POST /api/voice/resolve/{id}` closes the incident.
 
-## Autopilot
+### Press 1 to acknowledge
 
-`POST /api/autopilot/sweep` is the unattended watchdog — point Cloud Scheduler
-at it every few minutes. One pass flags sensors that have gone silent for over
-30 minutes (a sensor that cannot report cannot warn you) and places voice calls
-for incidents past the grace window. Pass `auto_escalate=false` to report
-without calling.
+The call script closes by telling the callee to press 1, and that reaches
+something: the call wraps the script in a TwiML `<Gather>` pointed at a
+callback that acknowledges the incident and stops the ladder.
+
+The callback cannot carry a bearer token, because Twilio is the caller. It
+is gated on a valid Twilio signature **and** a per-incident secret in the
+URL — incident IDs run in sequence, so the ID alone would let a stranger
+silence somebody else's alarm. Set `PUBLIC_BASE_URL` to switch it on;
+without it the call behaves as it always did rather than advertising a
+keypress that goes nowhere.
+
+## The watchdog
+
+Escalation is the product's whole promise, and it only holds if something
+runs the sweep when nobody is watching. A plain asyncio loop inside the API
+process sweeps every tenant on `CYBERLOGIX_SWEEP_SECONDS` (default 60) — one
+loop, no broker, no second service to pay for. A failure on one estate
+cannot stop the others.
+
+Set `CYBERLOGIX_SWEEP_SECONDS=0` when an external scheduler drives
+`POST /api/autopilot/sweep` instead, **or when running more than one
+replica** — otherwise each replica escalates the same incident.
+`GET /api/health` reports which it is.
+
+`POST /api/autopilot/sweep` still runs one pass on demand. One pass flags
+sensors that have gone silent for over 30 minutes (a sensor that cannot
+report cannot warn you) and places voice calls for incidents past the grace
+window. Pass `auto_escalate=false` to report without calling.
+
+## Alert channels
+
+An alert that needs somebody to log in to a dashboard is an alert that
+waits. Breaches are pushed to wherever the team already is — alongside the
+SMS and the call, never instead of them.
+
+```bash
+curl -X POST localhost:8080/api/webhooks -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{
+  "kind": "slack", "target": "https://hooks.slack.com/services/...",
+  "label": "#ops-alerts"
+}'
+```
+
+Four kinds: Slack and Teams incoming webhooks, PagerDuty Events API v2 (a
+routing key rather than a URL), and a generic JSON receiver. Each gets the
+envelope it actually accepts — a Slack body posted to Teams is a silent 400.
+PagerDuty triggers and resolves on the same dedup key, so acknowledging an
+incident closes the alert it opened rather than leaving an orphan on the
+rotation.
+
+Hooks can be scoped to a site, but unlike the phone roster a site hook
+**adds to** the estate-wide ones rather than replacing them: waking the
+wrong person matters, while head office silently losing branch alerts is
+worse.
+
+The target is a credential, so it is stored whole and never returned whole.
+Plain `http` is refused, and so is any target that resolves inside our own
+network — a customer-supplied URL this server posts to is a request-forgery
+primitive. Self-hosted deployments with a receiver on their own LAN can opt
+back in with `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS=1`.
+
+Delivery follows the same rule as SMS and voice: it never raises. Three
+failures in a row flag a hook as failing, and the breach handler carries on.
 
 `GET /api/autopilot/compliance?days=7` assembles the inspector-ready
 temperature log: readings logged, excursions, per-sensor min/max/mean,
@@ -481,6 +633,141 @@ On the infrastructure side, deploy with `--min-instances 0` so an idle
 deployment costs nothing but storage; SQLite on the instance disk avoids a
 managed database entirely at this scale.
 
+## The compliance vault
+
+A temperature log is worth what a sceptical third party thinks it is worth.
+An insurer settling a six-figure claim, an FDA auditor, a buyer checking a
+cellar's provenance — "our database says so" is not an answer to any of
+them. And the attack is not an outsider: it is the operator who finds a bad
+night and edits the row before the inspector arrives.
+
+So every reading is chained. Each digest covers the reading **and the
+digest before it**, which means altering one historical value changes every
+digest after it and the chain stops verifying. The customer cannot quietly
+rewrite their own history, and neither can we.
+
+```bash
+# A signed statement of the whole estate's record
+curl -H "Authorization: Bearer $TOKEN" \
+  localhost:8080/api/vault/attestation?days=30
+
+# A recipient who trusts neither party re-derives it themselves. No account.
+curl -X POST localhost:8080/api/vault/verify -H 'Content-Type: application/json' \
+  -d '{"readings": [...], "chain_head": "e3b4cf…"}'
+```
+
+`/api/vault/verify` is deliberately unauthenticated — that is the entire
+point — and reads nothing and stores nothing. Both the chain and the
+verifier derive digests through one function, because two implementations
+of the same hash is how a verifier ends up disagreeing with the thing it
+verifies.
+
+Set `CYBERLOGIX_ATTESTATION_KEY` to counter-sign. Without it the chain
+still verifies on its own and the attestation says so plainly rather than
+implying a signature it does not have.
+
+What this is not: a blockchain, a notary, or a legal guarantee. It is a
+hash chain plus an attestation, and overselling it is the one thing that
+would make it worthless.
+
+## Claim packets
+
+The money in a loss event is not lost in the failure. It is lost in the six
+weeks afterwards, while somebody hunts for logs and tries to prove the
+response was reasonable.
+
+`POST /api/claims/{incident_id}/packet` assembles it: readings either side
+of the event, the alert timeline with delivery receipts, who acknowledged
+and how fast, prior incidents on the same asset — **disclosed rather than
+hidden**, because an adjuster finds them anyway — and a vault attestation
+so none of it can have been written after the fact.
+
+A covering letter is drafted for the adjuster, and is forbidden from
+estimating the loss, arguing the claim, or characterising the insured's
+conduct. One invented figure discredits the entire packet.
+
+The console renders it as a document and prints it: a dedicated print
+stylesheet re-sets the whole thing for ink, because the adjuster's office
+will print it and the dark console on paper is unreadable.
+
+## Loss assurance
+
+The guarantee, at a flat $149 per covered unit per month: if a breach is
+recorded on a covered unit and no alert reaches anybody, CyberLogix
+reimburses the deductible for that event up to $25,000.
+
+Flat, never a share of what the customer saved. A percentage means a quiet
+year pays nothing for the same standing obligation, and it puts the vendor
+against the customer the moment a claim is marginal.
+
+What makes it defensible rather than reckless is that an operator can void
+their own cover without realising — a dead battery, an empty roster, a
+sensor offline for a week. So `GET /api/assurance/cover` computes
+eligibility continuously and names exactly what to fix, **before** an event:
+
+> BLOOD-07 battery is at 12.0% and will go dark before it is noticed
+
+A guarantee whose exclusions only appear at claim time is a trick; one that
+tells you what to fix this morning is a service.
+
+`GET /api/assurance/performance` publishes our own miss rate, counting an
+alert we composed but could not send as a miss. A guarantee from a vendor
+who hides that number is a slogan.
+
+## Benchmarks and equipment intelligence
+
+Two products fall out of data already being collected. `GET /api/benchmarks/{vertical}`
+tells a customer where they sit against comparable operators on excursion
+rate, response time and uptime — a number they cannot get anywhere else,
+which changes every quarter. `GET /api/benchmarks` reports failure and drift
+rates by hardware manufacturer across the whole fleet.
+
+Both rest entirely on the privacy floor holding. Nothing is published for a
+cohort under five operators, or a manufacturer under three operators and
+eight units — below that a participant subtracts themselves and reads a
+named competitor straight off. Findings are per manufacturer, never per
+serial. A benchmark that leaked one chain's performance to a rival would
+end the business that produced it.
+
+## Invoicing
+
+`POST /api/invoices` issues a numbered, dated invoice and **freezes it**.
+The figures are snapshotted at issue rather than recomputed on read: an
+invoice whose total moves after it was sent is a dispute the customer is
+right to raise.
+
+Numbers are sequential and gapless within a year, derived from what has
+already been issued rather than a counter, so a restart cannot reissue one.
+Voiding does not free the number — a gap in the sequence is the first thing
+an auditor asks about. A short payment is recorded as a short payment
+rather than quietly closing the invoice.
+
+The document carries the issuer's legal name, address, tax ID and
+remittance details from configuration, and says so plainly when they are
+unset rather than printing a line reading "Tax ID:" with nothing after it.
+
+Payment collection is left to a processor. `POST /api/invoices/{id}/paid`
+is where a webhook would land, and the lifecycle is complete without one —
+which is also how a bank transfer, how most contracts at these sizes are
+actually settled, gets recorded.
+
+## The reseller channel
+
+A refrigeration servicer with two hundred restaurant clients already visits
+every site and is already called at 2am when a walk-in fails. Selling to
+them once puts the product in two hundred kitchens.
+
+Partners are minted by the platform operator (`X-CyberLogix-Admin`, gated
+on `CYBERLOGIX_ADMIN_KEY`; unset means those endpoints are **closed**, not
+open) and earn a share of what their accounts bill — paid on collected
+revenue, so they earn from accounts that stay.
+
+The portal at `/partners` shows their book, what it earns them, which
+accounts need an engineer today, and one account in operational detail. A
+partner is a principal with narrower rights than a tenant owner: scoped to
+their own accounts, and shown what an engineer needs without the customer's
+roster or audit trail.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -499,6 +786,20 @@ managed database entirely at this scale.
 | `CYBERLOGIX_RATE_AI_CALL` | `0.0012` | USD per model call, for the estimate |
 | `CYBERLOGIX_RATE_SMS` | `0.0079` | USD per SMS, for the estimate |
 | `CYBERLOGIX_RATE_VOICE_CALL` | `0.0140` | USD per voice call, for the estimate |
+| `PUBLIC_BASE_URL` | — | Public URL so "press 1 to acknowledge" reaches the callback |
+| `CYBERLOGIX_SWEEP_SECONDS` | `60` | Unattended sweep interval; `0` disables the in-process loop |
+| `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
+| `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
+| `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
+| `CYBERLOGIX_LEGAL_NAME` | `CyberLogix AI` | Issuer name on invoices |
+| `CYBERLOGIX_ADDRESS` | — | Issuer address on invoices |
+| `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
+| `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |
+| `CYBERLOGIX_BILLING_EMAIL` | — | Billing contact on invoices |
+
+`.env.example` carries the same list with the reasoning next to each one, and
+a test fails if a setting is read by the code but missing from that file — or
+documented there and read by nothing.
 
 Set real origins before production; browsers reject credentialed requests
 against a wildcard, so credentials switch on only once origins are named.
@@ -543,7 +844,15 @@ export GEMINI_API_KEY=your-key
 the database is in-memory, so the suite runs without credentials, makes no
 network calls and touches no file on disk.
 
-## Deploying to Cloud Run
+## Deploying
+
+The image is a two-stage build: the wheel tooling stays in the build stage,
+so what ships is the interpreter, the installed packages and the
+application. It runs as an unprivileged user, and copies the tree rather
+than naming modules — a hand-written manifest had already fallen thirteen
+modules behind the application, and the container would have crashed on
+import the first time anybody deployed it. `tests/test_deployment.py` is
+what makes that impossible to repeat.
 
 ```bash
 gcloud run deploy cyberlogix-hub \
@@ -552,8 +861,39 @@ gcloud run deploy cyberlogix-hub \
   --max-instances 1 \
   --min-instances 0 \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_API_KEY=your-key,TWILIO_ACCOUNT_SID=AC...,TWILIO_AUTH_TOKEN=...,TWILIO_FROM_NUMBER=+15550100
+  --set-secrets GEMINI_API_KEY=gemini-key:latest,\
+TWILIO_AUTH_TOKEN=twilio-token:latest,\
+CYBERLOGIX_ATTESTATION_KEY=attestation-key:latest,\
+CYBERLOGIX_ADMIN_KEY=admin-key:latest \
+  --set-env-vars TWILIO_ACCOUNT_SID=AC...,TWILIO_FROM_NUMBER=+15550100,\
+PUBLIC_BASE_URL=https://cyberlogix-hub-xxxx.run.app
 ```
 
-Put the two secrets in Secret Manager rather than plain env vars for a real
-deployment.
+Secrets belong in Secret Manager, not `--set-env-vars`. Four matter: the
+Gemini key, the Twilio token, the attestation signing key, and the platform
+admin key that gates minting resellers.
+
+**`--max-instances 1` is not incidental.** Two things assume a single
+process: SQLite is single-writer, and the unattended sweep runs in-process,
+so a second replica escalates every incident twice. To scale out, set
+`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep` from Cloud
+Scheduler, and replace the `Database` class with a Postgres adapter —
+`db.py` is the only file that has to change, since nothing above it writes
+SQL. The adapter needs `put`, `get`, `delete`, `all`, `count` and `clear`.
+
+`--min-instances 0` means an idle deployment costs nothing but storage.
+
+### Before the first customer
+
+Things this repository does not do for you, in the order they will bite:
+
+- **Twilio is not live.** Until the three variables are set, every alert is
+  composed, recorded and never sent. `/api/health` says `dry_run`, and the
+  console shows a banner.
+- **Payments are not collected.** Invoices are issued and tracked; a
+  processor has to be wired to `POST /api/invoices/{id}/paid`.
+- **Nothing is backed up.** The SQLite file on a mounted volume survives a
+  restart, not a deleted volume.
+- **The LLC does not exist yet.** `CYBERLOGIX_LEGAL_NAME` and the other
+  issuer fields go on every invoice; an invoice from an entity that cannot
+  receive money is not a document anyone can pay.
