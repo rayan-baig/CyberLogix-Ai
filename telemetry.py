@@ -100,6 +100,8 @@ def list_industries():
                 "danger_above": profile["danger_above"],
                 "danger_below": profile["danger_below"],
                 "unit": profile["unit"],
+                "asset_noun": profile["asset_noun"],
+                "asset_plural": profile["asset_plural"],
                 "billing_unit": PRICE_BOOK[key]["unit"],
                 "monthly_usd": PRICE_BOOK[key]["monthly_usd"],
                 "price_label": (

@@ -70,3 +70,40 @@ def test_another_tenants_sensor_is_not_readable(
 
     mine, _, _ = operator_factory(company_name="Beta", email="b@x.com")
     assert api.get("/api/console/sensor/THEIRS-1", headers=mine).status_code == 404
+
+
+def test_the_estate_is_described_in_its_own_words(
+    api, operator_factory, sensor_factory
+):
+    """A yacht owner paying $4,999 a vessel should never read "sensor"."""
+    headers, _, _ = operator_factory()
+    sensor_factory(headers, sensor_id="ENG-1", vertical="superyacht")
+    sensor_factory(headers, sensor_id="ENG-2", vertical="superyacht")
+
+    body = api.get("/api/console/overview", headers=headers).json()
+    assert body["fleet_noun"] == "engine bay"
+    assert body["fleet_plural"] == "engine bays"
+    assert body["sensors"][0]["asset_noun"] == "engine bay"
+
+
+def test_a_mixed_estate_falls_back_to_something_neutral(
+    api, operator_factory, sensor_factory
+):
+    """Half yachts and half data halls have no shared word but "asset"."""
+    headers, _, _ = operator_factory()
+    sensor_factory(headers, sensor_id="ENG-1", vertical="superyacht")
+    sensor_factory(headers, sensor_id="RACK-1", vertical="cybersecurity")
+
+    body = api.get("/api/console/overview", headers=headers).json()
+    assert body["fleet_noun"] == "asset"
+    assert body["fleet_plural"] == "assets"
+
+
+def test_every_sector_names_the_thing_it_watches():
+    """A missing noun would print "undefined" on somebody's wall display."""
+    from store import INDUSTRY_PROFILES
+
+    for key, profile in INDUSTRY_PROFILES.items():
+        assert profile["asset_noun"], key
+        assert profile["asset_plural"], key
+        assert profile["asset_noun"] != profile["asset_plural"], key

@@ -135,6 +135,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 78.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "rack",
+        "asset_plural": "racks",
         "shortcut_name": "Automated CISO Incident Briefing",
         "shortcut_description": (
             "Compiles raw server-log alerts into an executive-ready compliance summary for board reviews."
@@ -146,6 +148,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "walk-in",
+        "asset_plural": "walk-ins",
         "shortcut_name": "Health Inspector Log Formatter",
         "shortcut_description": (
             "Formats temperature logs into official local health department audit sheets."
@@ -157,6 +161,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 40.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "reefer",
+        "asset_plural": "reefers",
         "shortcut_name": "Reefer Cargo Handover Pass",
         "shortcut_description": (
             "Generates a transit temperature guarantee certificate for delivery dock receivers."
@@ -168,6 +174,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 115.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "enclosure",
+        "asset_plural": "enclosures",
         "shortcut_name": "Grid Thermal Yield Report",
         "shortcut_description": (
             "Calculates battery thermal efficiency loss and maps preventative cleaning schedules."
@@ -179,6 +187,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 46.0,
         "danger_below": 36.0,
         "unit": "°F",
+        "asset_noun": "cooler",
+        "asset_plural": "coolers",
         "shortcut_name": "OSHA Cold-Storage Specimen Audit",
         "shortcut_description": (
             "Creates chain-of-custody temperature validation logs for vaccine and plasma vaults."
@@ -190,6 +200,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 85.0,  # Heat/humidity proxy
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "hangar bay",
+        "asset_plural": "hangar bays",
         "shortcut_name": "Hangar Avionics Humidity Log",
         "shortcut_description": (
             "Generates FAA-compliant environmental storage logs for sensitive flight computer components."
@@ -201,6 +213,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 90.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "engine bay",
+        "asset_plural": "engine bays",
         "shortcut_name": "Charter Guest Galley Safety Memo",
         "shortcut_description": (
             "Compiles engine room thermal safety logs into a digital report for yacht captains and owners."
@@ -212,6 +226,8 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",
+        "asset_noun": "kitchen",
+        "asset_plural": "kitchens",
         "shortcut_name": "Clubhouse Kitchen Inventory Safe-Guard",
         "shortcut_description": (
             "Calculates potential food loss prevention savings for executive club managers."
@@ -618,6 +634,11 @@ class Sensor:
             or self.override_below is not None,
             "industry_vertical": self.industry_vertical,
             "industry_name": profile["name"],
+            # What this sector calls the thing being watched. A superyacht
+            # customer paying $4,999 a vessel should not read the word
+            # "sensor" anywhere on their own screen.
+            "asset_noun": profile["asset_noun"],
+            "asset_plural": profile["asset_plural"],
             "location_name": self.location_name,
             "external_device_sn": self.external_device_sn,
             "registered_at": iso(self.registered_at),

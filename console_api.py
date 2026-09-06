@@ -96,6 +96,15 @@ def console_overview(
         logged += len(readings)
         breached += sum(1 for r in readings if r.breached)
 
+    # The estate's own vocabulary. One vertical means we can speak it
+    # throughout; a mixed estate has to fall back to something neutral.
+    verticals = {s["industry_vertical"] for s in sensors}
+    if len(verticals) == 1:
+        only = INDUSTRY_PROFILES[next(iter(verticals))]
+        fleet_noun, fleet_plural = only["asset_noun"], only["asset_plural"]
+    else:
+        fleet_noun, fleet_plural = "asset", "assets"
+
     at_risk = sum(
         1
         for s in sensors
@@ -117,6 +126,8 @@ def console_overview(
             "predictive_forecasting": forecasting,
         },
         "temperature_unit": unit,
+        "fleet_noun": fleet_noun,
+        "fleet_plural": fleet_plural,
         "sites": [
             site.public(
                 sensor_count=sum(
