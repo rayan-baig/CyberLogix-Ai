@@ -91,7 +91,8 @@
 
 <!-- ============================ APP ============================ -->
 <div id="app" hidden>
-  <nav class="nav">
+  <a class="skip" href="#fleet-card">Skip to the fleet</a>
+  <nav class="nav" aria-label="Account and display">
     <span class="pulse" aria-hidden="true"></span>
     <div class="brand">
       <span class="brand-name">CyberLogix <em>AI</em></span>
@@ -114,13 +115,14 @@
   </nav>
 
   <main>
+    <div id="stale-banner" class="banner stale" role="status" hidden></div>
     <div id="delivery-banner" class="banner warn" hidden></div>
 
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
 
     <div class="layout">
       <div>
-        <section class="card">
+        <section class="card" id="fleet-card" tabindex="-1">
           <div class="card-head">
             <span class="card-title" id="fleet-title">The fleet</span>
             <span class="card-note" id="fleet-note"></span>
@@ -144,7 +146,9 @@
             <button class="btn btn-sm" id="group-sites" aria-pressed="false"
                     title="Group the fleet by location">Group by site</button>
           </div>
-          <div id="fleet" class="fleet"></div>
+          <div id="fleet" class="fleet">
+            <div class="loading">Reading the estate…</div>
+          </div>
           <div id="fleet-table" hidden></div>
         </section>
 
@@ -366,6 +370,35 @@
                      border:1px solid var(--border);border-radius:9px;color:var(--ink)">
               <button class="btn btn-sm" type="submit">Add</button>
             </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Invoices</span>
+            <span class="card-note" id="invoice-note"></span>
+          </div>
+          <div id="invoice-body"></div>
+          <form id="invoice-form" style="margin-top:12px">
+            <div class="row">
+              <label class="sr" for="inv-addons">Add-ons to bill</label>
+              <select id="inv-addons" class="grow"
+                      style="padding:9px 11px;background:var(--sunken);
+                      border:1px solid var(--border);border-radius:9px;color:var(--ink)">
+                <option value="">Subscription only</option>
+                <option value="assurance">+ Loss assurance</option>
+                <option value="vault">+ Compliance vault</option>
+                <option value="assurance,vault">+ Assurance and vault</option>
+                <option value="assurance,vault,benchmarks,equipment_intelligence">
+                  + Everything
+                </option>
+              </select>
+              <button class="btn btn-sm" type="submit">Issue</button>
+            </div>
+            <label class="row" style="margin-top:8px;font-size:12px;color:var(--muted)">
+              <input type="checkbox" id="inv-setup" style="width:auto">
+              Include one-time commissioning
+            </label>
           </form>
         </section>
 
@@ -617,26 +650,66 @@ async function enter(token, user) {
   setTerminal(readTerminalPreference());
   logToConsole("Session opened.", "info");
   await loadIndustries();
+  markFresh();
   startPolling();
 }
 
-$("sign-out").addEventListener("click", async () => {
-  try { await api("/api/accounts/logout", { method: "POST" }); } catch (_) {}
+/* Tearing down the session locally, without calling the API — used when
+   the token is already dead and a logout call would only 401 again. */
+function signOutLocally() {
   try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
   clearInterval(state.timer);
   state.token = null;
   state.user = null;
   state.data = null;
+  state.benchmarkLoaded = false;
+  state.attestation = null;
+  closeDrawer();
   $("app").hidden = true;
+  $("stale-banner").hidden = true;
   setTerminal(false, { remember: false });
   $("gate").hidden = false;
   $("si-password").value = "";
+}
+
+$("sign-out").addEventListener("click", async () => {
+  try { await api("/api/accounts/logout", { method: "POST" }); } catch (_) {}
+  signOutLocally();
 });
+
+/* A dashboard that quietly stops updating is worse than one that says it
+   has. The banner stays up until a poll succeeds, and a session that has
+   expired sends the operator back to the gate rather than showing them a
+   frozen estate. */
+function markFresh() {
+  state.lastGoodAt = Date.now();
+  state.pollFailures = 0;
+  $("stale-banner").hidden = true;
+}
+
+function markStale(err) {
+  state.pollFailures = (state.pollFailures || 0) + 1;
+  if (err && err.status === 401) {
+    toast("Your session has expired. Sign in again.", "err");
+    signOutLocally();
+    return;
+  }
+  // One dropped poll is a blip; two is worth saying out loud.
+  if (state.pollFailures < 2) return;
+  const since = state.lastGoodAt
+    ? Math.round((Date.now() - state.lastGoodAt) / 1000)
+    : null;
+  const banner = $("stale-banner");
+  banner.hidden = false;
+  banner.textContent =
+    `Not reaching the hub${since ? ` for ${since} seconds` : ""}. `
+    + "What is on screen is the last good reading, not the current one.";
+}
 
 function startPolling() {
   clearInterval(state.timer);
   state.timer = setInterval(() => {
-    refresh().catch((err) => toast(err.message, "err"));
+    refresh().then(markFresh).catch(markStale);
   }, POLL_MS);
 }
 
@@ -686,7 +759,7 @@ async function loadIndustries() {
 
 async function refresh() {
   const [overview, health, costs, audit, me, roster, team, catalogue, hooks,
-         cover] =
+         cover, invoices] =
     await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
@@ -700,6 +773,7 @@ async function refresh() {
       : api("/api/shortcuts"),
     api("/api/webhooks"),
     api("/api/assurance/cover"),
+    api("/api/invoices"),
   ]);
   state.shortcutCatalogue = catalogue;
   state.data = overview;
@@ -709,6 +783,7 @@ async function refresh() {
   renderSites(overview);
   renderHooks(hooks);
   renderAssurance(cover);
+  renderInvoices(invoices);
   renderVault();
   loadBenchmarks(overview);
   if (state.drawerSensor) openDrawer(state.drawerSensor, { quiet: true });
@@ -1440,6 +1515,140 @@ function renderRoster(roster) {
 }
 
 
+/* ---------------- invoices ---------------- */
+
+const INVOICE_STATE_CLASS = { issued: "", paid: "good", void: "" };
+
+function renderInvoices(ledger) {
+  $("invoice-note").textContent = ledger.outstanding_count
+    ? `${money(ledger.outstanding_usd)} outstanding`
+    : ledger.count ? "all settled" : "none yet";
+
+  if (!ledger.invoices.length) {
+    $("invoice-body").innerHTML =
+      `<div class="empty" style="padding:22px">
+         Nothing billed yet.
+         <span class="sub">Issue one and it is frozen at today's figures.</span>
+       </div>`;
+    return;
+  }
+
+  $("invoice-body").innerHTML = ledger.invoices.slice(0, 6).map((inv) => {
+    const late = inv.overdue;
+    const due = inv.state !== "issued" ? inv.state
+      : late ? `${Math.abs(inv.days_until_due)}d overdue`
+      : `due in ${inv.days_until_due}d`;
+    return `<div style="display:flex;align-items:center;gap:9px;padding:8px 0;
+                        border-bottom:1px solid var(--border);
+                        ${inv.state === "void" ? "opacity:.5" : ""}">
+      <span class="grow">
+        <span style="font-family:var(--mono);font-size:12px">${
+          esc(inv.number)}</span>
+        <span style="display:block;font-size:11.5px;color:var(${
+          late ? "--critical" : "--muted"})">${esc(due)}</span>
+      </span>
+      <span style="font-variant-numeric:tabular-nums">${
+        money(inv.total_usd)}</span>
+      <button class="btn btn-sm" data-invoice="${esc(inv.invoice_id)}">View</button>
+    </div>`;
+  }).join("") + (ledger.invoices.length > 6
+    ? `<div class="card-note" style="margin-top:8px">${
+        ledger.invoices.length - 6} older not shown.</div>` : "");
+}
+
+const money = (n) => "$" + Number(n || 0).toLocaleString(undefined,
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* The invoice as a document, in the same drawer and to the same print
+   rules as the claim packet — a finance department prints this too. */
+async function openInvoice(invoiceId) {
+  let inv;
+  try { inv = await api(`/api/invoices/${encodeURIComponent(invoiceId)}`); }
+  catch (err) { toast(err.message, "err"); return; }
+
+  const rows = inv.lines.map((line) => `<tr>
+      <td>${esc(line.description)}</td>
+      <td class="num">${esc(line.quantity)}</td>
+      <td class="num">${money(line.unit_price_usd)}</td>
+      <td class="num">${money(line.amount_usd)}</td>
+    </tr>`).join("");
+
+  const status = inv.state === "paid"
+    ? `Settled ${stamp(inv.paid_at)}${
+        inv.payment_reference ? ` · ${esc(inv.payment_reference)}` : ""}`
+    : inv.state === "void" ? `Voided ${stamp(inv.voided_at)}`
+    : inv.overdue ? `Overdue by ${Math.abs(inv.days_until_due)} days`
+    : `Due ${stamp(inv.due_at)}`;
+
+  $("drawer").innerHTML = `
+    <div class="drawer-head">
+      <div class="grow">
+        <div class="doc-kicker">Invoice</div>
+        <div class="drawer-title" id="drawer-title">${esc(inv.number)}</div>
+        <div class="drawer-sub">${esc(status)}</div>
+      </div>
+      <button class="btn btn-sm" id="invoice-print">Print</button>
+      <button class="btn btn-sm" id="drawer-close">Close</button>
+    </div>
+
+    <div class="doc-issuer">
+      <div class="doc-issuer-name">${esc(inv.issued_by.legal_name)}</div>
+      ${inv.issued_by.address
+        ? `<div>${esc(inv.issued_by.address)}</div>` : ""}
+      ${inv.issued_by.tax_id
+        ? `<div>Tax ID ${esc(inv.issued_by.tax_id)}</div>` : ""}
+      ${inv.issued_by.email
+        ? `<div>${esc(inv.issued_by.email)}</div>` : ""}
+      ${inv.issued_by.note
+        ? `<div class="doc-issuer-warn">${esc(inv.issued_by.note)}</div>` : ""}
+    </div>
+
+    <div class="doc-section">Billed to</div>
+    <div class="readout">
+      <div><span class="k">Company</span><span class="v">${
+        esc(inv.billed_to.company_name)}</span></div>
+      <div><span class="k">Attention</span><span class="v">${
+        esc(inv.billed_to.contact_name)}</span></div>
+      <div><span class="k">Email</span><span class="v">${
+        esc(inv.billed_to.contact_email)}</span></div>
+      ${inv.purchase_order ? `<div><span class="k">Purchase order</span>
+        <span class="v">${esc(inv.purchase_order)}</span></div>` : ""}
+      <div><span class="k">Issued</span><span class="v">${
+        esc(stamp(inv.issued_at))}</span></div>
+      <div><span class="k">Due</span><span class="v">${
+        esc(stamp(inv.due_at))}</span></div>
+    </div>
+
+    <div class="doc-section">Charges</div>
+    <div class="scrollx"><table>
+      <thead><tr><th>Description</th><th class="num">Qty</th>
+        <th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td colspan="3" style="text-align:right;color:var(--muted)">Total due</td>
+        <td class="num" style="font-family:var(--display);font-size:19px">${
+          money(inv.total_usd)}</td>
+      </tr></tfoot>
+    </table></div>
+
+    <div class="card-note" style="margin-top:16px">${esc(inv.terms)}</div>
+    ${inv.issued_by.remit_to
+      ? `<div class="card-note">Remit to: ${esc(inv.issued_by.remit_to)}</div>`
+      : ""}
+
+    ${inv.state === "issued" ? `<div class="row no-print" style="margin-top:18px">
+      <button class="btn btn-sm" data-settle="${esc(inv.invoice_id)}">
+        Record payment</button>
+      <button class="btn btn-sm" data-voidinv="${esc(inv.invoice_id)}">
+        Void</button>
+    </div>` : ""}
+  `;
+
+  showDrawer();
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("invoice-print").addEventListener("click", () => window.print());
+}
+
 /* ---------------- claim packet ---------------- */
 
 /* Rendered in the drawer as the document it is, because the person who
@@ -1948,21 +2157,49 @@ async function openDrawer(sensorId, options = {}) {
 }
 
 function showDrawer() {
+  // Remembered so focus can go back where it came from, rather than
+  // dumping a keyboard user at the top of the page on close.
+  if (!document.body.classList.contains("drawer-open")) {
+    state.focusReturn = document.activeElement;
+  }
   $("drawer").hidden = false;
   $("scrim").hidden = false;
   document.body.classList.add("drawer-open");
-  // Focus moves into the panel, or a keyboard user is left behind it.
   const close = $("drawer-close");
   if (close) close.focus();
 }
 
 function closeDrawer() {
+  const wasOpen = !$("drawer").hidden;
   state.drawerSensor = null;
   state.packet = null;
   $("drawer").hidden = true;
   $("scrim").hidden = true;
   document.body.classList.remove("drawer-open");
+  if (wasOpen && state.focusReturn && state.focusReturn.isConnected) {
+    state.focusReturn.focus();
+  }
+  state.focusReturn = null;
 }
+
+/* Tab must not escape an open panel: a modal a keyboard user can walk out
+   of behind is not modal. */
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || $("drawer").hidden) return;
+  const focusable = $("drawer").querySelectorAll(
+    'a[href], button:not(:disabled), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 /* A full-width line of the last hundred-odd readings, with the safe band
    drawn behind it: a number out of band is obvious, a list of them is not. */
@@ -2110,6 +2347,31 @@ document.addEventListener("click", (event) => {
     act(() => api(`/api/webhooks/${encodeURIComponent(btn.dataset.hookRemove)}`, {
       method: "DELETE",
     }), "Alert channel removed.");
+  }
+
+  if (btn.dataset.invoice) {
+    openInvoice(btn.dataset.invoice);
+    return;
+  }
+
+  if (btn.dataset.settle) {
+    const reference = prompt(
+      "Payment reference (wire number, cheque, processor id):");
+    if (!reference) return;
+    act(() => api(`/api/invoices/${encodeURIComponent(btn.dataset.settle)}/paid`, {
+      method: "POST", body: JSON.stringify({ reference }),
+    }), "Payment recorded.");
+    closeDrawer();
+    return;
+  }
+
+  if (btn.dataset.voidinv) {
+    if (!confirm("Void this invoice? The number is never reissued.")) return;
+    act(() => api(`/api/invoices/${encodeURIComponent(btn.dataset.voidinv)}/void`, {
+      method: "POST",
+    }), "Invoice voided.");
+    closeDrawer();
+    return;
   }
 
   if (btn.dataset.packet) {
@@ -2403,6 +2665,22 @@ $("contact-form").addEventListener("submit", (event) => {
     });
     event.target.reset();
   }, "Added to the roster.");
+});
+
+$("invoice-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  act(async () => {
+    const issued = await api("/api/invoices", {
+      method: "POST",
+      body: JSON.stringify({
+        include_add_ons: $("inv-addons").value,
+        include_setup: $("inv-setup").checked,
+        period_days: 30,
+      }),
+    });
+    $("inv-setup").checked = false;
+    return issued;
+  }, "Invoice issued and frozen at today's figures.");
 });
 
 $("site-form").addEventListener("submit", (event) => {

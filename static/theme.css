@@ -32,7 +32,11 @@
   --border-lit:rgba(245,241,234,0.14);
   --ink:       #F5F1EA;
   --ink-2:     #BCB2A4;
-  --muted:     #837A6E;
+  /* Lifted from #837A6E: at that value small muted text landed at 4.30
+     against the raised surface, under the 4.5 WCAG AA floor. Every colour
+     in this file clears 4.5 on every surface it is used on — checked, not
+     assumed. */
+  --muted:     #8F867A;
   /* One accent, champagne rather than cyan, and used sparingly. A
      screen with colour in six places has no accent at all. */
   --accent:    #D9B98A;
@@ -49,7 +53,9 @@
   --good:      #7E9A72;
   --warning:   #C9A227;
   --serious:   #C08552;
-  --critical:  #C0563F;
+  /* Also lifted (from #C0563F, 4.01) — an out-of-band reading in a table
+     is small text and is the single most important number on the page. */
+  --critical:  #D26851;
   --grid:      rgba(245,241,234,0.06);
   --radius:    14px;
   /* Elevation instead of outlines. Bordered boxes read cheap; surfaces
@@ -351,8 +357,8 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 /* A breach is stated by a hairline and a wash, not a red box. The badge
    carries the word and the glyph; the card only has to draw the eye. */
 .sensor.is-breaching {
-  border-color: rgba(192,86,63,0.45);
-  background: linear-gradient(180deg, rgba(192,86,63,0.09), var(--surface-2) 60%);
+  border-color: rgba(210,104,81,0.45);
+  background: linear-gradient(180deg, rgba(210,104,81,0.09), var(--surface-2) 60%);
 }
 .sensor-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
 .sensor-id {
@@ -530,7 +536,7 @@ body.has-terminal main { padding-bottom: 148px; }
   background: var(--sunken);
 }
 .pill.warn { color: var(--warning); border-color: rgba(201,162,39,0.4); }
-.pill.bad  { color: var(--critical); border-color: rgba(192,86,63,0.45); }
+.pill.bad  { color: var(--critical); border-color: rgba(210,104,81,0.45); }
 .pill.site { color: var(--accent); border-color: rgba(217,185,138,0.34); }
 .meter { width: 30px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .meter > i { display: block; height: 100%; background: currentColor; }
@@ -594,7 +600,7 @@ body.wall .fleet { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 body.wall #wall-exit { display: inline-flex; }
 /* A wall screen is read from across the room; breaching must be obvious. */
 body.wall .sensor.is-breaching {
-  border-color: rgba(192,86,63,0.6); background: rgba(192,86,63,0.14);
+  border-color: rgba(210,104,81,0.6); background: rgba(210,104,81,0.14);
 }
 
 
@@ -668,6 +674,17 @@ body.wall .sensor.is-breaching {
   margin: 26px 0 10px; padding-bottom: 7px;
   border-bottom: 1px solid var(--border);
 }
+/* The issuer block: who is asking to be paid. Small, at the top, the way
+   every invoice a finance department has ever processed is laid out. */
+.doc-issuer {
+  margin: 16px 0 4px; font-size: 12px; color: var(--muted); line-height: 1.7;
+}
+.doc-issuer-name {
+  font-family: var(--display); font-size: 17px; color: var(--ink);
+  line-height: 1.3; margin-bottom: 2px;
+}
+.doc-issuer-warn { color: var(--warning); margin-top: 6px; max-width: 52ch; }
+
 .doc-letter {
   font-family: var(--display); font-size: 16px; line-height: 1.6;
   color: var(--ink-2); margin: 18px 0 4px;
@@ -687,7 +704,7 @@ body.wall .sensor.is-breaching {
      whatever browser the adjuster's office is running. */
   body.drawer-open > *:not(#drawer) { display: none !important; }
   .nav, #terminal, #toasts, #scrim, #wall-exit, #tip,
-  .drawer-head .btn { display: none !important; }
+  .drawer-head .btn, .no-print { display: none !important; }
   .card { box-shadow: none; border-color: #ccc; break-inside: avoid; }
   #drawer {
     position: static; width: auto; overflow: visible;
@@ -696,6 +713,9 @@ body.wall .sensor.is-breaching {
   }
   #drawer[hidden] { display: none !important; }
   .doc-kicker, .doc-section { color: #555; border-color: #ccc; }
+  .doc-issuer { color: #555; }
+  .doc-issuer-name { color: #111; }
+  .doc-issuer-warn { color: #8a6d1f; }
   .doc-letter { color: #111; border-left-color: #999; }
   .readout, .digest { border-color: #ccc; background: #fff; }
   .readout div { border-color: #eee; }
@@ -736,4 +756,98 @@ body.wall .sensor.is-breaching {
   #fleet-table, .scrollx { overflow-x: auto; }
   #toasts { right: 10px; left: 10px; bottom: 88px; }
   .toast { max-width: none; }
+}
+
+
+/* ==========================================================================
+   Focus, selection, and the details that decide whether this feels made
+   ========================================================================== */
+
+/* A keyboard user has to be able to see where they are. Nothing here is
+   optional: without it, every control on both surfaces is invisible to
+   anyone not using a mouse. :focus-visible rather than :focus, so a
+   clicked button does not keep a ring afterwards. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.btn:focus-visible {
+  outline-offset: 3px;
+  border-color: var(--accent);
+}
+.field input:focus-visible,
+.field textarea:focus-visible,
+.field select:focus-visible,
+.toolbar input:focus-visible,
+.toolbar select:focus-visible {
+  /* These already draw their own ring; a second outline reads as a fault. */
+  outline: none;
+}
+tr[tabindex]:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Warm, quiet, and legible — the browser default blue against this ground
+   looks like a rendering bug. */
+::selection { background: rgba(217,185,138,0.26); color: var(--ink); }
+
+::placeholder { color: var(--muted); opacity: 1; }
+
+/* Scrollbars follow the theme rather than punching a light strip through
+   a dark page. Firefox first, then the WebKit form. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-lit) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-lit); border-radius: 10px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+
+/* Straight to the fleet, past a nav of identity chips. Visible only when
+   focused, which is the only time it is useful. */
+.skip {
+  position: absolute; left: 12px; top: -60px; z-index: 100;
+  padding: 10px 16px; border-radius: 9px;
+  background: var(--raised); border: 1px solid var(--accent);
+  color: var(--ink); font-weight: 500;
+  transition: top .2s var(--ease);
+}
+.skip:focus { top: 12px; }
+
+/* Optical alignment: the serif figures carry a little side bearing that
+   makes a column of them look indented next to sans labels. */
+.tile-value, .sensor-temp, .assure-figure { margin-left: -0.02em; }
+
+/* A page mid-fetch should look like it is working, not like it is broken. */
+.loading {
+  display: grid; place-items: center; gap: 12px;
+  padding: 60px 20px; color: var(--muted);
+  font-family: var(--display); font-size: 17px;
+}
+.loading::before {
+  content: ""; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--border-lit); border-top-color: var(--accent);
+  animation: spin 1.1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The connection banner: shown when a poll fails, so a stale screen never
+   passes for a live one. Silence is the dangerous failure here. */
+.banner.stale {
+  border-color: rgba(210,104,81,0.35);
+  background: rgba(210,104,81,0.06);
+  color: #E2937E;
+}
+
+/* One place, one rule: anybody who asked for less movement gets none of
+   it, including the count-up, the drift and the spinner. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

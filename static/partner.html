@@ -70,7 +70,8 @@
 </div>
 
 <div id="app" hidden>
-  <nav class="nav">
+  <a class="skip" href="#book-card">Skip to the book</a>
+  <nav class="nav" aria-label="Partner and display">
     <div class="brand">
       <span class="pulse" aria-hidden="true"></span>
       <span class="brand-name">CyberLogix <em>AI</em></span>
@@ -83,6 +84,7 @@
   </nav>
 
   <main class="portal">
+    <div id="stale-banner" class="banner stale" role="status" hidden></div>
     <div id="list-view">
       <section class="earn" id="earn"></section>
 
@@ -91,10 +93,10 @@
           <span class="card-title">Needs a visit</span>
           <span class="card-note" id="attn-note"></span>
         </div>
-        <div id="attn-body"></div>
+        <div id="attn-body"><div class="loading">Reading the book…</div></div>
       </section>
 
-      <section class="card">
+      <section class="card" id="book-card" tabindex="-1">
         <div class="card-head">
           <span class="card-title">Your book</span>
           <span class="card-note" id="book-note"></span>
@@ -187,7 +189,7 @@ $("key-form").addEventListener("submit", async (event) => {
     try { localStorage.setItem(KEY_STORAGE, key); } catch (_) {}
     $("gate").hidden = true;
     $("app").hidden = false;
-    state.timer = setInterval(() => refresh().catch(() => {}), POLL_MS);
+    startPolling();
   } catch (err) {
     state.key = null;
     toast(err.message, "err");
@@ -371,6 +373,31 @@ document.addEventListener("keydown", (event) => {
 
 /* ---------------- resume ---------------- */
 
+/* A book that has quietly stopped updating is worse than one that admits
+   it: a servicer reading "every account is quiet" off a frozen page will
+   not send anybody. */
+function startPolling() {
+  clearInterval(state.timer);
+  state.timer = setInterval(() => {
+    refresh()
+      .then(() => { state.failures = 0; $("stale-banner").hidden = true; })
+      .catch((err) => {
+        if (err && err.status === 401) {
+          toast("That key is no longer valid.", "err");
+          $("sign-out").click();
+          return;
+        }
+        state.failures = (state.failures || 0) + 1;
+        if (state.failures < 2) return;
+        const banner = $("stale-banner");
+        banner.hidden = false;
+        banner.textContent =
+          "Not reaching the hub. What is on screen is the last good "
+          + "reading, not the current one.";
+      });
+  }, POLL_MS);
+}
+
 (async () => {
   let stored = null;
   try { stored = localStorage.getItem(KEY_STORAGE); } catch (_) {}
@@ -380,7 +407,7 @@ document.addEventListener("keydown", (event) => {
     await refresh();
     $("gate").hidden = true;
     $("app").hidden = false;
-    state.timer = setInterval(() => refresh().catch(() => {}), POLL_MS);
+    startPolling();
   } catch (_) {
     state.key = null;
     try { localStorage.removeItem(KEY_STORAGE); } catch (_) {}

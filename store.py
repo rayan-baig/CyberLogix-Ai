@@ -1102,6 +1102,97 @@ class Site:
         }
 
 
+INVOICE_STATES = ("issued", "paid", "void")
+
+
+@dataclass
+class Invoice:
+    """A numbered, dated demand for money, frozen at issue.
+
+    The figures are snapshotted rather than recomputed on read. An invoice
+    whose total moves after it was sent is a dispute, and the customer
+    would be right to raise one.
+    """
+
+    invoice_id: str
+    tenant_id: str
+    number: str
+    company_name: str
+    lines: List[Dict[str, Any]]
+    subtotal_usd: float
+    total_usd: float
+    currency: str = "USD"
+    state: str = "issued"
+    period_days: int = 30
+    terms_days: int = 30
+    purchase_order: Optional[str] = None
+    issued_at: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    payment_reference: Optional[str] = None
+    voided_at: Optional[datetime] = None
+
+    def overdue(self, now: Optional[datetime] = None) -> bool:
+        if self.state != "issued" or self.due_at is None:
+            return False
+        return (now or utc_now()) > self.due_at
+
+    def days_until_due(self, now: Optional[datetime] = None) -> Optional[int]:
+        if self.due_at is None:
+            return None
+        delta = self.due_at - (now or utc_now())
+        return int(delta.total_seconds() // 86400)
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "invoice_id": self.invoice_id,
+            "tenant_id": self.tenant_id,
+            "number": self.number,
+            "company_name": self.company_name,
+            "lines": self.lines,
+            "subtotal_usd": self.subtotal_usd,
+            "total_usd": self.total_usd,
+            "currency": self.currency,
+            "state": self.state,
+            "period_days": self.period_days,
+            "terms_days": self.terms_days,
+            "purchase_order": self.purchase_order,
+            "issued_at": iso(self.issued_at),
+            "due_at": iso(self.due_at),
+            "paid_at": iso(self.paid_at),
+            "payment_reference": self.payment_reference,
+            "voided_at": iso(self.voided_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "Invoice":
+        return cls(
+            invoice_id=row["invoice_id"],
+            tenant_id=row["tenant_id"],
+            number=row["number"],
+            company_name=row["company_name"],
+            lines=row.get("lines") or [],
+            subtotal_usd=row["subtotal_usd"],
+            total_usd=row["total_usd"],
+            currency=row.get("currency", "USD"),
+            state=row.get("state", "issued"),
+            period_days=row.get("period_days", 30),
+            terms_days=row.get("terms_days", 30),
+            purchase_order=row.get("purchase_order"),
+            issued_at=_parse(row.get("issued_at")),
+            due_at=_parse(row.get("due_at")),
+            paid_at=_parse(row.get("paid_at")),
+            payment_reference=row.get("payment_reference"),
+            voided_at=_parse(row.get("voided_at")),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        row = self.to_row()
+        row["overdue"] = self.overdue()
+        row["days_until_due"] = self.days_until_due()
+        return row
+
+
 # What a reseller earns on the accounts they bring and support. They do
 # the installation and first-line support; we do the platform.
 DEFAULT_PARTNER_COMMISSION_PERCENT = 20.0
@@ -1433,6 +1524,7 @@ class HubStore:
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._resets: Dict[str, ResetToken] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
+        self._invoices: Dict[str, Invoice] = {}
         self._partners: Dict[str, Partner] = {}
         self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
@@ -1491,6 +1583,10 @@ class HubStore:
                 site = Site.from_row(row)
                 self._sites[site.site_id] = site
 
+            for row in self._db.all("invoice"):
+                invoice = Invoice.from_row(row)
+                self._invoices[invoice.invoice_id] = invoice
+
             for row in self._db.all("partner"):
                 partner = Partner.from_row(row)
                 self._partners[partner.partner_id] = partner
@@ -1533,6 +1629,7 @@ class HubStore:
                     + list(self._sites)
                     + list(self._webhooks)
                     + list(self._partners)
+                    + list(self._invoices)
                 )
                 if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
             ]
@@ -1563,6 +1660,7 @@ class HubStore:
             self._sites.clear()
             self._contacts.clear()
             self._webhooks.clear()
+            self._invoices.clear()
             self._partners.clear()
             self._partner_keys.clear()
             self._contracts.clear()
@@ -2217,6 +2315,88 @@ class HubStore:
             del self._contacts[contact_id]
             self._db.delete("contact", contact_id)
             return True
+
+    # ---- invoices -----------------------------------------------------------
+
+    def _next_invoice_number(self, year: int) -> str:
+        """Sequential and gapless within a year.
+
+        Derived from what has already been issued rather than a counter,
+        so a restart cannot reissue a number — a duplicate invoice number
+        is the kind of thing that fails an audit.
+        """
+        prefix = f"CLX-{year}-"
+        issued = [
+            int(inv.number[len(prefix):])
+            for inv in self._invoices.values()
+            if inv.number.startswith(prefix)
+            and inv.number[len(prefix):].isdigit()
+        ]
+        return f"{prefix}{max(issued, default=0) + 1:04d}"
+
+    def create_invoice(
+        self,
+        tenant: Tenant,
+        lines: List[Dict[str, Any]],
+        period_days: int = 30,
+        terms_days: int = 30,
+        purchase_order: Optional[str] = None,
+    ) -> Invoice:
+        with self._lock:
+            now = utc_now()
+            subtotal = round(sum(line["amount_usd"] for line in lines), 2)
+            invoice = Invoice(
+                invoice_id=self._next_id("INV"),
+                tenant_id=tenant.tenant_id,
+                number=self._next_invoice_number(now.year),
+                company_name=tenant.company_name,
+                # Copied, not referenced: the caller must not be able to
+                # mutate a line after the invoice is issued.
+                lines=[dict(line) for line in lines],
+                subtotal_usd=subtotal,
+                total_usd=subtotal,
+                period_days=period_days,
+                terms_days=terms_days,
+                purchase_order=purchase_order,
+                issued_at=now,
+                due_at=now + timedelta(days=terms_days),
+            )
+            self._invoices[invoice.invoice_id] = invoice
+            self._db.put("invoice", invoice.invoice_id, invoice.to_row())
+            return invoice
+
+    def get_invoice(self, invoice_id: str) -> Optional[Invoice]:
+        with self._lock:
+            return self._invoices.get(invoice_id)
+
+    def invoices_for(self, tenant_id: str) -> List[Invoice]:
+        with self._lock:
+            rows = [i for i in self._invoices.values() if i.tenant_id == tenant_id]
+        return sorted(rows, key=lambda i: i.number, reverse=True)
+
+    def settle_invoice(
+        self, invoice: Invoice, reference: str, amount_usd: Optional[float] = None
+    ) -> Invoice:
+        with self._lock:
+            invoice.state = "paid"
+            invoice.paid_at = utc_now()
+            invoice.payment_reference = reference
+            if amount_usd is not None and round(amount_usd, 2) != invoice.total_usd:
+                # Recorded rather than silently accepted: a short payment
+                # that quietly closes an invoice is money never chased.
+                invoice.payment_reference = (
+                    f"{reference} (paid ${amount_usd:,.2f} of "
+                    f"${invoice.total_usd:,.2f})"
+                )
+            self._db.put("invoice", invoice.invoice_id, invoice.to_row())
+            return invoice
+
+    def void_invoice(self, invoice: Invoice) -> Invoice:
+        with self._lock:
+            invoice.state = "void"
+            invoice.voided_at = utc_now()
+            self._db.put("invoice", invoice.invoice_id, invoice.to_row())
+            return invoice
 
     # ---- partners ---------------------------------------------------------
 

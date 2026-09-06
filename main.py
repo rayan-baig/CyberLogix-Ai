@@ -29,6 +29,7 @@ from costs import router as costs_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
+from invoicing import router as invoicing_router
 from notifications import delivery_ready
 from partners import router as partners_router
 import scheduler
@@ -110,6 +111,7 @@ app.include_router(claims_router)
 app.include_router(assurance_router)
 app.include_router(benchmarks_router)
 app.include_router(partners_router)
+app.include_router(invoicing_router)
 app.include_router(enterprise_router)
 
 MODULES_ACTIVE = [
@@ -134,6 +136,7 @@ MODULES_ACTIVE = [
     "loss_assurance",
     "anonymised_sector_benchmarks",
     "reseller_channel",
+    "invoicing",
     "enterprise_cluster_billing",
 ]
 
