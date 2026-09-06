@@ -22,7 +22,7 @@ because an ROI page built on invented figures is worse than one that says
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 

@@ -27,7 +27,6 @@ from store import (
     format_temperature,
     to_fahrenheit,
     iso,
-    resolve_vertical,
     utc_now,
 )
 

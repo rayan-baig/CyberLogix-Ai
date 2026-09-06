@@ -5,8 +5,6 @@ must change the chain head, and a third party must be able to check that
 themselves without an account and without trusting us.
 """
 
-import pytest
-
 import vault
 
 

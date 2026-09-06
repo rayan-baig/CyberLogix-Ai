@@ -1,8 +1,5 @@
 """Sites, Celsius display, and sensor health."""
 
-import pytest
-
-
 def make_site(api, headers, name="Store 118 Boca Raton", address="Boca Raton, FL"):
     resp = api.post("/api/sites", headers=headers,
                     json={"name": name, "address": address})

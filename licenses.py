@@ -13,7 +13,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
-from auth import require_entitlement, require_tenant  # noqa: F401 - re-exported
+from auth import require_entitlement, require_tenant
+
+# Re-exported: several routers import these from here rather than reaching
+# past this module into auth, so the dependency reads in one direction.
+__all__ = ["router", "require_entitlement", "require_tenant"]
 from store import PLAN_TIERS, STORE, Tenant, resolve_vertical
 
 router = APIRouter(prefix="/api/licenses", tags=["Corporate License Management"])

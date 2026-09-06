@@ -9,11 +9,8 @@ These are that something.
 
 import ast
 import fnmatch
-import os
 import re
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 

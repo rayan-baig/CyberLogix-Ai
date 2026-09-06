@@ -4,9 +4,6 @@ Two properties carry the whole module: an issued invoice's figures never
 move, and its number is never reused. Everything else is bookkeeping.
 """
 
-import pytest
-
-
 def estate(api, operator_factory, sensor_factory, units=2, sites=1):
     headers, _, _ = operator_factory(plan="enterprise")
     for n in range(sites):

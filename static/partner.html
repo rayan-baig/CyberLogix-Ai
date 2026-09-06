@@ -17,10 +17,10 @@
   }
   .book tbody tr { cursor: pointer; }
   .book tbody tr.flagged td.name { color: var(--serious); }
-  .earn {
-    display: grid; gap: 14px; margin-bottom: 22px;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  }
+  /* Same reason as .tiles in the theme: a row that does not divide evenly
+     should still fill the width rather than leave empty cells. */
+  .earn { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+  .earn > .tile { flex: 1 1 190px; }
   .attn {
     display: flex; align-items: center; gap: 10px;
     padding: 11px 0; border-bottom: 1px solid var(--border);

@@ -25,16 +25,14 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from accounts import require_role
 from auth import require_tenant, write_audit
-from store import STORE, Tenant, User, iso, utc_now
+from store import STORE, Tenant, User, iso
 
 logger = logging.getLogger("cyberlogix.invoicing")
 

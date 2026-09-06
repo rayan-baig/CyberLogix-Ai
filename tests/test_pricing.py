@@ -2,8 +2,8 @@
 
 import pytest
 
-from pricing import PRICE_BOOK, build_subscription
-from store import INDUSTRY_PROFILES, STORE
+from pricing import PRICE_BOOK
+from store import INDUSTRY_PROFILES
 
 
 def test_every_vertical_is_priced():

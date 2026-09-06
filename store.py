@@ -15,7 +15,7 @@ import secrets
 import threading
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Deque, Dict, List, Optional
 
 from db import Database

@@ -221,7 +221,11 @@ a { color: var(--accent); }
 /* ---------- shell ---------- */
 .nav {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 10px;
+  /* Wrapping, always. Every chip and button in here is nowrap, so without
+     it the row simply ran off the right edge — silently, at every width
+     between a phone and a large laptop, which is most of them. */
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  row-gap: 8px;
   padding: 14px 30px;
   background: rgba(16,14,12,0.86);
   backdrop-filter: blur(16px) saturate(120%);
@@ -305,10 +309,13 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 .mod-chip { font-weight: 400; letter-spacing: .12em; text-transform: uppercase; }
 
 /* ---------- stat tiles ---------- */
+/* Flex rather than grid, so a row that does not divide evenly still fills
+   the width. Seven tiles in a five-column grid leaves three empty cells
+   and reads as a layout that gave up. */
 .tiles {
-  display: grid; gap: 14px; margin-bottom: 22px;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px;
 }
+.tiles > .tile { flex: 1 1 168px; }
 .tile {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 20px 22px 18px;
@@ -598,10 +605,19 @@ body.wall .fleet { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   position: fixed; right: 16px; top: 16px; z-index: 70; display: none;
 }
 body.wall #wall-exit { display: inline-flex; }
-/* A wall screen is read from across the room; breaching must be obvious. */
+/* A wall screen is read from across the room, often out of the corner of
+   an eye. This is the one place in the product where more emphasis is the
+   right answer: a slow breathe that catches peripheral vision without
+   turning the room into an alarm. */
 body.wall .sensor.is-breaching {
   border-color: rgba(210,104,81,0.6); background: rgba(210,104,81,0.14);
+  animation: breathe 3.4s ease-in-out infinite;
 }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(210,104,81,0); }
+  50%      { box-shadow: 0 0 0 6px rgba(210,104,81,0.13); }
+}
+body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
 
 
 /* ---------- loss assurance ---------- */
@@ -733,6 +749,27 @@ body.wall .sensor.is-breaching {
   tr { break-inside: avoid; }
 }
 
+/* ---------- the nav, as space runs out ----------
+   Wrapping stops the overflow; this keeps it on one line for as long as
+   it can by dropping the chips in order of how little they change. The
+   plan and the seat count are the same all month; the spend and the
+   delivery state are not. */
+@media (max-width: 1460px) {
+  #chip-plan, #chip-seats { display: none; }
+}
+@media (max-width: 1250px) {
+  .nav .status-line, #chip-spend { display: none; }
+  .nav { padding: 12px 22px; }
+}
+@media (max-width: 1000px) {
+  #chip-user { display: none; }
+}
+/* The delivery state is also on a banner across the top of the page, so
+   below this it is the chip that goes rather than the row that wraps. */
+@media (max-width: 860px) {
+  #chip-delivery { display: none; }
+}
+
 /* ---------- narrow screens ---------- */
 @media (max-width: 720px) {
   main { padding: 14px; }
@@ -747,7 +784,8 @@ body.wall .sensor.is-breaching {
   .brand-name { font-size: 18px; }
   #term-toggle { display: none; }
   .card { padding: 14px; }
-  .tiles { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
+  .tiles { gap: 8px; }
+  .tiles > .tile { flex: 1 1 132px; }
   .tile { padding: 11px 12px; }
   .tile-value { font-size: 22px; }
   .fleet { grid-template-columns: minmax(0, 1fr); }

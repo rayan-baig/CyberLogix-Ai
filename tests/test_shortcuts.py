@@ -1,7 +1,5 @@
 """Sector shortcuts: the document each vertical has to produce."""
 
-import json
-
 import pytest
 
 

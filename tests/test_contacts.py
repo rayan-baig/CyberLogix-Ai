@@ -2,9 +2,6 @@
 
 import pytest
 
-import notifications
-
-
 @pytest.fixture()
 def sent(monkeypatch):
     """Capture every message the platform tries to deliver."""

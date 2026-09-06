@@ -1,7 +1,5 @@
 """Spend controls: the cache, the daily caps, and the report."""
 
-import pytest
-
 import costs
 from store import STORE
 
