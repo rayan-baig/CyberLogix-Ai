@@ -1,0 +1,739 @@
+/* CyberLogix AI — the design system, in one place.
+ *
+ * Both the operations console and the reseller portal render from this
+ * file. Two pages that must look like one product cannot each keep their
+ * own copy of the palette: the moment one is edited, the other is wrong
+ * and nobody notices until a customer sees both.
+ *
+ * The rules the whole thing rests on:
+ *   - Warm charcoal, never blue-black. One accent, champagne, used rarely.
+ *   - Serif for headings and every large figure; sans at two weights only.
+ *   - Elevation instead of outlines, and room between things.
+ *   - Motion slow and eased, and absent entirely for anyone who asked.
+ *   - Status is never colour alone; every badge carries a glyph.
+ */
+/* Instrument Serif carries the headings and the readings; a serif number
+   is what a private bank puts on a statement and a SaaS dashboard never
+   does. Inter stays for body text at two weights only — four weights of
+   contrast is the look of a product that costs $49. */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap');
+
+:root {
+  color-scheme: dark;
+  /* Warm charcoal, not blue-black. Blue-black is the default of every
+     developer tool; warm dark is what luxury hospitality, private
+     banking and marque automotive all reach for. */
+  --bg:        #100E0C;
+  --surface:   #191512;
+  --surface-2: #141110;
+  --sunken:    #0A0908;
+  --raised:    #221D19;
+  --border:    rgba(245,241,234,0.07);
+  --border-lit:rgba(245,241,234,0.14);
+  --ink:       #F5F1EA;
+  --ink-2:     #BCB2A4;
+  --muted:     #837A6E;
+  /* One accent, champagne rather than cyan, and used sparingly. A
+     screen with colour in six places has no accent at all. */
+  --accent:    #D9B98A;
+  --accent-deep:#A8834C;
+  --accent-dim:rgba(217,185,138,0.14);
+  /* Module hues are desaturated into one family so nothing shouts. */
+  --telemetry: #9BAAB8;
+  --commerce:  #94A883;
+  --intel:     #A697A8;
+  --paperwork: #C6996B;
+  /* Status desaturated: a concierge telling you something is wrong,
+     not a smoke alarm. Still distinguishable without colour, because
+     every badge carries a glyph as well. */
+  --good:      #7E9A72;
+  --warning:   #C9A227;
+  --serious:   #C08552;
+  --critical:  #C0563F;
+  --grid:      rgba(245,241,234,0.06);
+  --radius:    14px;
+  /* Elevation instead of outlines. Bordered boxes read cheap; surfaces
+     that float read considered. */
+  --lift-1: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.22);
+  --lift-2: 0 2px 4px rgba(0,0,0,.5), 0 24px 60px rgba(0,0,0,.4);
+  --ease: cubic-bezier(.22,.61,.36,1);
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  /* Tabular figures everywhere. A column of readings that shifts width
+     as the digits change is the single clearest tell of a cheap UI. */
+  font-variant-numeric: tabular-nums;
+}
+[hidden] { display: none !important; }
+button { font-family: inherit; font-size: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; font-size: inherit; }
+a { color: var(--accent); }
+
+/* ---------- gate ---------- */
+#gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1100px 620px at 50% -20%, rgba(217,185,138,0.07), transparent 72%),
+    var(--bg);
+}
+/* One slow, barely perceptible drift. Movement this quiet is not
+   decoration — it is the difference between a page and a room. */
+#gate::before {
+  content: ""; position: fixed; inset: -20%;
+  background: radial-gradient(620px 420px at 30% 20%, rgba(168,131,76,0.10), transparent 65%);
+  animation: drift 34s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1); }
+  to   { transform: translate3d(4%, 3%, 0) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) { #gate::before { animation: none; } }
+.gate-card {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  padding: 44px 40px 34px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(34,29,25,0.92), rgba(20,17,16,0.96));
+  backdrop-filter: blur(18px);
+  box-shadow: var(--lift-2), inset 0 1px 0 rgba(245,241,234,0.05);
+}
+.brand { display: flex; align-items: center; gap: 12px; flex: none; }
+.brand-name { white-space: nowrap; }
+/* A hairline mark rather than a glowing tile. Restraint is the whole
+   brief: the logo should not be the loudest thing on the screen. */
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  background: transparent;
+  border: 1px solid var(--accent-deep);
+  display: grid; place-items: center;
+  color: var(--accent);
+}
+.brand-mark svg { width: 15px; height: 15px; display: block; }
+.brand-name {
+  font-family: var(--display);
+  font-size: 22px; font-weight: 400; letter-spacing: .01em;
+  text-transform: none;
+}
+.brand-name em { font-style: italic; color: var(--accent); }
+.tag {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 2px 8px; border-radius: 4px;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--border);
+}
+/* Slower and softer. A fast ping reads as an alarm; this reads as a
+   pilot light. */
+.pulse {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--good); box-shadow: 0 0 0 0 rgba(126,154,114,.55);
+  animation: ping 4.5s var(--ease) infinite;
+}
+@keyframes ping {
+  70% { box-shadow: 0 0 0 8px rgba(126,154,114,0); }
+  100% { box-shadow: 0 0 0 0 rgba(126,154,114,0); }
+}
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.status-line {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  color: var(--muted); text-transform: uppercase;
+}
+.status-line b { color: var(--good); font-weight: 500; }
+.gate-sub { color: var(--muted); margin: 14px 0 26px; font-size: 13px; }
+.field { margin-bottom: 14px; }
+.field label {
+  display: block; font-family: var(--mono); font-size: 10.5px;
+  font-weight: 400; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px;
+}
+.field label span { text-transform: none; letter-spacing: 0; }
+.field input, .field textarea, .field select {
+  width: 100%; padding: 11px 13px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 9px; color: var(--ink); outline: none;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  white-space: nowrap;
+  padding: 10px 18px; border-radius: 9px;
+  border: 1px solid var(--border-lit);
+  background: transparent; color: var(--ink-2); font-weight: 500;
+  letter-spacing: .01em;
+  transition: border-color .25s var(--ease), background .25s var(--ease),
+              color .25s var(--ease), transform .12s var(--ease);
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent-deep); background: rgba(217,185,138,0.06);
+  color: var(--ink);
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary {
+  width: 100%; padding: 13px 18px;
+  border: 1px solid var(--accent-deep);
+  background: rgba(217,185,138,0.10); color: var(--accent);
+  box-shadow: none; letter-spacing: .02em;
+}
+.btn-primary:hover:not(:disabled) {
+  background: rgba(217,185,138,0.18); color: var(--ink);
+  border-color: var(--accent);
+}
+.btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.gate-switch {
+  margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border);
+  text-align: center; color: var(--muted); font-size: 13px;
+}
+.linkish {
+  background: none; border: none; color: var(--accent);
+  font-weight: 500; padding: 0; text-decoration: underline;
+  text-underline-offset: 3px; text-decoration-thickness: 1px;
+}
+
+/* ---------- shell ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 30px;
+  background: rgba(16,14,12,0.86);
+  backdrop-filter: blur(16px) saturate(120%);
+  border-bottom: 1px solid var(--border);
+}
+/* The one metallic hairline on the page. Used once, it reads as
+   craftsmanship; used everywhere it reads as a theme. */
+.nav::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(217,185,138,0.32) 22%,
+              rgba(217,185,138,0.32) 78%, transparent);
+}
+.nav-spacer { flex: 1; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  font-size: 12px; color: var(--ink-2); white-space: nowrap;
+}
+main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
+.layout { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 22px; }
+@media (max-width: 1180px) { .layout { grid-template-columns: minmax(0,1fr); } }
+.modules {
+  display: grid; gap: 22px; margin-bottom: 0;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+.modules > .card { margin-bottom: 22px; display: flex; flex-direction: column; }
+/* Fields sit under the description; only the action drops to the foot, so
+   three modules of different lengths still line their buttons up. */
+.modules > .card form { display: flex; flex-direction: column; flex: 1; }
+.modules > .card form .btn-primary { margin-top: auto; }
+.modules > .card #calc-out { margin-top: auto; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.pair > .card { margin-bottom: 22px; }
+@media (max-width: 900px) { .pair { grid-template-columns: minmax(0,1fr); } }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px;
+  margin-bottom: 22px;
+  box-shadow: var(--lift-1);
+}
+.card-head {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px;
+}
+.card-title {
+  font-family: var(--display); font-size: 20px; font-weight: 400;
+  letter-spacing: 0; line-height: 1.2;
+}
+.card.mod-telemetry { border-top: 2px solid var(--telemetry); }
+.card.mod-commerce  { border-top: 2px solid var(--commerce); }
+.card.mod-intel     { border-top: 2px solid var(--intel); }
+.card.mod-paperwork { border-top: 2px solid var(--paperwork); }
+.mod-chip {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .05em;
+  padding: 2px 7px; border-radius: 5px; margin-left: auto;
+  border: 1px solid currentColor;
+}
+.c-telemetry { color: var(--telemetry); }
+.c-commerce  { color: var(--commerce); }
+.c-intel     { color: var(--intel); }
+.c-paperwork { color: var(--paperwork); }
+/* Laid out like a statement: label left, figure right, hairline rules
+   between. A tabbed monospace block is a log; this is a document. */
+.readout {
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 16px; margin-top: 14px;
+  font-size: 12.5px;
+}
+.readout div {
+  display: flex; justify-content: space-between; gap: 14px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.readout div:last-child { border-bottom: none; }
+.readout .k { color: var(--muted); }
+.readout .v { font-weight: 500; color: var(--ink); }
+.card-note { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+/* Section eyebrows in mono caps, the one place technical type belongs. */
+.mod-chip { font-weight: 400; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ---------- stat tiles ---------- */
+.tiles {
+  display: grid; gap: 14px; margin-bottom: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+}
+.tile {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px 22px 18px;
+  box-shadow: var(--lift-1);
+}
+.tile-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+}
+/* Large, light and serif. A 48px number in weight 400 carries more
+   authority than a 27px one in weight 700. */
+.tile-value {
+  font-family: var(--display); font-size: 42px; font-weight: 400;
+  letter-spacing: -0.01em; line-height: 1; color: var(--ink);
+}
+.tile-foot { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+/* ---------- status ---------- */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 500; white-space: nowrap;
+  letter-spacing: .05em; text-transform: uppercase;
+  border: 1px solid currentColor; opacity: .92;
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.s-good     { color: var(--good); }
+.s-warning  { color: var(--warning); }
+.s-serious  { color: var(--serious); }
+.s-critical { color: var(--critical); }
+.s-muted    { color: var(--muted); }
+
+/* ---------- fleet ---------- */
+.fleet { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(286px, 1fr)); }
+.sensor {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px;
+  display: flex; flex-direction: column;
+  transition: border-color .25s var(--ease), transform .25s var(--ease),
+              box-shadow .25s var(--ease);
+}
+.sensor:hover {
+  border-color: var(--border-lit); transform: translateY(-1px);
+  box-shadow: var(--lift-1);
+}
+/* A breach is stated by a hairline and a wash, not a red box. The badge
+   carries the word and the glyph; the card only has to draw the eye. */
+.sensor.is-breaching {
+  border-color: rgba(192,86,63,0.45);
+  background: linear-gradient(180deg, rgba(192,86,63,0.09), var(--surface-2) 60%);
+}
+.sensor-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.sensor-id {
+  font-family: var(--mono); font-weight: 400; font-size: 12px;
+  letter-spacing: .06em; color: var(--ink-2);
+}
+/* Two lines' worth of space so cards in a row stay aligned whether or
+   not the location wraps. */
+.sensor-loc {
+  color: var(--muted); font-size: 12.5px; margin-bottom: 14px;
+  min-height: 38px;
+}
+.sensor-read { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.sensor-temp {
+  font-family: var(--display); font-size: 40px; font-weight: 400;
+  letter-spacing: -0.01em; line-height: 1;
+}
+.sensor-unit { color: var(--muted); font-size: 14px; font-family: var(--display); }
+.spark-wrap { position: relative; }
+.spark { display: block; width: 100%; height: 40px; overflow: visible; }
+.sensor-meta {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 11.5px; color: var(--muted); margin-top: 8px;
+  border-top: 1px solid var(--border); padding-top: 9px;
+}
+.sensor-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; flex-wrap: wrap; }
+
+/* ---------- tooltip ---------- */
+#tip {
+  position: fixed; z-index: 60; pointer-events: none;
+  background: var(--sunken); border: 1px solid var(--border-lit);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px;
+  box-shadow: 0 10px 26px rgba(0,0,0,.6); white-space: nowrap;
+}
+#tip .tip-v { font-family: var(--display); font-size: 15px; }
+#tip .tip-t { color: var(--muted); font-size: 11px; }
+
+/* ---------- table view ---------- */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); }
+th {
+  color: var(--muted); font-family: var(--mono); font-weight: 400;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .13em;
+  padding-bottom: 9px;
+}
+tbody tr { transition: background .2s var(--ease); }
+tbody tr:hover { background: rgba(245,241,234,0.02); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- incidents ---------- */
+.incident {
+  border: 1px solid var(--border); border-left: 2px solid var(--muted);
+  border-radius: 10px; padding: 18px; margin-bottom: 14px;
+  background: var(--surface-2);
+}
+.incident.st-open { border-left-color: var(--critical); }
+.incident.st-acknowledged { border-left-color: var(--warning); }
+.incident.st-resolved { border-left-color: var(--good); opacity: .68; }
+.incident-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.incident-title {
+  font-family: var(--display); font-weight: 400; font-size: 18px;
+  line-height: 1.25;
+}
+/* Model-written words are set as a pull quote, because that is what they
+   are: something the machine said on your behalf, on the record. */
+.quote {
+  background: transparent; border: none;
+  border-left: 1px solid var(--accent-deep);
+  border-radius: 0; padding: 4px 0 4px 16px; margin: 14px 0;
+  font-family: var(--display); font-size: 15.5px; line-height: 1.5;
+  color: var(--ink-2);
+}
+.quote-label {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .14em; color: var(--muted); font-weight: 400;
+  margin-bottom: 7px;
+}
+.incident-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+.empty {
+  color: var(--ink-2); text-align: center; padding: 46px 22px;
+  font-family: var(--display); font-size: 19px; line-height: 1.45;
+  letter-spacing: 0;
+}
+.empty .sub {
+  display: block; margin-top: 8px; font-family: var(--sans);
+  font-size: 12.5px; color: var(--muted);
+}
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.grow { flex: 1; min-width: 0; }
+pre.snippet {
+  background: var(--sunken); border: 1px solid var(--border); border-radius: 9px;
+  padding: 11px; font-size: 11.5px; color: var(--ink-2);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; line-height: 1.55;
+}
+.banner {
+  border-radius: 10px; padding: 10px 13px; font-size: 12.5px;
+  border: 1px solid; margin-bottom: 12px;
+}
+/* A notice, not a klaxon: a hairline and quiet type. */
+.banner.warn {
+  border-color: rgba(201,162,39,0.28); background: rgba(201,162,39,0.05);
+  color: #CBB379; padding: 13px 18px;
+}
+
+/* ---------- toast ---------- */
+#terminal {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  margin: 0; padding: 10px 22px;
+  border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+  background: var(--sunken); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono); font-size: 11.5px;
+  box-shadow: 0 -12px 34px rgba(0,0,0,.6);
+}
+/* Room for the drawer, so it never covers the last card. */
+body.has-terminal main { padding-bottom: 148px; }
+#terminal { border-top: 1px solid rgba(217,185,138,0.18); }
+.term-head {
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
+  font-size: 10px; margin-bottom: 7px;
+}
+#term-body { max-height: 88px; overflow-y: auto; line-height: 1.7; }
+#term-body .t { color: var(--muted); margin-right: 8px; }
+#term-body .ok { color: var(--good); }
+#term-body .err { color: var(--critical); }
+#term-body .info { color: var(--accent); }
+
+#toasts { position: fixed; right: 18px; bottom: 96px; z-index: 80; display: grid; gap: 8px; }
+.toast {
+  background: var(--raised); border: 1px solid var(--border-lit);
+  border-left: 3px solid var(--accent);
+  border-radius: 9px; padding: 10px 14px; font-size: 13px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.55); max-width: 340px;
+}
+.toast.err { border-left-color: var(--critical); }
+.toast.ok  { border-left-color: var(--good); }
+.sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ---------- fleet toolbar ---------- */
+.toolbar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 12px;
+}
+.toolbar input[type="search"], .toolbar select {
+  padding: 7px 11px; background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 9px; outline: none;
+}
+.toolbar input[type="search"] { flex: 1; min-width: 150px; }
+.toolbar input:focus, .toolbar select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.btn[aria-pressed="true"] { border-color: var(--accent); background: #1b2a44; }
+.group-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 16px 0 8px; font-size: 12px;
+  font-family: var(--mono); letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted);
+}
+.group-head:first-child { margin-top: 0; }
+.group-head .count { color: var(--ink-2); }
+
+/* ---------- sensor health ---------- */
+.health { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em;
+  padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--border); color: var(--muted);
+  background: var(--sunken);
+}
+.pill.warn { color: var(--warning); border-color: rgba(201,162,39,0.4); }
+.pill.bad  { color: var(--critical); border-color: rgba(192,86,63,0.45); }
+.pill.site { color: var(--accent); border-color: rgba(217,185,138,0.34); }
+.meter { width: 30px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: currentColor; }
+.sensor-id.clickable { cursor: pointer; text-decoration: underline dotted var(--muted); }
+.sensor-id.clickable:hover { color: var(--accent); }
+
+/* ---------- drill-down drawer ---------- */
+#scrim {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(3,7,18,.68); backdrop-filter: blur(2px);
+}
+#drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 61;
+  width: min(560px, 100%); overflow-y: auto;
+  background: var(--surface); border-left: 1px solid var(--border-lit);
+  box-shadow: -24px 0 60px rgba(0,0,0,.6);
+  padding: 20px;
+}
+.drawer-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.drawer-title { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
+.drawer-sub { color: var(--muted); font-size: 12.5px; }
+.history { width: 100%; height: 150px; display: block; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
+.kv .k { color: var(--muted); }
+
+/* ---------- incident timeline ---------- */
+.timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 16px;
+            border-left: 1px solid var(--border-lit); }
+.timeline li { position: relative; padding: 0 0 12px 12px; font-size: 12.5px; }
+.timeline li::before {
+  content: ""; position: absolute; left: -21px; top: 5px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--muted);
+}
+.timeline li.hit::before   { border-color: var(--critical); background: var(--critical); }
+.timeline li.call::before  { border-color: var(--warning); }
+.timeline li.ack::before   { border-color: var(--accent); }
+.timeline li.done::before  { border-color: var(--good); background: var(--good); }
+.timeline .when { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+/* ---------- wall display ---------- */
+body.wall .nav, body.wall .layout > aside, body.wall #terminal,
+body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !important; }
+body.wall main { padding: 22px; max-width: none; }
+body.wall .layout { grid-template-columns: minmax(0, 1fr); }
+body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
+/* Read from across a room: the figure grows, the label stays a quiet
+   mono eyebrow rather than growing with it. */
+body.wall .tile-value { font-size: 68px; }
+body.wall .tile-label { font-size: 11px; letter-spacing: .16em; }
+body.wall .tile { padding: 26px 28px 24px; }
+body.wall .sensor { font-size: 15px; padding: 22px; }
+body.wall .sensor-temp { font-size: 58px; }
+body.wall .sensor-loc { font-size: 14px; min-height: 44px; }
+body.wall .card-title { font-size: 26px; }
+body.wall .sensor-actions, body.wall .toolbar { display: none; }
+body.wall .fleet { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+#wall-exit {
+  position: fixed; right: 16px; top: 16px; z-index: 70; display: none;
+}
+body.wall #wall-exit { display: inline-flex; }
+/* A wall screen is read from across the room; breaching must be obvious. */
+body.wall .sensor.is-breaching {
+  border-color: rgba(192,86,63,0.6); background: rgba(192,86,63,0.14);
+}
+
+
+/* ---------- loss assurance ---------- */
+.assure {
+  display: flex; align-items: baseline; gap: 12px;
+  padding-bottom: 14px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.assure-figure {
+  font-family: var(--display); font-size: 40px; line-height: 1;
+  color: var(--good);
+}
+.assure.off .assure-figure { color: var(--muted); }
+.assure-label { color: var(--ink-2); font-size: 12.5px; }
+/* Each gap is a claim that would be refused. Stated as a line of prose
+   with a mark, not a red banner — the tone is a warning, not an alarm. */
+.gap {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 7px 0; font-size: 12.5px; color: var(--ink-2);
+  border-bottom: 1px solid var(--border);
+}
+.gap:last-of-type { border-bottom: none; }
+.gap-mark {
+  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center; margin-top: 1px;
+  border: 1px solid var(--warning); color: var(--warning);
+  font-size: 10px; font-weight: 500;
+}
+
+/* ---------- vault ---------- */
+.digest {
+  margin-top: 12px; padding: 11px 13px; border-radius: 9px;
+  background: var(--sunken); border: 1px solid var(--border);
+}
+.digest-label {
+  display: block; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px;
+}
+.digest code {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
+  color: var(--accent); overflow-wrap: anywhere;
+}
+
+/* ---------- sector standing ---------- */
+.stand { padding: 11px 0; border-bottom: 1px solid var(--border); }
+.stand:last-of-type { border-bottom: none; }
+.stand-top {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 12.5px; margin-bottom: 6px;
+}
+.pill.good { color: var(--good); border-color: rgba(126,154,114,0.4); }
+.stand-scale {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  letter-spacing: .04em;
+}
+.stand-mine { font-size: 12px; color: var(--ink-2); margin-top: 5px; }
+.stand-mine b { font-weight: 500; color: var(--ink); }
+
+
+/* ---------- packet as a document ---------- */
+.doc-kicker {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 6px;
+}
+.doc-section {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 26px 0 10px; padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+.doc-letter {
+  font-family: var(--display); font-size: 16px; line-height: 1.6;
+  color: var(--ink-2); margin: 18px 0 4px;
+  padding-left: 18px; border-left: 1px solid var(--accent-deep);
+}
+.doc-letter .quote-label { margin-bottom: 9px; }
+
+/* ---------- print ---------- */
+/* An adjuster prints this. On paper the dark theme is unreadable and
+   wastes a cartridge, so the packet is re-set for ink: white ground,
+   black text, nothing but the document. */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; color: #111; }
+  /* With a document open, nothing but the document goes on paper. The
+     class is set in JS rather than relying on :has(), so this holds in
+     whatever browser the adjuster's office is running. */
+  body.drawer-open > *:not(#drawer) { display: none !important; }
+  .nav, #terminal, #toasts, #scrim, #wall-exit, #tip,
+  .drawer-head .btn { display: none !important; }
+  .card { box-shadow: none; border-color: #ccc; break-inside: avoid; }
+  #drawer {
+    position: static; width: auto; overflow: visible;
+    background: #fff; border: none; box-shadow: none; padding: 0;
+    color: #111;
+  }
+  #drawer[hidden] { display: none !important; }
+  .doc-kicker, .doc-section { color: #555; border-color: #ccc; }
+  .doc-letter { color: #111; border-left-color: #999; }
+  .readout, .digest { border-color: #ccc; background: #fff; }
+  .readout div { border-color: #eee; }
+  .readout .k, .card-note, .drawer-sub, .timeline .when { color: #555; }
+  .readout .v, .drawer-title { color: #111; }
+  .digest code { color: #111; }
+  table, th, td { border-color: #ccc !important; }
+  th { color: #555; }
+  td { color: #111; }
+  .timeline { border-left-color: #ccc; }
+  .timeline li::before { background: #fff; border-color: #666; }
+  .scrollx { overflow: visible !important; max-height: none !important; }
+  /* Never split a section across a page break mid-table. */
+  .doc-section { break-after: avoid; }
+  tr { break-inside: avoid; }
+}
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 720px) {
+  main { padding: 14px; }
+  .nav { gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+  .nav-spacer { display: none; }
+  .nav .chip { font-size: 11px; padding: 3px 8px; }
+  /* Seven identity chips is four rows of nav before any data. Keep the
+     two that change — who you are signed in as is not one of them. */
+  .nav .status-line, #chip-user, #chip-plan, #chip-seats, #chip-spend {
+    display: none;
+  }
+  .brand-name { font-size: 18px; }
+  #term-toggle { display: none; }
+  .card { padding: 14px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
+  .tile { padding: 11px 12px; }
+  .tile-value { font-size: 22px; }
+  .fleet { grid-template-columns: minmax(0, 1fr); }
+  #drawer { width: 100%; border-left: none; }
+  /* A phone-sized table has to scroll sideways rather than squash. */
+  #fleet-table, .scrollx { overflow-x: auto; }
+  #toasts { right: 10px; left: 10px; bottom: 88px; }
+  .toast { max-width: none; }
+}

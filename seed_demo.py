@@ -231,10 +231,21 @@ def seed() -> Dict[str, str]:
     ):
         STORE.bump_usage(tenant.tenant_id, field, amount)
 
+    # A reseller with this estate on their book, so the partner portal has
+    # something to render rather than an empty table.
+    partner = STORE.create_partner(
+        company_name="Coastal Refrigeration Services",
+        contact_name="Ray Okafor",
+        contact_email="ray@coastalref.example",
+        commission_percent=20.0,
+    )
+    STORE.assign_partner(tenant, partner.partner_id)
+
     return {
         "api_key": tenant.api_key,
         "email": DEMO_EMAIL,
         "password": DEMO_PASSWORD,
+        "partner_key": partner.api_key,
     }
 
 
@@ -251,6 +262,7 @@ def main() -> None:
     credentials = seed()
     print(f"Demo estate seeded: {len(FLEET)} sensors across 7 verticals.")
     print(f"Sign in: {credentials['email']} / {credentials['password']}")
+    print(f"Partner key: {credentials['partner_key']}")
     if args.print_key:
         print(f"API key: {credentials['api_key']}")
     if args.seed_only:
@@ -261,6 +273,7 @@ def main() -> None:
     from main import app
 
     print(f"Console: http://{args.host}:{args.port}/")
+    print(f"Partner portal: http://{args.host}:{args.port}/partners")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 

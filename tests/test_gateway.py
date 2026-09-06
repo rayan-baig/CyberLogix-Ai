@@ -68,3 +68,23 @@ def test_console_html_is_served_at_root(api):
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "CyberLogix" in resp.text
+
+
+def test_the_partner_portal_is_served(api):
+    resp = api.get("/partners")
+    assert resp.status_code == 200
+    assert "Partner Portal" in resp.text
+
+
+def test_both_surfaces_share_one_stylesheet(api):
+    """Two pages that must look like one product cannot each keep a copy."""
+    theme = api.get("/static/theme.css")
+    assert theme.status_code == 200
+    assert "--accent:    #D9B98A" in theme.text
+
+    for path in ("/", "/partners"):
+        assert '/static/theme.css' in api.get(path).text
+
+    # And neither page carries its own palette.
+    for path in ("/", "/partners"):
+        assert "#D9B98A" not in api.get(path).text

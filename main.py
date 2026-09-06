@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Import all modular system routers
 from accounts import router as accounts_router
@@ -137,13 +138,25 @@ MODULES_ACTIVE = [
 ]
 
 
-CONSOLE_HTML = Path(__file__).parent / "static" / "console.html"
+STATIC_DIR = Path(__file__).parent / "static"
+CONSOLE_HTML = STATIC_DIR / "console.html"
+PARTNER_HTML = STATIC_DIR / "partner.html"
+
+# The console and the partner portal render from one stylesheet, so it is
+# served rather than inlined twice.
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", include_in_schema=False)
 def operations_console():
     """Serve the operations console to a browser."""
     return FileResponse(CONSOLE_HTML, media_type="text/html")
+
+
+@app.get("/partners", include_in_schema=False)
+def partner_portal():
+    """Serve the reseller portal, which is a different principal entirely."""
+    return FileResponse(PARTNER_HTML, media_type="text/html")
 
 
 @app.get("/api", status_code=200, tags=["Gateway"])
