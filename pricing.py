@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from auth import require_tenant
 from store import (
@@ -102,6 +102,33 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
         ),
         "loss_avoided_usd": None,
     },
+    "wine_and_art": {
+        "unit": "cellar",
+        "monthly_usd": 2499.0,
+        "pitch": (
+            "Certifies unbroken storage conditions for a collection whose "
+            "value depends entirely on provenance being unquestioned."
+        ),
+        "loss_avoided_usd": 250000.0,
+    },
+    "pharmacy": {
+        "unit": "pharmacy",
+        "monthly_usd": 1299.0,
+        "pitch": (
+            "Meets the continuous-monitoring requirement for vaccine storage "
+            "and produces the audit record on demand."
+        ),
+        "loss_avoided_usd": 40000.0,
+    },
+    "cannabis": {
+        "unit": "cultivation room",
+        "monthly_usd": 1199.0,
+        "pitch": (
+            "Documents environmental control to the standard a state licence "
+            "renewal is judged against."
+        ),
+        "loss_avoided_usd": 60000.0,
+    },
     "restaurant": {
         "unit": "location",
         "monthly_usd": 999.0,
@@ -119,6 +146,98 @@ assert set(PRICE_BOOK) == set(INDUSTRY_PROFILES), (
     "Price book and industry profiles are out of step: "
     f"{set(PRICE_BOOK) ^ set(INDUSTRY_PROFILES)}"
 )
+
+
+# ---- contract terms ---------------------------------------------------
+#
+# The rate card is only half of what an estate is worth. These are the
+# terms that decide the other half, and the ones customers rarely
+# negotiate out because each is standard practice in enterprise software.
+
+# Charged once per site at commissioning. It funds acquisition cost on the
+# day of signature rather than eleven months later, and a customer who has
+# paid to be installed does not churn casually.
+SETUP_FEE_PER_SITE_USD = 1500.0
+
+# Paying a year up front is worth more than the ten percent it costs: it
+# removes the collections problem and fixes the customer for twelve months.
+ANNUAL_PREPAY_DISCOUNT_PERCENT = 10.0
+
+# Written into multi-year contracts. Uncontroversial at signature and
+# compounding: three years at five percent is sixteen percent more
+# contract value for no additional delivery.
+ANNUAL_ESCALATOR_PERCENT = 5.0
+MAX_CONTRACT_YEARS = 5
+
+# Flat monthly add-ons. Every one is a fixed fee — nothing here is a share
+# of what a customer saved, because a quiet year would then pay nothing
+# for the same standing obligation.
+ADD_ONS: Dict[str, Dict[str, Any]] = {
+    "assurance": {
+        "name": "Loss Assurance",
+        "basis": "per covered unit",
+        "monthly_usd": 149.0,
+        "description": (
+            "If a breach is recorded and no alert reaches anybody, we "
+            "reimburse the deductible for that event up to $25,000. "
+            "Exclusions are computed continuously and shown in advance."
+        ),
+    },
+    "vault": {
+        "name": "Certified Compliance Vault",
+        "basis": "per estate",
+        "monthly_usd": 499.0,
+        "description": (
+            "Hash-chained readings and signed attestations an insurer, "
+            "auditor or buyer can verify without trusting either party, "
+            "plus unlimited claim evidence packets."
+        ),
+    },
+    "benchmarks": {
+        "name": "Sector Benchmarks",
+        "basis": "per estate",
+        "monthly_usd": 299.0,
+        "description": (
+            "Where this estate sits against comparable operators on "
+            "excursion rate, response time and uptime, refreshed quarterly."
+        ),
+    },
+    "equipment_intelligence": {
+        "name": "Equipment Intelligence",
+        "basis": "per estate",
+        "monthly_usd": 399.0,
+        "description": (
+            "Failure and drift rates by hardware manufacturer across the "
+            "whole fleet, for anyone specifying what to buy next."
+        ),
+    },
+}
+
+
+def add_on_price(key: str, units: int) -> float:
+    """What one add-on costs an estate of this size."""
+    entry = ADD_ONS[key]
+    multiplier = units if entry["basis"] == "per covered unit" else 1
+    return round(entry["monthly_usd"] * multiplier, 2)
+
+
+def escalated_schedule(
+    monthly_usd: float, years: int, escalator_percent: float = ANNUAL_ESCALATOR_PERCENT
+) -> List[Dict[str, Any]]:
+    """Year-by-year contract value with the escalator applied."""
+    schedule = []
+    rate = monthly_usd
+    for year in range(1, max(1, min(years, MAX_CONTRACT_YEARS)) + 1):
+        if year > 1:
+            rate = round(rate * (1 + escalator_percent / 100.0), 2)
+        schedule.append(
+            {
+                "year": year,
+                "monthly_usd": rate,
+                "annual_usd": round(rate * 12, 2),
+            }
+        )
+    return schedule
 
 
 def unit_price(vertical: str) -> float:
@@ -332,3 +451,128 @@ def roi(days: int = 30, tenant: Tenant = Depends(require_tenant)):
     """Loss avoided against subscription cost over a period."""
     days = max(1, min(days, 365))
     return build_roi(tenant, days)
+
+
+@router.get("/add-ons")
+def list_add_ons(tenant: Tenant = Depends(require_tenant)):
+    """The add-on catalogue, priced for this estate."""
+    units = STORE.seat_count(tenant.tenant_id)
+    return {
+        "count": len(ADD_ONS),
+        "units": units,
+        "add_ons": [
+            {
+                "key": key,
+                **entry,
+                "monthly_for_this_estate_usd": add_on_price(key, units),
+            }
+            for key, entry in ADD_ONS.items()
+        ],
+        "note": (
+            "Every add-on is a fixed monthly fee. None is a share of what "
+            "the customer saved: a quiet year would then pay nothing for the "
+            "same standing obligation."
+        ),
+    }
+
+
+@router.get("/deal")
+def full_deal(
+    years: int = Query(1, ge=1, le=MAX_CONTRACT_YEARS),
+    annual_prepay: bool = Query(
+        False, description="Pay year one up front for a discount."
+    ),
+    include_add_ons: str = Query(
+        "", description="Comma-separated add-on keys, e.g. assurance,vault"
+    ),
+    tenant: Tenant = Depends(require_tenant),
+):
+    """The whole deal: subscription, add-ons, setup, term and escalator.
+
+    Everything a signature page needs in one figure, so nobody discovers a
+    setup fee or an escalator after the fact — which is the only way those
+    terms survive a renewal conversation.
+    """
+    subscription = build_subscription(tenant)
+    units = subscription["units_total"]
+    base_monthly = subscription["monthly_total_usd"]
+
+    wanted = [
+        key.strip()
+        for key in (include_add_ons or "").split(",")
+        if key.strip()
+    ]
+    unknown = [key for key in wanted if key not in ADD_ONS]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
+        )
+
+    add_on_lines = [
+        {
+            "key": key,
+            "name": ADD_ONS[key]["name"],
+            "basis": ADD_ONS[key]["basis"],
+            "monthly_usd": add_on_price(key, units),
+        }
+        for key in wanted
+    ]
+    add_on_monthly = round(sum(line["monthly_usd"] for line in add_on_lines), 2)
+    monthly = round(base_monthly + add_on_monthly, 2)
+
+    sites = len(STORE.sites_for(tenant.tenant_id))
+    # An estate with no sites recorded is still commissioned somewhere; one
+    # location is the floor rather than a free installation.
+    billable_sites = max(sites, 1) if units else 0
+    setup = round(SETUP_FEE_PER_SITE_USD * billable_sites, 2)
+
+    schedule = escalated_schedule(monthly, years)
+    total_contract = round(sum(row["annual_usd"] for row in schedule), 2)
+
+    year_one = schedule[0]["annual_usd"]
+    prepay_discount = (
+        round(year_one * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+        if annual_prepay
+        else 0.0
+    )
+
+    return {
+        "company_name": tenant.company_name,
+        "units": units,
+        "sites": sites,
+        "subscription_monthly_usd": base_monthly,
+        "add_ons": add_on_lines,
+        "add_ons_monthly_usd": add_on_monthly,
+        "monthly_usd": monthly,
+        "setup": {
+            "per_site_usd": SETUP_FEE_PER_SITE_USD,
+            "sites_billed": billable_sites,
+            "one_time_usd": setup,
+            "note": (
+                "Charged once, at commissioning. Covers placing every unit, "
+                "proving the alert path end to end, and training the roster."
+            ),
+        },
+        "term": {
+            "years": years,
+            "escalator_percent": ANNUAL_ESCALATOR_PERCENT if years > 1 else 0.0,
+            "schedule": schedule,
+            "total_contract_value_usd": total_contract,
+        },
+        "annual_prepay": {
+            "elected": annual_prepay,
+            "discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+            "discount_usd": prepay_discount,
+            "year_one_due_usd": round(year_one - prepay_discount + setup, 2),
+        },
+        "first_invoice_usd": round(
+            (year_one - prepay_discount + setup)
+            if annual_prepay
+            else monthly + setup,
+            2,
+        ),
+        "total_first_year_usd": round(year_one - prepay_discount + setup, 2),
+        "currency": "USD",
+        "generated_at": iso(utc_now()),
+    }

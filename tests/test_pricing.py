@@ -34,8 +34,10 @@ def test_price_book_matches_the_agreed_rate_card(api):
 
 
 def test_price_list_is_public_and_ordered_by_value(api):
+    from store import INDUSTRY_PROFILES
+
     body = api.get("/api/billing/pricing").json()
-    assert body["count"] == 8
+    assert body["count"] == len(INDUSTRY_PROFILES)
     prices = [r["monthly_usd"] for r in body["pricing"]]
     assert prices == sorted(prices, reverse=True)
 
@@ -189,3 +191,110 @@ def test_billing_requires_authentication(api):
     assert api.get("/api/billing").status_code == 401
     # The price list itself is public — it is a sales page.
     assert api.get("/api/billing/pricing").status_code == 200
+
+
+# ---- contract terms ------------------------------------------------------
+
+
+def test_the_escalator_compounds_across_the_term():
+    """Five percent a year is sixteen percent more contract over three."""
+    from pricing import escalated_schedule
+
+    schedule = escalated_schedule(10000.0, 3)
+    assert [row["monthly_usd"] for row in schedule] == [10000.0, 10500.0, 11025.0]
+    total = sum(row["annual_usd"] for row in schedule)
+    assert total == 378300.0
+    # 5.1% more contract value than three flat years, for no extra delivery.
+    flat = 10000.0 * 36
+    assert round((total - flat) / flat * 100, 1) == 5.1
+
+
+def test_a_single_year_carries_no_escalator():
+    from pricing import escalated_schedule
+
+    schedule = escalated_schedule(5000.0, 1)
+    assert len(schedule) == 1
+    assert schedule[0]["monthly_usd"] == 5000.0
+
+
+def test_the_term_is_capped():
+    """A ten-year escalator is a number nobody signs."""
+    from pricing import MAX_CONTRACT_YEARS, escalated_schedule
+
+    assert len(escalated_schedule(1000.0, 99)) == MAX_CONTRACT_YEARS
+
+
+def test_every_add_on_is_a_fixed_fee():
+    """The one rule: a quiet year must still pay for a standing obligation."""
+    from pricing import ADD_ONS, add_on_price
+
+    for key, entry in ADD_ONS.items():
+        assert entry["monthly_usd"] > 0, key
+        assert entry["basis"] in {"per estate", "per covered unit"}, key
+        # Nothing scales with a saving, only with the estate.
+        assert "percent" not in entry["basis"]
+        assert add_on_price(key, 0) >= 0
+
+
+def test_a_per_unit_add_on_scales_with_the_estate():
+    from pricing import add_on_price
+
+    assert add_on_price("assurance", 10) == 1490.0
+    assert add_on_price("vault", 10) == 499.0  # per estate, flat
+
+
+def test_the_deal_ties_setup_term_and_add_ons_together(
+    api, operator_factory, sensor_factory
+):
+    headers, _, _ = operator_factory(plan="enterprise")
+    api.post("/api/sites", headers=headers, json={"name": "Boca"})
+    api.post("/api/sites", headers=headers, json={"name": "Boynton"})
+    for n in range(2):
+        sensor_factory(headers, sensor_id=f"FRZ-{n}", vertical="restaurant")
+
+    deal = api.get("/api/billing/deal?years=3&annual_prepay=true"
+                   "&include_add_ons=assurance,vault", headers=headers).json()
+
+    assert deal["subscription_monthly_usd"] == 2 * 999.0
+    assert deal["add_ons_monthly_usd"] == 2 * 149.0 + 499.0
+    assert deal["setup"]["sites_billed"] == 2
+    assert deal["setup"]["one_time_usd"] == 3000.0
+    assert deal["term"]["years"] == 3
+    assert deal["term"]["escalator_percent"] == 5.0
+    assert len(deal["term"]["schedule"]) == 3
+    assert deal["annual_prepay"]["discount_percent"] == 10.0
+    assert deal["annual_prepay"]["discount_usd"] > 0
+    # Setup is never discounted by the prepay.
+    year_one = deal["term"]["schedule"][0]["annual_usd"]
+    assert deal["total_first_year_usd"] == round(
+        year_one * 0.9 + 3000.0, 2
+    )
+
+
+def test_an_estate_with_no_recorded_sites_still_pays_one_setup(
+    api, operator_factory, sensor_factory
+):
+    """Every estate is commissioned somewhere."""
+    headers, _, _ = operator_factory(plan="enterprise")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+
+    deal = api.get("/api/billing/deal", headers=headers).json()
+    assert deal["sites"] == 0
+    assert deal["setup"]["sites_billed"] == 1
+    assert deal["setup"]["one_time_usd"] == 1500.0
+
+
+def test_an_unknown_add_on_is_refused(api, operator_factory):
+    headers, _, _ = operator_factory()
+    resp = api.get("/api/billing/deal?include_add_ons=free_ponies",
+                   headers=headers)
+    assert resp.status_code == 400
+
+
+def test_the_new_verticals_are_priced_for_their_market():
+    """Wine and art is the highest per-asset price in the book."""
+    from pricing import PRICE_BOOK
+
+    assert PRICE_BOOK["wine_and_art"]["monthly_usd"] == 2499.0
+    assert PRICE_BOOK["pharmacy"]["monthly_usd"] == 1299.0
+    assert PRICE_BOOK["cannabis"]["monthly_usd"] == 1199.0

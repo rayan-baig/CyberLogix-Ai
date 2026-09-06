@@ -22,7 +22,9 @@ def test_root_gateway_lists_every_module(api):
 def test_health_reports_subsystem_state(api):
     body = api.get("/api/health").json()
     assert body["status"] == "online"
-    assert body["active_profiles"] == 8
+    from store import INDUSTRY_PROFILES
+
+    assert body["active_profiles"] == len(INDUSTRY_PROFILES)
     from main import MODULES_ACTIVE
 
     assert body["modules_active"] == len(MODULES_ACTIVE)
@@ -49,9 +51,11 @@ def test_every_router_is_actually_mounted(api):
         assert expected in paths, f"{expected} is not mounted"
 
 
-def test_industry_catalogue_exposes_eight_verticals(api):
+def test_industry_catalogue_covers_every_vertical(api):
+    from store import INDUSTRY_PROFILES
+
     body = api.get("/api/industries").json()
-    assert body["count"] == 8
+    assert body["count"] == len(INDUSTRY_PROFILES)
     medical = next(
         i for i in body["industries"] if i["vertical"] == "medical_lab"
     )

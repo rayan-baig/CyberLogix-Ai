@@ -142,6 +142,48 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
             "Compiles raw server-log alerts into an executive-ready compliance summary for board reviews."
         ),
     },
+    "pharmacy": {
+        "name": "Retail & Hospital Pharmacies",
+        "catastrophe": "Vaccine Refrigerator Compressor Failure",
+        "danger_above": 46.0,
+        "danger_below": 36.0,
+        "unit": "°F",
+        "asset_noun": "refrigerator",
+        "asset_plural": "refrigerators",
+        "shortcut_name": "VFC Storage & Handling Record",
+        "shortcut_description": (
+            "Produces the continuous temperature record a vaccine programme "
+            "audit asks for, with every excursion and its response."
+        ),
+    },
+    "wine_and_art": {
+        "name": "Fine Wine & Art Storage",
+        "catastrophe": "Cellar Climate Control Failure",
+        "danger_above": 60.0,
+        "danger_below": 50.0,
+        "unit": "°F",
+        "asset_noun": "cellar",
+        "asset_plural": "cellars",
+        "shortcut_name": "Provenance Climate Certificate",
+        "shortcut_description": (
+            "Certifies unbroken storage conditions for a collection, which is "
+            "what a buyer, an appraiser and a fine-art insurer each ask for."
+        ),
+    },
+    "cannabis": {
+        "name": "Licensed Cannabis Cultivation",
+        "catastrophe": "Drying Room Climate Excursion",
+        "danger_above": 72.0,
+        "danger_below": 58.0,
+        "unit": "°F",
+        "asset_noun": "room",
+        "asset_plural": "rooms",
+        "shortcut_name": "State Compliance Cultivation Log",
+        "shortcut_description": (
+            "Formats environmental records into the log a state cannabis "
+            "regulator requires alongside seed-to-sale tracking."
+        ),
+    },
     "restaurant": {
         "name": "Franchise Restaurants",
         "catastrophe": "Unlatched Walk-In Freezer Door Gasket Failure",
@@ -451,6 +493,10 @@ class Tenant:
     expires_at: datetime
     suspended: bool = False
     temperature_unit: str = "F"
+    # The reseller who brought and manages this account, if any. A
+    # refrigeration servicer with 200 clients is one relationship for us
+    # and 200 accounts on the books.
+    partner_id: Optional[str] = None
 
     @property
     def expired(self) -> bool:
@@ -476,6 +522,7 @@ class Tenant:
             "expires_at": iso(self.expires_at),
             "suspended": self.suspended,
             "temperature_unit": self.temperature_unit,
+            "partner_id": self.partner_id,
         }
 
     @classmethod
@@ -492,6 +539,7 @@ class Tenant:
             expires_at=_parse(row["expires_at"]),
             suspended=row.get("suspended", False),
             temperature_unit=row.get("temperature_unit", "F"),
+            partner_id=row.get("partner_id"),
         )
 
     def public(self, sensor_count: int) -> Dict[str, Any]:
@@ -510,6 +558,7 @@ class Tenant:
             "activated_at": iso(self.activated_at),
             "expires_at": iso(self.expires_at),
             "temperature_unit": self.temperature_unit,
+            "partner_id": self.partner_id,
             "seats_used": sensor_count,
             "seats_total": tier["max_sensors"],
             "seats_remaining": max(0, tier["max_sensors"] - sensor_count),
@@ -1053,6 +1102,65 @@ class Site:
         }
 
 
+# What a reseller earns on the accounts they bring and support. They do
+# the installation and first-line support; we do the platform.
+DEFAULT_PARTNER_COMMISSION_PERCENT = 20.0
+
+
+@dataclass
+class Partner:
+    """A reseller: an equipment servicer, integrator or facilities firm.
+
+    They already visit the sites, already have the relationship, and
+    already get called when a freezer fails. Selling through them turns one
+    negotiation into a book of accounts, and it is the only channel here
+    where acquisition cost does not scale with revenue.
+    """
+
+    partner_id: str
+    company_name: str
+    contact_name: str
+    contact_email: str
+    api_key: str
+    commission_percent: float = DEFAULT_PARTNER_COMMISSION_PERCENT
+    active: bool = True
+    created_at: Optional[datetime] = None
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "partner_id": self.partner_id,
+            "company_name": self.company_name,
+            "contact_name": self.contact_name,
+            "contact_email": self.contact_email,
+            "api_key": self.api_key,
+            "commission_percent": self.commission_percent,
+            "active": self.active,
+            "created_at": iso(self.created_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "Partner":
+        return cls(
+            partner_id=row["partner_id"],
+            company_name=row["company_name"],
+            contact_name=row["contact_name"],
+            contact_email=row["contact_email"],
+            api_key=row["api_key"],
+            commission_percent=row.get(
+                "commission_percent", DEFAULT_PARTNER_COMMISSION_PERCENT
+            ),
+            active=row.get("active", True),
+            created_at=_parse(row.get("created_at")),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        row = self.to_row()
+        # The key is a credential; it is shown once at creation and never
+        # echoed back on a listing.
+        row["api_key"] = f"...{self.api_key[-6:]}"
+        return row
+
+
 WEBHOOK_KINDS = ("slack", "teams", "pagerduty", "generic")
 
 
@@ -1325,6 +1433,8 @@ class HubStore:
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._resets: Dict[str, ResetToken] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
+        self._partners: Dict[str, Partner] = {}
+        self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
         self._ai_cache: Dict[str, str] = {}
         self._counter = 0
@@ -1381,6 +1491,11 @@ class HubStore:
                 site = Site.from_row(row)
                 self._sites[site.site_id] = site
 
+            for row in self._db.all("partner"):
+                partner = Partner.from_row(row)
+                self._partners[partner.partner_id] = partner
+                self._partner_keys[partner.api_key] = partner.partner_id
+
             for row in self._db.all("webhook"):
                 hook = AlertWebhook.from_row(row)
                 self._webhooks[hook.webhook_id] = hook
@@ -1417,6 +1532,7 @@ class HubStore:
                     + list(self._contacts)
                     + list(self._sites)
                     + list(self._webhooks)
+                    + list(self._partners)
                 )
                 if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
             ]
@@ -1447,6 +1563,8 @@ class HubStore:
             self._sites.clear()
             self._contacts.clear()
             self._webhooks.clear()
+            self._partners.clear()
+            self._partner_keys.clear()
             self._contracts.clear()
             self._resets.clear()
             self._usage.clear()
@@ -2099,6 +2217,61 @@ class HubStore:
             del self._contacts[contact_id]
             self._db.delete("contact", contact_id)
             return True
+
+    # ---- partners ---------------------------------------------------------
+
+    def create_partner(
+        self,
+        company_name: str,
+        contact_name: str,
+        contact_email: str,
+        commission_percent: float = DEFAULT_PARTNER_COMMISSION_PERCENT,
+    ) -> Partner:
+        with self._lock:
+            partner = Partner(
+                partner_id=self._next_id("PTR"),
+                company_name=company_name,
+                contact_name=contact_name,
+                contact_email=contact_email,
+                api_key=f"clx_ptr_{secrets.token_urlsafe(30)}",
+                commission_percent=commission_percent,
+                created_at=utc_now(),
+            )
+            self._partners[partner.partner_id] = partner
+            self._partner_keys[partner.api_key] = partner.partner_id
+            self._db.put("partner", partner.partner_id, partner.to_row())
+            return partner
+
+    def get_partner(self, partner_id: str) -> Optional[Partner]:
+        with self._lock:
+            return self._partners.get(partner_id)
+
+    def partner_by_key(self, api_key: str) -> Optional[Partner]:
+        with self._lock:
+            partner_id = self._partner_keys.get(api_key or "")
+            return self._partners.get(partner_id) if partner_id else None
+
+    def list_partners(self) -> List[Partner]:
+        with self._lock:
+            return sorted(self._partners.values(), key=lambda p: p.partner_id)
+
+    def save_partner(self, partner: Partner) -> Partner:
+        with self._lock:
+            self._db.put("partner", partner.partner_id, partner.to_row())
+            return partner
+
+    def tenants_for_partner(self, partner_id: str) -> List[Tenant]:
+        with self._lock:
+            rows = [
+                t for t in self._tenants.values() if t.partner_id == partner_id
+            ]
+        return sorted(rows, key=lambda t: t.company_name)
+
+    def assign_partner(self, tenant: Tenant, partner_id: Optional[str]) -> Tenant:
+        with self._lock:
+            tenant.partner_id = partner_id
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+            return tenant
 
     # ---- outbound webhooks -----------------------------------------------
 

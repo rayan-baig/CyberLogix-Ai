@@ -17,7 +17,10 @@ from fastapi.responses import FileResponse
 
 # Import all modular system routers
 from accounts import router as accounts_router
+from assurance import router as assurance_router
 from automation import router as autopilot_router
+from benchmarks import router as benchmarks_router
+from claims import router as claims_router
 from console_api import router as console_router
 from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
@@ -26,6 +29,7 @@ from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from notifications import delivery_ready
+from partners import router as partners_router
 import scheduler
 from licenses import router as license_router
 from pricing import router as billing_router
@@ -33,6 +37,7 @@ from shortcuts import router as shortcuts_router
 from sites import router as sites_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
+from vault import router as vault_router
 from voice_dispatch import router as voice_router
 from webhooks import router as webhooks_router
 
@@ -99,6 +104,11 @@ app.include_router(billing_router)
 app.include_router(shortcuts_router)
 app.include_router(sites_router)
 app.include_router(webhooks_router)
+app.include_router(vault_router)
+app.include_router(claims_router)
+app.include_router(assurance_router)
+app.include_router(benchmarks_router)
+app.include_router(partners_router)
 app.include_router(enterprise_router)
 
 MODULES_ACTIVE = [
@@ -118,6 +128,11 @@ MODULES_ACTIVE = [
     "site_management",
     "unattended_autopilot_scheduler",
     "outbound_alert_webhooks",
+    "tamper_evident_compliance_vault",
+    "insurance_claim_packets",
+    "loss_assurance",
+    "anonymised_sector_benchmarks",
+    "reseller_channel",
     "enterprise_cluster_billing",
 ]
 

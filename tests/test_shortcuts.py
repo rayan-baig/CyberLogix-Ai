@@ -14,8 +14,10 @@ def seed(api, headers, sensor_factory, sensor_id="FRZ-1", vertical="restaurant",
 
 
 def test_every_vertical_offers_a_shortcut(api):
+    from store import INDUSTRY_PROFILES
+
     body = api.get("/api/shortcuts").json()
-    assert body["count"] == 8
+    assert body["count"] == len(INDUSTRY_PROFILES)
     names = {s["vertical"]: s["shortcut_name"] for s in body["shortcuts"]}
     assert names["restaurant"] == "Health Inspector Log Formatter"
     assert names["logistics"] == "Reefer Cargo Handover Pass"
