@@ -156,6 +156,35 @@ def compliance_report(
     return report
 
 
+# Characters that make a spreadsheet treat a cell as a formula rather than
+# as text. The list includes tab and carriage return because Excel strips
+# leading whitespace before deciding.
+FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe(value: Any) -> Any:
+    """Neutralise a cell a spreadsheet would execute.
+
+    This export exists to be handed to a health inspector, an auditor or
+    an insurer — which means it will be opened in Excel by exactly the
+    person we least want to attack. A sensor named
+    `=HYPERLINK("http://evil","Click for your refund")` becomes a live
+    phishing link inside our own compliance document, and the DDE variants
+    (`=cmd|'/c calc'!A0`) go further than that.
+
+    A leading apostrophe is the standard mitigation: Excel and LibreOffice
+    both read the rest as literal text, and it is visible enough that
+    nobody mistakes the cell for the original name.
+
+    Numbers are passed through untouched — quoting them would turn every
+    temperature in the file into text and break the arithmetic the
+    inspector is there to do.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    return "'" + value if value[0] in FORMULA_TRIGGERS else value
+
+
 @router.get("/compliance.csv")
 def compliance_csv(
     days: int = Query(7, ge=1, le=90),
@@ -192,9 +221,9 @@ def compliance_csv(
     for row in rows:
         writer.writerow(
             [
-                row["sensor_id"],
-                row["location_name"],
-                row["industry_name"],
+                csv_safe(row["sensor_id"]),
+                csv_safe(row["location_name"]),
+                csv_safe(row["industry_name"]),
                 row["readings_logged"],
                 row["readings_in_band"],
                 row["readings_breached"],
@@ -202,7 +231,7 @@ def compliance_csv(
                 "" if row["min_temperature"] is None else row["min_temperature"],
                 "" if row["mean_temperature"] is None else row["mean_temperature"],
                 "" if row["max_temperature"] is None else row["max_temperature"],
-                row["last_seen"] or "",
+                csv_safe(row["last_seen"] or ""),
                 "yes" if row["currently_online"] else "no",
                 "yes" if row["compliant"] else "no",
             ]
@@ -214,8 +243,8 @@ def compliance_csv(
     writer.writerow(
         [
             "TOTAL",
-            tenant.company_name,
-            f"{days} days to {iso(utc_now())}",
+            csv_safe(tenant.company_name),
+            csv_safe(f"{days} days to {iso(utc_now())}"),
             logged,
             logged - breached,
             breached,
