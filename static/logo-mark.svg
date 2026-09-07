@@ -1,21 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
      aria-label="CyberLogix AI">
   <!--
-    The favicon cut. Same mark with the two feeds removed: at 16px in a
-    browser tab a 1.6px trace is not a trace, it is a smudge beside the
-    thing you were trying to draw. What survives is the silhouette, which
-    is the only part that has to.
+    The favicon cut. Same mark, two changes for 16px: the limit is a solid
+    hairline rather than dashed, because a 3.4px dash at that size is four
+    grey pixels and a rumour; and the traces are a touch heavier so they
+    survive being rounded to whole pixels.
   -->
   <defs>
-    <linearGradient id="clx-mark" x1="4" y1="29" x2="28" y2="6"
+    <linearGradient id="clx-mark" x1="6" y1="28" x2="26" y2="6"
                     gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#22B8E6"/>
-      <stop offset="0.55" stop-color="#2F6BE8"/>
-      <stop offset="1" stop-color="#6B3FE4"/>
+      <stop offset="0" stop-color="#7C3FE4"/>
+      <stop offset="0.5" stop-color="#4560EA"/>
+      <stop offset="1" stop-color="#2F8BE8"/>
     </linearGradient>
   </defs>
-  <path d="M16 6 V20" fill="none" stroke="url(#clx-mark)" stroke-width="7"
+  <path d="M3.5 13.6 H27" fill="none" stroke="#FF6B4A" stroke-width="1.5"
+        stroke-linecap="round" opacity="0.85"/>
+  <g fill="none" stroke="url(#clx-mark)" stroke-width="3.2"
+     stroke-linecap="round">
+    <path d="M8 27.5 V19.6"/>
+    <path d="M16 27.5 V16.9"/>
+  </g>
+  <g fill="url(#clx-mark)">
+    <circle cx="8" cy="19.6" r="2.3"/>
+    <circle cx="16" cy="16.9" r="2.3"/>
+  </g>
+  <path d="M24 27.5 V5.8" fill="none" stroke="#FF6B4A" stroke-width="3.4"
         stroke-linecap="round"/>
-  <circle cx="16" cy="23.2" r="6.4" fill="url(#clx-mark)"/>
-  <circle cx="16" cy="23.2" r="1.9" fill="#05070D"/>
+  <circle cx="24" cy="5.8" r="3.1" fill="#FF6B4A"/>
 </svg>
