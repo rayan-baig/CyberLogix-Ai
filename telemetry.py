@@ -10,10 +10,11 @@ alert to act on instead of a pager storm.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from gemini import safe_generate
 from licenses import require_tenant
@@ -22,8 +23,10 @@ from store import (
     INDUSTRY_PROFILES,
     STORE,
     Tenant,
+    ImplausibleReading,
     evaluate_sensor_breach,
     display_temperature,
+    require_plausible,
     format_temperature,
     to_fahrenheit,
     iso,
@@ -61,6 +64,37 @@ class SensorReading(BaseModel):
     signal_percent: Optional[float] = Field(
         None, ge=0.0, le=100.0, description="Sensor signal strength"
     )
+
+    @field_validator(
+        "temperature_fahrenheit", "temperature_celsius", "humidity_percent",
+        "battery_percent", "signal_percent",
+    )
+    @classmethod
+    def finite_only(cls, value: Optional[float]) -> Optional[float]:
+        """Refuse NaN and infinity at the door.
+
+        Pydantic accepts them as floats, and everything downstream then
+        misbehaves quietly: NaN compares false against every threshold, so
+        the asset is scored nominal forever, and it serialises to invalid
+        JSON, which takes out the compliance report and the attestation for
+        that tenant permanently. A device sending one deserves an error it
+        can see, not a reading nobody can trust.
+        """
+        if value is not None and (math.isnan(value) or math.isinf(value)):
+            raise ValueError(
+                "must be a finite number; a non-finite reading cannot be "
+                "scored against a threshold"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def physically_possible(self) -> "SensorReading":
+        """Refuse a reading no sensor could have produced."""
+        try:
+            require_plausible(self.resolved_fahrenheit())
+        except ImplausibleReading as exc:
+            raise ValueError(str(exc)) from exc
+        return self
 
     @model_validator(mode="after")
     def exactly_one_unit(self) -> "SensorReading":

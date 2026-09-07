@@ -7,13 +7,17 @@ forecasting.
 """
 
 import logging
+import math
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Import all modular system routers
@@ -148,6 +152,38 @@ PARTNER_HTML = STATIC_DIR / "partner.html"
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """Return a clean 422 for a malformed body, including a non-finite one.
+
+    FastAPI's default handler echoes the offending value back inside the
+    error, and `json.dumps` refuses NaN and infinity — so a device sending
+    a bare `NaN` or `1e400` token produced an unhandled 500 with a stack
+    trace instead of a rejection it could act on. Both are exactly what a
+    failing sensor emits, so the ingestion path had a crash reachable by
+    the hardware it exists to listen to.
+
+    The offending value is scrubbed to its text form rather than dropped:
+    whoever is debugging the device needs to see what it sent.
+    """
+    def scrub(value: Any) -> Any:
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return repr(value)
+        if isinstance(value, dict):
+            return {k: scrub(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [scrub(v) for v in value]
+        return value
+
+    # jsonable_encoder first, which turns the exception objects Pydantic
+    # attaches into strings; then scrub, because the encoder passes floats
+    # through untouched and NaN is what json.dumps refuses.
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": scrub(jsonable_encoder(exc.errors()))},
+    )
 
 
 @app.get("/", include_in_schema=False)

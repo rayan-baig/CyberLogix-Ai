@@ -35,6 +35,25 @@ CREATE INDEX IF NOT EXISTS records_kind ON records (kind);
 """
 
 
+def _encode(data: Dict[str, Any]) -> str:
+    """Serialise a row, refusing anything that is not valid JSON.
+
+    Python's json emits bare `NaN` and `Infinity` tokens by default. They
+    round-trip through Python and are invalid JSON to everything else, so
+    a single one written here silently corrupts the database for any other
+    reader and breaks every API response that includes the row. Better to
+    fail the write loudly than to persist something unreadable.
+    """
+    try:
+        return json.dumps(data, allow_nan=False)
+    except ValueError as exc:
+        raise ValueError(
+            f"Refusing to persist a non-JSON-compliant value: {exc}. "
+            "A NaN or infinity reached storage; the value must be rejected "
+            "at the boundary that produced it."
+        ) from exc
+
+
 class Database:
     """A tiny durable key/document store over SQLite."""
 
@@ -57,12 +76,12 @@ class Database:
             self._conn.execute(
                 "INSERT INTO records (kind, rec_id, data) VALUES (?, ?, ?) "
                 "ON CONFLICT(kind, rec_id) DO UPDATE SET data = excluded.data",
-                (kind, rec_id, json.dumps(data)),
+                (kind, rec_id, _encode(data)),
             )
             self._conn.commit()
 
     def put_many(self, kind: str, rows: Iterable[Tuple[str, Dict[str, Any]]]) -> None:
-        payload = [(kind, rec_id, json.dumps(data)) for rec_id, data in rows]
+        payload = [(kind, rec_id, _encode(data)) for rec_id, data in rows]
         if not payload:
             return
         with self._lock:

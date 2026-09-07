@@ -111,7 +111,11 @@ def _tenant_stats(tenant_id: str, vertical: str, since) -> Optional[Dict[str, An
         "excursion_rate": breached / readings * 100.0,
         "incidents_per_unit": len(incidents) / len(sensors),
         "mean_minutes_to_acknowledge": statistics.fmean(acks) if acks else None,
-        "uptime_percent": (
+        # A snapshot, not a period figure: it answers "how many are online
+        # right now". Named accordingly so nobody reads it as uptime across
+        # the quarter, which is what "uptime_percent" alongside period_days
+        # plainly implied.
+        "reporting_now_percent": (
             sum(1 for s in sensors if not s.offline()) / len(sensors) * 100.0
         ),
     }
@@ -129,19 +133,43 @@ def cohort(vertical: str, days: int) -> Dict[str, Any]:
 
 
 def _distribution(
-    rows: List[Dict[str, Any]], field: str, unit: str = "F"
+    rows: List[Dict[str, Any]],
+    field: str,
+    unit: str = "F",
+    lower_is_better: bool = True,
 ) -> Optional[Dict[str, Any]]:
+    """The spread of one metric, or None when too few operators report it.
+
+    Two things this has to get right.
+
+    Which end is "best" depends on the metric. Lower is better for
+    excursion rate and response time; higher is better for the share of
+    units reporting. Naming P25 "best" unconditionally told a customer at
+    99% that the best quartile of their sector manages 70%, so they read
+    themselves as far ahead of a field they were behind.
+
+    And the k-anonymity floor has to apply here, not only to the cohort.
+    Gating on the number of operators is not enough when a metric is
+    absent for most of them — minutes-to-acknowledge is None for anyone
+    with no acknowledged incident — so a cohort of five could publish one
+    operator's exact figure across all three quartiles. That is precisely
+    the disclosure this module exists to prevent.
+    """
     values = [r[field] for r in rows if r.get(field) is not None]
-    if not values:
+    if len(values) < MIN_COHORT_TENANTS:
         return None
+
     convert = field == "mean_f"
+
     def shown(v):
         return display_temperature(v, unit) if convert else round(v, 2)
 
+    low, high = _percentile(values, 0.25), _percentile(values, 0.75)
+    best, worst = (low, high) if lower_is_better else (high, low)
     return {
-        "best_quartile": shown(_percentile(values, 0.25)),
+        "best_quartile": shown(best),
         "median": shown(_percentile(values, 0.5)),
-        "worst_quartile": shown(_percentile(values, 0.75)),
+        "worst_quartile": shown(worst),
         "cohort_size": len(values),
     }
 
@@ -204,6 +232,17 @@ def sector_benchmark(
         }
 
     mine = next((r for r in rows if r["tenant_id"] == tenant.tenant_id), None)
+    spread = {
+        "mean_temperature": _distribution(rows, "mean_f", unit),
+        "excursion_rate_percent": _distribution(rows, "excursion_rate"),
+        "incidents_per_unit": _distribution(rows, "incidents_per_unit"),
+        "minutes_to_acknowledge": _distribution(
+            rows, "mean_minutes_to_acknowledge"
+        ),
+        "units_reporting_now_percent": _distribution(
+            rows, "reporting_now_percent", lower_is_better=False
+        ),
+    }
     return {
         "vertical": key,
         "industry": profile["name"],
@@ -212,15 +251,13 @@ def sector_benchmark(
         "available": True,
         "cohort_size": len(rows),
         "temperature_unit": unit,
-        "cohort": {
-            "mean_temperature": _distribution(rows, "mean_f", unit),
-            "excursion_rate_percent": _distribution(rows, "excursion_rate"),
-            "incidents_per_unit": _distribution(rows, "incidents_per_unit"),
-            "minutes_to_acknowledge": _distribution(
-                rows, "mean_minutes_to_acknowledge"
-            ),
-            "unit_uptime_percent": _distribution(rows, "uptime_percent"),
-        },
+        "cohort": {k: v for k, v in spread.items() if v is not None},
+        # Named rather than silently absent: a metric that just disappears
+        # looks like a bug, and the reason it is missing is itself the
+        # promise this product is sold on.
+        "withheld_for_anonymity": sorted(
+            k for k, v in spread.items() if v is None
+        ),
         "you": (
             {
                 "units": mine["units"],
@@ -244,9 +281,9 @@ def sector_benchmark(
                             if r["mean_minutes_to_acknowledge"] is not None
                         ],
                     ),
-                    "uptime": _standing(
-                        mine["uptime_percent"],
-                        [r["uptime_percent"] for r in rows],
+                    "reporting_now": _standing(
+                        mine["reporting_now_percent"],
+                        [r["reporting_now_percent"] for r in rows],
                         lower_is_better=False,
                     ),
                 },

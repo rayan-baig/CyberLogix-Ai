@@ -51,7 +51,7 @@ def test_a_full_cohort_publishes_a_distribution(
     assert body["cohort_size"] == 6
     assert body["cohort"]["mean_temperature"]["median"] is not None
     assert body["you"]["units"] == 1
-    assert body["you"]["standing"]["uptime"]["percentile"] is not None
+    assert body["you"]["standing"]["reporting_now"]["percentile"] is not None
 
 
 def test_no_customer_is_ever_named(api, operator_factory, sensor_factory):
@@ -128,3 +128,67 @@ def test_equipment_findings_publish_once_the_population_is_there(
     assert row["operators"] == 4
     # Serials are the identifying part and must never be echoed.
     assert "AA:BB" not in api.get("/api/benchmarks", headers=heads[0]).text
+
+
+def test_a_metric_only_one_operator_reports_is_withheld(
+    api, operator_factory, sensor_factory
+):
+    """Five operators is not five data points.
+
+    Minutes-to-acknowledge is absent for anyone who never acknowledged an
+    incident. Gating only on the cohort size let a single operator's exact
+    figure be published as all three quartiles.
+    """
+    heads = []
+    for i in range(6):
+        headers, _, _ = operator_factory(
+            company_name=f"Chain {i}", email=f"op{i}@example.com")
+        heads.append(headers)
+        api.post("/api/licenses/me/sensors", headers=headers,
+                 json={"sensor_id": f"FRZ-{i}", "industry_vertical": "restaurant",
+                       "location_name": "Walk-In"})
+        api.post("/api/sensor-pulse", headers=headers,
+                 json={"sensor_id": f"FRZ-{i}", "temperature_fahrenheit": 28.0})
+
+    # Exactly one of them acknowledges anything.
+    body = api.post("/api/sensor-pulse", headers=heads[0],
+                    json={"sensor_id": "FRZ-0",
+                          "temperature_fahrenheit": 55.0}).json()
+    api.post(f"/api/voice/acknowledge/{body['incident_id']}",
+             headers=heads[0], json={"acknowledged_by": "Someone"})
+
+    out = api.get("/api/benchmarks/restaurant", headers=heads[3]).json()
+    assert out["available"] is True
+    assert "minutes_to_acknowledge" not in out["cohort"]
+    assert "minutes_to_acknowledge" in out["withheld_for_anonymity"]
+    # And the one operator's figure appears nowhere in the response.
+    assert "42.7" not in api.get("/api/benchmarks/restaurant",
+                                 headers=heads[3]).text
+
+
+def test_higher_is_better_for_the_share_reporting(
+    api, operator_factory, sensor_factory
+):
+    """Naming P25 "best" told a customer at 99% that the field's best was 70%."""
+    heads = []
+    for i in range(6):
+        headers, _, _ = operator_factory(
+            company_name=f"Chain {i}", email=f"op{i}@example.com")
+        heads.append(headers)
+        api.post("/api/licenses/me/sensors", headers=headers,
+                 json={"sensor_id": f"FRZ-{i}", "industry_vertical": "restaurant",
+                       "location_name": "Walk-In"})
+        api.post("/api/sensor-pulse", headers=headers,
+                 json={"sensor_id": f"FRZ-{i}", "temperature_fahrenheit": 28.0})
+
+    out = api.get("/api/benchmarks/restaurant", headers=heads[0]).json()
+    reporting = out["cohort"]["units_reporting_now_percent"]
+    assert reporting["best_quartile"] >= reporting["worst_quartile"], (
+        "for a metric where higher is better, the best quartile must not "
+        "be the lower figure"
+    )
+
+    excursion = out["cohort"]["excursion_rate_percent"]
+    assert excursion["best_quartile"] <= excursion["worst_quartile"], (
+        "and lower must still be better for excursion rate"
+    )

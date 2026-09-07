@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -163,16 +164,41 @@ def _owned_sensor(tenant: Tenant, sensor_id: str):
 
 
 def attest_sensor(
-    tenant: Tenant, sensor, since: Optional[datetime] = None
+    tenant: Tenant,
+    sensor,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    anchor: bool = False,
 ) -> Dict[str, Any]:
-    """An attestation for one sensor over a period."""
+    """An attestation for one sensor over a period.
+
+    `until` matters more than it looks. The claim packet clips its reading
+    table to a window; without an upper bound here the head would cover
+    readings the packet does not show, and an adjuster re-deriving it
+    would get a different figure and conclude the evidence is false.
+
+    `anchor=True` records the head, which is what later makes tampering
+    detectable — a chain checked only against itself always agrees.
+    """
     readings = STORE.readings_for(sensor.sensor_id, since=since)
+    if until is not None:
+        readings = [r for r in readings if r.recorded_at <= until]
     unit = tenant.temperature_unit
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
     above, below = sensor.bounds()
 
     excursions = [r for r in readings if r.breached]
     head = chain_head(readings)
+
+    if anchor:
+        STORE.anchor_chain(
+            tenant_id=tenant.tenant_id,
+            sensor_id=sensor.sensor_id,
+            chain_head=head,
+            readings=len(readings),
+            period_start=iso(readings[0].recorded_at) if readings else None,
+            period_end=iso(readings[-1].recorded_at) if readings else None,
+        )
 
     return {
         "sensor_id": sensor.sensor_id,
@@ -227,7 +253,13 @@ def estate_attestation(
     sensors = sorted(
         STORE.sensors_for(tenant.tenant_id), key=lambda s: s.sensor_id
     )
-    entries = [attest_sensor(tenant, sensor, since) for sensor in sensors]
+    # Anchored, because an attestation that is not recorded cannot be
+    # checked against later — which is the only thing that makes the
+    # tamper claim true.
+    entries = [
+        attest_sensor(tenant, sensor, since, anchor=True)
+        for sensor in sensors
+    ]
 
     # One digest over the per-sensor heads, so the estate has a single
     # number a recipient can quote.
@@ -279,7 +311,7 @@ def sensor_attestation(
     """An attestation for one sensor, optionally with the full chain."""
     sensor = _owned_sensor(tenant, sensor_id)
     since = utc_now() - timedelta(days=days)
-    attestation = attest_sensor(tenant, sensor, since)
+    attestation = attest_sensor(tenant, sensor, since, anchor=True)
     attestation["company_name"] = tenant.company_name
     attestation["issued_at"] = iso(utc_now())
     attestation["signing"] = signing_state()
@@ -297,37 +329,82 @@ def verify_sensor(
     days: int = Query(30, ge=1, le=730),
     tenant: Tenant = Depends(require_tenant),
 ):
-    """Re-derive a sensor's chain from what is stored right now.
+    """Check the stored record against the head we previously attested.
 
-    Recomputing from storage catches corruption and any write that went
-    around the normal path. It cannot catch a change made by someone who
-    also recomputed the chain — for that, compare against a chain head
-    issued earlier, which is what the attestation is for.
+    The obvious implementation is a tautology and was the one here: derive
+    the chain from the current rows, then check it against a chain derived
+    from the same rows. That agrees no matter what was edited, so an
+    operator could rewrite a bad night and the tamper check would still
+    say "intact" — the single worst possible failure for the product this
+    module exists to sell.
+
+    A hash chain only detects tampering against a value recorded *before*
+    it. So this compares today's head against the most recent head issued
+    in an attestation. With no attestation yet there is nothing to compare
+    to, and it says so rather than implying a pass.
     """
     sensor = _owned_sensor(tenant, sensor_id)
     since = utc_now() - timedelta(days=days)
     readings = STORE.readings_for(sensor.sensor_id, since=since)
-    chain = build_chain(readings)
+    current = chain_head(readings)
 
-    broken = []
-    previous = GENESIS
-    for index, (entry, reading) in enumerate(zip(chain, readings)):
-        expected = digest_reading(previous, reading)
-        if expected != entry["digest"]:
-            broken.append({"index": index, "at": entry["at"]})
-        previous = entry["digest"]
+    anchors = [
+        a
+        for a in STORE.anchors_for_sensor(sensor.sensor_id)
+        if a.tenant_id == tenant.tenant_id
+    ]
+    if not anchors:
+        return {
+            "sensor_id": sensor.sensor_id,
+            "verifiable": False,
+            "links_checked": len(readings),
+            "chain_head": current,
+            "checked_at": iso(utc_now()),
+            "note": (
+                "No attestation has been issued for this sensor yet, so "
+                "there is no earlier head to compare against. Issue one "
+                "and this becomes a real check; until then a chain can "
+                "only be checked against itself, which proves nothing."
+            ),
+        }
+
+    latest = anchors[0]
+    # An attestation covers the readings that existed when it was issued.
+    # More have arrived since, and the ring buffer may have evicted older
+    # ones, so re-derive over exactly the run the anchor covered.
+    window = readings
+    if latest.period_start:
+        window = [r for r in window if iso(r.recorded_at) >= latest.period_start]
+    if latest.period_end:
+        window = [r for r in window if iso(r.recorded_at) <= latest.period_end]
+    rederived = chain_head(window)
+
+    intact = hmac.compare_digest(rederived, latest.chain_head)
+    evicted = len(window) < latest.readings
 
     return {
         "sensor_id": sensor.sensor_id,
-        "links_checked": len(chain),
-        "intact": not broken,
-        "broken_links": broken,
-        "chain_head": chain[-1]["digest"] if chain else GENESIS,
+        "verifiable": True,
+        "intact": intact and not evicted,
+        "links_checked": len(window),
+        "links_when_attested": latest.readings,
+        "attested_at": iso(latest.issued_at),
+        "attested_head": latest.chain_head,
+        "rederived_head": rederived,
+        "chain_head": current,
         "checked_at": iso(utc_now()),
         "note": (
-            "Compare this head against the one on an attestation issued "
-            "earlier. A head that has changed means the underlying readings "
-            "have changed."
+            "The record still produces the head attested on "
+            f"{iso(latest.issued_at)}. Nothing in that period has changed."
+            if intact and not evicted
+            else "Readings from the attested period have since been evicted "
+            "by the retention limit, so the head cannot be reproduced. This "
+            "is expected on an old attestation, and is not evidence of "
+            "tampering — but it is also no longer proof of anything."
+            if evicted
+            else "The stored record does NOT reproduce the head attested on "
+            f"{iso(latest.issued_at)}. Something in that period has been "
+            "altered since. Investigate before relying on this record."
         ),
     }
 
@@ -341,8 +418,27 @@ def verify_supplied_chain(payload: Dict[str, Any]):
     It reads nothing and stores nothing — it only re-derives digests from
     the readings supplied in the request.
     """
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Send a JSON object with 'readings' and 'chain_head'.",
+        )
     readings = payload.get("readings")
-    claimed = (payload.get("chain_head") or "").strip().lower()
+    # Coerced defensively: this endpoint is deliberately unauthenticated
+    # and is the first thing an insurer or auditor touches, so anything
+    # that is not a string must produce a 400, never a stack trace.
+    raw_head = payload.get("chain_head")
+    if raw_head is not None and not isinstance(raw_head, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'chain_head' must be a hex string.",
+        )
+    claimed = (raw_head or "").strip().lower()
+    if claimed and not re.fullmatch(r"[0-9a-f]{64}", claimed):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'chain_head' must be 64 hexadecimal characters.",
+        )
     if not isinstance(readings, list) or not readings:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

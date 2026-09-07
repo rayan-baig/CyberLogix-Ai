@@ -297,6 +297,12 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
             )
             continue
 
+        # Claimed before dialling, not after. Two sweeps running at once
+        # — the timer and the console button — would otherwise both pass
+        # the check above and both place a call.
+        if not STORE.claim_voice_escalation(incident):
+            continue
+
         outcome = dispatch_voice_call(incident, tenant)
         escalated += 1
 

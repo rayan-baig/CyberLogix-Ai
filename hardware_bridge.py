@@ -18,16 +18,25 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from gemini import safe_generate
 from auth import optional_operator
 from licenses import require_tenant
-from store import INDUSTRY_PROFILES, STORE, Tenant, iso, utc_now
+from store import (
+    INDUSTRY_PROFILES,
+    STORE,
+    ImplausibleReading,
+    Tenant,
+    iso,
+    require_plausible,
+    utc_now,
+)
 from telemetry import process_reading
 
 logger = logging.getLogger("cyberlogix.bridge")
@@ -67,6 +76,22 @@ class GenericWebhookPayload(BaseModel):
         "first-party client may send an Authorization bearer token instead.",
     )
     reading_value: float = Field(..., description="Raw metric value reported by hardware")
+
+    @field_validator("reading_value")
+    @classmethod
+    def finite_only(cls, value: float) -> float:
+        """The same door as the native pulse, for third-party hardware.
+
+        Off-the-shelf devices are the likelier source of a NaN — a flat
+        battery mid-conversion is a classic way to emit one — and it must
+        not reach a threshold comparison, where it would read as nominal.
+        """
+        if math.isnan(value) or math.isinf(value):
+            raise ValueError(
+                "reading_value must be a finite number; a non-finite "
+                "reading cannot be scored against a threshold"
+            )
+        return value
     metric_type: str = Field(
         "temperature_f",
         description="Unit of measurement, e.g. temperature_f, temperature_c, humidity_pct",
@@ -220,7 +245,12 @@ def ingest_third_party_hardware_webhook(
             "ingested_at": iso(utc_now()),
         }
 
-    temperature = payload.reading_value
+    try:
+        temperature = require_plausible(payload.reading_value)
+    except ImplausibleReading as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     if metric == "temperature_c":
         temperature = round(temperature * 9.0 / 5.0 + 32.0, 2)
 

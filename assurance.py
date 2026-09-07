@@ -62,15 +62,30 @@ def evaluate_cover(tenant: Tenant) -> Dict[str, Any]:
     """
     now = utc_now()
     sensors = STORE.sensors_for(tenant.tenant_id)
-    roster = STORE.sms_recipients(tenant)
-    has_real_roster = any(c.contact_id != "fallback" for c in roster)
+
+    # Asked exactly the way the alert will be routed: per sensor, with its
+    # site. Asking tenant-wide instead drops every site-scoped contact —
+    # `_roster_for_site` falls back to the contacts with no site — so a
+    # chain that had correctly built a per-site rota was told every
+    # morning that its cover was void while its alerts were in fact
+    # reaching the right people. An eligibility check that contradicts the
+    # dispatch path is worse than no check.
+    def covered_by_a_person(sensor) -> bool:
+        roster = STORE.sms_recipients(tenant, sensor.site_id)
+        return any(c.contact_id != "fallback" for c in roster)
+
+    tenant_wide = STORE.sms_recipients(tenant, None)
+    has_estate_roster = any(c.contact_id != "fallback" for c in tenant_wide)
+    someone_somewhere = has_estate_roster or any(
+        covered_by_a_person(s) for s in sensors
+    )
 
     estate_checks = [
         _unit_check(
             "on_call_roster",
-            has_real_roster,
+            someone_somewhere,
             "Someone is on the roster to receive an alert."
-            if has_real_roster
+            if someone_somewhere
             else "No roster is configured, so alerts fall back to the single "
             "contact captured at onboarding. Add at least one person.",
         ),
@@ -102,6 +117,14 @@ def evaluate_cover(tenant: Tenant) -> Dict[str, Any]:
             )
         if sensor.last_temperature is None:
             reasons.append("has never reported a reading")
+        # Per unit, because cover is per unit: a site whose own rota is
+        # empty is not covered even when head office has one, if the site
+        # has contacts of its own that are all muted.
+        if not covered_by_a_person(sensor):
+            reasons.append(
+                "has nobody on call for its site, so an alert about it "
+                "would reach only the onboarding contact"
+            )
 
         row = {
             "sensor_id": sensor.sensor_id,

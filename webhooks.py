@@ -243,28 +243,58 @@ def _resolves_privately(host: str) -> bool:
     return False
 
 
-def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
-    """POST JSON, returning (delivered, status). Never raises."""
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme.lower() not in ALLOWED_SCHEMES:
-        return False, "refused_insecure_url"
-    if not ALLOW_PRIVATE_WEBHOOK_TARGETS and _resolves_privately(parts.hostname):
-        logger.warning("Refused a webhook post to a private address (%s).", url)
-        return False, "refused_private_address"
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow a redirect.
 
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "CyberLogix-AI/1.0",
-        },
-        method="POST",
-    )
+    The private-address check runs against the hostname the tenant gave
+    us. urllib follows redirects by default, so a target that resolves
+    publicly can answer `302 -> http://169.254.169.254/…` and walk us
+    straight into the metadata service — past both the scheme check and
+    the address check, which only ever saw the first hop. The status is
+    recorded on the hook, which is enough to use as a blind port scanner.
+
+    A webhook receiver has no legitimate reason to redirect, so the whole
+    class of bypass goes away by declining to follow one.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.URLError(
+            f"refused to follow a redirect to {newurl!r}: a webhook "
+            "receiver must answer directly"
+        )
+
+
+_OPENER = urllib.request.build_opener(_NoRedirects)
+
+
+def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
+    """POST JSON, returning (delivered, status).
+
+    Never raises — and that has to include parsing the URL. `urlsplit`
+    throws on a malformed IPv6 literal such as `https://[::1`, which the
+    stored target happily was. Because this is called from the breach
+    handler, one fat-fingered Slack URL turned every subsequent ingest
+    into a 500, after the incident row and the SMS were already written.
+    So the whole body sits inside the guard, not just the network call.
+    """
     try:
-        with urllib.request.urlopen(
-            request, timeout=WEBHOOK_TIMEOUT_SECONDS
-        ) as response:
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme.lower() not in ALLOWED_SCHEMES:
+            return False, "refused_insecure_url"
+        if not ALLOW_PRIVATE_WEBHOOK_TARGETS and _resolves_privately(parts.hostname):
+            logger.warning("Refused a webhook post to a private address (%s).", url)
+            return False, "refused_private_address"
+
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "CyberLogix-AI/1.0",
+            },
+            method="POST",
+        )
+        with _OPENER.open(request, timeout=WEBHOOK_TIMEOUT_SECONDS) as response:
             return True, f"http_{response.status}"
     except urllib.error.HTTPError as exc:
         return False, f"http_{exc.code}"
@@ -339,6 +369,21 @@ def _validate_target(kind: str, target: str) -> str:
                 "credential, so it cannot be sent in clear."
             ),
         )
+    # Parsed at the door, because a URL that cannot be parsed cannot be
+    # posted to — and the place that discovers it must not be the breach
+    # handler, hours later, with an incident already open.
+    try:
+        parsed = urllib.parse.urlsplit(target)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"That is not a URL this can post to: {exc}",
+        ) from exc
+    if not parsed.hostname:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The webhook URL has no host.",
+        )
     return target
 
 
@@ -405,6 +450,20 @@ def update_webhook(
     if not changes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update."
+        )
+
+    # exclude_unset keeps a field the client set explicitly to null, and
+    # writing that through turns `active` into None — which is falsy, so
+    # the hook silently stops receiving breaches while the API answers
+    # 200. A UI that serialises its whole form hits this on every save.
+    nulled = [k for k, v in changes.items() if v is None]
+    if nulled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Fields cannot be set to null: {sorted(nulled)}. Omit a "
+                "field to leave it unchanged."
+            ),
         )
 
     if "target" in changes:

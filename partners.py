@@ -18,6 +18,7 @@ for accounts that stay, not for a loss that happened to be large.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any, Dict, Optional
 
@@ -75,7 +76,12 @@ def require_admin(
                 "administration is closed. Set CYBERLOGIX_ADMIN_KEY."
             ),
         )
-    if not x_cyberlogix_admin or x_cyberlogix_admin != PLATFORM_ADMIN_KEY:
+    # compare_digest, because this is the credential that mints resellers
+    # and a short-circuiting compare leaks its length and prefix to anyone
+    # who can time the response.
+    if not x_cyberlogix_admin or not hmac.compare_digest(
+        x_cyberlogix_admin, PLATFORM_ADMIN_KEY
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="A valid X-CyberLogix-Admin header is required.",
@@ -135,6 +141,10 @@ def _account_row(tenant: Tenant, commission_percent: float) -> Dict[str, Any]:
         "low_battery": sum(1 for s in sensors if s.battery_low),
         "open_incidents": len(open_incidents),
         "monthly_usd": monthly,
+        # Rounded per account here, and every total is the sum of these.
+        # Rounding the sum instead in one place and the parts in another
+        # gave the admin and the partner two different figures for the
+        # same book — an awkward thing to reconcile on a payout.
         "commission_usd": round(monthly * commission_percent / 100.0, 2),
     }
 
@@ -175,17 +185,18 @@ def list_partners():
     rows = []
     for partner in STORE.list_partners():
         accounts = STORE.tenants_for_partner(partner.partner_id)
-        billings = sum(
-            _account_row(t, partner.commission_percent)["monthly_usd"]
-            for t in accounts
-        )
+        priced = [_account_row(t, partner.commission_percent) for t in accounts]
         rows.append(
             {
                 **partner.public(),
                 "accounts": len(accounts),
-                "monthly_billings_usd": round(billings, 2),
+                "monthly_billings_usd": round(
+                    sum(a["monthly_usd"] for a in priced), 2
+                ),
+                # Summed from the same per-account figures the partner's
+                # own statement shows, so the two always agree.
                 "monthly_commission_usd": round(
-                    billings * partner.commission_percent / 100.0, 2
+                    sum(a["commission_usd"] for a in priced), 2
                 ),
             }
         )

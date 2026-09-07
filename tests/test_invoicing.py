@@ -127,17 +127,69 @@ def test_a_line_cannot_be_mutated_after_issue(tmp_path):
     assert invoice.lines[0]["amount_usd"] == 100.0
 
 
-def test_settlement_records_a_short_payment(
+def test_a_short_payment_leaves_the_invoice_open(
     api, operator_factory, sensor_factory
 ):
-    """A short payment that quietly closes an invoice is money never chased."""
+    """A short payment that quietly closes an invoice is money never chased.
+
+    This used to set state to "paid" regardless and write the shortfall
+    into a prose string, so $1 against $48,000 dropped the remaining
+    $47,999 out of the ledger entirely.
+    """
     headers = estate(api, operator_factory, sensor_factory, units=2)
-    invoice = issue(api, headers)
+    invoice = issue(api, headers)          # 2 x $999 = $1,998
 
     out = api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
                    json={"reference": "WIRE-8823", "amount_usd": 1000.0}).json()
+    assert out["invoice"]["state"] == "part_paid"
+    assert out["invoice"]["amount_paid_usd"] == 1000.0
+    assert out["invoice"]["balance_usd"] == 998.0
+    assert out["invoice"]["open"] is True
+    assert "998.00 is still outstanding" in out["message"]
+
+    # And it is still being chased.
+    ledger = api.get("/api/invoices", headers=headers).json()
+    assert ledger["outstanding_count"] == 1
+    assert ledger["outstanding_usd"] == 998.0
+    assert ledger["part_paid_count"] == 1
+
+
+def test_the_balance_settles_on_the_second_payment(
+    api, operator_factory, sensor_factory
+):
+    headers = estate(api, operator_factory, sensor_factory, units=2)
+    invoice = issue(api, headers)
+    iid = invoice["invoice_id"]
+
+    api.post(f"/api/invoices/{iid}/paid", headers=headers,
+             json={"reference": "WIRE-1", "amount_usd": 1000.0})
+    out = api.post(f"/api/invoices/{iid}/paid", headers=headers,
+                   json={"reference": "WIRE-2", "amount_usd": 998.0}).json()
+
     assert out["invoice"]["state"] == "paid"
-    assert "paid $1,000.00 of $1,998.00" in out["invoice"]["payment_reference"]
+    assert out["invoice"]["balance_usd"] == 0.0
+    ledger = api.get("/api/invoices", headers=headers).json()
+    assert ledger["outstanding_count"] == 0
+    assert ledger["outstanding_usd"] == 0.0
+
+
+def test_a_part_paid_invoice_still_goes_overdue(
+    api, operator_factory, sensor_factory
+):
+    """The half nobody paid does not stop being late."""
+    from datetime import timedelta
+
+    from store import STORE
+
+    headers = estate(api, operator_factory, sensor_factory, units=2)
+    invoice = issue(api, headers)
+    api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
+             json={"reference": "WIRE-1", "amount_usd": 500.0})
+    STORE.get_invoice(invoice["invoice_id"]).due_at -= timedelta(days=45)
+
+    ledger = api.get("/api/invoices", headers=headers).json()
+    assert ledger["overdue_count"] == 1
+    assert ledger["outstanding_usd"] == 1498.0
 
 
 def test_a_paid_invoice_cannot_be_voided(

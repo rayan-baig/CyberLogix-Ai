@@ -57,8 +57,19 @@ def run_one_pass() -> dict:
             )
             failures.append(tenant.tenant_id)
             continue
-        swept += 1
-        calls += result["voice_calls_placed"]
+        # Inside the guard: reading the result is part of "sweeping this
+        # tenant", and a malformed one must not take out every tenant
+        # after it — which is the exact failure this function promises
+        # not to have.
+        try:
+            swept += 1
+            calls += result["voice_calls_placed"]
+        except (KeyError, TypeError) as exc:
+            logger.exception(
+                "Sweep of tenant %s returned something unusable (%s).",
+                tenant.tenant_id, exc,
+            )
+            failures.append(tenant.tenant_id)
 
     if calls:
         logger.critical(

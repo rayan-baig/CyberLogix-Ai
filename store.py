@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import secrets
 import threading
 from collections import deque
@@ -56,6 +57,49 @@ def _parse(value: Optional[str]) -> Optional[datetime]:
 # Readings are stored in Fahrenheit throughout and converted only for
 # display, so a tenant switching units never rewrites its own history.
 TEMPERATURE_UNITS = ("F", "C")
+
+
+# Below this a reading is not a cold freezer, it is a broken sensor:
+# -459.67 °F is absolute zero, and nothing physical reports beneath it.
+# Above it, no monitored asset survives conditions this hot, so a reading
+# out here is a fault in the device rather than a fact about the world.
+ABSOLUTE_ZERO_F = -459.67
+IMPLAUSIBLE_ABOVE_F = 1000.0
+
+
+class ImplausibleReading(ValueError):
+    """A reading no physical sensor could have produced.
+
+    Raised rather than stored. The alternative is worse than it looks: a
+    NaN compares false against every threshold, so a sensor emitting one
+    is judged nominal forever while the asset behind it fails — and NaN
+    also serialises to invalid JSON, which takes out the compliance
+    report and the vault attestation for that tenant permanently.
+    """
+
+
+def require_plausible(
+    value: Optional[float], field: str = "temperature_fahrenheit"
+) -> Optional[float]:
+    """Refuse a value that cannot be true, before it reaches storage."""
+    if value is None:
+        return None
+    value = float(value)
+    if math.isnan(value) or math.isinf(value):
+        raise ImplausibleReading(
+            f"{field} must be a finite number; received {value!r}. A "
+            "non-finite reading compares false against every threshold, so "
+            "storing it would make a failing asset look healthy."
+        )
+    if field == "temperature_fahrenheit" and not (
+        ABSOLUTE_ZERO_F <= value <= IMPLAUSIBLE_ABOVE_F
+    ):
+        raise ImplausibleReading(
+            f"temperature_fahrenheit {value} is outside the physically "
+            f"possible range {ABSOLUTE_ZERO_F} to {IMPLAUSIBLE_ABOVE_F}. "
+            "Check the device: this is a sensor fault, not a cold asset."
+        )
+    return value
 
 
 def to_celsius(fahrenheit: Optional[float]) -> Optional[float]:
@@ -328,6 +372,16 @@ def evaluate_breach(
         above = profile["danger_above"]
     if below is None:
         below = profile["danger_below"]
+
+    # NaN compares false against everything, so without this a sensor
+    # emitting one would be scored nominal on every reading forever. A
+    # reading we cannot judge is a fault to be raised, never a pass.
+    if math.isnan(temperature) or math.isinf(temperature):
+        return (
+            f"Sensor fault: reported {temperature}, which is not a "
+            "temperature. The asset is unmonitored until the device is "
+            "checked."
+        )
 
     if above is not None and temperature > above:
         return (
@@ -1102,7 +1156,57 @@ class Site:
         }
 
 
-INVOICE_STATES = ("issued", "paid", "void")
+@dataclass
+class VaultAnchor:
+    """The chain head for one sensor, as it stood when an attestation was
+    issued.
+
+    Without this the tamper check has nothing to compare against.
+    Re-deriving the chain from the current rows and checking it against
+    itself is a tautology — it agrees no matter what was edited. The
+    anchor is the only thing that turns "these readings hash to X" into
+    "these readings still hash to what we told your insurer they did".
+    """
+
+    anchor_id: str
+    tenant_id: str
+    sensor_id: str
+    chain_head: str
+    readings: int
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    issued_at: Optional[datetime] = None
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "anchor_id": self.anchor_id,
+            "tenant_id": self.tenant_id,
+            "sensor_id": self.sensor_id,
+            "chain_head": self.chain_head,
+            "readings": self.readings,
+            "period_start": self.period_start,
+            "period_end": self.period_end,
+            "issued_at": iso(self.issued_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "VaultAnchor":
+        return cls(
+            anchor_id=row["anchor_id"],
+            tenant_id=row["tenant_id"],
+            sensor_id=row["sensor_id"],
+            chain_head=row["chain_head"],
+            readings=row.get("readings", 0),
+            period_start=row.get("period_start"),
+            period_end=row.get("period_end"),
+            issued_at=_parse(row.get("issued_at")),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        return self.to_row()
+
+
+INVOICE_STATES = ("issued", "part_paid", "paid", "void")
 
 
 @dataclass
@@ -1130,10 +1234,25 @@ class Invoice:
     due_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
     payment_reference: Optional[str] = None
+    amount_paid_usd: float = 0.0
     voided_at: Optional[datetime] = None
 
+    @property
+    def balance_usd(self) -> float:
+        """What is still owed. The figure collections actually works from."""
+        return round(max(0.0, self.total_usd - self.amount_paid_usd), 2)
+
+    @property
+    def settled(self) -> bool:
+        return self.state == "paid"
+
+    @property
+    def open(self) -> bool:
+        """Still owed something. A part payment does not close an invoice."""
+        return self.state in ("issued", "part_paid")
+
     def overdue(self, now: Optional[datetime] = None) -> bool:
-        if self.state != "issued" or self.due_at is None:
+        if not self.open or self.due_at is None:
             return False
         return (now or utc_now()) > self.due_at
 
@@ -1161,6 +1280,7 @@ class Invoice:
             "due_at": iso(self.due_at),
             "paid_at": iso(self.paid_at),
             "payment_reference": self.payment_reference,
+            "amount_paid_usd": self.amount_paid_usd,
             "voided_at": iso(self.voided_at),
         }
 
@@ -1183,6 +1303,7 @@ class Invoice:
             due_at=_parse(row.get("due_at")),
             paid_at=_parse(row.get("paid_at")),
             payment_reference=row.get("payment_reference"),
+            amount_paid_usd=row.get("amount_paid_usd", 0.0),
             voided_at=_parse(row.get("voided_at")),
         )
 
@@ -1190,6 +1311,8 @@ class Invoice:
         row = self.to_row()
         row["overdue"] = self.overdue()
         row["days_until_due"] = self.days_until_due()
+        row["balance_usd"] = self.balance_usd
+        row["open"] = self.open
         return row
 
 
@@ -1525,6 +1648,7 @@ class HubStore:
         self._resets: Dict[str, ResetToken] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
         self._invoices: Dict[str, Invoice] = {}
+        self._anchors: Dict[str, VaultAnchor] = {}
         self._partners: Dict[str, Partner] = {}
         self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
@@ -1587,6 +1711,10 @@ class HubStore:
                 invoice = Invoice.from_row(row)
                 self._invoices[invoice.invoice_id] = invoice
 
+            for row in self._db.all("anchor"):
+                anchor = VaultAnchor.from_row(row)
+                self._anchors[anchor.anchor_id] = anchor
+
             for row in self._db.all("partner"):
                 partner = Partner.from_row(row)
                 self._partners[partner.partner_id] = partner
@@ -1618,8 +1746,27 @@ class HubStore:
             for row in self._db.all("aicache"):
                 self._ai_cache[row["key"]] = row["text"]
 
-            # Identifiers are sequential, so resume past the highest one used.
-            issued = [
+            # Identifiers are sequential and share one counter, so a restart
+            # must resume past the highest one ever issued. Getting this
+            # wrong is not a cosmetic bug: ids are the primary key, so a
+            # reused id makes the next write silently overwrite an existing
+            # row — and because the counter is global, the row it destroys
+            # can belong to a different tenant.
+            #
+            # Two sources, and the larger wins:
+            #
+            #  1. The counter as persisted. Authoritative, and the only
+            #     thing that survives an entity being deleted after it took
+            #     the high-water mark.
+            #  2. A scan of every id actually present. The fallback for a
+            #     database written before the counter was persisted, and a
+            #     check on the first.
+            #
+            # The scan must cover EVERY kind that draws from the counter.
+            # Readings and audit entries were missing from this list, and
+            # they are by far the most numerous — the counter came back
+            # near zero and tenants overwrote each other's telemetry.
+            scanned = [
                 int(identifier.rsplit("-", 1)[1])
                 for identifier in (
                     list(self._tenants)
@@ -1630,10 +1777,16 @@ class HubStore:
                     + list(self._webhooks)
                     + list(self._partners)
                     + list(self._invoices)
+                    + list(self._anchors)
+                    + list(self._audit)
+                    + [r.reading_id for bucket in self._readings.values()
+                       for r in bucket]
                 )
                 if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
             ]
-            self._counter = max(issued, default=0)
+            persisted = (self._db.get("meta", "counter") or {}).get("value", 0)
+            self._counter = max([persisted] + scanned, default=0)
+            issued = scanned
 
             if issued or self._sensors:
                 logger.info(
@@ -1661,6 +1814,7 @@ class HubStore:
             self._contacts.clear()
             self._webhooks.clear()
             self._invoices.clear()
+            self._anchors.clear()
             self._partners.clear()
             self._partner_keys.clear()
             self._contracts.clear()
@@ -1669,10 +1823,19 @@ class HubStore:
             self._ai_cache.clear()
             self._counter = 0
             self._db.clear()
+            # clear() drops the meta row along with everything else, so the
+            # counter is genuinely back to zero rather than merely in memory.
 
     def _next_id(self, prefix: str) -> str:
+        """Allocate the next identifier, and remember that it was taken.
+
+        Persisted on every allocation rather than reconstructed at startup:
+        a scan can only ever see ids that still exist, so deleting the
+        newest row would otherwise hand its id straight back out.
+        """
         with self._lock:
             self._counter += 1
+            self._db.put("meta", "counter", {"value": self._counter})
             return f"{prefix}-{self._counter:06d}"
 
     # ---- tenants -------------------------------------------------------
@@ -1818,6 +1981,12 @@ class HubStore:
         It must be supplied here rather than patched onto the returned object,
         which would leave the persisted row holding the wrong time.
         """
+        # Checked here as well as at the API edge: every ingestion route and
+        # the demo seeder come through this one door, and a non-finite value
+        # that gets past it corrupts the stored JSON irreversibly.
+        temperature_fahrenheit = require_plausible(temperature_fahrenheit)
+        humidity_percent = require_plausible(humidity_percent, "humidity_percent")
+
         with self._lock:
             now = at or utc_now()
             reading = Reading(
@@ -1941,6 +2110,23 @@ class HubStore:
                 self._save_incident(incident)
             return incident.ack_token
 
+    def claim_voice_escalation(self, incident: Incident) -> bool:
+        """Take the right to place the call, atomically.
+
+        The sweep reads `voice_escalated_at`, decides, and only later
+        stamps it. Between those two the timer-driven sweep and an
+        operator pressing "run sweep now" can both see None and both dial
+        — one incident, two 3am phone calls to the same person, from a
+        single process. Claiming the stamp under the lock closes the
+        window; the loser gets False and stands down.
+        """
+        with self._lock:
+            if incident.voice_escalated_at is not None:
+                return False
+            incident.voice_escalated_at = utc_now()
+            self._save_incident(incident)
+            return True
+
     def record_voice_escalation(
         self,
         incident: Incident,
@@ -1950,7 +2136,10 @@ class HubStore:
         fanout: Optional[List[Dict[str, Any]]] = None,
     ) -> Incident:
         with self._lock:
-            incident.voice_escalated_at = utc_now()
+            # Already stamped by claim_voice_escalation on the path that
+            # uses it; set here too so the manual escalate endpoint, which
+            # has its own conflict checks, still records a time.
+            incident.voice_escalated_at = incident.voice_escalated_at or utc_now()
             incident.voice_script = script
             incident.voice_dispatch_source = source
             incident.voice_delivery = delivery
@@ -2316,6 +2505,39 @@ class HubStore:
             self._db.delete("contact", contact_id)
             return True
 
+    # ---- vault anchors --------------------------------------------------
+
+    def anchor_chain(
+        self,
+        tenant_id: str,
+        sensor_id: str,
+        chain_head: str,
+        readings: int,
+        period_start: Optional[str] = None,
+        period_end: Optional[str] = None,
+    ) -> VaultAnchor:
+        """Record the chain head handed out in an attestation."""
+        with self._lock:
+            anchor = VaultAnchor(
+                anchor_id=self._next_id("ANC"),
+                tenant_id=tenant_id,
+                sensor_id=sensor_id,
+                chain_head=chain_head,
+                readings=readings,
+                period_start=period_start,
+                period_end=period_end,
+                issued_at=utc_now(),
+            )
+            self._anchors[anchor.anchor_id] = anchor
+            self._db.put("anchor", anchor.anchor_id, anchor.to_row())
+            return anchor
+
+    def anchors_for_sensor(self, sensor_id: str) -> List[VaultAnchor]:
+        """Every head ever issued for a sensor, newest first."""
+        with self._lock:
+            rows = [a for a in self._anchors.values() if a.sensor_id == sensor_id]
+        return sorted(rows, key=lambda a: a.anchor_id, reverse=True)
+
     # ---- invoices -----------------------------------------------------------
 
     def _next_invoice_number(self, year: int) -> str:
@@ -2377,17 +2599,29 @@ class HubStore:
     def settle_invoice(
         self, invoice: Invoice, reference: str, amount_usd: Optional[float] = None
     ) -> Invoice:
+        """Record a payment, in full or in part.
+
+        A part payment must not close the invoice. The comment here used
+        to say exactly that while the code did the opposite: state went to
+        "paid" regardless, the shortfall was written into a prose string,
+        and the invoice dropped out of `outstanding_usd` and
+        `overdue_count`. Paying $1 against $48,000 stopped the remaining
+        $47,999 from ever being chased, and the only record of it was
+        English inside a reference field.
+        """
         with self._lock:
-            invoice.state = "paid"
-            invoice.paid_at = utc_now()
+            paid = invoice.total_usd if amount_usd is None else round(amount_usd, 2)
+            invoice.amount_paid_usd = round(invoice.amount_paid_usd + paid, 2)
             invoice.payment_reference = reference
-            if amount_usd is not None and round(amount_usd, 2) != invoice.total_usd:
-                # Recorded rather than silently accepted: a short payment
-                # that quietly closes an invoice is money never chased.
-                invoice.payment_reference = (
-                    f"{reference} (paid ${amount_usd:,.2f} of "
-                    f"${invoice.total_usd:,.2f})"
-                )
+            invoice.paid_at = utc_now()
+
+            # A hair's rounding either way still settles it; a real
+            # shortfall leaves it open and chaseable.
+            if invoice.amount_paid_usd + 0.005 >= invoice.total_usd:
+                invoice.state = "paid"
+            else:
+                invoice.state = "part_paid"
+
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
             return invoice
 

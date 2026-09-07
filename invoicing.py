@@ -159,12 +159,17 @@ def build_lines(
 def list_invoices(tenant: Tenant = Depends(require_tenant)):
     """Every invoice ever issued to this tenant, newest first."""
     invoices = STORE.invoices_for(tenant.tenant_id)
-    outstanding = [i for i in invoices if i.state == "issued"]
+    # `open` rather than `state == "issued"`, so a part-paid invoice stays
+    # in the ledger and keeps being chased for its balance. And the figure
+    # is the balance, not the face value — otherwise a $1 payment against
+    # $48,000 would either vanish from collections or overstate it.
+    outstanding = [i for i in invoices if i.open]
     return {
         "count": len(invoices),
         "outstanding_count": len(outstanding),
-        "outstanding_usd": round(sum(i.total_usd for i in outstanding), 2),
+        "outstanding_usd": round(sum(i.balance_usd for i in outstanding), 2),
         "overdue_count": sum(1 for i in outstanding if i.overdue()),
+        "part_paid_count": sum(1 for i in invoices if i.state == "part_paid"),
         "invoices": [i.public() for i in invoices],
     }
 
@@ -265,11 +270,23 @@ def mark_paid(
         }
 
     STORE.settle_invoice(invoice, payload.reference, payload.amount_usd)
+    settled = invoice.state == "paid"
     write_audit(
-        tenant, operator, "invoice.paid",
-        f"{invoice.number} settled ({payload.reference}).",
+        tenant, operator,
+        "invoice.paid" if settled else "invoice.part_paid",
+        f"{invoice.number}: ${invoice.amount_paid_usd:,.2f} of "
+        f"${invoice.total_usd:,.2f} received ({payload.reference})"
+        + ("." if settled else f"; ${invoice.balance_usd:,.2f} still owed."),
     )
-    return {"message": f"{invoice.number} settled.", "invoice": invoice.public()}
+    return {
+        "message": (
+            f"{invoice.number} settled."
+            if settled
+            else f"{invoice.number} part paid. "
+                 f"${invoice.balance_usd:,.2f} is still outstanding."
+        ),
+        "invoice": invoice.public(),
+    }
 
 
 @router.post("/{invoice_id}/void")

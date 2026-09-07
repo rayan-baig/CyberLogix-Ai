@@ -164,8 +164,14 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         else None
     )
 
+    # Bounded at both ends, so the head covers exactly the readings the
+    # packet shows. Without the upper bound it also covered readings
+    # recorded after the window, and an adjuster re-deriving it would get
+    # a different figure and conclude the evidence was false.
     attestation = (
-        attest_sensor(tenant, sensor, since=start) if sensor is not None else None
+        attest_sensor(tenant, sensor, since=start, until=end, anchor=True)
+        if sensor is not None
+        else None
     )
 
     return {
@@ -227,11 +233,28 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
                 if window
                 else None
             ),
+            # For a person: in the customer's unit, rounded for reading.
             "readings": [
                 {
                     "at": iso(r.recorded_at),
                     "temperature": display_temperature(r.temperature_fahrenheit, unit),
                     "humidity": r.humidity_percent,
+                    "breached": r.breached,
+                }
+                for r in window
+            ],
+            # For the verifier: the exact fields the chain was computed
+            # over, in the unit it was computed in. The two lists are the
+            # same readings; the human one is converted and rounded, and
+            # posting that to the verifier would never reproduce the head.
+            # Keeping both is the only way the packet's own instructions
+            # can be followed literally and still work.
+            "verifiable_readings": [
+                {
+                    "sensor_id": r.sensor_id,
+                    "at": iso(r.recorded_at),
+                    "temperature_fahrenheit": r.temperature_fahrenheit,
+                    "humidity_percent": r.humidity_percent,
                     "breached": r.breached,
                 }
                 for r in window
@@ -250,9 +273,13 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         "signing": signing_state(),
         "verification": (
             "The readings above are chained: each digest covers its reading "
-            "and the digest before it. POST them to /api/vault/verify with "
-            "the chain head in this packet to confirm independently that "
-            "nothing was altered after the event."
+            "and the digest before it. To confirm independently that nothing "
+            "was altered after the event, POST the `evidence."
+            "verifiable_readings` list — not the display list, which is "
+            "converted and rounded — to /api/vault/verify together with "
+            "`attestation.chain_head`. That endpoint needs no account and "
+            "reads nothing: it only re-derives the digests from what you "
+            "send it."
         ),
     }
 
