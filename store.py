@@ -1228,6 +1228,10 @@ class UsageDay:
     ai_cache_hits: int = 0
     ai_suppressed: int = 0
     sms_sent: int = 0
+    # Twilio bills per segment, not per message. Kept separately from
+    # sms_sent so the cap can stay on messages while the cost estimate
+    # uses what is actually invoiced.
+    sms_segments: int = 0
     sms_suppressed: int = 0
     voice_calls: int = 0
     voice_suppressed: int = 0
@@ -1244,6 +1248,7 @@ class UsageDay:
             "ai_cache_hits": self.ai_cache_hits,
             "ai_suppressed": self.ai_suppressed,
             "sms_sent": self.sms_sent,
+            "sms_segments": self.sms_segments,
             "sms_suppressed": self.sms_suppressed,
             "voice_calls": self.voice_calls,
             "voice_suppressed": self.voice_suppressed,
@@ -1251,7 +1256,11 @@ class UsageDay:
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "UsageDay":
-        return cls(**row)
+        data = dict(row)
+        # Rows written before segments were counted fall back to one
+        # segment per message. Zero would report those days as free.
+        data.setdefault("sms_segments", data.get("sms_sent", 0))
+        return cls(**data)
 
     def public(self) -> Dict[str, Any]:
         return self.to_row()

@@ -346,6 +346,25 @@ Incidents in the other five are listed and counted separately as
 `unquantified_saves`, never folded into the total with an invented number.
 Give me figures for those five and they'll count too.
 
+## What a message costs
+
+Twilio bills per **segment**, and a segment is 160 characters only while
+every character is in the GSM-7 alphabet. One character outside it — a
+degree sign, a curly quote, an em dash — switches the whole message to
+UCS-2 and the segment drops to 70.
+
+Every alert quoted the reading as `71.0°F`. That one degree sign took a
+158-character message from one segment to three, on the line that is the
+large majority of delivery cost, and the spend report counted messages so
+it was invisible from inside the product.
+
+Outbound SMS is therefore folded into GSM-7 and trimmed to a single
+segment in `send_sms` — the one choke point every message passes through,
+including the model-written ones whose length and punctuation nothing
+upstream controls. Usage records `sms_segments` alongside `sms_sent`, and
+the cost estimate bills on segments, because that is what the carrier
+invoices.
+
 ## Authentication
 
 Three credentials reach the API:

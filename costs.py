@@ -112,9 +112,13 @@ def record(tenant_id: Optional[str], field: str, amount: int = 1) -> None:
 
 
 def _estimate(usage) -> Dict[str, Any]:
+    # Billed on segments, because that is what the carrier invoices. A
+    # message counter reports a three-segment alert as one message and
+    # a third of its true cost.
+    billable_sms = usage.sms_segments or usage.sms_sent
     spend = (
         usage.ai_calls * RATE_AI_CALL
-        + usage.sms_sent * RATE_SMS
+        + billable_sms * RATE_SMS
         + usage.voice_calls * RATE_VOICE_CALL
     )
     # What the cache and caps kept off the bill.
@@ -130,6 +134,7 @@ def _estimate(usage) -> Dict[str, Any]:
         "ai_cache_hits": usage.ai_cache_hits,
         "ai_suppressed": usage.ai_suppressed,
         "sms_sent": usage.sms_sent,
+        "sms_segments": billable_sms,
         "sms_suppressed": usage.sms_suppressed,
         "voice_calls": usage.voice_calls,
         "voice_suppressed": usage.voice_suppressed,

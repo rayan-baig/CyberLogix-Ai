@@ -30,9 +30,74 @@ TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
 # acknowledged from the handset, so this is optional rather than required.
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
-# Twilio caps a single SMS body; longer text is segmented and billed per
-# segment, so the alert is trimmed rather than silently fragmented.
-MAX_SMS_CHARACTERS = 1500
+# Twilio bills per *segment*, not per message, and a segment is 160
+# characters only while every character is in the GSM-7 alphabet. One
+# character outside it — a degree sign, a curly quote, an em dash —
+# switches the whole message to UCS-2 and the segment drops to 70.
+#
+# Every alert this product sends quoted the reading as "71.0°F". That one
+# degree sign was taking a 158-character message from one segment to
+# three, on the line that is the large majority of delivery cost, and the
+# spend report counted messages so nobody would ever have seen it.
+#
+# So outbound text is transliterated into GSM-7 and trimmed to a single
+# segment. The trim matters as much as the encoding: the body is normally
+# model-written, so its length is not under this codebase's control, and
+# an alert that runs to ten segments is both expensive and useless on a
+# lock screen at 3am.
+GSM7_SEGMENT = 160          # a message that fits in one
+GSM7_MULTIPART = 153        # ...and per part once it does not
+UCS2_SEGMENT = 70
+UCS2_MULTIPART = 67
+
+MAX_SMS_CHARACTERS = GSM7_SEGMENT
+
+_GSM7_BASE = set(
+    "@\u00a3$\u00a5\u00e8\u00e9\u00f9\u00ec\u00f2\u00c7\n\u00d8\u00f8\r"
+    "\u00c5\u00e5\u0394_\u03a6\u0393\u039b\u03a9\u03a0\u03a8\u03a3\u0398\u039e"
+    "\u00c6\u00e6\u00df\u00c9 !\"#\u00a4%&'()*+,-./0123456789:;<=>?"
+    "\u00a1ABCDEFGHIJKLMNOPQRSTUVWXYZ\u00c4\u00d6\u00d1\u00dc\u00a7"
+    "\u00bfabcdefghijklmnopqrstuvwxyz\u00e4\u00f6\u00f1\u00fc\u00e0"
+)
+_GSM7_EXT = set("^{}\\[~]|\u20ac")   # these cost two characters each
+
+# Characters worth keeping the meaning of rather than dropping.
+_TRANSLITERATE = {
+    "\u00b0": "",        # 71.0°F -> 71.0F. The unit letter carries it.
+    "\u2014": "-", "\u2013": "-", "\u2212": "-",
+    "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+    "\u2026": "...", "\u00a0": " ", "\u2022": "*", "\u00d7": "x",
+    "\u2192": "->", "\u00b5": "u", "\u2264": "<=", "\u2265": ">=",
+}
+
+
+def to_gsm7(text: str) -> str:
+    """Fold text into the GSM-7 alphabet so it bills as 160 per segment.
+
+    Anything with a sensible ASCII equivalent is transliterated; anything
+    left that the alphabet cannot carry is dropped rather than allowed to
+    triple the bill. Whitespace is collapsed afterwards so a removed
+    character does not leave a double space behind.
+    """
+    out = []
+    for ch in text or "":
+        if ch in _GSM7_BASE or ch in _GSM7_EXT:
+            out.append(ch)
+        elif ch in _TRANSLITERATE:
+            out.append(_TRANSLITERATE[ch])
+        # else: dropped
+    return " ".join("".join(out).split())
+
+
+def sms_segments(text: str) -> int:
+    """How many segments Twilio will actually bill for this body."""
+    if not text:
+        return 0
+    if all(c in _GSM7_BASE or c in _GSM7_EXT for c in text):
+        n = sum(2 if c in _GSM7_EXT else 1 for c in text)
+        return 1 if n <= GSM7_SEGMENT else -(-n // GSM7_MULTIPART)
+    n = len(text)
+    return 1 if n <= UCS2_SEGMENT else -(-n // UCS2_MULTIPART)
 
 # Twilio rejects TwiML documents above 64 kB; spoken alerts are far shorter,
 # but the guard keeps a pathological model response from failing the call.
@@ -195,13 +260,21 @@ def send_sms(
     if blocked is not None:
         return blocked
 
-    text = (body or "").strip()[:MAX_SMS_CHARACTERS]
+    # Folded into GSM-7 and trimmed to one segment before it goes
+    # anywhere: this is the only choke point every message passes
+    # through, including the model-written ones whose length and
+    # punctuation nothing upstream controls.
+    text = to_gsm7((body or "").strip())[:MAX_SMS_CHARACTERS]
+    parts = sms_segments(text)
 
     try:
         message = _get_client().messages.create(
             to=to, from_=TWILIO_FROM_NUMBER, body=text
         )
         record(tenant_id, "sms_sent")
+        # Billed per segment, so counted per segment. Counting messages
+        # is what hid a 3x overspend on the largest delivery line.
+        record(tenant_id, "sms_segments", parts)
         logger.info("SMS delivered to %s (sid=%s).", to, message.sid)
         return {
             "channel": "sms",
@@ -209,6 +282,11 @@ def send_sms(
             "delivered": True,
             "status": getattr(message, "status", "queued"),
             "provider_sid": message.sid,
+            # What actually went on the wire, and what it cost. The
+            # compliance record should say what was sent, not what was
+            # drafted.
+            "body": text,
+            "segments": parts,
             "detail": "Alert handed to Twilio for delivery.",
         }
     except Exception as exc:  # noqa: BLE001 - a send failure must not kill the breach path
