@@ -84,6 +84,16 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
         ),
         "loss_avoided_usd": None,
     },
+    "cryostorage": {
+        "unit": "tank",
+        "monthly_usd": 2999.0,
+        "pitch": (
+            "Protects embryos, eggs and cell lines that cannot be replaced "
+            "at any price. The evidence trail is the product here: these "
+            "losses are settled in court, not on an insurance form."
+        ),
+        "loss_avoided_usd": None,
+    },
     "country_club": {
         "unit": "kitchen",
         "monthly_usd": 1499.0,

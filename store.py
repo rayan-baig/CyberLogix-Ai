@@ -299,6 +299,29 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
             "Creates chain-of-custody temperature validation logs for vaccine and plasma vaults."
         ),
     },
+    "cryostorage": {
+        "name": "IVF Clinics & Cryostorage",
+        "catastrophe": "Cryogenic Tank Nitrogen Boil-Off / Vapour Space Warming",
+        # Vapour-phase storage sits near −190°C. What actually matters is
+        # the glass transition of water at about −130°C (−202°F): warmer
+        # than that and ice crystals form inside the cells. The alarm is
+        # set at −150°C (−238°F), which leaves a real margin to act in
+        # rather than a moment to watch it happen.
+        "danger_above": -238.0,
+        # Nothing inside a nitrogen dewar can be colder than liquid
+        # nitrogen at −320.8°F, so a colder reading is not a colder tank —
+        # it is a failed probe, and a failed probe on this asset is the
+        # dangerous case, because it reads as permanently safe.
+        "danger_below": -325.0,
+        "unit": "°F",
+        "asset_noun": "tank",
+        "asset_plural": "tanks",
+        "shortcut_name": "Cryostorage Continuity Record",
+        "shortcut_description": (
+            "Proves every tank held vapour-phase temperature across a given "
+            "window, and names who was alerted when one did not."
+        ),
+    },
     "private_aviation": {
         "name": "Private Aviation Hangars",
         "catastrophe": "Hangar Bay Humidity Moisture Infiltration",
