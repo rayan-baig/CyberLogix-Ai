@@ -431,3 +431,292 @@ def test_deleting_a_site_releases_its_alert_channel_too():
 
     assert store.get_webhook(hook.webhook_id).site_id is None
     assert hook in store.webhooks_for_site(tenant.tenant_id, None)
+
+
+# ---------------------------------------------------------------------------
+#  A clock that runs backwards
+# ---------------------------------------------------------------------------
+
+
+def test_a_backwards_clock_never_suppresses_escalation():
+    """`minutes_open` went negative, so nothing was ever due for a call.
+
+    An incident opened at 03:00, then NTP stepped the host back thirty
+    minutes. Every comparison against the escalation grace window is
+    `minutes_open() >= GRACE`, and -30 is not >= 20, so the breach sat
+    open and silent: the SMS had gone out, nobody had answered it, and the
+    phone call that exists precisely for that case was never placed.
+    Nothing errored. The incident list showed it open the whole time.
+    """
+    from datetime import timedelta
+
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor,
+        temperature_fahrenheit=71.0, breach_details="too warm",
+        sms_text="warm", sms_dispatch_source="template",
+    )
+
+    stepped_back = incident.opened_at - timedelta(minutes=30)
+    assert incident.minutes_open(stepped_back) == 0.0, (
+        "a backwards clock made the incident look like it had not started, "
+        "so it was never due for escalation"
+    )
+    assert incident.minutes_open(stepped_back) >= 0.0
+
+
+def test_a_claim_packet_never_reports_negative_response_time():
+    """Same clock, but this number goes to a loss adjuster.
+
+    `minutes_to_acknowledge: -120.0` in a document arguing the team
+    responded promptly is worse than no document: it is a reason to
+    question everything else in the packet.
+    """
+    from datetime import timedelta
+
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor,
+        temperature_fahrenheit=71.0, breach_details="too warm",
+        sms_text="warm", sms_dispatch_source="template",
+    )
+    # Acknowledged "before" it opened, which is what a clock step looks
+    # like after the fact.
+    incident.acknowledged_at = incident.opened_at - timedelta(hours=2)
+
+    assert incident.minutes_open() == 0.0
+
+
+def test_a_sensor_reporting_from_the_future_is_not_trusted_as_online():
+    """`offline()` compares last_seen against now, so a future stamp
+
+    made a sensor that had stopped reporting look permanently healthy —
+    the silent-failure case the whole product exists to catch. A sensor
+    whose clock is ahead is flagged rather than believed.
+    """
+    from datetime import timedelta
+
+    from db import Database
+    from store import HubStore, utc_now
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+
+    sensor.last_seen = utc_now() + timedelta(hours=6)
+    assert sensor.clock_skewed(), (
+        "a sensor six hours ahead was accepted as simply very recent"
+    )
+
+    sensor.last_seen = utc_now() - timedelta(seconds=30)
+    assert not sensor.clock_skewed()
+
+
+# ---------------------------------------------------------------------------
+#  One customer's slow Slack, everybody's outage
+# ---------------------------------------------------------------------------
+
+
+def test_the_ingest_route_is_not_a_coroutine():
+    """Declared `async def`, it held the event loop through every alert.
+
+    Everything under this route blocks: SQLite, the Twilio REST client,
+    the webhook fan-out. Starlette runs a sync endpoint on a worker
+    thread and an async one on the single event loop thread, so as a
+    coroutine this route stopped the entire process for the duration of
+    an alert — every other tenant's ingest, the console, and /api/health,
+    which is what a load balancer polls before killing the container.
+
+    Measured: three hooks pointing at a receiver that accepted and then
+    said nothing produced 15.1 seconds of total platform blackout, and an
+    unrelated tenant's pulse went from 1 ms to 14.6 seconds.
+
+    This is a one-keyword regression. Nothing in the route awaits, so
+    nothing fails if somebody adds `async` back — it just goes quiet
+    again under load.
+    """
+    import inspect
+
+    import telemetry
+    import voice_dispatch
+
+    assert not inspect.iscoroutinefunction(telemetry.process_sensor_pulse), (
+        "the hottest path in the app is back on the event loop"
+    )
+
+    # The Twilio keypress callback genuinely has to be a coroutine (it
+    # awaits the request body), so it is held to the other half of the
+    # rule instead: its blocking tail goes to a thread.
+    assert inspect.iscoroutinefunction(voice_dispatch.voice_keypress)
+    body = inspect.getsource(voice_dispatch.voice_keypress)
+    assert "asyncio.to_thread" in body and "_notify_hooks" in body, (
+        "the acknowledgement callback dispatches webhooks inline again; a "
+        "slow hook now blocks the event loop and Twilio's 15s callback "
+        "timeout, so pressing 1 stops acknowledging the incident"
+    )
+
+
+def test_slow_webhooks_cost_one_timeout_between_them_not_one_each(monkeypatch):
+    """Serially, five slow hooks cost five timeouts. Concurrently, one."""
+    import time
+
+    import webhooks
+
+    monkeypatch.setattr(webhooks, "WEBHOOK_TIMEOUT_SECONDS", 1)
+
+    def _slow(url, body):
+        time.sleep(0.6)
+        return False, "unreachable"
+
+    monkeypatch.setattr(webhooks, "_post", _slow)
+
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    monkeypatch.setattr(webhooks, "STORE", store)
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    for i in range(5):
+        store.add_webhook(tenant.tenant_id, "slack",
+                          f"https://hooks.slack.com/a/b/{i}")
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor,
+        temperature_fahrenheit=71.0, breach_details="too warm",
+        sms_text="warm", sms_dispatch_source="template",
+    )
+
+    started = time.monotonic()
+    results = webhooks.dispatch_event(tenant, incident, sensor, "opened")
+    elapsed = time.monotonic() - started
+
+    assert len(results) == 5, "a hook was dropped from the fan-out"
+    assert elapsed < 5 * 0.6 * 0.75, (
+        f"five slow hooks took {elapsed:.1f}s; they are being posted one "
+        "after another again"
+    )
+
+
+def test_the_fanout_gives_up_rather_than_waiting_forever(monkeypatch):
+    """The per-hook timeout does not cover the name lookup ahead of it.
+
+    `urlopen`'s timeout is a socket timeout; `getaddrinfo` answers to the
+    resolver's own clock and blows straight through it. So the fan-out
+    carries a wall-clock budget of its own, and a hook that exceeds it is
+    abandoned and marked rather than waited on.
+    """
+    import time
+
+    import webhooks
+
+    monkeypatch.setattr(webhooks, "WEBHOOK_FANOUT_BUDGET_SECONDS", 1)
+
+    def _never_returns(url, body):
+        time.sleep(30)
+        return True, "http_200"
+
+    monkeypatch.setattr(webhooks, "_post", _never_returns)
+
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    monkeypatch.setattr(webhooks, "STORE", store)
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    store.add_webhook(tenant.tenant_id, "slack", "https://hooks.slack.com/a/b/c")
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor,
+        temperature_fahrenheit=71.0, breach_details="too warm",
+        sms_text="warm", sms_dispatch_source="template",
+    )
+
+    started = time.monotonic()
+    results = webhooks.dispatch_event(tenant, incident, sensor, "opened")
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 5, f"the fan-out waited {elapsed:.1f}s past its budget"
+    assert results[0]["delivered"] is False
+    assert results[0]["status"] == "abandoned_slow", (
+        "the customer cannot tell which hook is the slow one"
+    )
+
+
+def test_the_twilio_client_cannot_wait_forever():
+    """The SDK's default is `timeout=None`, which requests reads as never.
+
+    That is not a slow path, it is a permanently lost worker thread:
+    nothing raises, so `never_raises` never fires and no delivery record
+    is written. A Twilio incident lasting a few minutes retires one thread
+    per alert until Starlette's pool is empty and the platform answers
+    nothing at all — during exactly the event it exists for.
+
+    Measured against a socket that accepted and stayed silent: the app's
+    client was still blocked after 25 seconds; with a timeout it gave up
+    in 8.
+    """
+    import notifications
+
+    assert notifications.TWILIO_TIMEOUT_SECONDS > 0
+
+    built = {}
+
+    class _FakeHttpClient:
+        def __init__(self, timeout=None, **kwargs):
+            built["timeout"] = timeout
+
+    class _FakeClient:
+        def __init__(self, sid, token, http_client=None, **kwargs):
+            built["http_client"] = http_client
+
+    import sys
+    import types
+
+    rest = types.ModuleType("twilio.rest")
+    rest.Client = _FakeClient
+    http_mod = types.ModuleType("twilio.http.http_client")
+    http_mod.TwilioHttpClient = _FakeHttpClient
+
+    saved = {k: sys.modules.get(k) for k in ("twilio.rest", "twilio.http.http_client")}
+    sys.modules["twilio.rest"] = rest
+    sys.modules["twilio.http.http_client"] = http_mod
+    saved_client = notifications._client
+    saved_error = notifications._client_error
+    try:
+        notifications._client = None
+        notifications._client_error = None
+        notifications._get_client()
+    finally:
+        notifications._client = saved_client
+        notifications._client_error = saved_error
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+    assert built.get("http_client") is not None, (
+        "the Twilio client is built with the SDK default again, which has "
+        "no timeout at all"
+    )
+    assert built["timeout"] == notifications.TWILIO_TIMEOUT_SECONDS

@@ -158,8 +158,13 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
             {"at": iso(incident.resolved_at), "event": "Resolved", "detail": ""}
         )
 
+    # Clamped for the same reason minutes_open is: "acknowledged -120
+    # minutes after detection" does not read to a loss adjuster as a clock
+    # bug, it reads as a document somebody made up.
     minutes_to_ack = (
-        round((incident.acknowledged_at - incident.opened_at).total_seconds() / 60, 1)
+        max(0.0, round(
+            (incident.acknowledged_at - incident.opened_at).total_seconds() / 60, 1
+        ))
         if incident.acknowledged_at
         else None
     )

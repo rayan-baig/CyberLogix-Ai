@@ -38,6 +38,21 @@ MAX_SMS_CHARACTERS = 1500
 # but the guard keeps a pathological model response from failing the call.
 MAX_SPOKEN_CHARACTERS = 3000
 
+# The Twilio SDK's default HTTP client is built with `timeout=None`, which
+# `requests` reads as "wait forever". That is not a slow path, it is a
+# permanently lost thread: nothing raises, so `never_raises` never fires,
+# the delivery record is never written, and the worker handling that
+# breach never comes back. Starlette's threadpool is finite, so a Twilio
+# incident lasting a few minutes retires one thread per alert until there
+# are none left and the platform stops answering anything at all —
+# during exactly the kind of event the platform exists for.
+#
+# Eight seconds is longer than Twilio's own p99 and short enough that a
+# stuck alert releases its thread before the next reading arrives.
+TWILIO_TIMEOUT_SECONDS = float(
+    os.environ.get("TWILIO_TIMEOUT_SECONDS", "8").strip() or 8
+)
+
 _client = None
 _client_error: Optional[str] = None
 
@@ -55,9 +70,18 @@ def _get_client():
 
     try:
         from twilio.rest import Client  # imported lazily so the dep is optional
+        from twilio.http.http_client import TwilioHttpClient
 
-        _client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        logger.info("Twilio client initialized (from=%s).", TWILIO_FROM_NUMBER)
+        _client = Client(
+            TWILIO_ACCOUNT_SID,
+            TWILIO_AUTH_TOKEN,
+            http_client=TwilioHttpClient(timeout=TWILIO_TIMEOUT_SECONDS),
+        )
+        logger.info(
+            "Twilio client initialized (from=%s, timeout=%ss).",
+            TWILIO_FROM_NUMBER,
+            TWILIO_TIMEOUT_SECONDS,
+        )
     except Exception as exc:  # noqa: BLE001 - delivery must never hard-fail
         _client_error = str(exc)
         logger.error("Twilio client could not be created (%s).", exc)

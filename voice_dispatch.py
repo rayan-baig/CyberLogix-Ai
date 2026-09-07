@@ -8,6 +8,7 @@ speech and the response hands it to a telephony provider to place.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from typing import Optional
@@ -250,8 +251,20 @@ async def voice_keypress(
             f"{incident.incident_id} acknowledged by keypad from {caller}.",
         )
     if tenant is not None and not already:
-        _notify_hooks(
-            tenant, incident, "acknowledged", f"Acknowledged from {caller}."
+        # On a worker thread, not here. This route has to be a coroutine
+        # because it awaits the request body, so a blocking call in its
+        # body sits directly on the event loop and stops the whole
+        # process. The fan-out is a courtesy copy into Slack; the person
+        # standing at the freezer has already pressed 1, and Twilio gives
+        # up on this callback after fifteen seconds. Making them wait on
+        # somebody's chat integration risks the acknowledgement itself
+        # timing out — and an unacknowledged incident gets called again.
+        await asyncio.to_thread(
+            _notify_hooks,
+            tenant,
+            incident,
+            "acknowledged",
+            f"Acknowledged from {caller}.",
         )
     logger.info(
         "Incident %s acknowledged from the handset (%s).", incident_id, caller

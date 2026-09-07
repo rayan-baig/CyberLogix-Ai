@@ -660,11 +660,36 @@ class Sensor:
         return above, below
 
     def offline(self, now: Optional[datetime] = None) -> bool:
+        """True when this sensor has stopped reporting.
+
+        A last contact in the future makes the naive age negative, which
+        reads as "just heard from it" — so a sensor that went silent
+        during a clock correction would be counted online forever, and a
+        silent sensor cannot warn anybody. Skew is reported separately by
+        `clock_skewed` rather than being quietly folded into this answer.
+        """
         now = now or utc_now()
         if self.last_seen is None:
             return True
         age = (now - self.last_seen).total_seconds() / 60.0
+        if age < 0:
+            # The clock moved. Treat contact as having happened now, which
+            # keeps the sensor online for one more window rather than
+            # forever, and let clock_skewed() surface the real problem.
+            return False
         return age > SENSOR_OFFLINE_AFTER_MINUTES
+
+    def clock_skewed(self, now: Optional[datetime] = None) -> bool:
+        """Last contact is meaningfully in the future.
+
+        Either the device's clock or ours is wrong, and until somebody
+        fixes it every age calculation about this sensor is unreliable —
+        including the one that decides whether it has gone quiet.
+        """
+        if self.last_seen is None:
+            return False
+        ahead = (self.last_seen - (now or utc_now())).total_seconds() / 60.0
+        return ahead > self.CLOCK_SKEW_TOLERANCE_MINUTES
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -703,6 +728,10 @@ class Sensor:
             last_humidity=row.get("last_humidity"),
         )
 
+    # How far ahead of us a device's last contact may sit before we treat
+    # the clock as broken rather than the sensor as healthy.
+    CLOCK_SKEW_TOLERANCE_MINUTES = 5.0
+
     LOW_BATTERY_PERCENT = 20.0
 
     @property
@@ -720,6 +749,7 @@ class Sensor:
             "site_id": self.site_id,
             "battery_percent": self.battery_percent,
             "battery_low": self.battery_low,
+            "clock_skewed": self.clock_skewed(),
             "signal_percent": self.signal_percent,
             "temperature_unit": unit,
             "last_temperature_display": display_temperature(
@@ -825,9 +855,28 @@ class Incident:
         return self.resolved_at is None and self.acknowledged_at is None
 
     def minutes_open(self, now: Optional[datetime] = None) -> float:
+        """How long this has been somebody's problem. Never negative.
+
+        A clock that steps backwards — an NTP correction, a VM resuming
+        from suspend — makes the naive subtraction negative, and that
+        number is read in nine places. The one that matters is the
+        escalation gate: an incident whose age reads -30 minutes is not
+        past the ten-minute grace window, so it is never listed as due and
+        never gets its phone call. A real breach then sits open forever
+        because a clock moved.
+
+        The others are almost as bad in their own way: a claim packet
+        stating the alert was acknowledged -120 minutes after it fired
+        does not read as a clock bug to a loss adjuster, it reads as a
+        fabricated document.
+
+        Clamped at zero. A duration cannot be negative, and treating a
+        skewed clock as "just opened" fails in the safe direction: the
+        incident escalates a little late rather than never.
+        """
         now = now or utc_now()
         end = self.acknowledged_at or self.resolved_at or now
-        return round((end - self.opened_at).total_seconds() / 60.0, 2)
+        return max(0.0, round((end - self.opened_at).total_seconds() / 60.0, 2))
 
     def to_row(self) -> Dict[str, Any]:
         return {

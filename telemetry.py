@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -34,6 +35,11 @@ from store import (
 )
 
 logger = logging.getLogger("cyberlogix.telemetry")
+
+# An alert roster is texted concurrently rather than one number at a time.
+# Bounded, because the number of contacts on a site is the customer's
+# choice and a hundred-person roster should not open a hundred sockets.
+SMS_FANOUT_WORKERS = 6
 
 router = APIRouter(prefix="/api", tags=["Universal IoT Telemetry"])
 
@@ -276,16 +282,37 @@ def process_reading(
         sms_text=sms_text,
         sms_dispatch_source=sms_source,
     )
-    # Everyone on the roster gets the text, not just one number on file.
+    # Everyone on the roster gets the text, not just one number on file —
+    # and they get it at the same time, not one after another. Serially,
+    # a roster of six during a Twilio slowdown costs six timeouts stacked
+    # end to end, and the sensor waiting on this response gives up and
+    # retries long before the last person on the list is texted. Sent
+    # concurrently, the whole roster costs what the slowest one costs.
+    #
+    # `send_sms` is decorated to never raise, so `map` cannot break here,
+    # and `map` yields in submission order, so the roster's own priority
+    # ordering survives into the delivery record.
     recipients = STORE.sms_recipients(tenant, sensor.site_id)
-    fanout = [
-        dict(
-            send_sms(contact.phone, sms_text, tenant.tenant_id),
-            contact_id=contact.contact_id,
-            contact_name=contact.full_name,
-        )
-        for contact in recipients
-    ]
+    fanout: list[dict] = []
+    if recipients:
+        with ThreadPoolExecutor(
+            max_workers=min(len(recipients), SMS_FANOUT_WORKERS),
+            thread_name_prefix="sms-fanout",
+        ) as pool:
+            fanout = [
+                dict(
+                    receipt,
+                    contact_id=contact.contact_id,
+                    contact_name=contact.full_name,
+                )
+                for contact, receipt in zip(
+                    recipients,
+                    pool.map(
+                        lambda c: send_sms(c.phone, sms_text, tenant.tenant_id),
+                        recipients,
+                    ),
+                )
+            ]
     STORE.record_sms_delivery(incident, fanout[0] if fanout else None, fanout)
 
     # Push a copy into whatever the team already has open. Imported here
@@ -319,10 +346,25 @@ def resolve_owned_sensor(tenant: Tenant, sensor_id: str):
 
 
 @router.post("/sensor-pulse")
-async def process_sensor_pulse(
+def process_sensor_pulse(
     reading: SensorReading, tenant: Tenant = Depends(require_tenant)
 ):
-    """Ingest one telemetry packet from a registered sensor."""
+    """Ingest one telemetry packet from a registered sensor.
+
+    Deliberately a plain `def`, not `async def`. Everything below it is
+    blocking — SQLite, the Twilio REST client, the webhook fan-out — and
+    Starlette hands a sync endpoint to a worker thread while an async one
+    runs on the single event loop thread. Declared `async`, this route
+    held the loop for the entire duration of an alert, so one customer
+    whose Slack receiver had stopped answering took the whole platform
+    off the air: not just their own ingest, but every other tenant's
+    sensors, the console, and `/api/health` — which is what the load
+    balancer polls before deciding the container is dead. Measured at
+    15.1 seconds of total blackout from three slow hooks on one site.
+
+    There is nothing to await here, so there is nothing to gain by being
+    a coroutine, and everything to lose.
+    """
     sensor = resolve_owned_sensor(tenant, reading.sensor_id)
     if reading.battery_percent is not None or reading.signal_percent is not None:
         STORE.record_sensor_health(

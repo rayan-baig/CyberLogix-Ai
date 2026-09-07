@@ -12,11 +12,13 @@ recorded on the hook and the incident continues.
 
 from __future__ import annotations
 
+import concurrent.futures
 import ipaddress
 import json
 import logging
 import os
 import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -45,6 +47,26 @@ router = APIRouter(prefix="/api/webhooks", tags=["Outbound Alert Webhooks"])
 # A hook is a courtesy copy, not the alert itself. It gets a short leash so
 # a hanging endpoint cannot stall the breach path behind it.
 WEBHOOK_TIMEOUT_SECONDS = 5
+
+# ...and the leash has to be on the fan-out as a whole, not just on each
+# hook, because the two failure modes are different sizes.
+#
+# A hook that is *down* fails in milliseconds: the connection is refused
+# and urlopen returns. A hook that is *slow* — a Slack workspace under
+# load, a Teams tenant being throttled — completes the TCP handshake and
+# then says nothing, and costs the full timeout. Serially, a site with
+# five such hooks costs 25 seconds per breach. Posting them concurrently
+# makes the cost of N slow hooks the same as the cost of one.
+WEBHOOK_FANOUT_WORKERS = 8
+
+# The concurrent deadline is still not the whole story, because
+# `urlopen`'s timeout covers the socket and not the name lookup ahead of
+# it: getaddrinfo answers to the resolver's own clock, which on a default
+# glibc setup is 5s per attempt, twice, per nameserver. A hostname whose
+# DNS is blackholed therefore blows straight through a 5s socket timeout.
+# So the fan-out also carries a wall-clock budget it will not exceed,
+# whatever the hooks underneath it are doing.
+WEBHOOK_FANOUT_BUDGET_SECONDS = 12
 
 PAGERDUTY_ENQUEUE_URL = "https://events.pagerduty.com/v2/enqueue"
 
@@ -328,20 +350,61 @@ def dispatch_event(
         logger.exception("Could not describe the event for webhooks (%s).", exc)
         return []
 
-    results = []
-    for hook in hooks:
+    def _attempt(hook: AlertWebhook) -> tuple[bool, str]:
         # Per hook, so one broken configuration cannot stop the others —
         # and so none of them can stop the breach handler, which has
-        # already opened the incident by the time this runs.
+        # already opened the incident by the time this runs. Only the
+        # network call happens here; the store write is done by the
+        # collector below, on one thread, under the store's own lock.
         try:
             url, body = build_payload(hook, event)
-            delivered, http_status = _post(url, body)
-            STORE.record_webhook_attempt(hook, delivered, http_status)
+            return _post(url, body)
         except Exception as exc:  # noqa: BLE001 - the alert is the SMS and the call
             logger.exception(
                 "Webhook %s failed unexpectedly (%s).", hook.webhook_id, exc
             )
-            delivered, http_status = False, "dispatch_error"
+            return False, "dispatch_error"
+
+    deadline = time.monotonic() + WEBHOOK_FANOUT_BUDGET_SECONDS
+    pool = concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(len(hooks), WEBHOOK_FANOUT_WORKERS),
+        thread_name_prefix="webhook-fanout",
+    )
+    try:
+        pending = {pool.submit(_attempt, hook): hook for hook in hooks}
+        outcomes: Dict[str, tuple[bool, str]] = {}
+        for future, hook in pending.items():
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                outcomes[hook.webhook_id] = future.result(timeout=remaining)
+            except concurrent.futures.TimeoutError:
+                # Abandoned, not cancelled: the post may still land, and a
+                # duplicate Slack message is a far better outcome than a
+                # breach handler that waits on a name lookup. The hook is
+                # marked so the customer can see which one is misbehaving.
+                logger.warning(
+                    "Webhook %s (%s) exceeded the fan-out budget; abandoned.",
+                    hook.webhook_id,
+                    hook.label,
+                )
+                outcomes[hook.webhook_id] = (False, "abandoned_slow")
+    finally:
+        # Never join: an abandoned worker is still sitting in getaddrinfo,
+        # and waiting for it here would reintroduce exactly the stall this
+        # budget exists to prevent.
+        pool.shutdown(wait=False)
+
+    results = []
+    for hook in hooks:
+        delivered, http_status = outcomes.get(hook.webhook_id, (False, "not_attempted"))
+        try:
+            STORE.record_webhook_attempt(hook, delivered, http_status)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping, never the alert
+            logger.exception(
+                "Could not record the attempt for webhook %s (%s).",
+                hook.webhook_id,
+                exc,
+            )
         results.append(
             {
                 "webhook_id": hook.webhook_id,

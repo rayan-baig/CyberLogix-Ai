@@ -290,6 +290,25 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
             }
         )
 
+    # A clock in the future makes every age about this sensor meaningless,
+    # including whether it has gone quiet. Surfaced as its own action so
+    # it is fixed rather than silently trusted.
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        if sensor.clock_skewed(now):
+            actions.append(
+                {
+                    "action": "sensor_clock_skewed",
+                    "sensor_id": sensor.sensor_id,
+                    "location_name": sensor.location_name,
+                    "last_seen": iso(sensor.last_seen),
+                    "detail": (
+                        "This sensor's last contact is in the future, so "
+                        "either its clock or ours is wrong. Until that is "
+                        "fixed we cannot tell whether it has gone quiet."
+                    ),
+                }
+            )
+
     voice_allowed = tenant.entitlements()["voice_escalation"]
     escalated = 0
 
