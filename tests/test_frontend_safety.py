@@ -126,3 +126,27 @@ def test_the_api_returns_hostile_text_verbatim_for_the_client_to_escape():
     tenant = store.create_tenant(hostile, "n", "+1", "a@example.com", "growth")
     assert store.get_tenant(tenant.tenant_id).company_name == hostile
     assert tenant.public(sensor_count=0)["company_name"] == hostile
+
+
+def test_every_page_names_itself_for_a_screen_reader(api):
+    """A page with no h1 offers nothing to heading navigation.
+
+    Both app shells identified themselves only through a brand mark in
+    the nav, which is a graphic and a link, not a heading. Somebody
+    listing the headings on either page got an empty list and no way to
+    tell which of the two surfaces they had landed on.
+    """
+    import re
+
+    for path, expected in (
+        ("/", "freezer"),
+        ("/console", "operations console"),
+        ("/partners", "partner portal"),
+    ):
+        page = api.get(path).text
+        headings = re.findall(r"<h1[^>]*>(.*?)</h1>", page, re.S | re.I)
+        assert len(headings) == 1, f"{path} has {len(headings)} h1 elements"
+        assert expected in headings[0].lower(), (
+            f"{path} names itself {headings[0]!r}, which does not say which "
+            "surface this is"
+        )

@@ -146,6 +146,7 @@ MODULES_ACTIVE = [
 
 
 STATIC_DIR = Path(__file__).parent / "static"
+LANDING_HTML = STATIC_DIR / "index.html"
 CONSOLE_HTML = STATIC_DIR / "console.html"
 PARTNER_HTML = STATIC_DIR / "partner.html"
 
@@ -187,6 +188,19 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 
 @app.get("/", include_in_schema=False)
+def landing_page():
+    """The front door.
+
+    This used to be the console, which meant everybody who arrived at the
+    product — a prospect, a journalist, somebody following a link from an
+    invoice — was shown a password field and nothing that said what the
+    password was for. The console has moved to /console, where the people
+    who have one will look for it.
+    """
+    return FileResponse(LANDING_HTML, media_type="text/html")
+
+
+@app.get("/console", include_in_schema=False)
 def operations_console():
     """Serve the operations console to a browser."""
     return FileResponse(CONSOLE_HTML, media_type="text/html")

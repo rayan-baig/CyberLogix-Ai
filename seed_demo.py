@@ -272,7 +272,8 @@ def main() -> None:
 
     from main import app
 
-    print(f"Console: http://{args.host}:{args.port}/")
+    print(f"Landing page: http://{args.host}:{args.port}/")
+    print(f"Console: http://{args.host}:{args.port}/console")
     print(f"Partner portal: http://{args.host}:{args.port}/partners")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 

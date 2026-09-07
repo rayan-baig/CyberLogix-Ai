@@ -63,11 +63,28 @@ def test_industry_catalogue_covers_every_vertical(api):
     assert medical["danger_below"] == 36.0
 
 
-def test_console_html_is_served_at_root(api):
+def test_the_front_door_explains_the_product_before_asking_for_a_password(api):
+    """The root used to be the console, so every arrival met a login box.
+
+    A prospect, a journalist, somebody following a link off an invoice —
+    all of them were shown a password field and nothing that said what
+    the password was for. The landing page is the fix, and it is only a
+    fix if it actually says what the product does and where to sign in.
+    """
     resp = api.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    assert "CyberLogix" in resp.text
+    assert "signin-form" not in resp.text, "the root is the login box again"
+    assert 'href="/console"' in resp.text, "no way through to the console"
+    for promise in ("escalation", "sector", "claim"):
+        assert promise in resp.text.lower(), f"the page never mentions {promise}"
+
+
+def test_the_console_is_served_at_console(api):
+    resp = api.get("/console")
+    assert resp.status_code == 200
+    assert "Operations Console" in resp.text
+    assert "signin-form" in resp.text
 
 
 def test_the_partner_portal_is_served(api):
@@ -76,15 +93,40 @@ def test_the_partner_portal_is_served(api):
     assert "Partner Portal" in resp.text
 
 
-def test_both_surfaces_share_one_stylesheet(api):
-    """Two pages that must look like one product cannot each keep a copy."""
+def test_the_landing_page_quotes_no_prices_of_its_own(api):
+    """A marketing page with its own copy of the price list will drift.
+
+    Sooner or later it quotes a number the product does not charge, and
+    somebody signs up expecting it. Every figure on the page is fetched
+    from the same endpoints the console uses.
+    """
+    import re
+
+    from pricing import PRICE_BOOK
+
+    page = api.get("/").text
+    for entry in PRICE_BOOK.values():
+        price = f"{entry['monthly_usd']:.0f}"
+        assert f"${price}" not in page, (
+            f"${price} is hard-coded into the landing page instead of "
+            "being read from /api/industries"
+        )
+    assert "/api/industries" in page
+    assert "/api/licenses/plans" in page
+
+    # And the plan seat counts are not transcribed either.
+    assert not re.search(r"Up to 1,?000 sensors", page)
+
+
+def test_every_surface_shares_one_stylesheet(api):
+    """Three pages that must look like one product cannot each keep a copy."""
     theme = api.get("/static/theme.css")
     assert theme.status_code == 200
     assert "--accent:    #D9B98A" in theme.text
 
-    for path in ("/", "/partners"):
+    for path in ("/", "/console", "/partners"):
         assert '/static/theme.css' in api.get(path).text
 
-    # And neither page carries its own palette.
-    for path in ("/", "/partners"):
+    # And no page carries its own palette.
+    for path in ("/", "/console", "/partners"):
         assert "#D9B98A" not in api.get(path).text

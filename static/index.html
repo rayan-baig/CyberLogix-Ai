@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — Somebody is watching the freezer</title>
+<meta name="description" content="Thermal monitoring for the assets a business cannot afford to lose. A sensor reports, a breach is scored against your sector's own limits, and a person is woken until one of them answers.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%233987e5'/%3E%3Cpath d='M12 5v8M9 8h6' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='17' r='3.2' fill='none' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+/* Layout only. Every colour is a token from theme.css: this page and the
+   console are one product and must not each keep a palette. */
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.top .brand-name { font-size: 17px; }
+.top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.top nav a {
+  color: var(--muted); text-decoration: none; font-size: 14px;
+  transition: color .2s var(--ease);
+}
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+
+/* Five items do not fit a phone. Measured at 390px they ran to 550px and
+   the whole page scrolled sideways, which on a marketing page reads as
+   broken before a word of it has been read. The section links go; the way
+   in stays, because that is the one thing the header is for. */
+@media (max-width: 720px) {
+  .top { padding: 14px 20px; gap: 12px; }
+  .top nav a:not(.btn) { display: none; }
+}
+
+/* --- hero ---------------------------------------------------------- */
+.hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
+@media (max-width: 720px) { .hero { padding: 60px 0 52px; } section.band { padding: 56px 0; } }
+.hero::before {
+  content: ""; position: absolute; inset: -40% 30% auto -10%; height: 620px;
+  background: radial-gradient(closest-side, var(--accent-dim), transparent 72%);
+  pointer-events: none;
+}
+.hero-inner { position: relative; max-width: 780px; }
+.kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 22px;
+}
+h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(38px, 6.2vw, 68px); line-height: 1.04;
+  letter-spacing: -0.015em; margin: 0 0 24px; color: var(--ink);
+}
+h1 em { font-style: italic; color: var(--accent); }
+.lede {
+  font-size: clamp(16px, 1.9vw, 19px); line-height: 1.62;
+  color: var(--muted); max-width: 60ch; margin: 0 0 34px;
+}
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+/* .btn-primary is full-width because it lives at the bottom of the sign-in
+   form, where that is right. Loose on a page it is a bar, not a button. */
+.cta-row .btn-primary, .closer .btn-primary { width: auto; }
+.cta-note { font-size: 13px; color: var(--muted); }
+
+/* --- generic section ------------------------------------------------ */
+section.band { padding: 76px 0; border-top: 1px solid var(--border); }
+.band-head { max-width: 62ch; margin: 0 0 42px; }
+h2 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(26px, 3.4vw, 38px); line-height: 1.14;
+  letter-spacing: -0.01em; margin: 0 0 14px; color: var(--ink);
+}
+.band-head p { margin: 0; color: var(--muted); line-height: 1.62; font-size: 16px; }
+h3 {
+  font-size: 15px; font-weight: 500; margin: 0 0 8px; color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+/* --- the ladder ----------------------------------------------------- */
+.ladder { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+@media (min-width: 860px) { .ladder { grid-template-columns: repeat(4, 1fr); } }
+.rung { background: var(--surface); padding: 26px 24px; }
+.rung-when {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+}
+.rung p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+/* --- sectors -------------------------------------------------------- */
+.sectors { display: grid; gap: 14px; }
+@media (min-width: 700px) { .sectors { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .sectors { grid-template-columns: repeat(3, 1fr); } }
+.sector {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: 22px 22px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color .22s var(--ease), transform .22s var(--ease);
+}
+.sector:hover { border-color: var(--border-lit); transform: translateY(-2px); }
+.sector-fail { color: var(--muted); font-size: 13.5px; line-height: 1.55; margin: 0; flex: 1; }
+.sector-price {
+  display: flex; align-items: baseline; gap: 7px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.sector-price b { font-family: var(--display); font-size: 22px; font-weight: 400; color: var(--ink); }
+.sector-price span { font-size: 12.5px; color: var(--muted); }
+
+/* --- proof ---------------------------------------------------------- */
+.proof { display: grid; gap: 22px; }
+@media (min-width: 820px) { .proof { grid-template-columns: repeat(3, 1fr); } }
+.proof-item { border-left: 2px solid var(--accent-deep); padding-left: 20px; }
+.proof-item p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.62; }
+
+/* --- plans ---------------------------------------------------------- */
+.plans { display: grid; gap: 14px; }
+@media (min-width: 800px) { .plans { grid-template-columns: repeat(3, 1fr); } }
+.plan {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: 26px 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.plan[data-featured="yes"] { border-color: var(--accent-deep); background: var(--raised); }
+.plan-name { font-family: var(--display); font-size: 26px; font-weight: 400; color: var(--ink); }
+.plan-seats { font-size: 14px; color: var(--muted); }
+.plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; flex: 1; }
+.plan li { font-size: 14px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start; }
+.plan li::before { content: "—"; color: var(--accent-deep); flex: none; }
+.plan li[data-has="no"] { opacity: .45; }
+.plan li[data-has="no"]::before { content: "·"; }
+
+/* --- closing -------------------------------------------------------- */
+.closer { text-align: center; padding: 92px 0 100px; border-top: 1px solid var(--border); }
+.closer h2 { margin-bottom: 18px; }
+.closer p { color: var(--muted); max-width: 52ch; margin: 0 auto 30px; line-height: 1.62; }
+footer {
+  border-top: 1px solid var(--border); padding: 30px 0 44px;
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  color: var(--muted); font-size: 13px;
+}
+footer nav { display: flex; gap: 20px; margin-left: auto; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover, footer a:focus-visible { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v10"/><circle cx="12" cy="17" r="4"/><path d="M9 6h6"/>
+      </svg>
+    </span>
+    <span class="brand-name">CyberLogix <em>AI</em></span>
+  </span>
+  <nav aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#sectors">Sectors</a>
+    <a href="#proof">Evidence</a>
+    <a href="#plans">Plans</a>
+    <a class="btn btn-sm" href="/console">Sign in</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============================== HERO ============================== -->
+<section class="hero">
+  <div class="wrap hero-inner">
+    <p class="kicker">Thermal monitoring &amp; escalation</p>
+    <h1>The freezer fails at two in the morning.<br>
+        Nobody finds out until <em>seven</em>.</h1>
+    <p class="lede">
+      By then the stock is gone, the insurer wants evidence nobody kept, and
+      the argument about who was supposed to be watching has already started.
+      CyberLogix watches the temperature of the things a business cannot
+      afford to lose, and keeps waking people until one of them answers.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/console">Open the console</a>
+      <a class="btn" href="#how">See how it works</a>
+      <span class="cta-note">Fourteen-day trial. No card.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== HOW =============================== -->
+<section class="band" id="how">
+  <div class="wrap">
+    <div class="band-head">
+      <h2>An alert that can be slept through is not an alert.</h2>
+      <p>
+        Most monitoring stops at the notification. It sends a message into a
+        channel and considers the job done. This one does not stop until a
+        person has said, out loud, that they have it.
+      </p>
+    </div>
+    <div class="ladder">
+      <div class="rung">
+        <p class="rung-when">The moment it happens</p>
+        <h3>Scored, not just recorded</h3>
+        <p>Every reading is judged against the limits for that sector — a blood
+           bank and a wine cellar do not fail at the same temperature — and a
+           breach opens exactly one incident, however many times the sensor
+           reports it.</p>
+      </div>
+      <div class="rung">
+        <p class="rung-when">Within seconds</p>
+        <h3>The whole roster is texted</h3>
+        <p>Not one number on file. Everyone on call for that site, at once,
+           with the asset, the reading and the site named in the first line —
+           so it can be acted on from a lock screen.</p>
+      </div>
+      <div class="rung">
+        <p class="rung-when">If nobody answers</p>
+        <h3>The phone rings</h3>
+        <p>A spoken call that reads out what is failing and asks the person to
+           press 1. Until somebody does, it is not acknowledged, and the
+           system keeps behaving as though nobody knows.</p>
+      </div>
+      <div class="rung">
+        <p class="rung-when">All the way through</p>
+        <h3>Written down as it happens</h3>
+        <p>Every reading, every alert, every acknowledgement, in a log that
+           cannot be quietly edited afterwards. That record is the thing you
+           are actually buying.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SECTORS ============================= -->
+<section class="band" id="sectors">
+  <div class="wrap">
+    <div class="band-head">
+      <h2>Eleven sectors, each with its own way of going wrong.</h2>
+      <p>
+        Thresholds, the language of the alert, the unit on the invoice and the
+        paperwork produced afterwards are all specific to the trade. Priced per
+        unit, per month, flat — never a share of what was saved.
+      </p>
+    </div>
+    <div class="sectors" id="sectors-grid">
+      <p class="loading">Loading sectors…</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= PROOF ============================== -->
+<section class="band" id="proof">
+  <div class="wrap">
+    <div class="band-head">
+      <h2>The alert is the easy half.</h2>
+      <p>
+        What a business is really exposed to is the week afterwards: the
+        insurer, the auditor, the regulator, the customer who wants to know
+        what happened. That is where a monitoring bill justifies itself.
+      </p>
+    </div>
+    <div class="proof">
+      <div class="proof-item">
+        <h3>A record that cannot be edited</h3>
+        <p>Every entry is chained to the one before it, so a reading cannot be
+           removed or altered after the fact without the chain saying so. The
+           value of a log in a dispute is exactly the difficulty of faking it.</p>
+      </div>
+      <div class="proof-item">
+        <h3>The claim packet, already written</h3>
+        <p>One button produces the document a loss adjuster asks for: the
+           readings either side of the failure, when the alert went out, who
+           acknowledged it and how long it took them.</p>
+      </div>
+      <div class="proof-item">
+        <h3>Proof it was working</h3>
+        <p>A signed attestation that a given sensor was reporting, and was
+           being watched by a named person, over a given window — for the
+           audit that happens when nothing went wrong at all.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= PLANS ============================== -->
+<section class="band" id="plans">
+  <div class="wrap">
+    <div class="band-head">
+      <h2>Plans</h2>
+      <p>Seats are sensors. The per-unit price for your sector is above; the
+         plan decides how many you can run and what the system is allowed to
+         do when one of them fails.</p>
+    </div>
+    <div class="plans" id="plans-grid">
+      <p class="loading">Loading plans…</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CLOSING ============================= -->
+<section class="closer">
+  <div class="wrap">
+    <h2>Start with one freezer.</h2>
+    <p>
+      Onboard a company, register a sensor, and send it a reading that should
+      not be possible. Everything after that happens on its own.
+    </p>
+    <a class="btn btn-primary" href="/console">Open the console</a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;width:100%">
+    <span>CyberLogix AI</span>
+    <nav aria-label="Elsewhere">
+      <a href="/console">Console</a>
+      <a href="/partners">Partners</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// Every number on this page comes off the running product. A marketing page
+// that keeps its own copy of the price list is a marketing page that will
+// eventually quote a price the product does not charge.
+const money = n => "$" + Number(n).toLocaleString("en-US", {
+  minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function paintSectors() {
+  const grid = document.getElementById("sectors-grid");
+  try {
+    const res = await fetch("/api/industries");
+    if (!res.ok) throw new Error(res.status);
+    const body = await res.json();
+    const rows = body.industries || body;
+    grid.innerHTML = rows.map(r => `
+      <article class="sector">
+        <h3>${esc(r.name)}</h3>
+        <p class="sector-fail">${esc(r.catastrophe)}</p>
+        <div class="sector-price">
+          <b>${r.monthly_usd != null ? money(r.monthly_usd) : "—"}</b>
+          <span>per ${esc(r.billing_unit || r.asset_noun || "unit")} / month</span>
+        </div>
+      </article>`).join("");
+  } catch (err) {
+    // A blank grid would read as "no sectors". Say what actually happened.
+    grid.innerHTML = `<p class="empty">The sector list could not be loaded
+      (${esc(err.message)}). It is served from
+      <code>/api/industries</code>.</p>`;
+  }
+}
+
+async function paintPlans() {
+  const grid = document.getElementById("plans-grid");
+  try {
+    const res = await fetch("/api/licenses/plans");
+    if (!res.ok) throw new Error(res.status);
+    const plans = (await res.json()).plans || [];
+    grid.innerHTML = plans.map(p => `
+      <article class="plan" data-featured="${p.plan === "growth" ? "yes" : "no"}">
+        <div>
+          <div class="plan-name">${esc(p.name)}</div>
+          <div class="plan-seats">Up to ${p.max_sensors.toLocaleString("en-US")}
+            sensor${p.max_sensors === 1 ? "" : "s"}</div>
+        </div>
+        <ul>
+          <li>Breach detection on every reading</li>
+          <li>The whole on-call roster texted</li>
+          <li data-has="${p.voice_escalation ? "yes" : "no"}">
+            Spoken escalation call until somebody presses 1</li>
+          <li data-has="${p.predictive_forecasting ? "yes" : "no"}">
+            Forecasting — warned before it breaches</li>
+          <li>Tamper-evident log and claim packets</li>
+          <li>${p.term_days < 30
+                ? p.term_days + "-day trial"
+                : "Annual term"}</li>
+        </ul>
+        <a class="btn ${p.plan === "growth" ? "btn-primary" : ""}"
+           href="/console">Start on ${esc(p.name)}</a>
+      </article>`).join("");
+  } catch (err) {
+    grid.innerHTML = `<p class="empty">Plans could not be loaded
+      (${esc(err.message)}). They are served from
+      <code>/api/licenses/plans</code>.</p>`;
+  }
+}
+
+paintSectors();
+paintPlans();
+</script>
+</body>
+</html>

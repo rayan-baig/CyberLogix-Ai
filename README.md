@@ -21,7 +21,8 @@ ask for.
 | Predictive Breakdown Forecaster | `/api/forecast` | Trend fitting, time-to-breach projection |
 | BYOD Hardware Bridge | `/api/v1/bridge` | Webhook ingest from off-the-shelf sensors |
 | Sector Meeting Intelligence | `/api/v1/bridge` | Transcripts into structured action items |
-| Operations Console | `/` | Browser UI over the whole platform |
+| Operations Console | `/console` | Browser UI over the whole platform |
+| Public Front Door | `/` | What the product is, who it is for, what it costs |
 | Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 | On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
@@ -37,12 +38,18 @@ ask for.
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
 
-The console is at `/`, the reseller portal at `/partners`, the
-machine-readable gateway at `/api`, and interactive API docs at `/docs`.
+The landing page is at `/`, the console at `/console`, the reseller portal
+at `/partners`, the machine-readable gateway at `/api`, and interactive API
+docs at `/docs`.
+
+The landing page quotes no prices of its own: the sector rate card and the
+plan list are fetched from `/api/industries` and `/api/licenses/plans`, the
+same endpoints the console uses, so a marketing page can never advertise a
+number the product does not charge. A test asserts it.
 
 ## The console
 
-Open `/` in a browser and sign in with your email and password (or onboard a
+Open `/console` in a browser and sign in with your email and password (or onboard a
 company from the same card, which creates the tenant, its first owner and
 signs you in). The console shows the fleet with a 12-point sparkline per
 sensor, headline counts, the incident feed with the exact SMS and voice text
@@ -62,7 +69,7 @@ To see it with something on it:
 
 That seeds six sensors across six verticals with backdated history — one
 walk-in already failed, a data hall and an engine bay drifting toward their
-limits — then serves the console on :8080. It prints a login
+limits — then serves the app on :8080. It prints a login
 (`dana@blueharbor.example` / `harbor-demo-2026`). It resets the store, so run
 it only against a throwaway instance.
 
@@ -331,7 +338,7 @@ Two credentials reach the same endpoints:
 * a **bearer session token** in `Authorization` identifies a signed-in person,
   and is what the console uses.
 
-Public endpoints are `/`, `/api`, `/api/health`, `/api/industries`,
+Public endpoints are `/`, `/console`, `/api`, `/api/health`, `/api/industries`,
 `/api/licenses/plans`, `/api/licenses/tenants` and `/api/accounts/login`.
 
 Status codes distinguish the failure modes: `401` for a missing or unknown
