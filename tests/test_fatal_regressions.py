@@ -720,3 +720,333 @@ def test_the_twilio_client_cannot_wait_forever():
         "no timeout at all"
     )
     assert built["timeout"] == notifications.TWILIO_TIMEOUT_SECONDS
+
+
+# ---------------------------------------------------------------------------
+#  Two things at the same moment
+# ---------------------------------------------------------------------------
+#
+# Every bug below is the same mistake: a question asked of the store, an
+# answer acted on, and a write — three steps with the lock released twice
+# in between. Each one is invisible under a test suite that does one
+# thing at a time, and each one shows up the moment a real site has more
+# than one sensor reporting.
+
+
+class _LockWatcher:
+    """Wraps the store's lock and counts how often it is fully let go.
+
+    A racing test can only ever hope to observe a race; whether it does
+    depends on where the interpreter happens to switch threads, which is
+    why the two worst races here were caught against a live server and
+    not in-process. So the property is asserted directly instead: a
+    check-then-act sequence is safe exactly when the lock is not released
+    between the check and the act.
+
+    `full_releases` counts the times the depth returns to zero. One means
+    the whole operation was a single atomic section. Two or more means
+    the gap is back, whether or not any test thread happened to fall
+    into it.
+    """
+
+    def __init__(self, real):
+        self._real = real
+        self.depth = 0
+        self.full_releases = 0
+
+    def acquire(self, *args, **kwargs):
+        got = self._real.acquire(*args, **kwargs)
+        if got:
+            self.depth += 1
+        return got
+
+    def release(self):
+        self._real.release()
+        self.depth -= 1
+        if self.depth == 0:
+            self.full_releases += 1
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+        return False
+
+
+def _watch_lock(store):
+    watcher = _LockWatcher(store._lock)
+    store._lock = watcher
+    return watcher
+
+
+def _pool_map(fn, n, workers=None):
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=workers or n) as pool:
+        return list(pool.map(fn, range(n)))
+
+
+def _store_with_sensor(plan="enterprise"):
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com", plan)
+    sensor = store.register_sensor("RACE-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    return store, tenant, sensor
+
+
+def test_one_failing_freezer_opens_one_incident_not_eight():
+    """The central promise of the product, under concurrency.
+
+    One failure produces one incident: one text, one phone call, one line
+    in the log. That was enforced by reading the open incident, finding
+    none, and then writing — two store calls with a gap between them wide
+    enough to draft an SMS in.
+
+    A freezer that is genuinely failing is exactly what fills that gap:
+    the sensor behind it reports every few seconds. Measured against a
+    live server, twenty-four simultaneous breach pulses from one sensor
+    opened between three and eight incidents, each with its own fan-out
+    to the whole roster and its own escalation to the on-call phone. The
+    person on call is woken repeatedly, at night, for one freezer — which
+    is how a customer learns to ignore the alerts.
+    """
+    store, tenant, sensor = _store_with_sensor()
+
+    def open_one(i):
+        return store.open_incident_once(
+            tenant_id=tenant.tenant_id,
+            sensor=sensor,
+            temperature_fahrenheit=71.0,
+            breach_details="too warm",
+            sms_text="warm",
+            sms_dispatch_source="template",
+        )
+
+    results = _pool_map(open_one, 24)
+    created = [inc for inc, was_created in results if was_created]
+    ids = {inc.incident_id for inc, _ in results}
+
+    # And the property the race depends on, asserted rather than hoped for:
+    # the "is one already open?" read and the write are one atomic section.
+    # On a fresh store, so this measures the path that actually creates —
+    # the early return when an incident already exists never reaches the
+    # write and would look atomic no matter how the method was built.
+    fresh, fresh_tenant, fresh_sensor = _store_with_sensor()
+    watcher = _watch_lock(fresh)
+    fresh.open_incident_once(
+        tenant_id=fresh_tenant.tenant_id,
+        sensor=fresh_sensor,
+        temperature_fahrenheit=71.0,
+        breach_details="too warm",
+        sms_text="warm",
+        sms_dispatch_source="template",
+    )
+    assert watcher.full_releases == 1, (
+        f"the lock was released {watcher.full_releases} times inside "
+        "open_incident_once; the check and the write are two operations "
+        "again and a second incident can be opened in between"
+    )
+
+    assert len(created) == 1, (
+        f"{len(created)} incidents opened for one failing freezer -- that is "
+        f"{len(created)} SMS fan-outs and {len(created)} phone calls"
+    )
+    assert len(ids) == 1, "callers were handed different incidents for one fault"
+    assert len(store.open_incidents(tenant.tenant_id)) == 1
+
+
+def test_a_five_seat_licence_cannot_be_talked_into_nine():
+    """Counting seats walks every sensor, so the window is wide.
+
+    Measured on a live server against a five-seat trial licence: twenty
+    concurrent registrations were granted nine seats. Four sensors
+    monitored, and billed for, on a plan that does not include them —
+    and the customer is the one who finds out, from their invoice.
+    """
+    from db import Database
+    from store import HubStore, SeatClaimRefused
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Small", "Dana", "+15550100", "d@x.com",
+                                 "trial")
+    cap = tenant.entitlements()["max_sensors"]
+
+    def claim(i):
+        try:
+            store.claim_sensor_seat(
+                sensor_id=f"SEAT-{i:03d}",
+                tenant_id=tenant.tenant_id,
+                industry_vertical="pharmacy",
+                location_name="x",
+                max_sensors=cap,
+            )
+            return True
+        except SeatClaimRefused:
+            return False
+
+    granted = sum(_pool_map(claim, cap * 6))
+    assert granted == cap, (
+        f"granted {granted} seats on a {cap}-seat licence"
+    )
+    assert store.seat_count(tenant.tenant_id) == cap
+
+    # Counting seats and taking one must be a single atomic section.
+    store2 = HubStore(db=Database(":memory:"))
+    t2 = store2.create_tenant("Small", "D", "+15550100", "d@x.com", "trial")
+    watcher = _watch_lock(store2)
+    store2.claim_sensor_seat(
+        sensor_id="SEAT-X", tenant_id=t2.tenant_id,
+        industry_vertical="pharmacy", location_name="x", max_sensors=5,
+    )
+    assert watcher.full_releases == 1, (
+        f"the lock was released {watcher.full_releases} times inside "
+        "claim_sensor_seat; the seat count can go stale before the seat "
+        "is taken"
+    )
+
+
+def test_two_tenants_cannot_both_register_the_same_sensor_id():
+    """Never caught in 480 live races -- and closed anyway.
+
+    Sensor ids are global, and the duplicate check was a separate store
+    call from the write. The window is narrow enough that eight
+    contenders, sixty times, with the interpreter's switch interval
+    turned down, always produced exactly one winner. Narrow is not the
+    same as closed, and what is on the other side of it is one company's
+    freezer disappearing from their console into another company's
+    account.
+    """
+    from db import Database
+    from store import HubStore, SeatClaimRefused
+
+    store = HubStore(db=Database(":memory:"))
+    tenants = [
+        store.create_tenant(f"Co{i}", "D", "+15550100", f"d{i}@x.com",
+                            "enterprise")
+        for i in range(8)
+    ]
+
+    def claim(i):
+        try:
+            store.claim_sensor_seat(
+                sensor_id="SHARED-01",
+                tenant_id=tenants[i].tenant_id,
+                industry_vertical="pharmacy",
+                location_name="x",
+                max_sensors=tenants[i].entitlements()["max_sensors"],
+            )
+            return tenants[i].tenant_id
+        except SeatClaimRefused:
+            return None
+
+    winners = [w for w in _pool_map(claim, 8) if w]
+    assert len(winners) == 1, f"{len(winners)} tenants registered the same id"
+    assert store.get_sensor("SHARED-01").tenant_id == winners[0]
+
+
+def test_a_serial_number_cannot_be_bound_to_two_sensors_at_once():
+    """Same call, the other uniqueness check it now covers."""
+    from db import Database
+    from store import HubStore, SeatClaimRefused
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Co", "D", "+15550100", "d@x.com",
+                                 "enterprise")
+
+    def claim(i):
+        try:
+            store.claim_sensor_seat(
+                sensor_id=f"NODE-{i:02d}",
+                tenant_id=tenant.tenant_id,
+                industry_vertical="pharmacy",
+                location_name="x",
+                max_sensors=1000,
+                external_device_sn="SN-DUPLICATE",
+            )
+            return True
+        except SeatClaimRefused:
+            return False
+
+    assert sum(_pool_map(claim, 8)) == 1
+
+
+def test_twelve_operators_pressing_escalate_place_one_call():
+    """The sweep claimed atomically. The button a human presses did not.
+
+    Twelve simultaneous escalations placed twelve calls to the same phone
+    for the same freezer. A deliberate re-dial is still possible, after a
+    cooldown, because nobody picking up is a real thing that happens —
+    but a double-click is not a re-dial.
+    """
+    from datetime import timedelta
+
+    from store import VOICE_REDIAL_COOLDOWN_MINUTES, utc_now
+
+    store, tenant, sensor = _store_with_sensor()
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor,
+        temperature_fahrenheit=71.0, breach_details="too warm",
+        sms_text="warm", sms_dispatch_source="template",
+    )
+
+    claims = _pool_map(
+        lambda i: store.claim_voice_escalation(
+            incident, redial_after_minutes=VOICE_REDIAL_COOLDOWN_MINUTES
+        ),
+        12,
+    )
+    assert sum(claims) == 1, f"{sum(claims)} of 12 clicks each placed a call"
+
+    # Automation never re-dials on its own.
+    assert store.claim_voice_escalation(incident) is False
+
+    # A person can, once the cooldown has passed.
+    later = utc_now() + timedelta(minutes=VOICE_REDIAL_COOLDOWN_MINUTES + 1)
+    assert store.claim_voice_escalation(
+        incident, redial_after_minutes=VOICE_REDIAL_COOLDOWN_MINUTES, now=later
+    ) is True
+
+
+def test_only_one_person_is_told_they_have_the_incident(
+    api, operator_factory, sensor_factory, age_incident
+):
+    """The store kept the first responder. Nothing else did.
+
+    Twelve people reacting to the same alert each got a 200 reading
+    "Escalation ladder halted", a Slack message went out naming each of
+    them as the person who had it, and the audit trail — the one that
+    ends up in front of a loss adjuster — recorded twelve different
+    first responders for one incident.
+    """
+    headers, _, _ = operator_factory()
+    sensor = sensor_factory(headers, sensor_id="ACK-01", vertical="pharmacy")
+    opened = api.post(
+        "/api/sensor-pulse",
+        headers=headers,
+        json={"sensor_id": sensor["sensor_id"], "temperature_fahrenheit": 71.0},
+    )
+    incident_id = opened.json()["incident_id"]
+
+    bodies = [
+        api.post(
+            f"/api/voice/acknowledge/{incident_id}",
+            headers=headers,
+            json={"acknowledged_by": f"tech {i}"},
+        ).json()
+        for i in range(6)
+    ]
+
+    halted = [b for b in bodies if b["status"] == "ACKNOWLEDGED"]
+    assert len(halted) == 1, (
+        f"{len(halted)} people were told they had stopped the escalation"
+    )
+    losers = [b for b in bodies if b["status"] == "ALREADY_ACKNOWLEDGED"]
+    assert len(losers) == 5
+    # And each loser is told whose it actually is.
+    assert all(b["acknowledged_by"] == halted[0]["incident"]["acknowledged_by"]
+               for b in losers)

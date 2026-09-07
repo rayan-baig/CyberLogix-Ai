@@ -18,7 +18,13 @@ from auth import require_entitlement, require_tenant
 # Re-exported: several routers import these from here rather than reaching
 # past this module into auth, so the dependency reads in one direction.
 __all__ = ["router", "require_entitlement", "require_tenant"]
-from store import PLAN_TIERS, STORE, Tenant, resolve_vertical
+from store import (
+    PLAN_TIERS,
+    STORE,
+    SeatClaimRefused,
+    Tenant,
+    resolve_vertical,
+)
 
 router = APIRouter(prefix="/api/licenses", tags=["Corporate License Management"])
 
@@ -181,44 +187,38 @@ def register_sensor(
         )
 
     sensor_id = payload.sensor_id.strip()
-    existing = STORE.get_sensor(sensor_id)
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Sensor '{sensor_id}' is already registered.",
-        )
-
     serial = (payload.external_device_sn or "").strip() or None
-    if serial and STORE.device_sn_taken(serial):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Device serial '{serial}' is already bound to a sensor.",
-        )
-
-    seats_used = STORE.seat_count(tenant.tenant_id)
     cap = tenant.entitlements()["max_sensors"]
-    if seats_used >= cap:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
+
+    # One call, one lock. Asking "is there a seat?" and then taking it as
+    # two separate store calls let twenty concurrent registrations be
+    # granted nine seats on a five-seat licence.
+    try:
+        sensor = STORE.claim_sensor_seat(
+            sensor_id=sensor_id,
+            tenant_id=tenant.tenant_id,
+            industry_vertical=vertical,
+            location_name=payload.location_name,
+            max_sensors=cap,
+            external_device_sn=serial,
+        )
+    except SeatClaimRefused as refused:
+        detail = refused.detail
+        if refused.reason == "no_seats":
+            detail = (
                 f"Seat limit reached: the {tenant.entitlements()['name']} plan "
                 f"allows {cap} sensors. Upgrade to add more."
-            ),
-        )
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=detail
+        ) from None
 
-    sensor = STORE.register_sensor(
-        sensor_id=sensor_id,
-        tenant_id=tenant.tenant_id,
-        industry_vertical=vertical,
-        location_name=payload.location_name,
-        external_device_sn=serial,
-    )
     from pricing import PRICE_BOOK, build_subscription
 
     entry = PRICE_BOOK[vertical]
     return {
         "sensor": sensor.public(),
-        "seats_used": seats_used + 1,
+        "seats_used": STORE.seat_count(tenant.tenant_id),
         "seats_total": cap,
         "billing": {
             "unit": entry["unit"],

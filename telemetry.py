@@ -250,7 +250,34 @@ def process_reading(
 
     # Collapse a sustained breach onto the incident already open for this
     # sensor. One failure produces one incident to acknowledge.
+    #
+    # Checked twice, deliberately. The cheap check here skips drafting a
+    # message for the overwhelmingly common case of a breach already
+    # known about. The authoritative one is inside `open_incident_once`
+    # below, which does the read and the write under a single lock — the
+    # gap between these two calls is where a genuinely failing freezer,
+    # reporting every few seconds, opened up to eight incidents for one
+    # fault and rang the on-call phone eight times.
     existing = STORE.latest_open_incident(sensor.sensor_id)
+
+    if existing is None:
+        sms_text, sms_source = build_emergency_sms(
+            sensor, temperature, humidity, tenant.tenant_id, unit
+        )
+        incident, created = STORE.open_incident_once(
+            tenant_id=tenant.tenant_id,
+            sensor=sensor,
+            temperature_fahrenheit=temperature,
+            breach_details=breach_reason,
+            sms_text=sms_text,
+            sms_dispatch_source=sms_source,
+        )
+        if not created:
+            # Somebody else opened it while this call was drafting. Their
+            # SMS has gone out; a second one would be the duplicate this
+            # whole path exists to prevent.
+            existing = incident
+
     if existing is not None:
         STORE.update_incident_breach(existing, temperature, breach_reason)
         return {
@@ -271,17 +298,6 @@ def process_reading(
             ),
         }
 
-    sms_text, sms_source = build_emergency_sms(
-        sensor, temperature, humidity, tenant.tenant_id, unit
-    )
-    incident = STORE.open_incident(
-        tenant_id=tenant.tenant_id,
-        sensor=sensor,
-        temperature_fahrenheit=temperature,
-        breach_details=breach_reason,
-        sms_text=sms_text,
-        sms_dispatch_source=sms_source,
-    )
     # Everyone on the roster gets the text, not just one number on file —
     # and they get it at the same time, not one after another. Serially,
     # a roster of six during a Twilio slowdown costs six timeouts stacked

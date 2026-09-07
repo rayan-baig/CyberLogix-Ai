@@ -35,6 +35,7 @@ from store import (
     INDUSTRY_PROFILES,
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
+    VOICE_REDIAL_COOLDOWN_MINUTES,
     Incident,
     Tenant,
     User,
@@ -240,17 +241,21 @@ async def voice_keypress(
         )
 
     caller = (form.get("To") or "the handset").strip()
-    already = incident.acknowledged_at is not None
-    STORE.acknowledge_incident(incident, f"phone keypad ({caller})")
+    # `claimed` comes back from the store rather than being read off the
+    # incident beforehand: read separately, two handsets pressing 1 in the
+    # same second both saw None and both counted as the first responder.
+    incident, claimed = STORE.acknowledge_incident(
+        incident, f"phone keypad ({caller})"
+    )
     tenant = STORE.get_tenant(incident.tenant_id)
-    if tenant is not None and not already:
+    if tenant is not None and claimed:
         write_audit(
             tenant,
             None,
             "incident.acknowledged",
             f"{incident.incident_id} acknowledged by keypad from {caller}.",
         )
-    if tenant is not None and not already:
+    if tenant is not None and claimed:
         # On a worker thread, not here. This route has to be a coroutine
         # because it awaits the request body, so a blocking call in its
         # body sits directly on the event loop and stops the whole
@@ -340,6 +345,24 @@ def escalate_to_voice(
             ),
         )
 
+    # Claim the call before placing it. Without this, twelve operators
+    # hitting escalate at once — or one operator whose click registered
+    # twice, or the unattended sweep firing while somebody is already on
+    # it — placed twelve calls to the same phone for the same freezer.
+    # The sweep has claimed atomically since it was written; this
+    # endpoint, the one a human actually presses, never did.
+    if not STORE.claim_voice_escalation(
+        incident, redial_after_minutes=VOICE_REDIAL_COOLDOWN_MINUTES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"A call for '{incident_id}' has already been placed. It can "
+                f"be re-dialled {VOICE_REDIAL_COOLDOWN_MINUTES:.0f} minutes "
+                "after the last attempt."
+            ),
+        )
+
     outcome = dispatch_voice_call(incident, tenant)
     write_audit(
         tenant,
@@ -376,7 +399,23 @@ def acknowledge_incident(
     incident = _load_incident(incident_id, tenant)
 
     actor = actor_label(operator, payload.acknowledged_by or "API key")
-    STORE.acknowledge_incident(incident, actor)
+    incident, claimed = STORE.acknowledge_incident(incident, actor)
+
+    if not claimed:
+        # Somebody already has it. Say whose it is rather than implying
+        # this caller stopped the ladder — one incident has one owner,
+        # and the second person to press the button needs to know it is
+        # not them, not be told "acknowledged" and stand down too.
+        return {
+            "status": "ALREADY_ACKNOWLEDGED",
+            "message": (
+                f"{incident.acknowledged_by} acknowledged this incident "
+                f"first. No second alert was sent."
+            ),
+            "acknowledged_by": incident.acknowledged_by,
+            "incident": incident.public(),
+        }
+
     _notify_hooks(tenant, incident, "acknowledged", f"{actor} has the incident.")
     write_audit(
         tenant,

@@ -34,6 +34,12 @@ SENSOR_OFFLINE_AFTER_MINUTES = 30
 # How long a breach may sit unacknowledged before voice escalation is due.
 VOICE_ESCALATION_GRACE_MINUTES = 10
 
+# How long after a voice call an operator may deliberately place another,
+# because nobody picked up. Short enough to be useful; long enough that a
+# double-click, a retried request, or a dozen operators reacting to the
+# same alert at once all collapse into the one call that was meant.
+VOICE_REDIAL_COOLDOWN_MINUTES = 5.0
+
 
 def utc_now() -> datetime:
     """Current time as a timezone-aware UTC datetime."""
@@ -65,6 +71,19 @@ TEMPERATURE_UNITS = ("F", "C")
 # out here is a fault in the device rather than a fact about the world.
 ABSOLUTE_ZERO_F = -459.67
 IMPLAUSIBLE_ABOVE_F = 1000.0
+
+
+class SeatClaimRefused(Exception):
+    """A sensor could not be registered, with a reason worth showing.
+
+    Carries `reason` so the HTTP layer can distinguish a duplicate id from
+    an exhausted licence without matching on message text.
+    """
+
+    def __init__(self, detail: str, reason: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.reason = reason
 
 
 class ImplausibleReading(ValueError):
@@ -1952,6 +1971,64 @@ class HubStore:
 
     # ---- sensors -------------------------------------------------------
 
+    def claim_sensor_seat(
+        self,
+        sensor_id: str,
+        tenant_id: str,
+        industry_vertical: str,
+        location_name: str,
+        max_sensors: int,
+        external_device_sn: Optional[str] = None,
+    ) -> Sensor:
+        """Check the seat count and register, without letting go in between.
+
+        The route used to ask three questions — is this id taken, is this
+        serial taken, is there a seat left — and only then write. Each
+        question takes the lock and gives it back, so under concurrent
+        registration every caller can be told yes before any of them
+        writes.
+
+        The seat count is the one that actually breaks, because counting
+        seats walks every sensor the tenant owns: a long stretch of pure
+        Python, and therefore a long stretch of chances to be preempted.
+        Measured on a five-seat trial licence, twenty concurrent
+        registrations: nine were granted. Four sensors monitored, and
+        billed for, on a plan that does not include them.
+
+        The id and serial checks are folded in here for the same reason,
+        though those windows are narrow enough that 480 attempts never
+        caught one. A missed seat is revenue; a lost id would be one
+        company's freezer disappearing out of their console into another
+        company's account, so it does not get to depend on being narrow.
+
+        Raises SeatClaimRefused with a reason the caller can surface.
+        """
+        with self._lock:
+            if sensor_id in self._sensors:
+                raise SeatClaimRefused(
+                    f"Sensor '{sensor_id}' is already registered.", "id_taken"
+                )
+            if external_device_sn and external_device_sn in self._devices:
+                raise SeatClaimRefused(
+                    f"Device serial '{external_device_sn}' is already bound "
+                    "to a sensor.",
+                    "serial_taken",
+                )
+            used = sum(1 for s in self._sensors.values() if s.tenant_id == tenant_id)
+            if max_sensors > 0 and used >= max_sensors:
+                raise SeatClaimRefused(
+                    f"Seat limit reached: this plan allows {max_sensors} "
+                    "sensors. Upgrade to add more.",
+                    "no_seats",
+                )
+            return self.register_sensor(
+                sensor_id=sensor_id,
+                tenant_id=tenant_id,
+                industry_vertical=industry_vertical,
+                location_name=location_name,
+                external_device_sn=external_device_sn,
+            )
+
     def register_sensor(
         self,
         sensor_id: str,
@@ -2101,6 +2178,56 @@ class HubStore:
 
     # ---- incidents -----------------------------------------------------
 
+    def open_incident_once(
+        self,
+        *,
+        tenant_id: str,
+        sensor: "Sensor",
+        temperature_fahrenheit: float,
+        breach_details: str,
+        sms_text: str,
+        sms_dispatch_source: str,
+    ) -> "tuple[Incident, bool]":
+        """Open an incident for this sensor, unless one is already open.
+
+        Returns (incident, created). A False means somebody else opened it
+        while this caller was drafting the message, and this caller must
+        not send a second one.
+
+        The product's central promise is that one failure produces one
+        incident: one text, one phone call, one line in the log. That
+        promise was enforced by reading the open incident, finding none,
+        and then writing — two store calls with a gap between them wide
+        enough to draft an SMS in. A freezer that is genuinely failing is
+        exactly the situation that fills that gap, because the sensor
+        behind it reports every few seconds and a site full of sensors
+        reports at once.
+
+        Measured, twenty-four simultaneous breach pulses from one sensor:
+        between three and eight incidents opened, each with its own SMS
+        fan-out to the whole roster and its own escalation to the on-call
+        phone. The person on call is woken repeatedly, at night, for one
+        freezer — which is how a customer learns to ignore the alerts.
+
+        The lock is reentrant, so the read and the write happen inside one
+        acquisition and no other caller can land between them.
+        """
+        with self._lock:
+            existing = self.latest_open_incident(sensor.sensor_id)
+            if existing is not None:
+                return existing, False
+            return (
+                self.open_incident(
+                    tenant_id=tenant_id,
+                    sensor=sensor,
+                    temperature_fahrenheit=temperature_fahrenheit,
+                    breach_details=breach_details,
+                    sms_text=sms_text,
+                    sms_dispatch_source=sms_dispatch_source,
+                ),
+                True,
+            )
+
     def open_incident(
         self,
         tenant_id: str,
@@ -2168,7 +2295,12 @@ class HubStore:
                 self._save_incident(incident)
             return incident.ack_token
 
-    def claim_voice_escalation(self, incident: Incident) -> bool:
+    def claim_voice_escalation(
+        self,
+        incident: Incident,
+        redial_after_minutes: float = 0.0,
+        now: Optional[datetime] = None,
+    ) -> bool:
         """Take the right to place the call, atomically.
 
         The sweep reads `voice_escalated_at`, decides, and only later
@@ -2177,11 +2309,24 @@ class HubStore:
         — one incident, two 3am phone calls to the same person, from a
         single process. Claiming the stamp under the lock closes the
         window; the loser gets False and stands down.
+
+        `redial_after_minutes` is how an operator legitimately calls
+        again when nobody picked up. Zero means never call twice, which
+        is what the unattended sweep wants: automation should not decide
+        on its own to keep ringing someone. A positive value lets a
+        person re-dial once that many minutes have passed, and still
+        collapses a double-click — or twelve simultaneous clicks — into
+        exactly one call.
         """
         with self._lock:
-            if incident.voice_escalated_at is not None:
-                return False
-            incident.voice_escalated_at = utc_now()
+            stamped = incident.voice_escalated_at
+            if stamped is not None:
+                if redial_after_minutes <= 0:
+                    return False
+                waited = ((now or utc_now()) - stamped).total_seconds() / 60.0
+                if waited < redial_after_minutes:
+                    return False
+            incident.voice_escalated_at = now or utc_now()
             self._save_incident(incident)
             return True
 
@@ -2204,14 +2349,27 @@ class HubStore:
             incident.voice_fanout = fanout if fanout is not None else [delivery]
             return self._save_incident(incident)
 
-    def acknowledge_incident(self, incident: Incident, actor: str) -> Incident:
-        """Record the first acknowledgement; later ones are a no-op."""
+    def acknowledge_incident(
+        self, incident: Incident, actor: str
+    ) -> "tuple[Incident, bool]":
+        """Record the first acknowledgement; later ones are a no-op.
+
+        Returns (incident, claimed). The store has always kept the first
+        actor and quietly ignored the rest, which is right — but it did
+        not say so, and the caller could not tell. So every one of twelve
+        people who reacted to the same alert got a 200 reading
+        "Escalation ladder halted", a Slack message went out naming each
+        of them as the person who had it, and the audit trail — the one
+        that ends up in a claim packet — recorded twelve different first
+        responders for a single incident.
+        """
         with self._lock:
-            if incident.acknowledged_at is None:
-                incident.acknowledged_at = utc_now()
-                incident.acknowledged_by = actor
-                self._save_incident(incident)
-            return incident
+            if incident.acknowledged_at is not None:
+                return incident, False
+            incident.acknowledged_at = utc_now()
+            incident.acknowledged_by = actor
+            self._save_incident(incident)
+            return incident, True
 
     def resolve_incident(self, incident: Incident, actor: str) -> Incident:
         """Close an incident, acknowledging it first if nobody had."""
