@@ -12,61 +12,85 @@
  *   - Motion slow and eased, and absent entirely for anyone who asked.
  *   - Status is never colour alone; every badge carries a glyph.
  */
-/* Instrument Serif carries the headings and the readings; a serif number
-   is what a private bank puts on a statement and a SaaS dashboard never
-   does. Inter stays for body text at two weights only — four weights of
-   contrast is the look of a product that costs $49. */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap');
+/* Archivo carries the headings — engineered, tight, closer to a control
+   panel legend than to a magazine. Inter stays for body text at two
+   weights only; four weights of contrast is the look of a product that
+   costs $49. JetBrains Mono is for anything with a unit after it. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   color-scheme: dark;
-  /* Warm charcoal, not blue-black. Blue-black is the default of every
-     developer tool; warm dark is what luxury hospitality, private
-     banking and marque automotive all reach for. */
-  --bg:        #100E0C;
-  --surface:   #191512;
-  --surface-2: #141110;
-  --sunken:    #0A0908;
-  --raised:    #221D19;
-  --border:    rgba(245,241,234,0.07);
-  --border-lit:rgba(245,241,234,0.14);
-  --ink:       #F5F1EA;
-  --ink-2:     #BCB2A4;
-  /* Lifted from #837A6E: at that value small muted text landed at 4.30
-     against the raised surface, under the 4.5 WCAG AA floor. Every colour
-     in this file clears 4.5 on every surface it is used on — checked, not
-     assumed. */
-  --muted:     #8F867A;
-  /* One accent, champagne rather than cyan, and used sparingly. A
-     screen with colour in six places has no accent at all. */
-  --accent:    #D9B98A;
-  --accent-deep:#A8834C;
-  --accent-dim:rgba(217,185,138,0.14);
-  /* Module hues are desaturated into one family so nothing shouts. */
-  --telemetry: #9BAAB8;
-  --commerce:  #94A883;
-  --intel:     #A697A8;
-  --paperwork: #C6996B;
-  /* Status desaturated: a concierge telling you something is wrong,
-     not a smoke alarm. Still distinguishable without colour, because
-     every badge carries a glyph as well. */
-  --good:      #7E9A72;
-  --warning:   #C9A227;
-  --serious:   #C08552;
-  /* Also lifted (from #C0563F, 4.01) — an out-of-band reading in a table
-     is small text and is the single most important number on the page. */
-  --critical:  #D26851;
-  --grid:      rgba(245,241,234,0.06);
+  /* Board black. Not neutral grey and not warm charcoal — the blue-black
+     of a printed circuit under a bench lamp, which is where the house
+     motif comes from: routed traces carrying a cyan-to-violet wash. On a
+     monitoring product those traces are not ornament, they are the
+     signal paths, and the lights running along them are readings. */
+  --bg:        #05070D;
+  --surface:   #0A0F1A;
+  --surface-2: #070B14;
+  --sunken:    #03050A;
+  --raised:    #0F1626;
+  --border:    rgba(150,190,240,0.10);
+  --border-lit:rgba(150,190,240,0.22);
+  --ink:       #E8EEF9;
+  --ink-2:     #A7B6CE;
+  /* Every colour in this file clears WCAG AA 4.5:1 on every surface it
+     is used on — computed against the composited stack, not eyeballed. */
+  --muted:     #93A4BE;
+  /* The wash, in three stops. Cyan enters, violet leaves; blue is the
+     one that does the work and is what a single accented element gets. */
+  --accent:    #4FA8F0;
+  --accent-cyan:#22B8E6;
+  --accent-violet:#8B6BF0;
+  --accent-deep:#2F6BE8;
+  --accent-dim:rgba(79,168,240,0.14);
+  /* Module hues stay inside the wash so nothing shouts across it. */
+  --telemetry: #7FC5E8;
+  --commerce:  #7FC7B4;
+  --intel:     #A99BEE;
+  --paperwork: #7EA3D8;
+  /* Status is the one thing allowed out of the blue family, because a
+     breach must not read as more telemetry. Still distinguishable
+     without colour: every badge carries a glyph as well. */
+  --good:      #5DBE96;
+  --warning:   #E0B341;
+  --serious:   #F09055;
+  --critical:  #FF6B4A;
+  --grid:      rgba(150,190,240,0.07);
   --radius:    14px;
   /* Elevation instead of outlines. Bordered boxes read cheap; surfaces
      that float read considered. */
-  --lift-1: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.22);
-  --lift-2: 0 2px 4px rgba(0,0,0,.5), 0 24px 60px rgba(0,0,0,.4);
+  --lift-1: 0 1px 2px rgba(0,0,0,.55), 0 10px 30px rgba(0,0,0,.35);
+  --lift-2: 0 2px 4px rgba(0,0,0,.6), 0 24px 60px rgba(0,0,0,.5);
   --ease: cubic-bezier(.22,.61,.36,1);
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --display: "Archivo", "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
+
+/* The circuit canvas sits behind everything, fixed, and is never in the
+   way: no pointer events, and it is the only element allowed at a
+   negative z-index. */
+.circuit {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: -2; pointer-events: none; display: block;
+}
+/* ...and a veil over it, so text never has to compete with a trace
+   passing underneath. The page reads first; the board reads second. */
+.circuit-veil {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  /* Heaviest over the middle, where every column of running text sits,
+     and lifting toward the corners where the board is free to be seen.
+     Measured rather than judged: text over a lit trace was reaching
+     2.05:1 against a 4.5 floor, which no amount of "it looks fine"
+     makes readable. */
+  background:
+    radial-gradient(130% 100% at 50% 40%,
+      rgba(5,7,13,0.86) 0%, rgba(5,7,13,0.78) 36%,
+      rgba(5,7,13,0.44) 70%, rgba(5,7,13,0.12) 100%),
+    linear-gradient(to bottom, rgba(5,7,13,0.40), rgba(5,7,13,0.10) 26%, rgba(5,7,13,0.62));
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -93,14 +117,14 @@ a { color: var(--accent); }
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1100px 620px at 50% -20%, rgba(217,185,138,0.07), transparent 72%),
+    radial-gradient(1100px 620px at 50% -20%, rgba(79,168,240,0.07), transparent 72%),
     var(--bg);
 }
 /* One slow, barely perceptible drift. Movement this quiet is not
    decoration — it is the difference between a page and a room. */
 #gate::before {
   content: ""; position: fixed; inset: -20%;
-  background: radial-gradient(620px 420px at 30% 20%, rgba(168,131,76,0.10), transparent 65%);
+  background: radial-gradient(620px 420px at 30% 20%, rgba(47,107,232,0.10), transparent 65%);
   animation: drift 34s ease-in-out infinite alternate;
   pointer-events: none;
 }
@@ -116,9 +140,9 @@ a { color: var(--accent); }
   padding: 44px 40px 34px;
   border-radius: 18px;
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(34,29,25,0.92), rgba(20,17,16,0.96));
+  background: linear-gradient(180deg, rgba(15,22,38,0.92), rgba(7,11,20,0.96));
   backdrop-filter: blur(18px);
-  box-shadow: var(--lift-2), inset 0 1px 0 rgba(245,241,234,0.05);
+  box-shadow: var(--lift-2), inset 0 1px 0 rgba(232,238,249,0.05);
 }
 .brand { display: flex; align-items: center; gap: 12px; flex: none; }
 .brand-name { white-space: nowrap; }
@@ -137,7 +161,12 @@ a { color: var(--accent); }
   font-size: 22px; font-weight: 400; letter-spacing: .01em;
   text-transform: none;
 }
-.brand-name em { font-style: italic; color: var(--accent); }
+.brand-name em {
+  /* Not an italic: Archivo has no true italic cut and the browser would
+     synthesise a slant. The wordmark separates its two halves by weight
+     and by the wash instead. */
+  font-style: normal; font-weight: 500; color: var(--accent-cyan);
+}
 .tag {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
   text-transform: uppercase;
@@ -149,12 +178,12 @@ a { color: var(--accent); }
    pilot light. */
 .pulse {
   width: 7px; height: 7px; border-radius: 50%; flex: none;
-  background: var(--good); box-shadow: 0 0 0 0 rgba(126,154,114,.55);
+  background: var(--good); box-shadow: 0 0 0 0 rgba(93,190,150,.55);
   animation: ping 4.5s var(--ease) infinite;
 }
 @keyframes ping {
-  70% { box-shadow: 0 0 0 8px rgba(126,154,114,0); }
-  100% { box-shadow: 0 0 0 0 rgba(126,154,114,0); }
+  70% { box-shadow: 0 0 0 8px rgba(93,190,150,0); }
+  100% { box-shadow: 0 0 0 0 rgba(93,190,150,0); }
 }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 .status-line {
@@ -196,7 +225,7 @@ a { color: var(--accent); }
               color .25s var(--ease), transform .12s var(--ease);
 }
 .btn:hover:not(:disabled) {
-  border-color: var(--accent-deep); background: rgba(217,185,138,0.06);
+  border-color: var(--accent-deep); background: rgba(79,168,240,0.06);
   color: var(--ink);
 }
 .btn:active:not(:disabled) { transform: translateY(1px); }
@@ -204,11 +233,11 @@ a { color: var(--accent); }
 .btn-primary {
   width: 100%; padding: 13px 18px;
   border: 1px solid var(--accent-deep);
-  background: rgba(217,185,138,0.10); color: var(--accent);
+  background: rgba(79,168,240,0.10); color: var(--accent);
   box-shadow: none; letter-spacing: .02em;
 }
 .btn-primary:hover:not(:disabled) {
-  background: rgba(217,185,138,0.18); color: var(--ink);
+  background: rgba(79,168,240,0.18); color: var(--ink);
   border-color: var(--accent);
 }
 .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
@@ -231,7 +260,7 @@ a { color: var(--accent); }
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   row-gap: 8px;
   padding: 14px 30px;
-  background: rgba(16,14,12,0.86);
+  background: rgba(5,7,13,0.86);
   backdrop-filter: blur(16px) saturate(120%);
   border-bottom: 1px solid var(--border);
 }
@@ -239,8 +268,8 @@ a { color: var(--accent); }
    craftsmanship; used everywhere it reads as a theme. */
 .nav::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(217,185,138,0.32) 22%,
-              rgba(217,185,138,0.32) 78%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(79,168,240,0.32) 22%,
+              rgba(79,168,240,0.32) 78%, transparent);
 }
 .nav-spacer { flex: 1; }
 .chip {
@@ -368,8 +397,8 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 /* A breach is stated by a hairline and a wash, not a red box. The badge
    carries the word and the glyph; the card only has to draw the eye. */
 .sensor.is-breaching {
-  border-color: rgba(210,104,81,0.45);
-  background: linear-gradient(180deg, rgba(210,104,81,0.09), var(--surface-2) 60%);
+  border-color: rgba(255,107,74,0.45);
+  background: linear-gradient(180deg, rgba(255,107,74,0.09), var(--surface-2) 60%);
 }
 .sensor-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
 .sensor-id {
@@ -416,7 +445,7 @@ th {
   padding-bottom: 9px;
 }
 tbody tr { transition: background .2s var(--ease); }
-tbody tr:hover { background: rgba(245,241,234,0.02); }
+tbody tr:hover { background: rgba(232,238,249,0.02); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- incidents ---------- */
@@ -472,8 +501,8 @@ pre.snippet {
 }
 /* A notice, not a klaxon: a hairline and quiet type. */
 .banner.warn {
-  border-color: rgba(201,162,39,0.28); background: rgba(201,162,39,0.05);
-  color: #CBB379; padding: 13px 18px;
+  border-color: rgba(224,179,65,0.28); background: rgba(224,179,65,0.05);
+  color: #8FC4F5; padding: 13px 18px;
 }
 
 /* ---------- toast ---------- */
@@ -488,7 +517,7 @@ pre.snippet {
 }
 /* Room for the drawer, so it never covers the last card. */
 body.has-terminal main { padding-bottom: 148px; }
-#terminal { border-top: 1px solid rgba(217,185,138,0.18); }
+#terminal { border-top: 1px solid rgba(79,168,240,0.18); }
 .term-head {
   display: flex; align-items: center; justify-content: space-between;
   color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
@@ -546,9 +575,9 @@ body.has-terminal main { padding-bottom: 148px; }
   border: 1px solid var(--border); color: var(--muted);
   background: var(--sunken);
 }
-.pill.warn { color: var(--warning); border-color: rgba(201,162,39,0.4); }
-.pill.bad  { color: var(--critical); border-color: rgba(210,104,81,0.45); }
-.pill.site { color: var(--accent); border-color: rgba(217,185,138,0.34); }
+.pill.warn { color: var(--warning); border-color: rgba(224,179,65,0.4); }
+.pill.bad  { color: var(--critical); border-color: rgba(255,107,74,0.45); }
+.pill.site { color: var(--accent); border-color: rgba(79,168,240,0.34); }
 .meter { width: 30px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .meter > i { display: block; height: 100%; background: currentColor; }
 .sensor-id.clickable { cursor: pointer; text-decoration: underline dotted var(--muted); }
@@ -614,12 +643,12 @@ body.wall #wall-exit { display: inline-flex; }
    right answer: a slow breathe that catches peripheral vision without
    turning the room into an alarm. */
 body.wall .sensor.is-breaching {
-  border-color: rgba(210,104,81,0.6); background: rgba(210,104,81,0.14);
+  border-color: rgba(255,107,74,0.6); background: rgba(255,107,74,0.14);
   animation: breathe 3.4s ease-in-out infinite;
 }
 @keyframes breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(210,104,81,0); }
-  50%      { box-shadow: 0 0 0 6px rgba(210,104,81,0.13); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,74,0); }
+  50%      { box-shadow: 0 0 0 6px rgba(255,107,74,0.13); }
 }
 body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
 
@@ -673,7 +702,7 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   display: flex; align-items: center; gap: 9px;
   font-size: 12.5px; margin-bottom: 6px;
 }
-.pill.good { color: var(--good); border-color: rgba(126,154,114,0.4); }
+.pill.good { color: var(--good); border-color: rgba(93,190,150,0.4); }
 .stand-scale {
   display: flex; justify-content: space-between; gap: 8px;
   font-family: var(--mono); font-size: 10px; color: var(--muted);
@@ -735,7 +764,7 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-kicker, .doc-section { color: #555; border-color: #ccc; }
   .doc-issuer { color: #555; }
   .doc-issuer-name { color: #111; }
-  .doc-issuer-warn { color: #8a6d1f; }
+  .doc-issuer-warn { color: #1F4E8A; }
   .doc-letter { color: #111; border-left-color: #999; }
   .readout, .digest { border-color: #ccc; background: #fff; }
   .readout div { border-color: #eee; }
@@ -832,7 +861,7 @@ tr[tabindex]:focus-visible {
 
 /* Warm, quiet, and legible — the browser default blue against this ground
    looks like a rendering bug. */
-::selection { background: rgba(217,185,138,0.26); color: var(--ink); }
+::selection { background: rgba(79,168,240,0.26); color: var(--ink); }
 
 ::placeholder { color: var(--muted); opacity: 1; }
 
@@ -878,9 +907,9 @@ tr[tabindex]:focus-visible {
 /* The connection banner: shown when a poll fails, so a stale screen never
    passes for a live one. Silence is the dangerous failure here. */
 .banner.stale {
-  border-color: rgba(210,104,81,0.35);
-  background: rgba(210,104,81,0.06);
-  color: #E2937E;
+  border-color: rgba(255,107,74,0.35);
+  background: rgba(255,107,74,0.06);
+  color: #FF9B85;
 }
 
 /* One place, one rule: anybody who asked for less movement gets none of

@@ -120,13 +120,36 @@ def test_the_landing_page_quotes_no_prices_of_its_own(api):
 
 def test_every_surface_shares_one_stylesheet(api):
     """Three pages that must look like one product cannot each keep a copy."""
+    import re
+
     theme = api.get("/static/theme.css")
     assert theme.status_code == 200
-    assert "--accent:    #D9B98A" in theme.text
+    assert "--accent:    #4FA8F0" in theme.text
 
     for path in ("/", "/console", "/partners"):
-        assert '/static/theme.css' in api.get(path).text
+        page = api.get(path).text
+        assert "/static/theme.css" in page
 
-    # And no page carries its own palette.
+        # No page carries a colour of its own. Checked as a class rather
+        # than by naming one hex, so the next palette change cannot leave
+        # a stale literal behind on one surface — the favicon's data-URI
+        # is the one exemption, since it must be self-contained.
+        body = re.sub(r'<link rel="icon"[^>]*>', "", page)
+        strays = set(re.findall(r"#[0-9A-Fa-f]{6}\b", body))
+        assert not strays, f"{path} defines its own colours: {sorted(strays)}"
+
+
+def test_every_surface_carries_the_same_background(api):
+    """The board is the house motif; a page without it is a stranger."""
     for path in ("/", "/console", "/partners"):
-        assert "#D9B98A" not in api.get(path).text
+        page = api.get(path).text
+        assert '/static/circuit.js' in page, f"{path} has no board behind it"
+        assert 'id="circuit"' in page, f"{path} loads the board but never draws it"
+        assert 'aria-hidden="true"' in page
+
+    served = api.get("/static/circuit.js")
+    assert served.status_code == 200
+    # It must not be able to swallow a click, and it must stop moving for
+    # anyone who asked for less motion.
+    assert "pointer-events: none" in api.get("/static/theme.css").text
+    assert "prefers-reduced-motion" in served.text

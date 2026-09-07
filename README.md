@@ -38,6 +38,24 @@ ask for.
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
 
+### The look
+
+Board black (`#05070D`) under routed circuit traces carrying a cyan → blue
+→ violet wash, drawn on a canvas by `static/circuit.js`. The traces are not
+borrowed ornament: on a telemetry product they are the signal paths, and
+the lights running along them are readings arriving from the estate. About
+one in eight runs hot, in the alarm colour.
+
+It is one file, shared by all three surfaces, `position: fixed` at
+`z-index: -2` with no pointer events, and it paints a single still frame
+and stops for anyone who has asked for reduced motion. A veil over it is
+weighted to the middle of the page, where every column of running text
+sits, and lifts toward the corners where the board is free to be seen —
+that balance was measured, not judged: body copy over a lit trace was
+reaching 2.05:1 against a 4.5 floor.
+
+The slogan is *A freezer fails at two. Nobody finds out until seven.*
+
 The landing page is at `/`, the console at `/console`, the reseller portal
 at `/partners`, the machine-readable gateway at `/api`, and interactive API
 docs at `/docs`.

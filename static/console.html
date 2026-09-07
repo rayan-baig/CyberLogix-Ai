@@ -6,8 +6,12 @@
 <title>CyberLogix AI — Operations Console</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%233987e5'/%3E%3Cpath d='M12 5v8M9 8h6' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='17' r='3.2' fill='none' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/theme.css">
+<script src="/static/circuit.js" defer></script>
 </head>
 <body>
+
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
 
 <!-- ============================ GATE ============================ -->
 <div id="gate">
@@ -1053,11 +1057,19 @@ function healthPills(s) {
 function sensorCard(s) {
   {
     const risk = s.risk_level || "unknown";
-    const label = s.risk_level
-      ? (s.hours_until_breach !== null && s.hours_until_breach > 0
-          ? `${risk} · ${s.hours_until_breach}h`
-          : risk)
-      : "no forecast";
+    // "unknown" is the forecaster saying it has not got enough history to
+    // fit a trend yet — a freshly installed sensor, or one that has just
+    // come back. Printed as the word UNKNOWN next to a green ONLINE it
+    // reads as "something is wrong with this asset", which is the first
+    // thing a new customer sees across a whole healthy fleet on their
+    // first morning. Say what is actually true instead.
+    const label = !s.risk_level
+      ? "no forecast"
+      : risk === "unknown"
+        ? "trend pending"
+        : (s.hours_until_breach !== null && s.hours_until_breach > 0
+            ? `${risk} · ${s.hours_until_breach}h`
+            : risk);
     const unit = s.temperature_unit || state.unit;
     const reading = s.last_temperature_display;
     const temp = (reading === null || reading === undefined)
@@ -1130,7 +1142,7 @@ function sparkline(sensor) {
 
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
                role="img" aria-label="Recent temperature trend for ${esc(sensor.sensor_id)}">
-    <polyline points="${points}" fill="none" stroke="#6E6254" stroke-width="1.6"
+    <polyline points="${points}" fill="none" stroke="var(--muted)" stroke-width="1.6"
               stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="4"
             fill="${endColor}" stroke="var(--surface-2)" stroke-width="2"/>
@@ -1388,7 +1400,7 @@ function renderCosts(report) {
     if (!(spent + saved)) return "";
     const pct = Math.round((saved / (spent + saved)) * 100);
     return `<div style="margin:10px 0 4px">
-      <div style="height:8px;border-radius:999px;background:#1d2740;overflow:hidden;display:flex">
+      <div style="height:8px;border-radius:999px;background:var(--raised);overflow:hidden;display:flex">
         <div style="width:${pct}%;background:var(--good)"></div>
         <div style="width:${100 - pct}%;background:var(--accent);margin-left:2px"></div>
       </div>
