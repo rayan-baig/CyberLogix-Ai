@@ -1,55 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
      aria-label="CyberLogix AI">
   <!--
-    The branches that leave the head in the Cybersalus mark, on their own
-    and stood upright.
+    The branches that leave the head in the Cybersalus mark, stood
+    upright and laid out rather than scattered.
 
-    The thing that makes those lines read as circuitry and not as a plant
-    is that they are mostly *square*: a long horizontal or vertical run,
-    with 45° used only to turn a corner. Drawn as diagonals throughout —
-    which was the first attempt — the same idea comes out as a sapling.
+    Every branch does the same thing: leaves the rail, takes one corner
+    at 45°, and then runs *vertical* — parallel to the rail and to every
+    other branch — to its pad. Nothing runs flat, nothing wanders, and
+    the pairs are symmetric about the centre.
 
-    So every branch here leaves the rail at 45° and then runs flat to its
-    pad, and the pads sit far out at the edges rather than bunched near
-    the top. Purple at the root, blue at the tips: the wash climbs with
-    the branches instead of running flat across the box.
+    The earlier version gave each limb a different length and a different
+    exit height on purpose, on the theory that a real board is routed
+    around whatever is already there. On a 32px mark that theory just
+    produces mess. Order is the thing that reads at this size.
 
-    No two limbs the same length, and no two leaving at the same height.
-    A board is routed around whatever is already there, so symmetry is
-    the one thing that would make this look drawn rather than laid out.
+    The tips step down from the centre — 5.5, then 9, then 13 — so the
+    silhouette is a clean descent instead of a hedge.
   -->
   <defs>
-    <linearGradient id="clx-wash" x1="9" y1="30" x2="25" y2="3"
+    <linearGradient id="clx-wash" x1="16" y1="30" x2="16" y2="4"
                     gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#7C3FE4"/>
-      <stop offset="0.45" stop-color="#5A4DE8"/>
+      <stop offset="0.5" stop-color="#5A4DE8"/>
       <stop offset="1" stop-color="#2F8BE8"/>
     </linearGradient>
   </defs>
 
   <g fill="none" stroke="url(#clx-wash)" stroke-linecap="round"
      stroke-linejoin="round">
-    <path d="M15 30.5 V5" stroke-width="2.9"/>
-    <path d="M15 24.5 L11 20.5 H3.8" stroke-width="2.2"/>
-    <path d="M15 18 L20 13 H28.6" stroke-width="2.2"/>
-    <path d="M15 11.5 L11.5 8 H6.4" stroke-width="2.2"/>
+    <path d="M16 30.5 V5.5" stroke-width="2.9"/>
+    <path d="M16 20 L11 15 V9" stroke-width="2.2"/>
+    <path d="M16 20 L21 15 V9" stroke-width="2.2"/>
+    <path d="M16 26 L5 15 V13" stroke-width="2.2"/>
+    <path d="M16 26 L27 15 V13" stroke-width="2.2"/>
   </g>
 
-  <!--
-    A pad at every terminus, and a via where each branch leaves the rail.
-    Filled white with the wash as their outline: that is what a plated
-    pad actually looks like, and it keeps the mark legible on paper,
-    where a solid white dot would simply vanish.
-  -->
+  <!-- a plated pad at every tip, and a via where each pair leaves the rail -->
   <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.6">
-    <circle cx="15" cy="5" r="3.1"/>
-    <circle cx="3.8" cy="20.5" r="2.5"/>
-    <circle cx="28.6" cy="13" r="2.5"/>
-    <circle cx="6.4" cy="8" r="2.5"/>
+    <circle cx="16" cy="5.5" r="3.1"/>
+    <circle cx="11" cy="9" r="2.4"/>
+    <circle cx="21" cy="9" r="2.4"/>
+    <circle cx="5" cy="13" r="2.4"/>
+    <circle cx="27" cy="13" r="2.4"/>
   </g>
   <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.15">
-    <circle cx="15" cy="24.5" r="1.55"/>
-    <circle cx="15" cy="18" r="1.55"/>
-    <circle cx="15" cy="11.5" r="1.55"/>
+    <circle cx="16" cy="20" r="1.5"/>
+    <circle cx="16" cy="26" r="1.5"/>
   </g>
 </svg>

@@ -1,27 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
      aria-label="CyberLogix AI">
   <!--
-    The favicon cut. Two branches instead of three, no vias, heavier
-    strokes: at 16px a 1.25px via is one grey pixel and a third limb in
-    that space stops being a branch and becomes texture.
+    The favicon cut: the inner pair only, no vias, heavier strokes. Four
+    branches inside 16 pixels stop being branches and become texture.
   -->
   <defs>
-    <linearGradient id="clx-mark" x1="9" y1="29" x2="24" y2="4"
+    <linearGradient id="clx-mark" x1="16" y1="29" x2="16" y2="5"
                     gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#7C3FE4"/>
-      <stop offset="0.45" stop-color="#5A4DE8"/>
+      <stop offset="0.5" stop-color="#5A4DE8"/>
       <stop offset="1" stop-color="#2F8BE8"/>
     </linearGradient>
   </defs>
   <g fill="none" stroke="url(#clx-mark)" stroke-linecap="round"
      stroke-linejoin="round">
-    <path d="M15.5 29.5 V6" stroke-width="3.6"/>
-    <path d="M15.5 23 L11 18.5 H4.6" stroke-width="3"/>
-    <path d="M15.5 15 L20.5 10 H27.4" stroke-width="3"/>
+    <path d="M16 29.5 V6" stroke-width="3.6"/>
+    <path d="M16 22 L9 15 V11" stroke-width="3"/>
+    <path d="M16 22 L23 15 V11" stroke-width="3"/>
   </g>
   <g fill="#FFFFFF" stroke="url(#clx-mark)" stroke-width="2">
-    <circle cx="15.5" cy="6" r="3.6"/>
-    <circle cx="4.6" cy="18.5" r="3.1"/>
-    <circle cx="27.4" cy="10" r="3.1"/>
+    <circle cx="16" cy="6" r="3.6"/>
+    <circle cx="9" cy="11" r="3"/>
+    <circle cx="23" cy="11" r="3"/>
   </g>
 </svg>
