@@ -40,9 +40,24 @@ def _reject_inactive(tenant: Tenant) -> Tenant:
 
 
 def _bearer(authorization: Optional[str]) -> Optional[str]:
-    if not authorization or not authorization.lower().startswith("bearer "):
+    """The token out of an Authorization header, or None.
+
+    `split(None, 1)` collapses runs of whitespace, so a header that is
+    exactly "Bearer " passes the startswith check and then indexes past
+    the end of a one-element list. That is an IndexError on the
+    authentication path — an unauthenticated 500 available to anyone on
+    every protected endpoint in the application, from six characters and
+    a space.
+
+    Returns None for anything that is not a bearer scheme followed by a
+    non-empty token, so a malformed header is refused rather than raising.
+    """
+    if not authorization:
         return None
-    return authorization.split(None, 1)[1].strip()
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
 
 
 def optional_operator(

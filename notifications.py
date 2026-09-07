@@ -13,6 +13,7 @@ incidents open and escalate, and every delivery is marked `not_configured`.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -69,6 +70,38 @@ def delivery_ready() -> bool:
     return _configured()
 
 
+def never_raises(channel: str):
+    """Guarantee a delivery record comes back, whatever went wrong.
+
+    Both send functions are documented as never raising, and both only
+    wrapped the provider call. Everything before it — the spend check, the
+    client precheck, the usage write — sat outside the guard. Any
+    exception there escapes into the breach handler, which by then has
+    already opened the incident and recorded it, so the sensor gateway
+    gets a 500 and retries into a handler that will fail the same way.
+
+    The alert is the product. A promise that delivery cannot take down
+    the breach path has to hold for the whole function, not for the line
+    somebody remembered to wrap.
+    """
+    def wrap(fn):
+        @functools.wraps(fn)
+        def guarded(to, *args, **kwargs):
+            try:
+                return fn(to, *args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - the contract is total
+                logger.exception(
+                    "%s delivery to %s raised unexpectedly (%s).", channel, to, exc
+                )
+                return _undelivered(
+                    channel, to, "delivery_error",
+                    f"Delivery failed unexpectedly: {exc}. The incident is "
+                    "recorded; nobody was reached on this channel.",
+                )
+        return guarded
+    return wrap
+
+
 def _undelivered(channel: str, to: str, status: str, detail: str) -> Dict[str, Any]:
     return {
         "channel": channel,
@@ -121,6 +154,7 @@ def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+@never_raises("sms")
 def send_sms(
     to: str, body: str, tenant_id: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -229,6 +263,7 @@ def verify_twilio_signature(url: str, form: Dict[str, Any], signature: str) -> b
         return False
 
 
+@never_raises("voice")
 def place_voice_call(
     to: str,
     spoken_text: str,

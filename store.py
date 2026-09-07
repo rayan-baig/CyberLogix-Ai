@@ -1677,7 +1677,16 @@ class HubStore:
                     self._devices[sensor.external_device_sn] = sensor.sensor_id
 
             readings = [Reading.from_row(row) for row in self._db.all("reading")]
-            readings.sort(key=lambda r: r.recorded_at)
+            # Ordered by time, then by id. The id tiebreak is not
+            # cosmetic: timestamps are stored to the second, so two
+            # readings from the same second are tied, and a tie resolved
+            # by whatever order the rows came back in would put them in a
+            # different sequence after a restart. The vault chains
+            # readings in order, so that reordering silently changes the
+            # chain head — the attestation stops reproducing and the
+            # customer is told their record was tampered with when nothing
+            # touched it. Reading ids are monotonic, so they settle it.
+            readings.sort(key=lambda r: (r.recorded_at, r.reading_id))
             for reading in readings:
                 bucket = self._readings.get(reading.sensor_id)
                 if bucket is not None:

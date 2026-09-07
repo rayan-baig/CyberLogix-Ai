@@ -312,18 +312,36 @@ def dispatch_event(
     the SMS and the phone call are the alert, and a Slack outage must not
     stop either of them.
     """
-    hooks = STORE.webhooks_for_site(
-        tenant.tenant_id, sensor.site_id if sensor else None
-    )
+    try:
+        hooks = STORE.webhooks_for_site(
+            tenant.tenant_id, sensor.site_id if sensor else None
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Could not read the webhook list (%s).", exc)
+        return []
     if not hooks:
         return []
 
-    event = build_event(tenant, incident, sensor, state, note)
+    try:
+        event = build_event(tenant, incident, sensor, state, note)
+    except Exception as exc:  # noqa: BLE001 - a courtesy copy, never the alert
+        logger.exception("Could not describe the event for webhooks (%s).", exc)
+        return []
+
     results = []
     for hook in hooks:
-        url, body = build_payload(hook, event)
-        delivered, http_status = _post(url, body)
-        STORE.record_webhook_attempt(hook, delivered, http_status)
+        # Per hook, so one broken configuration cannot stop the others —
+        # and so none of them can stop the breach handler, which has
+        # already opened the incident by the time this runs.
+        try:
+            url, body = build_payload(hook, event)
+            delivered, http_status = _post(url, body)
+            STORE.record_webhook_attempt(hook, delivered, http_status)
+        except Exception as exc:  # noqa: BLE001 - the alert is the SMS and the call
+            logger.exception(
+                "Webhook %s failed unexpectedly (%s).", hook.webhook_id, exc
+            )
+            delivered, http_status = False, "dispatch_error"
         results.append(
             {
                 "webhook_id": hook.webhook_id,

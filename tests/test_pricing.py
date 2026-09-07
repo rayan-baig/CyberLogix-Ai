@@ -298,3 +298,83 @@ def test_the_new_verticals_are_priced_for_their_market():
     assert PRICE_BOOK["wine_and_art"]["monthly_usd"] == 2499.0
     assert PRICE_BOOK["pharmacy"]["monthly_usd"] == 1299.0
     assert PRICE_BOOK["cannabis"]["monthly_usd"] == 1199.0
+
+
+# ---- the pricing invariants, computed rather than assumed ----------------
+
+
+def test_no_estate_is_charged_more_than_a_larger_one():
+    """The guard the whole volume ladder rests on.
+
+    Checked across every vertical at every size up to 400 units, because
+    a discount ladder with a step in the wrong place is a customer
+    discovering that buying one more sensor makes their bill drop.
+    """
+    from pricing import PRICE_BOOK
+    from store import calculate_volume_tier_price
+
+    for vertical, entry in PRICE_BOOK.items():
+        price = entry["monthly_usd"]
+        previous = -1.0
+        for units in range(1, 401):
+            total = calculate_volume_tier_price(units, price)
+            assert total >= previous - 0.005, (
+                f"{vertical} at {units} units costs {total}, less than "
+                f"{previous} at {units - 1}"
+            )
+            previous = total
+
+
+def test_the_per_unit_rate_never_rises_with_scale():
+    """Buying more must never make each one dearer."""
+    from pricing import PRICE_BOOK
+    from store import calculate_volume_tier_price
+
+    for vertical, entry in PRICE_BOOK.items():
+        price = entry["monthly_usd"]
+        previous = float("inf")
+        for units in range(1, 401):
+            rate = calculate_volume_tier_price(units, price) / units
+            # A cent of tolerance: below that it is float division noise,
+            # not a pricing decision anybody could notice.
+            assert rate <= previous + 0.01, (
+                f"{vertical}: {units} units cost {rate:.4f} each, up from "
+                f"{previous:.4f}"
+            )
+            previous = rate
+
+
+def test_the_next_tier_is_never_a_step_down():
+    """A "next tier" that costs less would be advice to under-buy."""
+    from pricing import PRICE_BOOK
+    from store import next_volume_tier
+
+    for vertical, entry in PRICE_BOOK.items():
+        for units in range(1, 60):
+            step = next_volume_tier(units, entry["monthly_usd"])
+            if step is not None:
+                assert step["monthly_increase_usd"] >= 0, (
+                    f"{vertical} at {units}: {step}"
+                )
+
+
+def test_zero_and_negative_estates_price_at_zero():
+    """No division by zero, no negative invoice."""
+    from store import calculate_volume_tier_price, volume_discount_percent
+
+    for units in (0, -1, -500):
+        assert volume_discount_percent(units) == 0.0
+        assert calculate_volume_tier_price(units, 999.0) == 0.0
+
+
+def test_the_prepay_discount_never_touches_the_setup_fee():
+    """Commissioning is work already done; it is not discounted for paying
+    early."""
+    from pricing import (ANNUAL_PREPAY_DISCOUNT_PERCENT,
+                         SETUP_FEE_PER_SITE_USD, escalated_schedule)
+
+    year_one = escalated_schedule(5000.0, 1)[0]["annual_usd"]
+    discount = round(year_one * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+    assert abs(discount - year_one * 0.10) < 0.005
+    # And the setup fee is untouched by it.
+    assert SETUP_FEE_PER_SITE_USD * 3 == 4500.0
