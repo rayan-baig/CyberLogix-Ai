@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
-from auth import require_entitlement, require_tenant
+from auth import require_entitlement, require_role_or_machine, require_tenant
 
 # Re-exported: several routers import these from here rather than reaching
 # past this module into auth, so the dependency reads in one direction.
@@ -121,7 +121,11 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
 
 
 @router.post("/me/plan")
-def change_plan(payload: PlanChange, tenant: Tenant = Depends(require_tenant)):
+def change_plan(
+    payload: PlanChange,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("owner")),
+):
     """Move a tenant between tiers, refusing a downgrade that strands seats."""
     plan = _validate_plan(payload.plan)
     seats_used = STORE.seat_count(tenant.tenant_id)
@@ -143,7 +147,9 @@ def change_plan(payload: PlanChange, tenant: Tenant = Depends(require_tenant)):
 
 @router.post("/me/temperature-unit")
 def set_temperature_unit(
-    payload: UnitPreference, tenant: Tenant = Depends(require_tenant)
+    payload: UnitPreference,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
 ):
     """Choose Fahrenheit or Celsius for everything this tenant is shown.
 
@@ -171,7 +177,9 @@ def set_temperature_unit(
 
 @router.post("/me/sensors", status_code=status.HTTP_201_CREATED)
 def register_sensor(
-    payload: SensorRegister, tenant: Tenant = Depends(require_tenant)
+    payload: SensorRegister,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
 ):
     """Claim a license seat for a physical sensor node."""
     vertical = resolve_vertical(payload.industry_vertical)
@@ -246,6 +254,7 @@ def set_thresholds(
     sensor_id: str,
     payload: ThresholdOverride,
     tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
 ):
     """Tune one sensor's limits away from its industry defaults.
 
@@ -284,7 +293,11 @@ def set_thresholds(
 
 
 @router.delete("/me/sensors/{sensor_id}")
-def decommission_sensor(sensor_id: str, tenant: Tenant = Depends(require_tenant)):
+def decommission_sensor(
+    sensor_id: str,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
+):
     """Release a seat by decommissioning a sensor."""
     sensor = STORE.get_sensor(sensor_id)
     if sensor is None or sensor.tenant_id != tenant.tenant_id:
@@ -309,7 +322,10 @@ def decommission_sensor(sensor_id: str, tenant: Tenant = Depends(require_tenant)
 
 
 @router.post("/me/suspend")
-def suspend_license(tenant: Tenant = Depends(require_tenant)):
+def suspend_license(
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("owner")),
+):
     """Voluntarily suspend a license; telemetry is refused while suspended."""
     STORE.set_suspended(tenant, True)
     return {

@@ -119,6 +119,7 @@
 
   <main>
     <div id="stale-banner" class="banner stale" role="status" hidden></div>
+    <div id="role-banner" class="banner warn" hidden></div>
     <div id="delivery-banner" class="banner warn" hidden></div>
 
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
@@ -823,6 +824,22 @@ function render(d, health) {
   $("chip-user").textContent = state.user
     ? `${state.user.full_name} · ${state.user.role}`
     : "—";
+
+  // Say up front what this account can do. The console shows every
+  // control to everybody and lets the server refuse, which is the right
+  // place for the decision but the wrong place to learn about it — a
+  // viewer should not find out that they cannot acknowledge an alert by
+  // pressing the button during one.
+  const roleBanner = $("role-banner");
+  if (state.user && state.user.role === "viewer") {
+    roleBanner.textContent =
+      "Signed in as a viewer. You can see everything here and change " +
+      "nothing — registering sensors, changing alarm limits and the " +
+      "licence all need an operator or owner.";
+    roleBanner.hidden = false;
+  } else {
+    roleBanner.hidden = true;
+  }
   $("chip-company").textContent = t.company_name;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;

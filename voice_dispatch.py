@@ -24,6 +24,7 @@ from auth import (
     require_entitlement,
     require_tenant,
     write_audit,
+    require_role_or_machine,
 )
 from notifications import (
     acknowledgement_url,
@@ -310,6 +311,8 @@ def escalate_to_voice(
     force: bool = False,
     tenant: Tenant = Depends(require_entitlement("voice_escalation")),
     operator: Optional[User] = Depends(optional_operator),
+    # Dialling somebody is an action, not a view.
+    _: object = Depends(require_role_or_machine("operator")),
 ):
     """Draft and dispatch the voice call for one unacknowledged incident.
 

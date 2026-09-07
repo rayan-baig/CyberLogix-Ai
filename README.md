@@ -352,7 +352,24 @@ wording so the endpoint cannot be used to enumerate accounts.
 People sign in as themselves. Roles are `owner` > `operator` > `viewer`; each
 implies the ones below it. Only owners invite users, change roles or disable
 accounts, and an owner can neither demote nor disable themselves, so a tenant
-is never left without one. Disabling someone revokes their live sessions
+is never left without one.
+
+A **viewer** changes nothing. An **operator** runs the estate — registering
+and decommissioning sensors, setting alarm thresholds, managing sites,
+contacts and alert channels, escalating an incident to a phone call. An
+**owner** additionally owns the money and the licence: the plan, invoices,
+enterprise billing, inviting people, and suspending the service.
+
+Acknowledging and resolving an incident are deliberately open to any
+signed-in person, viewer included. Making it harder to say "I have this"
+during an emergency is its own hazard.
+
+`tests/test_authorization_matrix.py` enforces this structurally: every
+state-changing route must carry a role dependency or be named in an
+exemption list with the reason, so a new route cannot quietly arrive
+without one. A tenant API key is a machine credential with no human
+identity, so it passes role checks — a provisioning script registering
+fifty sensors is why it exists. Disabling someone revokes their live sessions
 immediately rather than waiting for expiry. Passwords are scrypt hashes with
 per-user salts and never leave the server.
 

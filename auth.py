@@ -127,6 +127,52 @@ def require_tenant(
     return _reject_inactive(tenant)
 
 
+def require_role_or_machine(required: str):
+    """Assert the caller is a machine, or a person senior enough.
+
+    The licence router was the one place with no role check at all. Every
+    other router that changes something asks `require_role`; this one
+    asked only `require_tenant`, which is satisfied by any signed-in
+    person whatever their role. So a viewer — the read-only role, the
+    night manager who is meant to look at the fleet and nothing else —
+    could suspend the company's licence, downgrade the plan out of voice
+    escalation, decommission a freezer, and, worst of the set, raise a
+    vaccine fridge's alarm threshold to 200°F. That last one leaves the
+    sensor reporting and the console green while the alarm can never
+    fire again: the silence-that-looks-like-safety failure, reachable by
+    the least privileged account in the system.
+
+    Roles are checked only when a person is calling. A tenant API key is
+    documented as a machine credential — sensors, provisioning scripts,
+    the scheduler — and carries no human identity to have a role, so it
+    passes through to `require_tenant`, which has already validated it.
+    """
+
+    def _dependency(
+        authorization: Optional[str] = Header(None),
+        user: Optional[User] = Depends(optional_operator),
+    ) -> Optional[User]:
+        if _bearer(authorization) is None:
+            return None  # a machine; require_tenant is the whole check
+        if user is None:
+            # A bearer token was sent and did not resolve to a live user.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session token is invalid or expired. Sign in again.",
+            )
+        if not user.can(required):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"This action needs the '{required}' role; "
+                    f"{user.email} is a '{user.role}'."
+                ),
+            )
+        return user
+
+    return _dependency
+
+
 def require_entitlement(feature: str):
     """Build a dependency asserting the tenant's plan includes `feature`."""
 

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from gemini import safe_generate
+from auth import require_role_or_machine
 from licenses import require_tenant
 from store import (
     INDUSTRY_PROFILES,
@@ -388,6 +389,9 @@ def autopilot_sweep(
         True, description="Place voice calls for incidents past the grace window."
     ),
     tenant: Tenant = Depends(require_tenant),
+    # Placing calls is an action, not a view. A read-only account
+    # triggering a fleet-wide sweep rings real phones.
+    _: object = Depends(require_role_or_machine("operator")),
 ):
     """Run one sweep now, on demand.
 
