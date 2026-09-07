@@ -150,3 +150,30 @@ def test_every_page_names_itself_for_a_screen_reader(api):
             f"{path} names itself {headings[0]!r}, which does not say which "
             "surface this is"
         )
+
+
+def test_the_console_does_not_throw_away_an_issued_credential(api):
+    """A key shown once, into a handler that ignores the response, is gone.
+
+    Registering a sensor issues an ingest key that is never echoed again.
+    The console's handler awaited the call and discarded what came back,
+    which made the whole credential unreachable from the UI — rotation
+    would have been the only way to ever see one.
+    """
+    page = api.get("/console").text
+
+    assert "showIssuedKey" in page, "nothing surfaces an issued key"
+    assert "made.ingest_key" in page, (
+        "the registration response is discarded again, so the key is issued "
+        "and immediately lost"
+    )
+    assert 'id="issued-key"' in page
+
+    # A toast fades. Something you cannot get back needs a container that
+    # stays until it is dismissed.
+    assert 'id="issued-done"' in page and 'id="issued-copy"' in page
+    assert "rotate-key" in page, "no way to re-key a device from the console"
+
+    # And the copy button cannot be the only route: clipboard access can be
+    # refused outright, so the key must be selectable text.
+    assert "user-select: all" in api.get("/static/theme.css").text

@@ -922,3 +922,14 @@ tr[tabindex]:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+
+/* ---------- an issued credential ----------
+   Shown once, so it gets a container that stays until it is dismissed
+   rather than a toast that takes it away again. */
+#issued-key { display: grid; gap: 10px; margin-bottom: 16px; }
+#issued-key .digest {
+  user-select: all; word-break: break-all; cursor: text;
+}
+.issued-actions { display: flex; gap: 8px; }
+.issued-note { font-size: 12px; color: var(--muted); line-height: 1.5; }

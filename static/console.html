@@ -279,6 +279,25 @@
       <aside>
         <section class="card">
           <div class="card-head"><span class="card-title">Add to the estate</span></div>
+          <!-- A key is shown once. A toast that fades after three seconds
+               is the wrong container for something you cannot get back. -->
+          <div id="issued-key" class="banner warn" hidden
+               role="status" aria-live="polite">
+            <div><b>Ingest key for <span id="issued-for">—</span></b></div>
+            <div class="digest" id="issued-value" tabindex="0"></div>
+            <div class="issued-actions">
+              <button class="btn btn-sm" type="button" id="issued-copy">Copy</button>
+              <button class="btn btn-sm" type="button" id="issued-done">Done</button>
+            </div>
+            <div class="issued-note">
+              Put this on the device and keep it nowhere else. It is shown
+              once and never again — if it is lost, rotate the sensor for a
+              new one. It can report readings for this asset and nothing
+              more, which is why it, and not your account key, belongs on
+              hardware.
+            </div>
+          </div>
+
           <form id="add-form">
             <div class="field">
               <label for="add-id">Sensor ID</label>
@@ -1107,6 +1126,7 @@ function sensorCard(s) {
         <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
                 data-safe="0">Simulate failure</button>
         <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Retune</button>
+        <button class="btn btn-sm" data-rekey="${esc(s.sensor_id)}">New key</button>
         <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
       </div>
     </article>`;
@@ -2465,6 +2485,22 @@ document.addEventListener("click", (event) => {
     }), `${id} retired.`);
   }
 
+  if (btn.dataset.rekey) {
+    const id = btn.dataset.rekey;
+    if (!confirm(
+      `Issue a new ingest key for ${id}?\n\n`
+      + "The current key stops working immediately, so the device will go "
+      + "silent until you put the new one on it."
+    )) return;
+    act(async () => {
+      const rotated = await api(
+        `/api/licenses/me/sensors/${encodeURIComponent(id)}/rotate-key`,
+        { method: "POST" }
+      );
+      showIssuedKey(id, rotated.ingest_key);
+    }, `New key issued for ${id}.`);
+  }
+
   if (btn.dataset.tune) {
     const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.tune);
     if (!sensor) return;
@@ -2533,20 +2569,55 @@ document.addEventListener("click", (event) => {
   }
 });
 
+/* Show an issued ingest key, once, somewhere it will stay put until it
+   has been dealt with. The response is otherwise thrown away and the key
+   is unrecoverable — rotation would be the only way back to one. */
+function showIssuedKey(sensorId, key) {
+  if (!key) return;
+  $("issued-for").textContent = sensorId;
+  $("issued-value").textContent = key;
+  $("issued-key").hidden = false;
+  $("issued-value").focus();
+}
+
+$("issued-copy").addEventListener("click", async () => {
+  const key = $("issued-value").textContent;
+  try {
+    await navigator.clipboard.writeText(key);
+    toast("Key copied.");
+  } catch (err) {
+    // Clipboard access can be refused outright. Select it so it can be
+    // copied by hand rather than leaving the operator stuck.
+    const range = document.createRange();
+    range.selectNodeContents($("issued-value"));
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast("Clipboard blocked — the key is selected, copy it by hand.", "err");
+  }
+});
+
+$("issued-done").addEventListener("click", () => {
+  $("issued-key").hidden = true;
+  $("issued-value").textContent = "";
+});
+
 $("add-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const serial = $("add-sn").value.trim();
+  const sensorId = $("add-id").value.trim();
   act(async () => {
-    await api("/api/licenses/me/sensors", {
+    const made = await api("/api/licenses/me/sensors", {
       method: "POST",
       body: JSON.stringify({
-        sensor_id: $("add-id").value.trim(),
+        sensor_id: sensorId,
         industry_vertical: $("add-vertical").value,
         location_name: $("add-loc").value.trim(),
         external_device_sn: serial || null,
       }),
     });
     event.target.reset();
+    showIssuedKey(made.sensor.sensor_id, made.ingest_key);
   }, "Sensor registered.");
 });
 
