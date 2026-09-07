@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
+from accounts import require_role
 from auth import require_entitlement, require_role_or_machine, require_tenant
 
 # Re-exported: several routers import these from here rather than reaching
@@ -23,6 +24,7 @@ from store import (
     STORE,
     SeatClaimRefused,
     Tenant,
+    User,
     resolve_vertical,
 )
 
@@ -124,7 +126,7 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
 def change_plan(
     payload: PlanChange,
     tenant: Tenant = Depends(require_tenant),
-    _: object = Depends(require_role_or_machine("owner")),
+    owner: User = Depends(require_role("owner")),
 ):
     """Move a tenant between tiers, refusing a downgrade that strands seats."""
     plan = _validate_plan(payload.plan)
@@ -226,6 +228,17 @@ def register_sensor(
     entry = PRICE_BOOK[vertical]
     return {
         "sensor": sensor.public(),
+        # Shown exactly once, like the tenant key. This is what belongs on
+        # the hardware: it reports readings for this one asset and can do
+        # nothing else. The tenant key can register assets, retune alarm
+        # limits and suspend the licence, and has no business inside a box
+        # bolted to the wall of a walk-in freezer.
+        "ingest_key": sensor.ingest_key,
+        "ingest_key_notice": (
+            "Store this on the device. It is shown once and never echoed "
+            "again. Send it as the X-CyberLogix-Sensor-Key header, or as "
+            "api_key_token for third-party hardware."
+        ),
         "seats_used": STORE.seat_count(tenant.tenant_id),
         "seats_total": cap,
         "billing": {
@@ -292,6 +305,37 @@ def set_thresholds(
     }
 
 
+@router.post("/me/sensors/{sensor_id}/rotate-key")
+def rotate_sensor_key(
+    sensor_id: str,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
+):
+    """Issue a new ingest key for one sensor and retire the old one.
+
+    Needed the day a device is replaced, sold on, or found with its case
+    open. Rotating is the whole reason the key is per-sensor: a compromised
+    tenant key means re-keying an entire estate, while a compromised sensor
+    key means re-keying one freezer.
+    """
+    sensor = STORE.get_sensor((sensor_id or "").strip())
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
+        )
+
+    issued = STORE.rotate_ingest_key(sensor)
+    return {
+        "sensor_id": sensor.sensor_id,
+        "ingest_key": issued,
+        "message": (
+            "New key issued. The previous key stopped working immediately; "
+            "update the device before its next reading is due."
+        ),
+    }
+
+
 @router.delete("/me/sensors/{sensor_id}")
 def decommission_sensor(
     sensor_id: str,
@@ -324,9 +368,17 @@ def decommission_sensor(
 @router.post("/me/suspend")
 def suspend_license(
     tenant: Tenant = Depends(require_tenant),
-    _: object = Depends(require_role_or_machine("owner")),
+    owner: User = Depends(require_role("owner")),
 ):
-    """Voluntarily suspend a license; telemetry is refused while suspended."""
+    """Voluntarily suspend a license; telemetry is refused while suspended.
+
+    A named owner, never a machine. These two routes are the only ones in
+    the licence router that will not accept the tenant API key, and the
+    reason is the audit trail: turning off a whole company's monitoring,
+    or moving it onto a plan without voice escalation, is not an action
+    whose record should read "API key". Provisioning scripts have no
+    business doing either.
+    """
     STORE.set_suspended(tenant, True)
     return {
         "message": f"License for {tenant.company_name} suspended.",

@@ -103,18 +103,31 @@ class GenericWebhookPayload(BaseModel):
 
 def _authenticate_webhook(
     token: Optional[str], authorization: Optional[str] = None
-) -> Tenant:
-    """Resolve the tenant from the in-body token, or a bearer header.
+) -> "tuple[Tenant, object]":
+    """Resolve the caller from the in-body token, or a bearer header.
 
     Hardware sends the token in the body because most off-the-shelf sensors
     cannot set custom headers. A first-party client — the console's
     simulator, say — already holds a session and sends that instead, so it
     never has to keep a copy of the tenant API key around.
 
+    Returns (tenant, sensor). `sensor` is set only when the token was a
+    per-sensor ingest key, and then the caller may report for that one
+    asset and nothing else. Third-party hardware should be given that key
+    rather than the tenant's: this token travels in a request body, is
+    typed into a vendor's web form, and often ends up in that vendor's
+    logs, so it should be worth as little as possible if it leaks.
+
     Mirrors the header dependency's contract: 401 for an unknown credential,
     402 for a lapsed license, so a billing problem never masquerades as a
     bad credential.
     """
+    scoped = STORE.sensor_by_ingest_key(token) if token else None
+    if scoped is not None:
+        bound = STORE.get_tenant(scoped.tenant_id)
+        if bound is not None:
+            return _reject_lapsed(bound), scoped
+
     tenant = STORE.tenant_by_key(token) if token else None
 
     if tenant is None and authorization:
@@ -130,6 +143,11 @@ def _authenticate_webhook(
                 "an Authorization bearer token."
             ),
         )
+    return _reject_lapsed(tenant), None
+
+
+def _reject_lapsed(tenant: Tenant) -> Tenant:
+    """A billing lapse is a 402, never a credential error."""
     if tenant.suspended:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -161,7 +179,7 @@ def ingest_third_party_hardware_webhook(
     profile of the sensor the device is bound to, not a flat number, so a
     freezer and a hangar are judged by their own rules.
     """
-    tenant = _authenticate_webhook(payload.api_key_token, authorization)
+    tenant, scoped = _authenticate_webhook(payload.api_key_token, authorization)
 
     metric = payload.metric_type.strip().lower()
     if metric not in SUPPORTED_METRICS:
@@ -178,6 +196,18 @@ def ingest_third_party_hardware_webhook(
                 f"Device '{payload.device_sn}' is not bound to a licensed "
                 "sensor. Register it via POST /api/licenses/me/sensors with "
                 "external_device_sn set to this serial."
+            ),
+        )
+
+    # A per-sensor key reports for its own asset and no other. Without
+    # this, one leaked device token could write readings for every sensor
+    # in the estate — including a nominal one over a freezer that is
+    # actually failing.
+    if scoped is not None and scoped.sensor_id != sensor.sensor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"This sensor key may only report for '{scoped.sensor_id}'."
             ),
         )
 

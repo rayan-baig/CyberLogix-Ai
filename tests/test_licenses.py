@@ -93,13 +93,14 @@ def test_bad_vertical_rejected_at_registration(api, tenant_factory):
 
 
 def test_downgrade_blocked_when_seats_would_strand(
-    api, tenant_factory, sensor_factory
+    api, tenant_factory, sensor_factory, owner_headers
 ):
     headers, _ = tenant_factory(plan="enterprise")
     for index in range(6):
         sensor_factory(headers, sensor_id=f"S-{index}")
 
-    resp = api.post("/api/licenses/me/plan", headers=headers, json={"plan": "trial"})
+    resp = api.post("/api/licenses/me/plan", headers=owner_headers(headers),
+                    json={"plan": "trial"})
     assert resp.status_code == 409
     assert "Cannot downgrade" in resp.json()["detail"]
 
@@ -115,11 +116,11 @@ def test_decommission_frees_a_seat(api, tenant_factory, sensor_factory):
 
 
 def test_suspension_locks_the_whole_platform(
-    api, tenant_factory, sensor_factory
+    api, tenant_factory, sensor_factory, owner_headers
 ):
     headers, _ = tenant_factory()
     sensor_factory(headers, sensor_id="RACK-01")
-    api.post("/api/licenses/me/suspend", headers=headers)
+    api.post("/api/licenses/me/suspend", headers=owner_headers(headers))
 
     for path, method in (
         ("/api/licenses/me", "get"),

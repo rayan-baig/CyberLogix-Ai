@@ -267,10 +267,11 @@ def test_audit_is_scoped_to_the_tenant(api, operator_factory):
     assert all("b@example.com" in e["actor"] for e in bob_trail["entries"])
 
 
-def test_suspended_license_blocks_login(api, tenant_factory):
+def test_suspended_license_blocks_login(api, tenant_factory, owner_headers):
     key_headers, _ = tenant_factory()
     bootstrap(api, key_headers)
-    api.post("/api/licenses/me/suspend", headers=key_headers)
+    api.post("/api/licenses/me/suspend",
+             headers=owner_headers(key_headers, email="dana@example.com"))
 
     resp = api.post(
         "/api/accounts/login",

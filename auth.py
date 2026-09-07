@@ -127,6 +127,82 @@ def require_tenant(
     return _reject_inactive(tenant)
 
 
+class IngestPrincipal:
+    """Who is submitting a reading, and what they are allowed to submit.
+
+    `sensor` is set only when a per-sensor key was used, and then that key
+    may report for that one asset and nothing else.
+    """
+
+    __slots__ = ("tenant", "sensor")
+
+    def __init__(self, tenant: Tenant, sensor=None) -> None:
+        self.tenant = tenant
+        self.sensor = sensor
+
+    def authorise(self, sensor_id: str) -> None:
+        """Refuse a scoped key being pointed at somebody else's asset."""
+        if self.sensor is None:
+            return
+        if (sensor_id or "").strip() != self.sensor.sensor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"This sensor key may only report for "
+                    f"'{self.sensor.sensor_id}'."
+                ),
+            )
+
+
+def require_ingest(
+    x_cyberlogix_sensor_key: Optional[str] = Header(
+        None,
+        description=(
+            "Per-sensor ingest key, issued once when the sensor is "
+            "registered. Prefer this over the tenant key on the device."
+        ),
+    ),
+    x_cyberlogix_key: Optional[str] = Header(
+        None, description="Tenant API key. Speaks for the whole estate."
+    ),
+    authorization: Optional[str] = Header(None),
+) -> IngestPrincipal:
+    """Resolve who may write a reading.
+
+    A tenant API key is a master key: it registers assets, retunes alarm
+    thresholds and can suspend the licence. Until now it was also the only
+    credential a sensor could carry, which put all of that inside a box
+    bolted to the wall of a walk-in freezer — reachable by anyone with a
+    screwdriver and a serial cable, in a room the public can often walk
+    into.
+
+    So a sensor now gets its own key, scoped to itself and able to do one
+    thing: report readings. The tenant key still works here, because a
+    fleet installer bringing up fifty devices from a script is a real
+    thing and breaking it would push people back to the master key by
+    another route — but it is no longer what the hardware should hold.
+    """
+    if x_cyberlogix_sensor_key:
+        sensor = STORE.sensor_by_ingest_key(x_cyberlogix_sensor_key.strip())
+        if sensor is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unrecognised sensor key.",
+            )
+        tenant = STORE.get_tenant(sensor.tenant_id)
+        if tenant is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown tenant."
+            )
+        return IngestPrincipal(_reject_inactive(tenant), sensor)
+
+    return IngestPrincipal(
+        require_tenant(
+            x_cyberlogix_key=x_cyberlogix_key, authorization=authorization
+        )
+    )
+
+
 def require_role_or_machine(required: str):
     """Assert the caller is a machine, or a person senior enough.
 

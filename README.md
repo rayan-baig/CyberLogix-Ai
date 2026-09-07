@@ -348,13 +348,31 @@ Give me figures for those five and they'll count too.
 
 ## Authentication
 
-Two credentials reach the same endpoints:
+Three credentials reach the API:
 
-* a **tenant API key** in `X-CyberLogix-Key` identifies a machine — sensors,
-  webhooks, the autopilot scheduler — and carries no human identity. It is
-  returned exactly once, when the tenant is onboarded, and never echoed again;
+* a **per-sensor ingest key** in `X-CyberLogix-Sensor-Key` (or as
+  `api_key_token` for third-party hardware) belongs to one asset and does
+  one thing: report readings, for that asset. Issued once when the sensor
+  is registered, never echoed again, rotatable per sensor, and dies with
+  the sensor. **This is what belongs on the hardware.**
+* a **tenant API key** in `X-CyberLogix-Key` identifies a machine — a
+  provisioning script, the autopilot scheduler — and carries no human
+  identity. Returned exactly once, at onboarding, and never echoed again;
 * a **bearer session token** in `Authorization` identifies a signed-in person,
   and is what the console uses.
+
+The tenant key is a master key: it registers assets, retunes alarm
+thresholds and speaks for the whole estate. It used to be the only thing a
+sensor could carry, which put all of that inside a box bolted to the wall
+of a walk-in freezer — reachable by anyone with a screwdriver and a serial
+cable, in a room the public can often walk into. A sensor key is worth one
+freezer's readings, and a leaked one is re-keyed with a single call
+instead of re-keying an estate.
+
+Two routes refuse a machine credential outright — `POST
+/api/licenses/me/suspend` and `POST /api/licenses/me/plan`. Turning off a
+company's monitoring, or moving it onto a plan without voice escalation,
+is not an action whose audit record should read "API key".
 
 Public endpoints are `/`, `/console`, `/api`, `/api/health`, `/api/industries`,
 `/api/licenses/plans`, `/api/licenses/tenants` and `/api/accounts/login`.
@@ -378,9 +396,15 @@ contacts and alert channels, escalating an incident to a phone call. An
 **owner** additionally owns the money and the licence: the plan, invoices,
 enterprise billing, inviting people, and suspending the service.
 
-Acknowledging and resolving an incident are deliberately open to any
-signed-in person, viewer included. Making it harder to say "I have this"
-during an emergency is its own hazard.
+Acknowledging and resolving need an operator. Acknowledging does not mean
+"I have seen this" — it means somebody who can deal with it has it, and it
+stops the product waking anyone else. A viewer cannot change a threshold,
+decommission an asset or escalate, so letting them halt the ladder halts it
+on behalf of someone unable to act. The counter-argument, that making
+acknowledgement harder during an emergency is its own hazard, is answered
+by the path that matters at 3am staying open: the person on call presses 1
+on the handset, and that callback is authenticated by Twilio's signature
+and a per-incident secret, not by a role.
 
 `tests/test_authorization_matrix.py` enforces this structurally: every
 state-changing route must carry a role dependency or be named in an

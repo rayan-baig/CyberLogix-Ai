@@ -649,6 +649,9 @@ class Sensor:
     industry_vertical: str
     location_name: str
     registered_at: datetime
+    # Its own credential, scoped to this one asset. See `claim_sensor_seat`
+    # for why a sensor must not be carrying the tenant's key.
+    ingest_key: str = ""
     external_device_sn: Optional[str] = None
     site_id: Optional[str] = None
     battery_percent: Optional[float] = None
@@ -717,6 +720,7 @@ class Sensor:
             "industry_vertical": self.industry_vertical,
             "location_name": self.location_name,
             "registered_at": iso(self.registered_at),
+            "ingest_key": self.ingest_key,
             "external_device_sn": self.external_device_sn,
             "site_id": self.site_id,
             "battery_percent": self.battery_percent,
@@ -736,6 +740,7 @@ class Sensor:
             industry_vertical=row["industry_vertical"],
             location_name=row["location_name"],
             registered_at=_parse(row["registered_at"]),
+            ingest_key=row.get("ingest_key") or "",
             external_device_sn=row.get("external_device_sn"),
             site_id=row.get("site_id"),
             battery_percent=row.get("battery_percent"),
@@ -762,6 +767,10 @@ class Sensor:
         )
 
     def public(self, unit: str = "F") -> Dict[str, Any]:
+        # `ingest_key` is deliberately absent, and must stay absent. It is
+        # shown once, at registration, exactly like the tenant key: a
+        # credential that any authenticated reader can fetch from a list
+        # endpoint is not a credential.
         profile = INDUSTRY_PROFILES[self.industry_vertical]
         above, below = self.bounds()
         return {
@@ -1726,6 +1735,8 @@ class HubStore:
         self._keys: Dict[str, str] = {}
         self._sensors: Dict[str, Sensor] = {}
         self._devices: Dict[str, str] = {}
+        # ingest key -> sensor_id. A sensor's own credential.
+        self._ingest_keys: Dict[str, str] = {}
         self._readings: Dict[str, Deque[Reading]] = {}
         self._incidents: Dict[str, Incident] = {}
         self._users: Dict[str, User] = {}
@@ -1765,6 +1776,8 @@ class HubStore:
                 )
                 if sensor.external_device_sn:
                     self._devices[sensor.external_device_sn] = sensor.sensor_id
+                if sensor.ingest_key:
+                    self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
 
             readings = [Reading.from_row(row) for row in self._db.all("reading")]
             # Ordered by time, then by id. The id tiebreak is not
@@ -1903,6 +1916,7 @@ class HubStore:
             self._keys.clear()
             self._sensors.clear()
             self._devices.clear()
+            self._ingest_keys.clear()
             self._readings.clear()
             self._incidents.clear()
             self._users.clear()
@@ -2066,9 +2080,11 @@ class HubStore:
                 industry_vertical=industry_vertical,
                 location_name=location_name,
                 registered_at=utc_now(),
+                ingest_key=f"clx_snr_{secrets.token_urlsafe(24)}",
                 external_device_sn=external_device_sn,
             )
             self._sensors[sensor_id] = sensor
+            self._ingest_keys[sensor.ingest_key] = sensor_id
             if external_device_sn:
                 self._devices[external_device_sn] = sensor_id
             self._readings.setdefault(
@@ -2076,6 +2092,31 @@ class HubStore:
             )
             self._db.put("sensor", sensor_id, sensor.to_row())
             return sensor
+
+    def sensor_by_ingest_key(self, key: str) -> Optional[Sensor]:
+        """Resolve a sensor's own credential.
+
+        A tenant API key is a master key: it speaks for the whole estate,
+        and it was the only thing a sensor could carry. That put a
+        credential able to register assets, retune alarm thresholds and
+        suspend the entire licence inside a box bolted to the wall of a
+        walk-in freezer, reachable by anyone with a screwdriver and a
+        serial cable. This key does one thing: report readings, for one
+        asset.
+        """
+        with self._lock:
+            sensor_id = self._ingest_keys.get(key or "")
+            return self._sensors.get(sensor_id) if sensor_id else None
+
+    def rotate_ingest_key(self, sensor: Sensor) -> str:
+        """Issue a new key for one sensor and retire the old one."""
+        with self._lock:
+            if sensor.ingest_key:
+                self._ingest_keys.pop(sensor.ingest_key, None)
+            sensor.ingest_key = f"clx_snr_{secrets.token_urlsafe(24)}"
+            self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
+            self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+            return sensor.ingest_key
 
     def get_sensor(self, sensor_id: str) -> Optional[Sensor]:
         with self._lock:
@@ -2101,9 +2142,14 @@ class HubStore:
         with self._lock:
             if sensor_id not in self._sensors:
                 return False
-            serial = self._sensors[sensor_id].external_device_sn
-            if serial:
-                self._devices.pop(serial, None)
+            doomed = self._sensors[sensor_id]
+            if doomed.external_device_sn:
+                self._devices.pop(doomed.external_device_sn, None)
+            # The key dies with the sensor. A decommissioned asset whose
+            # credential still resolves is a decommissioned asset that can
+            # still write readings.
+            if doomed.ingest_key:
+                self._ingest_keys.pop(doomed.ingest_key, None)
             del self._sensors[sensor_id]
             evicted = self._readings.pop(sensor_id, None)
             self._db.delete("sensor", sensor_id)

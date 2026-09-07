@@ -192,3 +192,36 @@ def configured_twilio(monkeypatch):
     monkeypatch.setattr(notifications, "_client", _Client())
     monkeypatch.setattr(notifications, "_client_error", None)
     return _Client
+
+
+@pytest.fixture()
+def owner_headers(api):
+    """Bearer headers for a named owner on an already-onboarded tenant.
+
+    Suspending a licence and moving a plan are the two routes that will
+    not accept the tenant API key: turning off a company's monitoring is
+    not an action whose audit record should read "API key". Tests that
+    need those say so through this.
+    """
+
+    def _make(key_headers, email="owner@example.com"):
+        made = api.post(
+            "/api/accounts/bootstrap",
+            headers=key_headers,
+            json={
+                "email": email,
+                "full_name": "Owner",
+                "password": "correct-horse-battery",
+                "role": "owner",
+            },
+        )
+        if made.status_code == 409:  # already bootstrapped by the caller
+            pass
+        signed_in = api.post(
+            "/api/accounts/login",
+            json={"email": email, "password": "correct-horse-battery"},
+        )
+        assert signed_in.status_code == 200, signed_in.text
+        return {"Authorization": f"Bearer {signed_in.json()['token']}"}
+
+    return _make

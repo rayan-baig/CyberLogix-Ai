@@ -255,3 +255,49 @@ def test_this_sessions_new_store_methods_survive_a_restart(tmp_path):
             industry_vertical="pharmacy", location_name="x", max_sensors=cap)
 
     assert int(second._next_id("PROBE").split("-")[1]) > probe_before
+
+
+def test_reset_clears_every_index_the_store_keeps():
+    """A credential index that survives a reset is a credential that leaks.
+
+    `reset` names its collections one by one, which means adding a new
+    index and forgetting to name it here is a silent, invisible mistake —
+    and it happened: the per-sensor ingest keys were added and the reset
+    left them resolving to sensors that no longer existed.
+
+    Rather than naming the indexes again in the test (which would need the
+    same edit and be forgotten in the same way), this finds every dict and
+    list the store keeps and asserts the whole lot is empty afterwards.
+    """
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Acme", "D", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("F-01", tenant.tenant_id, "pharmacy", "x",
+                                   external_device_sn="SN-1")
+    store.create_user(tenant.tenant_id, "a@x.com", "A", "owner", "pw-pw-pw-pw")
+    store.create_site(tenant.tenant_id, "Boca")
+    store.add_webhook(tenant.tenant_id, "slack", "https://hooks.slack.com/a/b/c")
+    store.open_incident(tenant_id=tenant.tenant_id, sensor=sensor,
+                        temperature_fahrenheit=71.0, breach_details="warm",
+                        sms_text="w", sms_dispatch_source="template")
+    store.bump_usage(tenant.tenant_id, "sms_sent", 3)
+
+    populated = [
+        name for name, value in vars(store).items()
+        if name.startswith("_") and isinstance(value, (dict, list)) and value
+    ]
+    assert len(populated) > 8, "the fixture stopped populating the store"
+
+    store.reset()
+
+    left = {
+        name: len(value) for name, value in vars(store).items()
+        if name.startswith("_") and isinstance(value, (dict, list)) and value
+    }
+    assert not left, f"reset left these behind: {left}"
+
+    # And specifically: a key from before the reset must not resolve.
+    assert store.sensor_by_ingest_key(sensor.ingest_key) is None

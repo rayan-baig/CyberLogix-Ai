@@ -397,8 +397,25 @@ def acknowledge_incident(
     payload: Acknowledgement,
     tenant: Tenant = Depends(require_tenant),
     operator: Optional[User] = Depends(optional_operator),
+    _: object = Depends(require_role_or_machine("operator")),
 ):
-    """Stop the escalation ladder: a human has the incident."""
+    """Stop the escalation ladder: a human has the incident.
+
+    Operator, not viewer — and the reasoning is worth writing down,
+    because the safer-looking choice is the wrong one. Acknowledging does
+    not mean "I have seen this". It means "somebody who can deal with
+    this has it", and it stops the product waking anyone else. A viewer
+    cannot change a threshold, cannot decommission an asset and cannot
+    escalate; letting them halt the ladder halts it on behalf of someone
+    who is not able to act.
+
+    The counter-argument — that making acknowledgement harder during an
+    emergency is its own hazard — is real, and is why the path that
+    actually matters at 3am is untouched: the person on call presses 1 on
+    the handset, and that callback is authenticated by Twilio's signature
+    and a per-incident secret, not by a role. Nobody is ever locked out
+    of acknowledging the call they are being woken by.
+    """
     incident = _load_incident(incident_id, tenant)
 
     actor = actor_label(operator, payload.acknowledged_by or "API key")
@@ -441,8 +458,14 @@ def resolve_incident(
     payload: ResolutionNote,
     tenant: Tenant = Depends(require_tenant),
     operator: Optional[User] = Depends(optional_operator),
+    _: object = Depends(require_role_or_machine("operator")),
 ):
-    """Close an incident once the physical fault is fixed."""
+    """Close an incident once the physical fault is fixed.
+
+    The same reasoning as acknowledging, and one more: resolving writes
+    into the compliance record. A read-only account's name should not
+    appear in a claim packet as the person who closed out a loss.
+    """
     incident = _load_incident(incident_id, tenant)
 
     actor = actor_label(operator, payload.resolved_by or "API key")

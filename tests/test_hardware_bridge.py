@@ -124,10 +124,10 @@ def test_webhook_rejects_a_bad_token(api, tenant_factory):
     assert resp.status_code == 401
 
 
-def test_webhook_rejects_a_suspended_license(api, tenant_factory):
+def test_webhook_rejects_a_suspended_license(api, tenant_factory, owner_headers):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    api.post("/api/licenses/me/suspend", headers=headers)
+    api.post("/api/licenses/me/suspend", headers=owner_headers(headers))
 
     resp = webhook(api, headers["X-CyberLogix-Key"])
     assert resp.status_code == 402

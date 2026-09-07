@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from gemini import safe_generate
-from licenses import require_tenant
+from auth import IngestPrincipal, require_ingest
 from notifications import send_sms
 from store import (
     INDUSTRY_PROFILES,
@@ -363,7 +363,7 @@ def resolve_owned_sensor(tenant: Tenant, sensor_id: str):
 
 @router.post("/sensor-pulse")
 def process_sensor_pulse(
-    reading: SensorReading, tenant: Tenant = Depends(require_tenant)
+    reading: SensorReading, principal: IngestPrincipal = Depends(require_ingest)
 ):
     """Ingest one telemetry packet from a registered sensor.
 
@@ -381,6 +381,10 @@ def process_sensor_pulse(
     There is nothing to await here, so there is nothing to gain by being
     a coroutine, and everything to lose.
     """
+    # A per-sensor key may only speak for its own asset; the tenant key
+    # may speak for any of them.
+    principal.authorise(reading.sensor_id)
+    tenant = principal.tenant
     sensor = resolve_owned_sensor(tenant, reading.sensor_id)
     if reading.battery_percent is not None or reading.signal_percent is not None:
         STORE.record_sensor_health(

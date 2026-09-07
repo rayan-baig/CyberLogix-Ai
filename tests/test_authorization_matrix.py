@@ -34,11 +34,6 @@ UNGATED_BY_DESIGN = {
     "/api/voice/keypress/{incident_id}/{token}": (
         "Twilio's callback, verified by request signature and a per-incident secret"
     ),
-    "/api/voice/acknowledge/{incident_id}": (
-        "anybody who can see an alert may say they have it; making this harder "
-        "during an emergency is its own hazard"
-    ),
-    "/api/voice/resolve/{incident_id}": "the same argument as acknowledging",
     "/api/vault/verify": "a public verifier — being checkable by outsiders is the point",
     "/api/claims/{incident_id}/packet": "assembles a document, changes no state",
     "/api/shortcuts/{vertical}": "produces a document, changes no state",
@@ -233,3 +228,75 @@ def test_a_machine_key_still_provisions(api, tenant_factory):
         json={"sensor_id": "SCRIPTED-01", "industry_vertical": "pharmacy",
               "location_name": "Bay 4"})
     assert made.status_code == 201, made.text
+
+
+def test_a_viewer_cannot_halt_an_escalation(api, three_roles, sensor_factory):
+    """Acknowledging is not "I have seen this".
+
+    It means "somebody who can deal with this has it", and it stops the
+    product waking anyone else. A viewer cannot change a threshold, cannot
+    decommission an asset and cannot escalate — so letting them halt the
+    ladder halts it on behalf of someone who is not able to act.
+
+    This was left open deliberately at first, on the argument that making
+    acknowledgement harder during an emergency is its own hazard. That
+    argument is real, and it is answered by the path that actually matters
+    at 3am staying open: the person on call presses 1 on the handset, and
+    that callback is authenticated by Twilio's signature and a
+    per-incident secret, not by a role. Nobody is locked out of
+    acknowledging the call they are being woken by.
+    """
+    owner, operator, viewer = (three_roles["owner"], three_roles["operator"],
+                               three_roles["viewer"])
+    sensor = sensor_factory(owner, sensor_id="LADDER-01", vertical="pharmacy")
+    incident = api.post(
+        "/api/sensor-pulse", headers=owner,
+        json={"sensor_id": sensor["sensor_id"], "temperature_fahrenheit": 71.0},
+    ).json()["incident_id"]
+
+    blocked = api.post(f"/api/voice/acknowledge/{incident}", headers=viewer,
+                       json={"acknowledged_by": "Night Manager"})
+    assert blocked.status_code == 403, "a read-only account stopped the ladder"
+
+    stopped = api.post(f"/api/voice/resolve/{incident}", headers=viewer,
+                       json={"resolved_by": "Night Manager"})
+    assert stopped.status_code == 403, (
+        "a read-only account wrote itself into the compliance record as the "
+        "person who closed out a loss"
+    )
+
+    # It is still open in every sense — nothing was quietly recorded.
+    listed = api.get("/api/voice/incidents", headers=owner).json()
+    live = next(i for i in listed["incidents"] if i["incident_id"] == incident)
+    assert live["acknowledged_at"] is None and live["resolved_at"] is None
+
+    # And an operator can, which is the point of the middle rung.
+    assert api.post(f"/api/voice/acknowledge/{incident}", headers=operator,
+                    json={"acknowledged_by": "Ops"}).status_code == 200
+
+
+def test_the_tenant_api_key_cannot_switch_the_company_off(api, tenant_factory,
+                                                          owner_headers):
+    """Two routes refuse a machine credential outright.
+
+    Everywhere else the tenant key passes role checks, because a
+    provisioning script has no human identity to have a role and that is
+    the credential's whole purpose. But turning off a company's monitoring,
+    or moving it onto a plan without voice escalation, is not an action
+    whose audit record should read "API key".
+    """
+    key_headers, _ = tenant_factory()
+
+    for what, resp in (
+        ("suspend the licence", api.post("/api/licenses/me/suspend",
+                                         headers=key_headers)),
+        ("change the plan", api.post("/api/licenses/me/plan", headers=key_headers,
+                                     json={"plan": "trial"})),
+    ):
+        assert resp.status_code in (401, 403), (
+            f"a machine credential could {what} ({resp.status_code})"
+        )
+
+    # The licence is untouched, and a named owner can still do both.
+    owner = owner_headers(key_headers)
+    assert api.post("/api/licenses/me/suspend", headers=owner).status_code == 200
