@@ -371,3 +371,63 @@ def test_one_bad_tenant_cannot_stop_the_sweep(monkeypatch, api,
 
     assert len(seen) == 2, "the second tenant was skipped"
     assert len(summary["failed_tenants"]) == 1
+
+
+# ---------------------------------------------------------------------------
+#  Deleting a site quietly removed people from the roster
+# ---------------------------------------------------------------------------
+
+
+def test_deleting_a_site_does_not_silence_its_on_call_contact():
+    """Found by the fuzzer, and it is the fatal shape again.
+
+    Site-scoped contacts match either their own live site or, if they have
+    no site, the estate-wide pool. A contact left pointing at a deleted
+    site matches neither — so they are dropped from every alert while
+    still showing as "on call" in the console. The operator sees a rota
+    that is not the rota.
+    """
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Chain", "HQ", "+15550100", "hq@x.com",
+                                 "enterprise")
+    site = store.create_site(tenant.tenant_id, "Boca")
+    manager = store.add_contact(tenant.tenant_id, "Night Manager", "+15550111",
+                                site_id=site.site_id)
+    sensor = store.register_sensor("FRZ-1", tenant.tenant_id, "restaurant", "W")
+    store.assign_sensor_to_site(sensor, site.site_id)
+
+    reached = store.sms_recipients(tenant, site.site_id)
+    assert [c.full_name for c in reached] == ["Night Manager"]
+
+    store.remove_site(site.site_id)
+
+    # The sensor is released, so it now asks for the estate-wide roster.
+    assert store.get_sensor("FRZ-1").site_id is None
+    still = store.sms_recipients(tenant, None)
+    assert "Night Manager" in [c.full_name for c in still], (
+        "the manager was dropped from every alert but still appears on the "
+        "roster"
+    )
+    assert store.get_contact(manager.contact_id).site_id is None
+
+
+def test_deleting_a_site_releases_its_alert_channel_too():
+    """Same shape: a hook scoped to a dead site stops firing."""
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Chain", "HQ", "+15550100", "hq@x.com",
+                                 "enterprise")
+    site = store.create_site(tenant.tenant_id, "Boca")
+    hook = store.add_webhook(tenant.tenant_id, "slack",
+                             "https://hooks.slack.com/a/b/c",
+                             site_id=site.site_id)
+
+    store.remove_site(site.site_id)
+
+    assert store.get_webhook(hook.webhook_id).site_id is None
+    assert hook in store.webhooks_for_site(tenant.tenant_id, None)

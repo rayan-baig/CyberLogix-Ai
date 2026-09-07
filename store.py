@@ -2409,7 +2409,20 @@ class HubStore:
             return site
 
     def remove_site(self, site_id: str) -> bool:
-        """Delete a site, releasing its sensors rather than deleting them."""
+        """Delete a site, releasing everything attached to it.
+
+        Sensors were already released. Contacts were not, and that was
+        worse than it looks: `_roster_for_site` matches a contact either
+        to a live site or to the estate-wide pool of contacts whose
+        site_id is None. A contact left pointing at a deleted site matches
+        neither, so they are silently dropped from every alert while still
+        appearing on the roster in the console. The operator sees "Night
+        Manager, on call" and Night Manager is never texted again.
+
+        Releasing them to estate-wide is the safe direction: somebody
+        whose site disappeared should receive more alerts than they
+        expected, never fewer.
+        """
         with self._lock:
             if site_id not in self._sites:
                 return False
@@ -2417,6 +2430,14 @@ class HubStore:
                 if sensor.site_id == site_id:
                     sensor.site_id = None
                     self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+            for contact in list(self._contacts.values()):
+                if contact.site_id == site_id:
+                    contact.site_id = None
+                    self._db.put("contact", contact.contact_id, contact.to_row())
+            for hook in list(self._webhooks.values()):
+                if hook.site_id == site_id:
+                    hook.site_id = None
+                    self._db.put("webhook", hook.webhook_id, hook.to_row())
             del self._sites[site_id]
             self._db.delete("site", site_id)
             return True
