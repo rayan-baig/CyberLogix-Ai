@@ -149,13 +149,16 @@ a { color: var(--accent); }
 /* A hairline mark rather than a glowing tile. Restraint is the whole
    brief: the logo should not be the loudest thing on the screen. */
 .brand-mark {
-  width: 30px; height: 30px; border-radius: 50%; flex: none;
-  background: transparent;
-  border: 1px solid var(--accent-deep);
+  /* The ring is gone. It was there to give a thin line-art glyph
+     something to sit in; the mark has its own silhouette and a wash of
+     its own, and a circle drawn around a thermometer just reads as a
+     dial. */
+  width: 30px; height: 30px; flex: none;
   display: grid; place-items: center;
-  color: var(--accent);
 }
-.brand-mark svg { width: 15px; height: 15px; display: block; }
+.brand-mark img, .brand-mark svg {
+  width: 30px; height: 30px; display: block;
+}
 .brand-name {
   font-family: var(--display);
   font-size: 22px; font-weight: 400; letter-spacing: .01em;

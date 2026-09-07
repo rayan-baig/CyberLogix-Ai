@@ -177,3 +177,28 @@ def test_the_console_does_not_throw_away_an_issued_credential(api):
     # And the copy button cannot be the only route: clipboard access can be
     # refused outright, so the key must be selectable text.
     assert "user-select: all" in api.get("/static/theme.css").text
+
+
+def test_every_surface_wears_the_same_mark(api):
+    """One mark, one file, referenced — not three inline copies.
+
+    The old glyph was pasted separately into each page, which is how it
+    came to be drawn in a blue that predated the palette and stayed there
+    through a full rebrand without anyone noticing on two of the three
+    surfaces.
+    """
+    served = api.get("/static/logo.svg")
+    assert served.status_code == 200
+    assert "image/svg" in served.headers["content-type"]
+
+    for path in ("/", "/console", "/partners"):
+        page = api.get(path).text
+        assert '/static/logo.svg' in page, f"{path} does not wear the mark"
+        # No page draws its own version of it.
+        assert 'd="M12 3v10"' not in page, (
+            f"{path} still has the old inline glyph pasted into it"
+        )
+
+    # The tab icon is generated from the mark's own file, so the two
+    # cannot drift; it just has to be an SVG data URI, not a stale PNG.
+    assert 'rel="icon" href="data:image/svg+xml,' in api.get("/").text

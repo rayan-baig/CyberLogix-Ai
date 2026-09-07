@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
+     aria-label="CyberLogix AI">
+  <!--
+    A sibling of the Cybersalus mark, not a copy of it.
+
+    That logo draws a head out of routed board traces. The family
+    resemblance is the grammar — orthogonal runs, 45° doglegs, a pad at
+    every terminus, a cyan-to-violet wash — so this one keeps all of it
+    and changes the subject to the thing this product actually watches: a
+    thermometer, with the signal paths feeding into it.
+
+    Two feeds, not four. A mark has to survive 16px in a browser tab, and
+    every extra trace is one more thing that turns to mush there.
+  -->
+  <defs>
+    <!-- Mapped across the mark's own extent, not the padded box: run it
+         corner to corner of the viewBox and the artwork only ever sits in
+         the middle of the wash, so the cyan and the violet never arrive. -->
+    <linearGradient id="clx-wash" x1="2" y1="29" x2="30" y2="6"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22B8E6"/>
+      <stop offset="0.34" stop-color="#2C97EA"/>
+      <stop offset="0.62" stop-color="#2F6BE8"/>
+      <stop offset="1" stop-color="#6B3FE4"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="none" stroke="url(#clx-wash)" stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- the feeds: in from the edge, square, then the corner at 45° -->
+    <path d="M3.5 12 H9.4 L12.9 15.5" stroke-width="1.6"/>
+    <path d="M28.5 9 H22.6 L19.1 12.5" stroke-width="1.6"/>
+    <!-- the stem -->
+    <path d="M16 5.5 V20" stroke-width="5.5"/>
+  </g>
+
+  <!-- the bulb, and the column standing in it -->
+  <circle cx="16" cy="23.4" r="5.6" fill="url(#clx-wash)"/>
+  <path d="M16 18.5 V11.5" stroke="#05070D" stroke-width="1.9"
+        stroke-linecap="round" opacity="0.34"/>
+
+  <!-- pads. A trace that stops at nothing looks unfinished. -->
+  <g fill="url(#clx-wash)">
+    <circle cx="3.5" cy="12" r="1.9"/>
+    <circle cx="28.5" cy="9" r="1.9"/>
+  </g>
+  <g fill="#05070D">
+    <circle cx="3.5" cy="12" r="0.75"/>
+    <circle cx="28.5" cy="9" r="0.75"/>
+    <circle cx="16" cy="23.4" r="1.5"/>
+  </g>
+</svg>
