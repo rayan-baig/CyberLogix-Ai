@@ -202,3 +202,21 @@ def test_every_surface_wears_the_same_mark(api):
     # The tab icon is generated from the mark's own file, so the two
     # cannot drift; it just has to be an SVG data URI, not a stale PNG.
     assert 'rel="icon" href="data:image/svg+xml,' in api.get("/").text
+
+
+def test_the_background_stops_for_anyone_who_asked_it_to(api):
+    """Ambient motion behind every page is exactly what that setting means.
+
+    Also checked live: with reduced motion the canvas paints one frame and
+    never changes again, and without it the field genuinely drifts.
+    """
+    js = api.get("/static/circuit.js")
+    assert js.status_code == 200
+    assert "prefers-reduced-motion" in js.text
+    assert "visibilitychange" in js.text, (
+        "the background keeps animating in a tab nobody is looking at"
+    )
+    # It must not be able to swallow a click or sit in front of anything.
+    theme = api.get("/static/theme.css").text
+    assert "pointer-events: none" in theme
+    assert "z-index: -2" in theme

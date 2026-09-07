@@ -1,21 +1,24 @@
-/* Circuit-trace background.
+/* The background: a field of the mark, breathing.
  *
- * The house motif is routed board traces — orthogonal runs with 45°
- * doglegs and a pad at every terminus, carrying a cyan → blue → violet
- * wash across the page. It is not decoration borrowed from a logo: on a
- * telemetry product the traces are the signal paths, and the lights
- * running along them are readings arriving from the estate. One trace is
- * always carrying a breach, in the alarm colour, doing what a breach
- * does — travelling somewhere and not stopping.
+ * Same grammar as the logo — a vertical rail, branches leaving it at 45°
+ * and then running vertical to a plated pad — scattered across the page
+ * at varying scale and drifting slowly up and down. Not decoration
+ * borrowed from the mark: at this size the rails read as the signal
+ * paths they are, and the light that runs up one of them every few
+ * seconds is a reading arriving from the estate.
+ *
+ * Dark only, deliberately. The product commits to one visual world and
+ * this is tuned against #05070D; on paper it would be invisible.
  *
  * Usage:
  *   <canvas id="circuit" class="circuit"></canvas>
  *   <script src="/static/circuit.js"></script>
  *
- * It attaches to any canvas with id "circuit", sizes itself to the
- * element, redraws on resize, and honours prefers-reduced-motion by
- * painting one still frame and stopping. Nothing else on the page needs
- * to know it exists.
+ * Each structure is drawn once into an offscreen sprite and then blitted
+ * per frame, so an animated frame costs a handful of drawImage calls
+ * rather than a few hundred path operations. Anyone who asked for less
+ * motion gets one still frame and nothing after it; a hidden tab gets
+ * nothing at all.
  */
 (function () {
   "use strict";
@@ -26,246 +29,196 @@
   var REDUCED = window.matchMedia
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var CYAN = "#22B8E6";
-  var BLUE = "#2F6BE8";
-  var VIOLET = "#6B3FE4";
-  var ALARM = "#FF6B4A";
+  var VIOLET = "#7C3FE4";
+  var MID = "#5A4DE8";
+  var BLUE = "#2F8BE8";
+  var TIP = "#9BD2FF";
+  var GROUND = "#05070D";
 
   var ctx = cv.getContext("2d");
   var W = 0, H = 0, dpr = 1;
-  var board = null;      // offscreen canvas holding the static network
-  var traces = [];       // [{pts, len, cum}]
-  var sparks = [];
+  var field = [];
   var raf = 0;
+  var started = 0;
+  var last = 0;
 
-  /* ---- routing ---------------------------------------------------- */
+  /* ---- one structure ------------------------------------------------ */
 
-  /* One PCB dogleg: run along the dominant axis, then take the corner at
-   * 45°. This is what makes a board look like a board rather than like a
-   * maze — the diagonal is always exactly 45°, never an arbitrary angle. */
-  function dogleg(ax, ay, bx, by, out) {
-    var dx = bx - ax, dy = by - ay;
-    var sx = dx < 0 ? -1 : 1, sy = dy < 0 ? -1 : 1;
-    var adx = Math.abs(dx), ady = Math.abs(dy);
-    var diag = Math.min(adx, ady);
-
-    if (adx >= ady) {
-      out.push([ax + sx * (adx - diag), ay]);
-    } else {
-      out.push([ax, ay + sy * (ady - diag)]);
+  /* Geometry in local coordinates, origin at the foot of the rail.
+   * Branches leave in symmetric pairs, take their corner at exactly 45°,
+   * then run vertical — the same three moves every time, which is what
+   * makes a field of these read as laid out rather than grown. */
+  function design(h) {
+    var pairs = 2 + ((Math.random() * 2) | 0);
+    var reach = h * (0.20 + Math.random() * 0.10);
+    var branches = [];
+    for (var i = 0; i < pairs; i++) {
+      var t = (i + 1) / (pairs + 1);
+      branches.push({
+        leave: h * (0.30 + t * 0.42),      // further down the rail
+        out: reach * (0.55 + t * 0.85),    // and further out
+        tip: h * (0.74 + t * 0.16)         // stopping shorter
+      });
     }
-    out.push([bx, by]);
+    return { h: h, branches: branches, tipR: Math.max(1.7, h * 0.030) };
   }
 
-  function route(ax, ay, bx, by) {
-    /* A board is routed in short square runs with the corners taken at
-     * 45°, not in long sweeps. The parent mark is dense with those
-     * corners and puts a node at most of them, so the walk below takes
-     * many small hops toward the target rather than two big ones —
-     * that texture is most of what makes the thing look like a board
-     * instead of like a web. */
-    var pts = [[ax, ay]];
-    var hops = 3 + ((Math.random() * 3) | 0);
-    var px = ax, py = ay;
-    for (var i = 1; i <= hops; i++) {
-      var t = i / hops;
-      var spread = (1 - t) * 0.5 + 0.12;
-      var wx = ax + (bx - ax) * t + (Math.random() - 0.5) * W * 0.13 * spread;
-      var wy = ay + (by - ay) * t + (Math.random() - 0.5) * H * 0.18 * spread;
-      if (i === hops) { wx = bx; wy = by; }
-      dogleg(px, py, wx, wy, pts);
-      px = wx; py = wy;
+  function sprite(d) {
+    var pad = d.tipR * 2 + 8;
+    var maxOut = 0;
+    for (var i = 0; i < d.branches.length; i++) {
+      if (d.branches[i].out > maxOut) maxOut = d.branches[i].out;
     }
-    return pts;
-  }
+    var w = (maxOut + pad) * 2;
+    var hh = d.h + pad * 2;
 
-  function measure(pts) {
-    var cum = [0], total = 0;
-    for (var i = 1; i < pts.length; i++) {
-      total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-      cum.push(total);
-    }
-    return { pts: pts, len: total, cum: cum };
-  }
+    var c = document.createElement("canvas");
+    c.width = Math.ceil(w * dpr);
+    c.height = Math.ceil(hh * dpr);
+    var g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.translate(w / 2, hh - pad);          // origin: foot of the rail
 
-  function pointAt(tr, d) {
-    var cum = tr.cum;
-    for (var i = 1; i < cum.length; i++) {
-      if (d <= cum[i]) {
-        var seg = cum[i] - cum[i - 1] || 1;
-        var f = (d - cum[i - 1]) / seg;
-        var a = tr.pts[i - 1], b = tr.pts[i];
-        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    var wash = g.createLinearGradient(0, 0, 0, -d.h);
+    wash.addColorStop(0, VIOLET);
+    wash.addColorStop(0.5, MID);
+    wash.addColorStop(1, BLUE);
+
+    g.strokeStyle = wash;
+    g.lineCap = "round";
+    g.lineJoin = "round";
+
+    // A soft pass under the crisp one: a trace on a dark board should
+    // read as lit rather than as drawn.
+    for (var pass = 0; pass < 2; pass++) {
+      g.globalAlpha = pass === 0 ? 0.13 : 0.60;
+      g.lineWidth = pass === 0
+        ? Math.max(3, d.h * 0.055) : Math.max(1, d.h * 0.020);
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(0, -d.h);
+      g.stroke();
+
+      g.lineWidth = pass === 0
+        ? Math.max(2.4, d.h * 0.042) : Math.max(0.9, d.h * 0.015);
+      g.beginPath();
+      for (var j = 0; j < d.branches.length; j++) {
+        var b = d.branches[j];
+        for (var s = -1; s <= 1; s += 2) {
+          g.moveTo(0, -b.leave);
+          g.lineTo(s * b.out, -(b.leave + b.out));   // exactly 45°
+          g.lineTo(s * b.out, -b.tip);
+        }
       }
+      g.stroke();
     }
-    var last = tr.pts[tr.pts.length - 1];
-    return [last[0], last[1]];
+
+    // Plated pads: the ground punched through, the wash as the ring —
+    // the same construction as the mark.
+    g.globalAlpha = 1;
+    function plate(x, y, r) {
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832);
+      g.fillStyle = GROUND; g.fill();
+      g.strokeStyle = wash; g.lineWidth = Math.max(0.8, r * 0.55); g.stroke();
+    }
+    plate(0, -d.h, d.tipR * 1.3);
+    for (var k = 0; k < d.branches.length; k++) {
+      plate(-d.branches[k].out, -d.branches[k].tip, d.tipR);
+      plate(d.branches[k].out, -d.branches[k].tip, d.tipR);
+    }
+
+    return { canvas: c, w: w, h: hh, footY: hh - pad, cx: w / 2 };
   }
 
-  /* ---- building --------------------------------------------------- */
+  /* ---- the field ---------------------------------------------------- */
 
   function build() {
-    traces = [];
-    // Density scales with area so a phone is not a tangle and a wall
-    // display is not empty.
-    var count = Math.round(Math.max(18, Math.min(60, (W * H) / 19000)));
+    field = [];
+    var count = Math.round(Math.max(5, Math.min(20, (W * H) / 82000)));
+    var lane = W / count;
 
     for (var i = 0; i < count; i++) {
-      // Traces enter from an edge and run across, the way a board's
-      // signals come in from a connector.
-      var edge = (Math.random() * 4) | 0;
-      var ax, ay;
-      if (edge === 0) { ax = -20; ay = Math.random() * H; }
-      else if (edge === 1) { ax = W + 20; ay = Math.random() * H; }
-      else if (edge === 2) { ax = Math.random() * W; ay = -20; }
-      else { ax = Math.random() * W; ay = H + 20; }
-
-      var bx = W * (0.12 + Math.random() * 0.76);
-      var by = H * (0.10 + Math.random() * 0.80);
-      var tr = measure(route(ax, ay, bx, by));
-      if (tr.len > 40) traces.push(tr);
-    }
-
-    paintBoard();
-    sparks = [];
-  }
-
-  function wash(c) {
-    // The logo's gradient, laid across the whole surface rather than per
-    // trace, so every run belongs to one wash instead of repeating it.
-    var g = c.createLinearGradient(0, H, W, 0);
-    g.addColorStop(0.00, CYAN);
-    g.addColorStop(0.34, "#2C97EA");
-    g.addColorStop(0.62, BLUE);
-    g.addColorStop(1.00, VIOLET);
-    return g;
-  }
-
-  function paintBoard() {
-    board = document.createElement("canvas");
-    board.width = cv.width;
-    board.height = cv.height;
-    var c = board.getContext("2d");
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.lineCap = "round";
-    c.lineJoin = "round";
-
-    var g = wash(c);
-
-    // A soft under-glow first, then the crisp line over it: a trace on a
-    // dark board reads as lit rather than drawn.
-    c.globalAlpha = 0.16;
-    c.strokeStyle = g;
-    c.lineWidth = 6;
-    strokeAll(c);
-
-    c.globalAlpha = 0.66;
-    c.lineWidth = 1.5;
-    strokeAll(c);
-
-    // Pads. A trace that stops at nothing looks unfinished.
-    c.globalAlpha = 1;
-    for (var i = 0; i < traces.length; i++) {
-      var pts = traces[i].pts;
-      pad(c, pts[pts.length - 1][0], pts[pts.length - 1][1], g);
-      for (var j = 1; j < pts.length - 1; j++) {
-        var r = Math.random();
-        if (r < 0.34) via(c, pts[j][0], pts[j][1], g);
-        else if (r < 0.48) ring(c, pts[j][0], pts[j][1], g);
-      }
+      var h = (H * 0.15) + Math.random() * (H * 0.30);
+      var sp = sprite(design(h));
+      field.push({
+        sp: sp,
+        // Along the width with a little jitter, so it reads as a field
+        // and not as a picket fence.
+        x: lane * (i + 0.5) + (Math.random() - 0.5) * lane * 0.7,
+        baseY: H * (0.18 + Math.random() * 0.76),
+        // Up and down: slow, and no two on the same clock.
+        amp: 16 + Math.random() * 48,
+        period: 9000 + Math.random() * 17000,
+        phase: Math.random() * 6.2832,
+        railTop: h,
+        spark: null,
+        nextSpark: 900 + Math.random() * 9000
+      });
     }
   }
 
-  function strokeAll(c) {
-    c.beginPath();
-    for (var i = 0; i < traces.length; i++) {
-      var pts = traces[i].pts;
-      c.moveTo(pts[0][0], pts[0][1]);
-      for (var j = 1; j < pts.length; j++) c.lineTo(pts[j][0], pts[j][1]);
-    }
-    c.stroke();
-  }
+  /* ---- animation ----------------------------------------------------- */
 
-  function pad(c, x, y, g) {
-    c.globalAlpha = 0.30;
-    c.beginPath(); c.arc(x, y, 6, 0, 6.2832);
-    c.fillStyle = g; c.fill();
-    c.globalAlpha = 0.95;
-    c.beginPath(); c.arc(x, y, 3.1, 0, 6.2832);
-    c.fillStyle = g; c.fill();
-    c.globalAlpha = 1;
-    c.beginPath(); c.arc(x, y, 1.3, 0, 6.2832);
-    c.fillStyle = "#05070D"; c.fill();
-  }
+  function frame(now) {
+    if (!started) { started = now; last = now; }
+    var t = now - started;
+    var dt = Math.min(64, now - last);
+    last = now;
 
-  /* Hollow, not filled: a board has both, and a field of identical dots
-   * reads as decoration rather than as a circuit. */
-  function ring(c, x, y, g) {
-    c.globalAlpha = 0.72;
-    c.beginPath(); c.arc(x, y, 2.6, 0, 6.2832);
-    c.strokeStyle = g; c.lineWidth = 1.1; c.stroke();
-    c.globalAlpha = 1;
-  }
-
-  function via(c, x, y, g) {
-    c.globalAlpha = 0.7;
-    c.beginPath(); c.arc(x, y, 2.1, 0, 6.2832);
-    c.fillStyle = g; c.fill();
-    c.globalAlpha = 1;
-  }
-
-  /* ---- animation -------------------------------------------------- */
-
-  function frame(t) {
     ctx.clearRect(0, 0, W, H);
-    if (board) ctx.drawImage(board, 0, 0, W, H);
 
-    if (!REDUCED) {
-      if (sparks.length < 16 && Math.random() < 0.14 && traces.length) {
-        var tr = traces[(Math.random() * traces.length) | 0];
-        sparks.push({
-          tr: tr,
-          d: 0,
-          v: 0.9 + Math.random() * 1.9,
-          // Most runs are ordinary telemetry. Occasionally one is not.
-          hot: Math.random() < 0.13
-        });
+    for (var i = 0; i < field.length; i++) {
+      var f = field[i];
+      var y = f.baseY + (REDUCED
+        ? 0 : Math.sin(t / f.period * 6.2832 + f.phase) * f.amp);
+
+      ctx.drawImage(f.sp.canvas, f.x - f.sp.cx, y - f.sp.footY,
+                    f.sp.w, f.sp.h);
+
+      if (REDUCED) continue;
+
+      // A reading arriving: a light running up the rail to the top pad.
+      if (f.spark === null) {
+        f.nextSpark -= dt;
+        if (f.nextSpark <= 0) {
+          f.spark = 0;
+          f.nextSpark = 2600 + Math.random() * 14000;
+        }
+        continue;
       }
 
+      f.spark += dt / 1100;
+      if (f.spark >= 1) { f.spark = null; continue; }
+
+      var head = y - f.railTop * f.spark;
+      var tail = Math.min(y, head + f.railTop * 0.22);
+      var lg = ctx.createLinearGradient(0, tail, 0, head);
+      lg.addColorStop(0, "rgba(0,0,0,0)");
+      lg.addColorStop(1, TIP);
+      ctx.strokeStyle = lg;
+      ctx.lineWidth = Math.max(1.2, f.railTop * 0.022);
       ctx.lineCap = "round";
-      for (var i = sparks.length - 1; i >= 0; i--) {
-        var s = sparks[i];
-        s.d += s.v;
-        if (s.d > s.tr.len) { sparks.splice(i, 1); continue; }
+      ctx.globalAlpha = 0.78;
+      ctx.beginPath();
+      ctx.moveTo(f.x, tail);
+      ctx.lineTo(f.x, head);
+      ctx.stroke();
 
-        var head = pointAt(s.tr, s.d);
-        var tail = pointAt(s.tr, Math.max(0, s.d - 26));
-        var life = 1 - s.d / s.tr.len;
-
-        var lg = ctx.createLinearGradient(tail[0], tail[1], head[0], head[1]);
-        var col = s.hot ? ALARM : "#9BE0FF";
-        lg.addColorStop(0, "rgba(0,0,0,0)");
-        lg.addColorStop(1, col);
-        ctx.strokeStyle = lg;
-        ctx.lineWidth = s.hot ? 2.2 : 1.7;
-        ctx.globalAlpha = 0.30 + 0.55 * life;
+      // and the pad it lands on takes the light for a moment
+      if (f.spark > 0.9) {
+        ctx.globalAlpha = (1 - f.spark) / 0.1 * 0.65;
         ctx.beginPath();
-        ctx.moveTo(tail[0], tail[1]);
-        ctx.lineTo(head[0], head[1]);
-        ctx.stroke();
-
-        ctx.globalAlpha = 0.55 + 0.45 * life;
-        ctx.beginPath();
-        ctx.arc(head[0], head[1], s.hot ? 2.6 : 2.0, 0, 6.2832);
-        ctx.fillStyle = col;
+        ctx.arc(f.x, y - f.railTop, Math.max(2.6, f.railTop * 0.05), 0, 6.2832);
+        ctx.fillStyle = TIP;
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      raf = requestAnimationFrame(frame);
     }
+
+    if (!REDUCED) raf = requestAnimationFrame(frame);
   }
 
-  /* ---- lifecycle -------------------------------------------------- */
+  /* ---- lifecycle ------------------------------------------------------ */
 
   function size() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -283,6 +236,7 @@
     clearTimeout(pending);
     pending = setTimeout(function () {
       cancelAnimationFrame(raf);
+      started = 0;
       size();
       raf = requestAnimationFrame(frame);
     }, 180);
@@ -298,6 +252,7 @@
     if (document.hidden) {
       cancelAnimationFrame(raf);
     } else if (!REDUCED) {
+      started = 0;
       raf = requestAnimationFrame(frame);
     }
   });
