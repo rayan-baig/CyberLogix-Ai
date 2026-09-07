@@ -136,6 +136,11 @@ def list_industries():
                 "vertical": key,
                 "name": profile["name"],
                 "catastrophe": profile["catastrophe"],
+                # The line that gets said out loud in that trade's own
+                # words. Served from here rather than written into the
+                # marketing page, so the copy and the sector it describes
+                # cannot drift apart.
+                "slogan": profile["slogan"],
                 "danger_above": profile["danger_above"],
                 "danger_below": profile["danger_below"],
                 "unit": profile["unit"],

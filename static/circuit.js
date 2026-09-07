@@ -58,15 +58,20 @@
   }
 
   function route(ax, ay, bx, by) {
+    /* A board is routed in short square runs with the corners taken at
+     * 45°, not in long sweeps. The parent mark is dense with those
+     * corners and puts a node at most of them, so the walk below takes
+     * many small hops toward the target rather than two big ones —
+     * that texture is most of what makes the thing look like a board
+     * instead of like a web. */
     var pts = [[ax, ay]];
-    var hops = 1 + ((Math.random() * 2) | 0);
+    var hops = 3 + ((Math.random() * 3) | 0);
     var px = ax, py = ay;
     for (var i = 1; i <= hops; i++) {
       var t = i / hops;
-      // A waypoint pulled off the straight line, so runs bend like a
-      // board being routed around something rather than heading straight.
-      var wx = ax + (bx - ax) * t + (Math.random() - 0.5) * W * 0.16;
-      var wy = ay + (by - ay) * t + (Math.random() - 0.5) * H * 0.22;
+      var spread = (1 - t) * 0.5 + 0.12;
+      var wx = ax + (bx - ax) * t + (Math.random() - 0.5) * W * 0.13 * spread;
+      var wy = ay + (by - ay) * t + (Math.random() - 0.5) * H * 0.18 * spread;
       if (i === hops) { wx = bx; wy = by; }
       dogleg(px, py, wx, wy, pts);
       px = wx; py = wy;
@@ -163,9 +168,10 @@
     for (var i = 0; i < traces.length; i++) {
       var pts = traces[i].pts;
       pad(c, pts[pts.length - 1][0], pts[pts.length - 1][1], g);
-      // and at the interior corners, where a real board vias through
       for (var j = 1; j < pts.length - 1; j++) {
-        if (Math.random() < 0.22) via(c, pts[j][0], pts[j][1], g);
+        var r = Math.random();
+        if (r < 0.34) via(c, pts[j][0], pts[j][1], g);
+        else if (r < 0.48) ring(c, pts[j][0], pts[j][1], g);
       }
     }
   }
@@ -190,6 +196,15 @@
     c.globalAlpha = 1;
     c.beginPath(); c.arc(x, y, 1.3, 0, 6.2832);
     c.fillStyle = "#05070D"; c.fill();
+  }
+
+  /* Hollow, not filled: a board has both, and a field of identical dots
+   * reads as decoration rather than as a circuit. */
+  function ring(c, x, y, g) {
+    c.globalAlpha = 0.72;
+    c.beginPath(); c.arc(x, y, 2.6, 0, 6.2832);
+    c.strokeStyle = g; c.lineWidth = 1.1; c.stroke();
+    c.globalAlpha = 1;
   }
 
   function via(c, x, y, g) {

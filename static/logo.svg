@@ -1,49 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
      aria-label="CyberLogix AI">
   <!--
-    Three readings, a limit drawn across them, and one that has gone over
-    it. The whole product in a mark.
+    The branches that leave the head in the Cybersalus mark, on their own
+    and stood upright.
 
-    A sibling of the Cybersalus logo rather than a copy: that one draws
-    its subject out of routed board traces, so this keeps the grammar —
-    square runs, a pad at every terminus, violet into blue — and stands
-    the fan of lines upright, where a rising trace means what it means.
+    The thing that makes those lines read as circuitry and not as a plant
+    is that they are mostly *square*: a long horizontal or vertical run,
+    with 45° used only to turn a corner. Drawn as diagonals throughout —
+    which was the first attempt — the same idea comes out as a sapling.
 
-    Read left to right it is time. The first two are fine and differ
-    slightly, because real readings do. The third is not.
+    So every branch here leaves the rail at 45° and then runs flat to its
+    pad, and the pads sit far out at the edges rather than bunched near
+    the top. Purple at the root, blue at the tips: the wash climbs with
+    the branches instead of running flat across the box.
 
-    It survives one colour. The breach is taller and carries a heavier
-    pad, so with the alarm red stripped out — a black-and-white invoice,
-    an embossed card — it is still plainly the odd one out. A mark that
-    only works in colour is a mark that works in half the places it has
-    to go.
+    No two limbs the same length, and no two leaving at the same height.
+    A board is routed around whatever is already there, so symmetry is
+    the one thing that would make this look drawn rather than laid out.
   -->
   <defs>
-    <linearGradient id="clx-wash" x1="6" y1="28" x2="26" y2="6"
+    <linearGradient id="clx-wash" x1="9" y1="30" x2="25" y2="3"
                     gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#7C3FE4"/>
-      <stop offset="0.5" stop-color="#4560EA"/>
+      <stop offset="0.45" stop-color="#5A4DE8"/>
       <stop offset="1" stop-color="#2F8BE8"/>
     </linearGradient>
   </defs>
 
-  <!-- the limit -->
-  <path d="M3.5 13.6 H27" fill="none" stroke="#FF6B4A" stroke-width="1.4"
-        stroke-dasharray="3.4 3" stroke-linecap="round" opacity="0.8"/>
-
-  <!-- two readings inside it -->
-  <g fill="none" stroke="url(#clx-wash)" stroke-width="2.7"
-     stroke-linecap="round">
-    <path d="M8 28 V19.6"/>
-    <path d="M16 28 V16.9"/>
-  </g>
-  <g fill="url(#clx-wash)">
-    <circle cx="8" cy="19.6" r="2.1"/>
-    <circle cx="16" cy="16.9" r="2.1"/>
+  <g fill="none" stroke="url(#clx-wash)" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M15 30.5 V5" stroke-width="2.9"/>
+    <path d="M15 24.5 L11 20.5 H3.8" stroke-width="2.2"/>
+    <path d="M15 18 L20 13 H28.6" stroke-width="2.2"/>
+    <path d="M15 11.5 L11.5 8 H6.4" stroke-width="2.2"/>
   </g>
 
-  <!-- and the one that is not -->
-  <path d="M24 28 V5.6" fill="none" stroke="#FF6B4A" stroke-width="2.9"
-        stroke-linecap="round"/>
-  <circle cx="24" cy="5.6" r="2.9" fill="#FF6B4A"/>
+  <!--
+    A pad at every terminus, and a via where each branch leaves the rail.
+    Filled white with the wash as their outline: that is what a plated
+    pad actually looks like, and it keeps the mark legible on paper,
+    where a solid white dot would simply vanish.
+  -->
+  <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.6">
+    <circle cx="15" cy="5" r="3.1"/>
+    <circle cx="3.8" cy="20.5" r="2.5"/>
+    <circle cx="28.6" cy="13" r="2.5"/>
+    <circle cx="6.4" cy="8" r="2.5"/>
+  </g>
+  <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.15">
+    <circle cx="15" cy="24.5" r="1.55"/>
+    <circle cx="15" cy="18" r="1.55"/>
+    <circle cx="15" cy="11.5" r="1.55"/>
+  </g>
 </svg>

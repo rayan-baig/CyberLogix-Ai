@@ -195,6 +195,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "cybersecurity": {
         "name": "CyberTech Data Centers",
         "catastrophe": "HVAC Circuit Trip / Cooling Fan Stalled",
+        "slogan": "A fan stalls at three. Nobody notices until the customer does.",
         "danger_above": 78.0,
         "danger_below": None,
         "unit": "°F",
@@ -208,6 +209,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "pharmacy": {
         "name": "Retail & Hospital Pharmacies",
         "catastrophe": "Vaccine Refrigerator Compressor Failure",
+        "slogan": "A vaccine fridge drifts at two. Nobody checks until seven.",
         "danger_above": 46.0,
         "danger_below": 36.0,
         "unit": "°F",
@@ -222,6 +224,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "wine_and_art": {
         "name": "Fine Wine & Art Storage",
         "catastrophe": "Cellar Climate Control Failure",
+        "slogan": "The cellar warms at midnight. Nobody tastes it for ten years.",
         "danger_above": 60.0,
         "danger_below": 50.0,
         "unit": "°F",
@@ -236,6 +239,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "cannabis": {
         "name": "Licensed Cannabis Cultivation",
         "catastrophe": "Drying Room Climate Excursion",
+        "slogan": (
+            "The drying room warms overnight. Nobody knows until the "
+            "lab says so."
+        ),
         "danger_above": 72.0,
         "danger_below": 58.0,
         "unit": "°F",
@@ -250,6 +257,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "restaurant": {
         "name": "Franchise Restaurants",
         "catastrophe": "Unlatched Walk-In Freezer Door Gasket Failure",
+        "slogan": "A walk-in fails on Friday. Nobody opens it until Monday.",
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",
@@ -263,6 +271,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "logistics": {
         "name": "High-Stakes Cold-Chain Transport",
         "catastrophe": "Reefer Truck Auxiliary Diesel Engine Stall",
+        "slogan": "A reefer stalls in Nebraska. Nobody notices until Ohio.",
         "danger_above": 40.0,
         "danger_below": None,
         "unit": "°F",
@@ -276,6 +285,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "solar_infrastructure": {
         "name": "Solar Infrastructure & Storage",
         "catastrophe": "Inverter Thermal Runaway Overload",
+        "slogan": (
+            "An inverter runs hot at noon. Nobody is on site until "
+            "Thursday."
+        ),
         "danger_above": 115.0,
         "danger_below": None,
         "unit": "°F",
@@ -289,6 +302,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "medical_lab": {
         "name": "Medical Labs & Blood Banks",
         "catastrophe": "Specimen Refrigerator Door Seal Degradation",
+        "slogan": "A specimen warms overnight. Nobody can take it again.",
         "danger_above": 46.0,
         "danger_below": 36.0,
         "unit": "°F",
@@ -302,6 +316,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "cryostorage": {
         "name": "IVF Clinics & Cryostorage",
         "catastrophe": "Cryogenic Tank Nitrogen Boil-Off / Vapour Space Warming",
+        "slogan": "The tank warms on Saturday. The phone calls start on Monday.",
         # Vapour-phase storage sits near −190°C. What actually matters is
         # the glass transition of water at about −130°C (−202°F): warmer
         # than that and ice crystals form inside the cells. The alarm is
@@ -325,6 +340,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "private_aviation": {
         "name": "Private Aviation Hangars",
         "catastrophe": "Hangar Bay Humidity Moisture Infiltration",
+        "slogan": (
+            "The hangar sweats all winter. Nobody finds it until the "
+            "annual."
+        ),
         "danger_above": 85.0,  # Heat/humidity proxy
         "danger_below": None,
         "unit": "°F",
@@ -338,6 +357,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "superyacht": {
         "name": "Luxury Superyacht Engine Bays",
         "catastrophe": "Engine Room Ventilation Airflow Blockage",
+        "slogan": (
+            "The engine bay heats at anchor. The nearest engineer is a "
+            "day away."
+        ),
         "danger_above": 90.0,
         "danger_below": None,
         "unit": "°F",
@@ -351,6 +374,10 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "country_club": {
         "name": "High-End Country Clubs",
         "catastrophe": "Clubhouse Kitchen Walk-In Compressor Failure",
+        "slogan": (
+            "The walk-in dies Sunday night. Two hundred covers are "
+            "booked Tuesday."
+        ),
         "danger_above": 32.0,
         "danger_below": None,
         "unit": "°F",

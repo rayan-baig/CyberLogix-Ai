@@ -139,3 +139,37 @@ def test_every_vertical_is_complete(api):
         if above is not None and below is not None:
             assert below < above, f"{key} thresholds are inverted"
         assert key in PRICE_BOOK, f"{key} has no price"
+
+
+def test_every_vertical_has_a_line_and_the_page_does_not_keep_a_copy(api):
+    """The copy lives with the sector it describes, or it drifts from it.
+
+    A slogan written into the marketing page is a slogan that outlives the
+    vertical it was for. These are served from `/api/industries` beside
+    the thresholds and the price, so a trade cannot be renamed, repriced
+    or removed while its line stays on the front page.
+    """
+    listed = api.get("/api/industries").json()["industries"]
+    assert len(listed) == len(INDUSTRY_PROFILES)
+
+    for row in listed:
+        line = row.get("slogan") or ""
+        assert line, f"{row['vertical']} has no line"
+        # The shape of the thing: two sentences, plain, no adjectives
+        # doing the work.
+        assert line.count(".") >= 2, f"{row['vertical']}: not two sentences — {line!r}"
+        assert len(line) <= 90, f"{row['vertical']}: too long to be a slogan"
+        assert line[0].isupper() and line.endswith(".")
+
+    assert len({r["slogan"] for r in listed}) == len(listed), (
+        "two trades share a line, so one of them is being sold somebody "
+        "else's story"
+    )
+
+    page = api.get("/").text
+    for row in listed:
+        assert row["slogan"] not in page, (
+            f"{row['vertical']}'s line is hard-coded into the landing page "
+            "instead of being read from the API"
+        )
+    assert "r.slogan" in page, "the page never renders the line at all"
