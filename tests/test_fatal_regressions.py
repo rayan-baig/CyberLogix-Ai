@@ -1050,3 +1050,111 @@ def test_only_one_person_is_told_they_have_the_incident(
     # And each loser is told whose it actually is.
     assert all(b["acknowledged_by"] == halted[0]["incident"]["acknowledged_by"]
                for b in losers)
+
+
+# ---------------------------------------------------------------------------
+#  Acknowledging made it louder
+# ---------------------------------------------------------------------------
+
+
+def test_acknowledging_an_alert_does_not_restart_it(
+    api, operator_factory, sensor_factory, monkeypatch
+):
+    """The button says "Escalation ladder halted". It did not halt it.
+
+    `Incident.open` means "nobody has this yet" — an escalation question,
+    so an acknowledgement closes it. The ingest path asked for the latest
+    *open* incident when deciding whether a breach was already known
+    about, which is a different question and looks identical in the
+    source.
+
+    So: Dana acknowledges at 01:05 and starts driving to the site. The
+    freezer is still broken and still reporting. At 01:06 the next
+    reading finds no open incident, opens a second one, texts the whole
+    roster again, and starts a fresh ten-minute clock that will phone
+    the person who has just said she is on her way.
+
+    Acknowledging an alert made the product louder. That is the opposite
+    of what the button does.
+    """
+    import notifications
+    import telemetry
+
+    texts = []
+
+    def _stub(to, body, tenant_id=None):
+        texts.append(to)
+        return {"channel": "sms", "to": to, "delivered": True,
+                "status": "queued", "provider_sid": "SM", "detail": "stub"}
+
+    monkeypatch.setattr(telemetry, "send_sms", _stub)
+    monkeypatch.setattr(notifications, "send_sms", _stub)
+
+    headers, _, _ = operator_factory()
+    sensor = sensor_factory(headers, sensor_id="FRIDGE-01", vertical="pharmacy")
+    sid = sensor["sensor_id"]
+
+    def pulse():
+        return api.post(
+            "/api/sensor-pulse", headers=headers,
+            json={"sensor_id": sid, "temperature_fahrenheit": 71.0},
+        ).json()
+
+    first = pulse()["incident_id"]
+    assert len(texts) == 1
+
+    api.post(f"/api/voice/acknowledge/{first}", headers=headers,
+             json={"acknowledged_by": "Dana Reyes"})
+
+    seen = {first}
+    for _ in range(20):
+        seen.add(pulse().get("incident_id"))
+
+    assert seen == {first}, (
+        f"twenty readings from one still-broken freezer opened {len(seen)} "
+        "incidents after it was acknowledged"
+    )
+    assert len(texts) == 1, (
+        f"the roster was texted {len(texts)} times for one fault that "
+        "somebody had already taken ownership of"
+    )
+
+    due = api.get("/api/voice/pending", headers=headers).json()
+    assert due["escalation_due"] == 0, (
+        "the person who acknowledged is queued to be phoned about it"
+    )
+
+    # And the other half: once it is closed out, a genuinely new failure
+    # on the same sensor is a new incident and does alert.
+    api.post(f"/api/voice/resolve/{first}", headers=headers,
+             json={"resolved_by": "Dana Reyes"})
+    again = pulse()
+    assert again["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
+    assert again["incident_id"] != first
+    assert len(texts) == 2
+
+
+def test_open_and_unresolved_are_different_questions():
+    """Pinning the distinction itself, since the names are one word apart."""
+    from db import Database
+    from store import HubStore
+
+    store = HubStore(db=Database(":memory:"))
+    tenant = store.create_tenant("Cold", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = store.register_sensor("RACK-01", tenant.tenant_id, "pharmacy",
+                                   "Hall B")
+    incident = store.open_incident(
+        tenant_id=tenant.tenant_id, sensor=sensor, temperature_fahrenheit=71.0,
+        breach_details="warm", sms_text="w", sms_dispatch_source="template")
+
+    assert incident.open and incident.unresolved
+
+    store.acknowledge_incident(incident, "Dana")
+    assert not incident.open, "an acknowledged incident still wakes people"
+    assert incident.unresolved, "an acknowledged incident is not a fixed freezer"
+    assert store.latest_unresolved_incident("RACK-01") is incident
+
+    store.resolve_incident(incident, "Dana")
+    assert not incident.open and not incident.unresolved
+    assert store.latest_unresolved_incident("RACK-01") is None

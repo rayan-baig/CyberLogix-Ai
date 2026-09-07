@@ -7,6 +7,8 @@ nothing in normal operation reveals it, because the in-memory copy is
 right until the process ends.
 """
 
+import pytest
+
 def rebuilt(path):
     from db import Database
     from store import HubStore
@@ -186,3 +188,70 @@ def test_readings_in_the_same_second_keep_their_order_across_a_restart(tmp_path)
         "the chain head moved without anybody touching a reading, which "
         "would report an honest record as tampered with"
     )
+
+
+def test_this_sessions_new_store_methods_survive_a_restart(tmp_path):
+    """Atomicity that only holds in memory is not atomicity.
+
+    `claim_sensor_seat`, `open_incident_once` and the escalation claim
+    all decide by reading the working set. If any of what they read were
+    not written through, a restart would hand back a seat that is taken,
+    open a second incident for a fault already being handled, or ring the
+    on-call phone again for a call that was already placed.
+    """
+    from db import Database
+    from store import VOICE_REDIAL_COOLDOWN_MINUTES, HubStore, SeatClaimRefused
+
+    path = str(tmp_path / "restart.db")
+
+    first = HubStore(db=Database(path))
+    tenant = first.create_tenant("Acme", "Dana", "+15550100", "d@x.com",
+                                 "enterprise")
+    sensor = first.claim_sensor_seat(
+        sensor_id="FRIDGE-01", tenant_id=tenant.tenant_id,
+        industry_vertical="pharmacy", location_name="Vaccine fridge",
+        max_sensors=1000, external_device_sn="SN-XYZ")
+    incident, created = first.open_incident_once(
+        tenant_id=tenant.tenant_id, sensor=sensor, temperature_fahrenheit=71.0,
+        breach_details="too warm", sms_text="warm",
+        sms_dispatch_source="template")
+    assert created
+    assert first.claim_voice_escalation(
+        incident, redial_after_minutes=VOICE_REDIAL_COOLDOWN_MINUTES)
+    assert first.acknowledge_incident(incident, "Dana Reyes <d@x.com>")[1]
+
+    small = first.create_tenant("Tiny", "D", "+15550100", "t@x.com", "trial")
+    cap = small.entitlements()["max_sensors"]
+    for i in range(cap):
+        first.claim_sensor_seat(
+            sensor_id=f"T-{i}", tenant_id=small.tenant_id,
+            industry_vertical="pharmacy", location_name="x", max_sensors=cap)
+    probe_before = int(first._next_id("PROBE").split("-")[1])
+    del first
+
+    second = HubStore(db=Database(path))
+
+    reopened = second.get_incident(incident.incident_id)
+    assert reopened.acknowledged_by == "Dana Reyes <d@x.com>"
+    assert reopened.voice_escalated_at is not None
+
+    # The claims still refuse a second taker on the other side of a restart.
+    assert second.acknowledge_incident(reopened, "Somebody Else")[1] is False
+    assert second.claim_voice_escalation(reopened) is False
+    assert second.open_incident_once(
+        tenant_id=tenant.tenant_id, sensor=second.get_sensor("FRIDGE-01"),
+        temperature_fahrenheit=72.0, breach_details="still warm",
+        sms_text="warm", sms_dispatch_source="template")[1] is False
+
+    # The seat cap counts what is on disk, not what this process happens
+    # to remember.
+    with pytest.raises(SeatClaimRefused):
+        second.claim_sensor_seat(
+            sensor_id="T-OVERFLOW", tenant_id=small.tenant_id,
+            industry_vertical="pharmacy", location_name="x", max_sensors=cap)
+    with pytest.raises(SeatClaimRefused):
+        second.claim_sensor_seat(
+            sensor_id="T-0", tenant_id=small.tenant_id,
+            industry_vertical="pharmacy", location_name="x", max_sensors=cap)
+
+    assert int(second._next_id("PROBE").split("-")[1]) > probe_before

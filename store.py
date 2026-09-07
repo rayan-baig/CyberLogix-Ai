@@ -871,7 +871,29 @@ class Incident:
 
     @property
     def open(self) -> bool:
+        """Nobody has this yet.
+
+        This is the escalation question — whether to keep waking people —
+        so an acknowledgement closes it even though the freezer is still
+        broken. It is *not* the question of whether the fault is still
+        live; see `unresolved`.
+        """
         return self.resolved_at is None and self.acknowledged_at is None
+
+    @property
+    def unresolved(self) -> bool:
+        """The fault is still live, whoever is dealing with it.
+
+        The two are different questions and the difference is easy to
+        miss, which is exactly what happened: the ingest path asked for
+        the latest *open* incident when deciding whether a breach was
+        already known about. The moment somebody acknowledged, the
+        incident stopped being open, so the next reading from the same
+        still-broken freezer opened a second one — texting the whole
+        roster again and starting a fresh ten-minute clock that would
+        phone the person who had just said they were on their way.
+        """
+        return self.resolved_at is None
 
     def minutes_open(self, now: Optional[datetime] = None) -> float:
         """How long this has been somebody's problem. Never negative.
@@ -2213,7 +2235,7 @@ class HubStore:
         acquisition and no other caller can land between them.
         """
         with self._lock:
-            existing = self.latest_open_incident(sensor.sensor_id)
+            existing = self.latest_unresolved_incident(sensor.sensor_id)
             if existing is not None:
                 return existing, False
             return (
@@ -2407,12 +2429,19 @@ class HubStore:
             found = [i for i in found if i.tenant_id == tenant_id]
         return sorted(found, key=lambda i: i.opened_at)
 
-    def latest_open_incident(self, sensor_id: str) -> Optional[Incident]:
+    def latest_unresolved_incident(self, sensor_id: str) -> Optional[Incident]:
+        """The incident a fresh breach on this sensor belongs to.
+
+        `unresolved`, not `open`. One fault is one incident until somebody
+        closes it out, whether or not it has been acknowledged — otherwise
+        acknowledging an alert makes the product louder rather than
+        quieter, which is the opposite of what the button says.
+        """
         with self._lock:
             candidates = [
                 i
                 for i in self._incidents.values()
-                if i.sensor_id == sensor_id and i.open
+                if i.sensor_id == sensor_id and i.unresolved
             ]
         if not candidates:
             return None
