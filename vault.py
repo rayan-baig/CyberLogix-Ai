@@ -32,6 +32,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from auth import require_tenant
+# Reporting is the one thing a delinquent account loses. Alerting is not,
+# and neither is `/verify` — a document already handed to an insurer has
+# to stay checkable whatever the customer's finance department is doing.
+from contracts import require_current
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -241,7 +245,7 @@ def attest_sensor(
 @router.get("/attestation")
 def estate_attestation(
     days: int = Query(30, ge=1, le=730),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("Estate attestation")),
 ):
     """A signed statement of the whole estate's record over a period.
 
@@ -306,7 +310,7 @@ def sensor_attestation(
             "re-deriving the chain themselves."
         ),
     ),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("Sensor attestation")),
 ):
     """An attestation for one sensor, optionally with the full chain."""
     sensor = _owned_sensor(tenant, sensor_id)

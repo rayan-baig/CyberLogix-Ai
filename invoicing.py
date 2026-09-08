@@ -102,36 +102,57 @@ def _load(invoice_id: str, tenant: Tenant):
 
 
 def build_lines(
-    tenant: Tenant, add_on_keys: List[str], include_setup: bool
+    tenant: Tenant,
+    add_on_keys: List[str],
+    include_setup: bool,
+    rate_multiplier: float = 1.0,
+    months: int = 1,
 ) -> List[Dict[str, Any]]:
-    """The line items, priced at this moment and then frozen."""
+    """The line items, priced at this moment and then frozen.
+
+    `rate_multiplier` carries the contract escalator. The rate card is what
+    a new customer pays today; a customer three years into a term with a
+    five percent escalator pays 1.1025 times it, and billing them the card
+    rate is a discount nobody agreed to give. It applies to recurring
+    lines only — commissioning is a one-time fee at the price it was
+    quoted at, and escalating it would be charging interest on a job
+    already done.
+
+    `months` bills several months on one document, which is what an annual
+    prepay is: twelve months at the same year's rate, on one invoice.
+    """
     from pricing import ADD_ONS, SETUP_FEE_PER_SITE_USD, add_on_price, build_subscription
 
     subscription = build_subscription(tenant)
     lines: List[Dict[str, Any]] = []
+    months = max(1, int(months))
+    period_note = "" if months == 1 else f" × {months} months"
+
+    def recurring(base: float) -> float:
+        return round(base * rate_multiplier * months, 2)
 
     for row in subscription["line_items"]:
         lines.append(
             {
                 "kind": "subscription",
-                "description": f"{row['industry']} — {row['description']}",
+                "description": f"{row['industry']} — {row['description']}{period_note}",
                 "quantity": row["units"],
-                "unit_price_usd": row["unit_price_usd"],
-                "amount_usd": row["line_total_usd"],
+                "unit_price_usd": round(row["unit_price_usd"] * rate_multiplier, 2),
+                "amount_usd": recurring(row["line_total_usd"]),
             }
         )
 
     units = subscription["units_total"]
     for key in add_on_keys:
         entry = ADD_ONS[key]
-        amount = add_on_price(key, units)
+        amount = recurring(add_on_price(key, units))
         quantity = units if entry["basis"] == "per covered unit" else 1
         lines.append(
             {
                 "kind": "add_on",
-                "description": f"{entry['name']} ({entry['basis']})",
+                "description": f"{entry['name']} ({entry['basis']}){period_note}",
                 "quantity": quantity,
-                "unit_price_usd": entry["monthly_usd"],
+                "unit_price_usd": round(entry["monthly_usd"] * rate_multiplier, 2),
                 "amount_usd": amount,
             }
         )

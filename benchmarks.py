@@ -31,7 +31,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from auth import require_tenant
+# Reporting is the one thing a delinquent account loses. Alerting is not,
+# and neither is `/verify` — a document already handed to an insurer has
+# to stay checkable whatever the customer's finance department is doing.
+from contracts import require_current
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -200,7 +203,7 @@ def _standing(value: Optional[float], values: List[float], lower_is_better=True)
 def sector_benchmark(
     vertical: str,
     days: int = Query(90, ge=7, le=730),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("Sector benchmarks")),
 ):
     """Where this customer sits against comparable operators."""
     key = resolve_vertical(vertical)
@@ -315,7 +318,7 @@ def _model_of(serial: Optional[str]) -> Optional[str]:
 @router.get("")
 def equipment_intelligence(
     days: int = Query(180, ge=30, le=730),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("Equipment intelligence")),
 ):
     """How hardware makes behave across the whole fleet.
 

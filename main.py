@@ -27,6 +27,7 @@ from automation import router as autopilot_router
 from benchmarks import router as benchmarks_router
 from claims import router as claims_router
 from console_api import router as console_router
+from contracts import router as contracts_router
 from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
 from costs import router as costs_router
@@ -117,6 +118,7 @@ app.include_router(benchmarks_router)
 app.include_router(partners_router)
 app.include_router(invoicing_router)
 app.include_router(enterprise_router)
+app.include_router(contracts_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",

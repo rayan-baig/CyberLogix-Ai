@@ -9,6 +9,7 @@ one change required to scale horizontally.
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import logging
 import math
@@ -1394,6 +1395,15 @@ class Invoice:
     payment_reference: Optional[str] = None
     amount_paid_usd: float = 0.0
     voided_at: Optional[datetime] = None
+    # What issued it: a subscription id, or "manual" when a human did.
+    source: str = "manual"
+    # Collections. An invoice nobody chases is a donation, and a founder
+    # who has to remember to chase is a founder who sometimes doesn't.
+    reminders_sent: int = 0
+    last_reminder_at: Optional[datetime] = None
+    # A late fee is a separate, numbered invoice — never an edit to this
+    # one. An issued invoice whose total moves is a dispute.
+    late_fee_invoice_id: Optional[str] = None
 
     @property
     def balance_usd(self) -> float:
@@ -1413,6 +1423,12 @@ class Invoice:
         if not self.open or self.due_at is None:
             return False
         return (now or utc_now()) > self.due_at
+
+    def days_overdue(self, now: Optional[datetime] = None) -> int:
+        """How far past due, or 0 if it is not."""
+        if not self.overdue(now):
+            return 0
+        return int(((now or utc_now()) - self.due_at).total_seconds() // 86400)
 
     def days_until_due(self, now: Optional[datetime] = None) -> Optional[int]:
         if self.due_at is None:
@@ -1440,6 +1456,10 @@ class Invoice:
             "payment_reference": self.payment_reference,
             "amount_paid_usd": self.amount_paid_usd,
             "voided_at": iso(self.voided_at),
+            "source": self.source,
+            "reminders_sent": self.reminders_sent,
+            "last_reminder_at": iso(self.last_reminder_at),
+            "late_fee_invoice_id": self.late_fee_invoice_id,
         }
 
     @classmethod
@@ -1463,11 +1483,16 @@ class Invoice:
             payment_reference=row.get("payment_reference"),
             amount_paid_usd=row.get("amount_paid_usd", 0.0),
             voided_at=_parse(row.get("voided_at")),
+            source=row.get("source", "manual"),
+            reminders_sent=row.get("reminders_sent", 0),
+            last_reminder_at=_parse(row.get("last_reminder_at")),
+            late_fee_invoice_id=row.get("late_fee_invoice_id"),
         )
 
     def public(self) -> Dict[str, Any]:
         row = self.to_row()
         row["overdue"] = self.overdue()
+        row["days_overdue"] = self.days_overdue()
         row["days_until_due"] = self.days_until_due()
         row["balance_usd"] = self.balance_usd
         row["open"] = self.open
@@ -1785,6 +1810,194 @@ class EnterpriseContract:
         }
 
 
+# ---- signed contracts -------------------------------------------------
+#
+# The gap this closes: the product could *quote* a three-year deal with a
+# five percent annual escalator, a setup fee and a prepay discount, and
+# then bill a flat month-one rate, by hand, if somebody remembered. The
+# quote and the money were two different numbers, and the difference grew
+# every year of the term.
+#
+# A Subscription is the signed deal made durable: the term, the rate, the
+# escalator, the attached add-ons and — the part that matters — a count of
+# the periods already invoiced, so the billing run can be safely re-run,
+# restarted, or caught up after an outage without ever charging the same
+# month twice.
+
+# Nobody signs beyond this, and the quote endpoint already caps at it.
+MAX_TERM_YEARS = 5
+
+# A catch-up ceiling. If a clock jumps, a database is restored from an old
+# backup, or a subscription is backdated by mistake, the billing run must
+# not answer by issuing eighty invoices to a real customer. It bills what
+# it can, logs loudly, and leaves the rest for a human.
+MAX_CATCHUP_PERIODS = 3
+
+
+def add_months(moment: datetime, months: int) -> datetime:
+    """Shift by whole calendar months, clamping the day.
+
+    31 January plus one month is 28 February, not 3 March. Getting this
+    wrong drifts a billing date forward a few days every year until an
+    invoice dated the 3rd is chasing a contract signed on the 31st.
+    """
+    total = moment.month - 1 + months
+    year = moment.year + total // 12
+    month = total % 12 + 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
+
+
+@dataclass
+class Subscription:
+    """A countersigned contract that bills itself."""
+
+    subscription_id: str
+    tenant_id: str
+    term_years: int
+    escalator_percent: float
+    annual_prepay: bool
+    add_ons: List[str] = field(default_factory=list)
+    purchase_order: Optional[str] = None
+    auto_renew: bool = True
+    periods_billed: int = 0
+    setup_billed: bool = False
+    started_at: Optional[datetime] = None
+    signed_by: str = ""
+    cancelled_at: Optional[datetime] = None
+    cancellation_reason: str = ""
+    last_billed_at: Optional[datetime] = None
+    # Where a renewal picks the rate up from. A second term starts at the
+    # rate the first one finished on, not back at the year-one number.
+    carried_multiplier: float = 1.0
+
+    @property
+    def months_per_period(self) -> int:
+        """Paying a year up front means one invoice a year, not twelve."""
+        return 12 if self.annual_prepay else 1
+
+    @property
+    def active(self) -> bool:
+        return self.cancelled_at is None
+
+    def period_start(self, index: int) -> datetime:
+        """When period `index` (0-based) begins."""
+        return add_months(self.started_at, index * self.months_per_period)
+
+    def contract_year(self, index: int) -> int:
+        """Which year of the term period `index` falls in, 1-based."""
+        return (index * self.months_per_period) // 12 + 1
+
+    def rate_multiplier(self, index: int) -> float:
+        """The escalator, compounded to the contract year of this period.
+
+        Year one is 1.0 — an escalator that applied on day one would be a
+        price rise, not an escalator, and the customer signed the year-one
+        number.
+        """
+        return round(
+            self.carried_multiplier
+            * (1 + self.escalator_percent / 100.0) ** (self.contract_year(index) - 1),
+            6,
+        )
+
+    @property
+    def ends_at(self) -> datetime:
+        return add_months(self.started_at, self.term_years * 12)
+
+    def expired(self, now: Optional[datetime] = None) -> bool:
+        """Past its term with no automatic renewal. Billing stops here."""
+        return not self.auto_renew and (now or utc_now()) >= self.ends_at
+
+    def days_to_renewal(self, now: Optional[datetime] = None) -> int:
+        return int((self.ends_at - (now or utc_now())).total_seconds() // 86400)
+
+    def due_periods(self, now: Optional[datetime] = None) -> List[int]:
+        """Period indices that have started and have not been invoiced.
+
+        A period is billed in advance: the invoice for the month goes out
+        on the day the month begins, which is what every subscription
+        contract in this market says and what makes non-payment visible
+        before the service has been delivered rather than after.
+        """
+        now = now or utc_now()
+        if not self.active or self.started_at is None:
+            return []
+        due = []
+        index = self.periods_billed
+        while self.period_start(index) <= now:
+            if self.expired(self.period_start(index)):
+                break
+            due.append(index)
+            index += 1
+            if len(due) >= MAX_CATCHUP_PERIODS:
+                break
+        return due
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "subscription_id": self.subscription_id,
+            "tenant_id": self.tenant_id,
+            "term_years": self.term_years,
+            "escalator_percent": self.escalator_percent,
+            "annual_prepay": self.annual_prepay,
+            "add_ons": list(self.add_ons),
+            "purchase_order": self.purchase_order,
+            "auto_renew": self.auto_renew,
+            "periods_billed": self.periods_billed,
+            "setup_billed": self.setup_billed,
+            "started_at": iso(self.started_at),
+            "signed_by": self.signed_by,
+            "cancelled_at": iso(self.cancelled_at),
+            "cancellation_reason": self.cancellation_reason,
+            "last_billed_at": iso(self.last_billed_at),
+            "carried_multiplier": self.carried_multiplier,
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "Subscription":
+        return cls(
+            subscription_id=row["subscription_id"],
+            tenant_id=row["tenant_id"],
+            term_years=row["term_years"],
+            escalator_percent=row["escalator_percent"],
+            annual_prepay=row.get("annual_prepay", False),
+            add_ons=list(row.get("add_ons") or []),
+            purchase_order=row.get("purchase_order"),
+            auto_renew=row.get("auto_renew", True),
+            periods_billed=row.get("periods_billed", 0),
+            setup_billed=row.get("setup_billed", False),
+            started_at=_parse(row.get("started_at")),
+            signed_by=row.get("signed_by", ""),
+            cancelled_at=_parse(row.get("cancelled_at")),
+            cancellation_reason=row.get("cancellation_reason", ""),
+            last_billed_at=_parse(row.get("last_billed_at")),
+            carried_multiplier=row.get("carried_multiplier", 1.0),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        row = self.to_row()
+        row.update(
+            {
+                "status": "active" if self.active else "cancelled",
+                "billing_interval": (
+                    "annual" if self.annual_prepay else "monthly"
+                ),
+                "current_contract_year": self.contract_year(
+                    max(0, self.periods_billed - 1)
+                ),
+                "current_rate_multiplier": self.rate_multiplier(
+                    max(0, self.periods_billed - 1)
+                ),
+                "next_billing_at": iso(self.period_start(self.periods_billed)),
+                "ends_at": iso(self.ends_at),
+                "days_to_renewal": self.days_to_renewal(),
+            }
+        )
+        return row
+
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -1805,6 +2018,7 @@ class HubStore:
         self._sites: Dict[str, Site] = {}
         self._contacts: Dict[str, Contact] = {}
         self._contracts: Dict[str, EnterpriseContract] = {}
+        self._subscriptions: Dict[str, Subscription] = {}
         self._resets: Dict[str, ResetToken] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
         self._invoices: Dict[str, Invoice] = {}
@@ -1903,6 +2117,10 @@ class HubStore:
                 contract = EnterpriseContract.from_row(row)
                 self._contracts[contract.account_id] = contract
 
+            for row in self._db.all("subscription"):
+                sub = Subscription.from_row(row)
+                self._subscriptions[sub.subscription_id] = sub
+
             for row in self._db.all("reset"):
                 reset = ResetToken.from_row(row)
                 if reset.spent:
@@ -1948,6 +2166,7 @@ class HubStore:
                     + list(self._webhooks)
                     + list(self._partners)
                     + list(self._invoices)
+                    + list(self._subscriptions)
                     + list(self._anchors)
                     + list(self._audit)
                     + [r.reading_id for bucket in self._readings.values()
@@ -1990,6 +2209,7 @@ class HubStore:
             self._partners.clear()
             self._partner_keys.clear()
             self._contracts.clear()
+            self._subscriptions.clear()
             self._resets.clear()
             self._usage.clear()
             self._ai_cache.clear()
@@ -2934,6 +3154,7 @@ class HubStore:
         period_days: int = 30,
         terms_days: int = 30,
         purchase_order: Optional[str] = None,
+        source: str = "manual",
     ) -> Invoice:
         with self._lock:
             now = utc_now()
@@ -2953,6 +3174,7 @@ class HubStore:
                 purchase_order=purchase_order,
                 issued_at=now,
                 due_at=now + timedelta(days=terms_days),
+                source=source,
             )
             self._invoices[invoice.invoice_id] = invoice
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
@@ -2966,6 +3188,52 @@ class HubStore:
         with self._lock:
             rows = [i for i in self._invoices.values() if i.tenant_id == tenant_id]
         return sorted(rows, key=lambda i: i.number, reverse=True)
+
+    def claim_reminder(self, invoice: Invoice, stage: int) -> bool:
+        """Reserve the right to send reminder `stage` for this invoice.
+
+        Same shape as the billing claim, for the same reason: two dunning
+        passes overlapping must not chase the customer twice.
+
+        The stage may jump. An invoice that went ninety days without a pass
+        — the process was off, the deployment was down — has earned the
+        notice that fits ninety days, not a march up through the four
+        milder ones it slept through. Anything at or below the stage
+        already sent is refused, so the sequence only ever moves forward.
+        """
+        with self._lock:
+            live = self._invoices.get(invoice.invoice_id)
+            if live is None or not live.open:
+                return False
+            if stage <= live.reminders_sent:
+                return False
+            live.reminders_sent = stage
+            live.last_reminder_at = utc_now()
+            self._db.put("invoice", live.invoice_id, live.to_row())
+            invoice.reminders_sent = live.reminders_sent
+            invoice.last_reminder_at = live.last_reminder_at
+            return True
+
+    def claim_late_fee(self, invoice: Invoice, fee_invoice_id: str) -> bool:
+        """Attach a late-fee invoice, once and only once."""
+        with self._lock:
+            live = self._invoices.get(invoice.invoice_id)
+            if live is None or live.late_fee_invoice_id is not None:
+                return False
+            live.late_fee_invoice_id = fee_invoice_id
+            self._db.put("invoice", live.invoice_id, live.to_row())
+            invoice.late_fee_invoice_id = fee_invoice_id
+            return True
+
+    def open_invoices(self, tenant_id: Optional[str] = None) -> List[Invoice]:
+        """Every invoice still owed something, oldest first."""
+        with self._lock:
+            rows = [
+                i
+                for i in self._invoices.values()
+                if i.open and (tenant_id is None or i.tenant_id == tenant_id)
+            ]
+        return sorted(rows, key=lambda i: i.issued_at or utc_now())
 
     def settle_invoice(
         self, invoice: Invoice, reference: str, amount_usd: Optional[float] = None
@@ -3298,6 +3566,154 @@ class HubStore:
         with self._lock:
             self._db.put("contract", contract.account_id, contract.to_row())
             return contract
+
+    # ---- signed subscriptions -----------------------------------------
+
+    def create_subscription(
+        self,
+        *,
+        tenant: Tenant,
+        term_years: int,
+        escalator_percent: float,
+        annual_prepay: bool,
+        add_ons: List[str],
+        purchase_order: Optional[str],
+        auto_renew: bool,
+        signed_by: str,
+        started_at: Optional[datetime] = None,
+        carried_multiplier: float = 1.0,
+    ) -> Subscription:
+        with self._lock:
+            sub = Subscription(
+                subscription_id=self._next_id("SUB"),
+                tenant_id=tenant.tenant_id,
+                term_years=max(1, min(int(term_years), MAX_TERM_YEARS)),
+                escalator_percent=round(float(escalator_percent), 4),
+                annual_prepay=bool(annual_prepay),
+                add_ons=sorted(set(add_ons)),
+                purchase_order=purchase_order,
+                auto_renew=bool(auto_renew),
+                signed_by=signed_by,
+                started_at=started_at or utc_now(),
+                carried_multiplier=round(float(carried_multiplier), 6),
+            )
+            self._subscriptions[sub.subscription_id] = sub
+            self._db.put("subscription", sub.subscription_id, sub.to_row())
+            return sub
+
+    def get_subscription(self, subscription_id: str) -> Optional[Subscription]:
+        with self._lock:
+            return self._subscriptions.get(subscription_id)
+
+    def subscriptions_for(self, tenant_id: str) -> List[Subscription]:
+        with self._lock:
+            rows = [
+                s for s in self._subscriptions.values() if s.tenant_id == tenant_id
+            ]
+        return sorted(rows, key=lambda s: s.started_at or utc_now(), reverse=True)
+
+    def active_subscription(self, tenant_id: str) -> Optional[Subscription]:
+        """The one contract that bills this tenant, if there is one."""
+        for sub in self.subscriptions_for(tenant_id):
+            if sub.active:
+                return sub
+        return None
+
+    def all_subscriptions(self) -> List[Subscription]:
+        with self._lock:
+            return list(self._subscriptions.values())
+
+    def save_subscription(self, sub: Subscription) -> Subscription:
+        with self._lock:
+            self._db.put("subscription", sub.subscription_id, sub.to_row())
+            return sub
+
+    def claim_billing_period(self, sub: Subscription, index: int) -> bool:
+        """Reserve period `index` for invoicing. False means somebody else has it.
+
+        Billing is the one place in this system where doing the work twice
+        costs the customer money, so the decision to bill and the record
+        that it was billed happen inside a single lock acquisition. Without
+        this, two billing runs overlapping — a scheduler tick landing on a
+        manual catch-up, or a restart mid-pass — each read
+        `periods_billed == 4`, each decided period 4 was due, and the
+        customer received two invoices for the same month.
+
+        The counter only ever advances, so a claim for a period already
+        billed is refused rather than reordered.
+        """
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id)
+            if live is None or not live.active:
+                return False
+            if index != live.periods_billed:
+                return False
+            live.periods_billed = index + 1
+            live.last_billed_at = utc_now()
+            self._db.put("subscription", live.subscription_id, live.to_row())
+            # The caller holds a reference; keep it in step so it does not
+            # go on to bill from a stale count.
+            sub.periods_billed = live.periods_billed
+            sub.last_billed_at = live.last_billed_at
+            return True
+
+    def release_billing_period(self, sub: Subscription, index: int) -> None:
+        """Give a claimed period back after the invoice failed to issue.
+
+        A claim that is never released is a month nobody is ever billed
+        for — the failure mode this whole mechanism exists to avoid, just
+        pointing the other way.
+        """
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id)
+            if live is None or live.periods_billed != index + 1:
+                return
+            live.periods_billed = index
+            self._db.put("subscription", live.subscription_id, live.to_row())
+            sub.periods_billed = index
+
+    def mark_setup_billed(self, sub: Subscription) -> None:
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id)
+            if live is not None:
+                live.setup_billed = True
+                self._db.put("subscription", live.subscription_id, live.to_row())
+            sub.setup_billed = True
+
+    def cancel_subscription(self, sub: Subscription, reason: str) -> Subscription:
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id) or sub
+            live.cancelled_at = utc_now()
+            live.cancellation_reason = reason
+            self._db.put("subscription", live.subscription_id, live.to_row())
+            return live
+
+    def renew_subscription(self, sub: Subscription, term_years: int) -> Subscription:
+        """Start a fresh term at the rate the last one ended on.
+
+        A renewal that reset to the year-one rate would hand back every
+        point of the escalator the term was signed to earn, which is the
+        single most expensive thing a renewal can quietly do.
+        """
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id) or sub
+            carried = live.rate_multiplier(max(0, live.periods_billed - 1))
+            live.cancelled_at = utc_now()
+            live.cancellation_reason = "superseded by renewal"
+            self._db.put("subscription", live.subscription_id, live.to_row())
+        tenant = self.get_tenant(live.tenant_id)
+        fresh = self.create_subscription(
+            tenant=tenant,
+            term_years=term_years,
+            escalator_percent=live.escalator_percent,
+            annual_prepay=live.annual_prepay,
+            add_ons=list(live.add_ons),
+            purchase_order=live.purchase_order,
+            auto_renew=live.auto_renew,
+            signed_by=live.signed_by,
+            carried_multiplier=carried,
+        )
+        return fresh
 
 
 STORE = HubStore()

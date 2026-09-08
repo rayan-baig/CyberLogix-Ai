@@ -24,9 +24,16 @@ import os
 from typing import Optional
 
 from automation import sweep_tenant
+from contracts import run_billing, run_dunning
 from store import STORE
 
 logger = logging.getLogger("cyberlogix.scheduler")
+
+# Billing does not need a minute-by-minute sweep, and running it on the
+# alert cadence would mean a thousand no-op passes a day over the whole
+# invoice ledger. Once an hour is far more often than a monthly contract
+# needs, and still catches up within the hour after a restart.
+BILLING_EVERY_SECONDS = 3600
 
 
 def _interval() -> int:
@@ -36,6 +43,37 @@ def _interval() -> int:
     except ValueError:
         logger.error("CYBERLOGIX_SWEEP_SECONDS is not a number; scheduler off.")
         return 0
+
+
+def run_money_pass() -> dict:
+    """Issue what is due and chase what is late.
+
+    Separate from the alert sweep and far less frequent, but under the
+    same rule: it runs unattended, so a failure in one account must not
+    stop the others. This is the function that decides whether the company
+    gets paid, and until it existed the answer was "if somebody remembers".
+    """
+    billed = {"invoices_issued": 0, "billed_usd": 0.0}
+    chased = {"notices_count": 0, "late_fees_issued": []}
+    try:
+        billed = run_billing()
+    except Exception as exc:  # noqa: BLE001 - collections must still run
+        logger.exception("Billing pass failed (%s).", exc)
+    try:
+        chased = run_dunning()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Collections pass failed (%s).", exc)
+
+    if billed.get("invoices_issued") or chased.get("notices_count"):
+        logger.info(
+            "Money pass: %d invoice(s) for $%.2f issued, %d chase(s) due, "
+            "%d late fee(s).",
+            billed.get("invoices_issued", 0),
+            billed.get("billed_usd", 0.0),
+            chased.get("notices_count", 0),
+            len(chased.get("late_fees_issued", [])),
+        )
+    return {"billing": billed, "collections": chased}
 
 
 def run_one_pass() -> dict:
@@ -85,13 +123,25 @@ def run_one_pass() -> dict:
 
 
 async def _loop(interval: int) -> None:
-    logger.info("Autopilot scheduler started; sweeping every %ds.", interval)
+    logger.info(
+        "Autopilot scheduler started; sweeping every %ds, billing every %ds.",
+        interval,
+        BILLING_EVERY_SECONDS,
+    )
+    # Counted in seconds slept rather than in passes, so changing the sweep
+    # interval does not silently change how often the company invoices.
+    since_billing = 0.0
     while True:
         try:
             await asyncio.sleep(interval)
             # Sweeps touch SQLite and the telephony client, both blocking,
             # so they run on a worker thread rather than stalling the API.
             await asyncio.to_thread(run_one_pass)
+
+            since_billing += interval
+            if since_billing >= BILLING_EVERY_SECONDS:
+                since_billing = 0.0
+                await asyncio.to_thread(run_money_pass)
         except asyncio.CancelledError:
             logger.info("Autopilot scheduler stopping.")
             raise
