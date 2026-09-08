@@ -9,7 +9,7 @@ to the cent. And then nothing carried any of it into an invoice. Billing
 was a button somebody had to remember to press, at the month-one rate,
 forever. On a $48,000-a-year estate signed to a three-year escalating
 term, the difference between the deal as quoted and the deal as billed is
-$7,384 over the term — and that is before counting the months nobody
+$7,320 over the term — and that is before counting the months nobody
 remembered to bill at all.
 
 Three things live here:
