@@ -35,6 +35,7 @@ from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
+from legal import router as legal_router
 from notifications import delivery_ready
 from partners import router as partners_router
 import scheduler
@@ -119,6 +120,7 @@ app.include_router(partners_router)
 app.include_router(invoicing_router)
 app.include_router(enterprise_router)
 app.include_router(contracts_router)
+app.include_router(legal_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -144,6 +146,9 @@ MODULES_ACTIVE = [
     "reseller_channel",
     "invoicing",
     "enterprise_cluster_billing",
+    "self_billing_contracts",
+    "collections_and_dunning",
+    "generated_legal_terms",
 ]
 
 
@@ -151,6 +156,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 LANDING_HTML = STATIC_DIR / "index.html"
 CONSOLE_HTML = STATIC_DIR / "console.html"
 PARTNER_HTML = STATIC_DIR / "partner.html"
+LEGAL_HTML = STATIC_DIR / "legal.html"
 
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
@@ -212,6 +218,16 @@ def operations_console():
 def partner_portal():
     """Serve the reseller portal, which is a different principal entirely."""
     return FileResponse(PARTNER_HTML, media_type="text/html")
+
+
+@app.get("/legal", include_in_schema=False)
+def legal_page():
+    """The agreements, where a prospect can read them before signing.
+
+    Terms nobody can find until after they have bought are a surprise, not
+    terms — and in several jurisdictions an unenforceable one.
+    """
+    return FileResponse(LEGAL_HTML, media_type="text/html")
 
 
 @app.get("/api", status_code=200, tags=["Gateway"])

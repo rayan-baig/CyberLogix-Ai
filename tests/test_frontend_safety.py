@@ -220,3 +220,73 @@ def test_the_background_stops_for_anyone_who_asked_it_to(api):
     theme = api.get("/static/theme.css").text
     assert "pointer-events: none" in theme
     assert "z-index: -2" in theme
+
+
+def test_the_agreement_renderer_escapes_before_it_marks_up(api):
+    """/legal turns Markdown into HTML, which is a new innerHTML surface.
+
+    The property that makes it safe is an ordering one: every line is
+    escaped *first*, and the inline pass then only ever wraps
+    already-escaped content in <strong> or <code>. Reverse those two steps
+    and the page that carries the liability cap starts executing whatever
+    is in the document.
+
+    Verified live in Chromium too — twelve payloads through
+    `renderMarkdown` (raw tags, an onerror image, an svg in a blockquote,
+    an iframe in a list, a broken-out code span, a javascript: href)
+    produced zero executions, zero event handlers and no element beyond
+    the six the renderer emits. This keeps the ordering from drifting.
+    """
+    page = api.get("/static/legal.html")
+    assert page.status_code == 200
+    js = script_of(ROOT / "static/legal.html")
+
+    assert 'const esc =' in js
+    for entity in ("&amp;", "&lt;", "&gt;", "&quot;", "&#39;"):
+        assert entity in js, f"esc() does not produce {entity}"
+
+    # esc() is the first thing inline() does, before any replace() that
+    # introduces a tag.
+    body = js[js.index("function inline("): js.index("function renderMarkdown(")]
+    assert body.index("esc(text)") < body.index("<strong>"), (
+        "inline() adds markup before escaping, so the document can inject tags"
+    )
+
+    # Every interpolation in the file, listed. Pairing backticks to find
+    # only the markup literals does not survive contact with this file —
+    # it contains regex literals made of backticks — and a scan that
+    # silently skips half the page is worse than none. So each one is
+    # named and justified instead, the way the console's exceptions are.
+    SAFE = {
+        # escaped at the point of use
+        "esc(d.slug)", "esc(d.title)", "esc(doc.sha256)",
+        "esc(err.message)", "esc(slug)",
+        # inline() escapes its own argument before adding any markup
+        'inline(c)', 'inline(para.join(" "))',
+        "inline(trimmed.slice(2))", "inline(trimmed.slice(3))",
+        # 'th' or 'td', chosen by this file and never by the document
+        "tag",
+        # a URL path segment, where percent-encoding is the right escape
+        "encodeURIComponent(slug)",
+        # an HTTP status code, into an Error message that is itself
+        # escaped by esc(err.message) before it reaches the page
+        "resp.status",
+    }
+    found = {m.strip() for m in re.findall(r"\$\{([^}]+)\}", js)}
+    assert found <= SAFE, (
+        "new interpolation(s) in legal.html that nobody has checked: "
+        f"{sorted(found - SAFE)}"
+    )
+
+    # And the renderer must not grow a construct that emits a tag beyond
+    # the ones whose safety was reasoned about above. Anchors especially:
+    # a href built from the document is a javascript: url waiting to
+    # happen.
+    emitted = {
+        tag.lstrip("/") for tag in re.findall(r"<(/?[a-z][a-z0-9]*)[ >]", js)
+    }
+    assert emitted <= {
+        "script",  # the page's own <script> element
+        "strong", "code", "p", "h1", "h2", "ul", "li", "blockquote",
+        "table", "thead", "tbody", "tr", "th", "td", "button",
+    }, f"legal.html emits an unexpected tag: {sorted(emitted)}"

@@ -279,9 +279,14 @@ def write_audit(
     action: str,
     detail: str,
     fallback_actor: str = "API key",
-) -> None:
-    """Record who did something, whether a person or a machine."""
-    STORE.record_audit(
+):
+    """Record who did something, whether a person or a machine.
+
+    Returns the entry. Most callers ignore it; the ones that hand a
+    reference back to the customer — a recorded acceptance, say — need
+    something to point at.
+    """
+    return STORE.record_audit(
         tenant_id=tenant.tenant_id,
         actor=actor_label(user, fallback_actor),
         actor_role=user.role if user else "machine",
