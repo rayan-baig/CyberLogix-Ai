@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+from datetime import timedelta
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -123,11 +124,48 @@ def _owned_tenant(partner: Partner, tenant_id: str) -> Tenant:
     return tenant
 
 
+# How far back a statement looks for payments. One month, because the
+# statement is monthly.
+COMMISSION_WINDOW_DAYS = 30
+
+
+def collected_from(tenant: Tenant, days: int = COMMISSION_WINDOW_DAYS) -> float:
+    """Cash actually received from this account in the window.
+
+    Commission used to be computed from `effective_monthly_usd` — the rate
+    card applied to whatever sensors happened to be registered. That is
+    what the account is *worth*, not what it paid, and the two are very
+    different things for exactly the accounts that matter:
+
+      * a customer who has never paid an invoice still earned its partner
+        20% of list, every month, forever;
+      * a suspended account did too, because suspension does not remove
+        its sensors.
+
+    Measured on a ten-rack account that had paid nothing: $1,798 a month
+    of commission against $0 collected, and it kept accruing after the
+    licence was suspended.
+
+    The module docstring has always said commission is "a share of revenue
+    we actually collect". This makes that true.
+    """
+    since = utc_now() - timedelta(days=days)
+    total = 0.0
+    for invoice in STORE.invoices_for(tenant.tenant_id):
+        if invoice.state == "void" or invoice.paid_at is None:
+            continue
+        if invoice.paid_at < since:
+            continue
+        total += invoice.amount_paid_usd
+    return round(total, 2)
+
+
 def _account_row(tenant: Tenant, commission_percent: float) -> Dict[str, Any]:
     from pricing import build_subscription
 
     subscription = build_subscription(tenant)
-    monthly = subscription["effective_monthly_usd"]
+    run_rate = subscription["effective_monthly_usd"]
+    collected = collected_from(tenant)
     sensors = STORE.sensors_for(tenant.tenant_id)
     open_incidents = STORE.open_incidents(tenant.tenant_id)
 
@@ -140,12 +178,17 @@ def _account_row(tenant: Tenant, commission_percent: float) -> Dict[str, Any]:
         "units_offline": sum(1 for s in sensors if s.offline()),
         "low_battery": sum(1 for s in sensors if s.battery_low),
         "open_incidents": len(open_incidents),
-        "monthly_usd": monthly,
+        # What the account is worth on the rate card, kept because it is
+        # what a partner wants to see when deciding where to spend a visit.
+        "run_rate_monthly_usd": run_rate,
+        # And what it actually paid, which is what the commission is on.
+        "collected_usd": collected,
+        "monthly_usd": collected,
         # Rounded per account here, and every total is the sum of these.
         # Rounding the sum instead in one place and the parts in another
         # gave the admin and the partner two different figures for the
         # same book — an awkward thing to reconcile on a payout.
-        "commission_usd": round(monthly * commission_percent / 100.0, 2),
+        "commission_usd": round(collected * commission_percent / 100.0, 2),
     }
 
 
@@ -359,16 +402,25 @@ def partner_statement(partner: Partner = Depends(require_partner)):
         "lines": [
             {
                 "company_name": a["company_name"],
-                "monthly_usd": a["monthly_usd"],
+                # Both, deliberately: the run rate is what the account is
+                # worth, the collected figure is what it paid, and the
+                # commission is on the second. A statement that showed
+                # only one of them would either look wrong or hide why.
+                "run_rate_monthly_usd": a["run_rate_monthly_usd"],
+                "collected_usd": a["collected_usd"],
                 "commission_usd": a["commission_usd"],
             }
-            for a in sorted(accounts, key=lambda a: -a["monthly_usd"])
+            for a in sorted(accounts, key=lambda a: -a["collected_usd"])
         ],
+        "collected_usd": billings,
         "billings_usd": billings,
         "commission_usd": commission,
+        "window_days": COMMISSION_WINDOW_DAYS,
         "note": (
-            "Paid on revenue collected from these accounts, not on any loss "
-            "avoided. A partner earns from accounts that stay."
+            "Paid on cash actually received from these accounts in the last "
+            f"{COMMISSION_WINDOW_DAYS} days, not on the rate card and not on "
+            "any loss avoided. An account that has not paid earns nothing, "
+            "which is the same incentive we have."
         ),
         "issued_at": iso(utc_now()),
     }

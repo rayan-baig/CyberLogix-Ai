@@ -1404,6 +1404,10 @@ class Invoice:
     # A late fee is a separate, numbered invoice — never an edit to this
     # one. An issued invoice whose total moves is a dispute.
     late_fee_invoice_id: Optional[str] = None
+    # Which period of the subscription this invoice covers, when one issued
+    # it. Voiding an invoice has to be able to name the period so it can be
+    # billed again.
+    billing_period: Optional[int] = None
 
     @property
     def balance_usd(self) -> float:
@@ -1460,6 +1464,7 @@ class Invoice:
             "reminders_sent": self.reminders_sent,
             "last_reminder_at": iso(self.last_reminder_at),
             "late_fee_invoice_id": self.late_fee_invoice_id,
+            "billing_period": self.billing_period,
         }
 
     @classmethod
@@ -1487,6 +1492,7 @@ class Invoice:
             reminders_sent=row.get("reminders_sent", 0),
             last_reminder_at=_parse(row.get("last_reminder_at")),
             late_fee_invoice_id=row.get("late_fee_invoice_id"),
+            billing_period=row.get("billing_period"),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1870,6 +1876,11 @@ class Subscription:
     # Where a renewal picks the rate up from. A second term starts at the
     # rate the first one finished on, not back at the year-one number.
     carried_multiplier: float = 1.0
+    # Periods whose invoice was voided and which must therefore be issued
+    # again. Without this a voided invoice is a month of service that can
+    # never be charged for: `periods_billed` is a high-water mark, so the
+    # run simply moves past the hole.
+    rebill_periods: List[int] = field(default_factory=list)
 
     @property
     def months_per_period(self) -> int:
@@ -1923,7 +1934,10 @@ class Subscription:
         now = now or utc_now()
         if not self.active or self.started_at is None:
             return []
-        due = []
+        # Holes first. A voided invoice leaves a period that has already
+        # been "billed" as far as the counter is concerned, and it has to
+        # come back round before the run moves on.
+        due = [i for i in sorted(self.rebill_periods) if self.period_start(i) <= now]
         index = self.periods_billed
         while self.period_start(index) <= now:
             if self.expired(self.period_start(index)):
@@ -1952,6 +1966,7 @@ class Subscription:
             "cancellation_reason": self.cancellation_reason,
             "last_billed_at": iso(self.last_billed_at),
             "carried_multiplier": self.carried_multiplier,
+            "rebill_periods": sorted(self.rebill_periods),
         }
 
     @classmethod
@@ -1973,6 +1988,7 @@ class Subscription:
             cancellation_reason=row.get("cancellation_reason", ""),
             last_billed_at=_parse(row.get("last_billed_at")),
             carried_multiplier=row.get("carried_multiplier", 1.0),
+            rebill_periods=list(row.get("rebill_periods") or []),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -3185,6 +3201,7 @@ class HubStore:
         terms_days: int = 30,
         purchase_order: Optional[str] = None,
         source: str = "manual",
+        billing_period: Optional[int] = None,
     ) -> Invoice:
         with self._lock:
             now = utc_now()
@@ -3205,6 +3222,7 @@ class HubStore:
                 issued_at=now,
                 due_at=now + timedelta(days=terms_days),
                 source=source,
+                billing_period=billing_period,
             )
             self._invoices[invoice.invoice_id] = invoice
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
@@ -3295,11 +3313,45 @@ class HubStore:
             return invoice
 
     def void_invoice(self, invoice: Invoice) -> Invoice:
+        """Void an invoice, and hand its billing period back to be re-issued.
+
+        Voiding used to be the end of the story, and that quietly gave the
+        month away. `periods_billed` is a high-water mark, so once period 4
+        had been billed the run moved to period 5 whether or not the
+        invoice for 4 still existed. A single void — a typo in the PO, a
+        disputed line, a wrong address — meant that month's service was
+        delivered and could never be charged for again.
+
+        The period goes on a re-bill list rather than rewinding the
+        counter, because the voided invoice is not always the newest one:
+        rewinding would re-issue every period after it as well.
+        """
         with self._lock:
             invoice.state = "void"
             invoice.voided_at = utc_now()
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
+
+            if invoice.billing_period is not None:
+                sub = self._subscriptions.get(invoice.source)
+                if sub is not None and invoice.billing_period not in sub.rebill_periods:
+                    sub.rebill_periods.append(invoice.billing_period)
+                    self._db.put("subscription", sub.subscription_id, sub.to_row())
+                    logger.info(
+                        "Voided %s; subscription %s will re-bill period %d.",
+                        invoice.number, sub.subscription_id, invoice.billing_period,
+                    )
             return invoice
+
+    def clear_rebill(self, sub: "Subscription", index: int) -> None:
+        """Take a period off the re-bill list once it has been re-issued."""
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id)
+            if live is None or index not in live.rebill_periods:
+                return
+            live.rebill_periods.remove(index)
+            self._db.put("subscription", live.subscription_id, live.to_row())
+            if index in sub.rebill_periods:
+                sub.rebill_periods.remove(index)
 
     # ---- partners ---------------------------------------------------------
 
@@ -3676,6 +3728,11 @@ class HubStore:
             live = self._subscriptions.get(sub.subscription_id)
             if live is None or not live.active:
                 return False
+            # A period on the re-bill list is behind the counter by
+            # definition — its invoice was voided — so it is claimed
+            # without moving the counter at all.
+            if index in live.rebill_periods:
+                return True
             if index != live.periods_billed:
                 return False
             live.periods_billed = index + 1

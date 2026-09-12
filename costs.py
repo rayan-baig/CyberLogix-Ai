@@ -67,6 +67,58 @@ CAPS = {
     "voice_calls": MAX_VOICE_CALLS_PER_DAY,
 }
 
+# What a *trial* may spend, which until now was the same as a paying
+# customer. That was survivable while the only way to get an account was
+# to ask somebody; with a public sign-up door it is not.
+#
+# A trial at the paid ceilings can burn 100 texts, 30 calls and 200 model
+# generations a day. At the list rates above that is $1.45 a day, $43.50 a
+# month, against zero revenue — and the whole fixed cost base of this
+# company is $8.85 a month. Fifty trials would be $2,175 a month of real
+# cash paid to Twilio and Google on behalf of people who have not bought
+# anything, which is not a growth cost, it is a hole.
+#
+# The trial has five sensor seats. These ceilings are far above what five
+# genuinely failing units need in a day, and far below what a script can
+# spend. Evaluating the product properly never meets them.
+TRIAL_MAX_AI_CALLS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_AI_CALLS_PER_DAY", 25)
+TRIAL_MAX_SMS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_SMS_PER_DAY", 15)
+TRIAL_MAX_VOICE_CALLS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_VOICE_CALLS_PER_DAY", 3)
+
+TRIAL_CAPS = {
+    "ai_calls": TRIAL_MAX_AI_CALLS_PER_DAY,
+    "sms": TRIAL_MAX_SMS_PER_DAY,
+    "voice_calls": TRIAL_MAX_VOICE_CALLS_PER_DAY,
+}
+
+
+def _on_trial(tenant_id: Optional[str]) -> bool:
+    tenant = STORE.get_tenant(tenant_id) if tenant_id else None
+    return tenant is not None and tenant.plan == "trial"
+
+
+def caps_for(tenant_id: Optional[str]) -> Dict[str, int]:
+    """The ceilings that apply to this tenant today.
+
+    Read from the module globals every time rather than from the CAPS
+    dict, which is a snapshot taken at import. Routing the enforcement
+    path through the snapshot meant a cap could be changed — by a test, by
+    a deployment reloading configuration — and the code that actually
+    refuses a send would carry on using the old number. A limit that can
+    silently be the wrong one is not a limit.
+    """
+    if _on_trial(tenant_id):
+        return {
+            "ai_calls": TRIAL_MAX_AI_CALLS_PER_DAY,
+            "sms": TRIAL_MAX_SMS_PER_DAY,
+            "voice_calls": TRIAL_MAX_VOICE_CALLS_PER_DAY,
+        }
+    return {
+        "ai_calls": MAX_AI_CALLS_PER_DAY,
+        "sms": MAX_SMS_PER_DAY,
+        "voice_calls": MAX_VOICE_CALLS_PER_DAY,
+    }
+
 
 def cache_key(prompt: str, purpose: str) -> str:
     """Stable key for a generation request."""
@@ -76,12 +128,13 @@ def cache_key(prompt: str, purpose: str) -> str:
 
 def allow_ai_call(tenant_id: Optional[str]) -> Tuple[bool, str]:
     """Whether a fresh model call is within today's budget."""
-    if not tenant_id or MAX_AI_CALLS_PER_DAY <= 0:
+    cap = caps_for(tenant_id)["ai_calls"]
+    if not tenant_id or cap <= 0:
         return True, ""
     usage = STORE.usage_for(tenant_id)
-    if usage.ai_calls >= MAX_AI_CALLS_PER_DAY:
+    if usage.ai_calls >= cap:
         return False, (
-            f"Daily AI generation cap reached ({MAX_AI_CALLS_PER_DAY}). "
+            f"Daily AI generation cap reached ({cap}). "
             "Falling back to the deterministic template."
         )
     return True, ""
@@ -93,14 +146,23 @@ def allow_message(tenant_id: Optional[str], channel: str) -> Tuple[bool, str]:
         return True, ""
     usage = STORE.usage_for(tenant_id)
 
+    caps = caps_for(tenant_id)
     if channel == "sms":
-        cap, used = MAX_SMS_PER_DAY, usage.sms_sent
+        cap, used = caps["sms"], usage.sms_sent
     elif channel == "voice":
-        cap, used = MAX_VOICE_CALLS_PER_DAY, usage.voice_calls
+        cap, used = caps["voice_calls"], usage.voice_calls
     else:
         return True, ""
 
     if cap > 0 and used >= cap:
+        # Naming the plan matters here. A trial hitting a trial ceiling is
+        # a reason to buy; the same message without it reads as the product
+        # being broken.
+        if _on_trial(tenant_id):
+            return False, (
+                f"Daily {channel} cap reached ({cap}) — the trial allowance. "
+                "A paid plan raises it."
+            )
         return False, f"Daily {channel} cap reached ({cap})."
     return True, ""
 
@@ -186,7 +248,11 @@ def cost_report(
         ),
         "ai_cache_hit_rate_percent": hit_rate,
         "ai_cache_entries": STORE.cache_size(),
-        "daily_caps": CAPS,
+        # The caps that apply to *this* tenant, not the paid ones. A trial
+        # shown the paid ceilings would be told it had headroom it does
+        # not have, and then wonder why its alerts stopped.
+        "daily_caps": caps_for(tenant.tenant_id),
+        "on_trial_allowance": tenant.plan == "trial",
         "unit_rates_usd": {
             "ai_call": RATE_AI_CALL,
             "sms": RATE_SMS,

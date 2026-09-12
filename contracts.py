@@ -51,6 +51,7 @@ from accounts import require_role
 from auth import require_tenant, write_audit
 from invoicing import PAYMENT_TERMS_DAYS, build_lines
 from store import (
+    INDUSTRY_PROFILES,
     MAX_CATCHUP_PERIODS,
     MAX_TERM_YEARS,
     STORE,
@@ -136,6 +137,85 @@ class CancelRequest(BaseModel):
 # ---- billing -----------------------------------------------------------
 
 
+def arrears_lines(
+    tenant: Tenant, sub: Subscription, index: int
+) -> List[Dict[str, Any]]:
+    """Charge for units that appeared *inside* the period just gone.
+
+    Billing in advance has a hole in it, and it is the largest one in the
+    system. The invoice for a period is priced on the day the period
+    opens. A customer who signs for five racks and rolls out twenty more
+    the following week is monitored on twenty-five and billed for five,
+    for the rest of the month — measured, $17,980 of service delivered and
+    never charged, from one ordinary rollout.
+
+    So each invoice also carries the part-period owed for anything that
+    turned up during the previous one, priced from the day it was
+    registered. Nobody is charged for days before their sensor existed,
+    and nobody gets a month free for adding it on the 2nd.
+    """
+    if index <= 0 or sub.started_at is None:
+        return []
+
+    from pricing import PRICE_BOOK, plural
+
+    window_open = sub.period_start(index - 1)
+    window_close = sub.period_start(index)
+    span = (window_close - window_open).total_seconds()
+    if span <= 0:
+        return []
+
+    # A sensor registered before the window opened was on the invoice that
+    # opened it; one registered after it closed belongs to this period,
+    # which this invoice already charges in full.
+    late: Dict[str, List[float]] = {}
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        joined = sensor.registered_at
+        if joined is None or joined <= window_open or joined >= window_close:
+            continue
+        unbilled = (window_close - joined).total_seconds() / span
+        # A sensor registered in the last moments of the period owes a
+        # fraction of a cent. Counting it inflates the line's unit count
+        # against an amount it did not contribute to, which reads on the
+        # invoice as an overcharge and invites the dispute.
+        if unbilled <= 0:
+            continue
+        late.setdefault(sensor.industry_vertical, []).append(unbilled)
+
+    multiplier = sub.rate_multiplier(index - 1)
+    lines: List[Dict[str, Any]] = []
+    for vertical, fractions in sorted(late.items()):
+        if vertical not in PRICE_BOOK:
+            continue
+        rate = PRICE_BOOK[vertical]["monthly_usd"] * multiplier
+        # Priced at the *previous* period's rate, because that is the
+        # period being caught up on. Using this period's rate would apply
+        # an escalator to days before it took effect.
+        # Only the ones that actually owe something appear in the count.
+        billable = [
+            f for f in fractions
+            if round(rate * f * sub.months_per_period, 2) >= 0.01
+        ]
+        amount = round(rate * sum(billable) * sub.months_per_period, 2)
+        if amount <= 0:
+            continue
+        count = len(billable)
+        lines.append(
+            {
+                "kind": "arrears",
+                "description": (
+                    f"{INDUSTRY_PROFILES[vertical]['name']} — {count} "
+                    f"{plural(vertical, count)} added mid-period, "
+                    f"part period to {window_close.date().isoformat()}"
+                ),
+                "quantity": count,
+                "unit_price_usd": round(rate, 2),
+                "amount_usd": amount,
+            }
+        )
+    return lines
+
+
 def bill_period(
     tenant: Tenant, sub: Subscription, index: int
 ) -> Optional[Invoice]:
@@ -153,6 +233,9 @@ def bill_period(
     try:
         multiplier = sub.rate_multiplier(index)
         months = sub.months_per_period
+        # Not on a re-bill of period 0: the commissioning fee was already
+        # charged on the invoice that was voided, or it was not, and
+        # `setup_billed` is the record of which.
         include_setup = index == 0 and not sub.setup_billed
         lines = build_lines(
             tenant,
@@ -161,6 +244,8 @@ def bill_period(
             rate_multiplier=multiplier,
             months=months,
         )
+        lines += arrears_lines(tenant, sub, index)
+
         if not lines:
             # An estate with nothing registered yet. Not an error, and not
             # a period to burn: hand it back so it bills once there is
@@ -203,10 +288,16 @@ def bill_period(
             terms_days=PAYMENT_TERMS_DAYS,
             purchase_order=sub.purchase_order,
             source=sub.subscription_id,
+            billing_period=index,
         )
     except Exception:
         STORE.release_billing_period(sub, index)
         raise
+
+    # Re-issued, so it is no longer a hole. Done after the invoice exists:
+    # clearing it first and then failing would lose the period for good,
+    # which is the bug this list was added to fix.
+    STORE.clear_rebill(sub, index)
 
     if include_setup:
         STORE.mark_setup_billed(sub)
