@@ -137,6 +137,46 @@ class Database:
             self._conn.execute("DELETE FROM records")
             self._conn.commit()
 
+    def snapshot(self, destination: str) -> Dict[str, Any]:
+        """Write a consistent copy of the whole database to a file.
+
+        SQLite's own online backup, not a file copy. A copy taken with
+        `cp` while the process is writing can catch a torn page or a WAL
+        that has not been checkpointed, and the result is a file that
+        looks like a backup right up until the afternoon somebody needs
+        it. The backup API takes a consistent snapshot of a live
+        database, which is the only kind worth having.
+
+        The snapshot is reopened and counted before this returns. A
+        backup nobody has read is a guess, and this is the one file in
+        the system whose failure mode is losing the company.
+        """
+        with self._lock:
+            target = sqlite3.connect(destination)
+            try:
+                self._conn.backup(target)
+                target.commit()
+                kinds = {
+                    kind: count
+                    for kind, count in target.execute(
+                        "SELECT kind, COUNT(*) FROM records GROUP BY kind"
+                    ).fetchall()
+                }
+                total = int(
+                    target.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+                )
+                integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
+            finally:
+                target.close()
+
+        if integrity != "ok":
+            raise RuntimeError(
+                f"The snapshot at {destination} failed its own integrity "
+                f"check ({integrity}). It has been written but must not be "
+                "trusted as a backup."
+            )
+        return {"path": destination, "records": total, "kinds": kinds}
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

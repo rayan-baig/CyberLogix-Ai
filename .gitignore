@@ -7,3 +7,4 @@ venv/
 cyberlogix.db
 cyberlogix.db-wal
 cyberlogix.db-shm
+backups/

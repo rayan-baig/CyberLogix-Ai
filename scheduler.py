@@ -26,6 +26,7 @@ from typing import Optional
 from automation import sweep_tenant
 from contracts import run_billing, run_dunning
 from conversion import run_trial_conversion
+from backup import run_daily_backup
 from digest import run_digests
 from mail import flush_queue
 from store import STORE
@@ -67,6 +68,7 @@ def run_money_pass() -> dict:
     chased = {"notices_count": 0, "late_fees_issued": []}
     asked = {"sent_count": 0}
     summarised = {"operator": {"sent": False}, "customer_reports": {"sent_count": 0}}
+    backed_up = {"taken": False, "status": "not_run"}
     flushed = {"attempted": 0, "sent": 0}
     try:
         billed = run_billing()
@@ -80,6 +82,13 @@ def run_money_pass() -> dict:
         asked = run_trial_conversion()
     except Exception as exc:  # noqa: BLE001 - selling must not stop collecting
         logger.exception("Trial conversion pass failed (%s).", exc)
+    try:
+        # Before the summaries and before the flush, because a snapshot
+        # is worth most taken while the day's billing is fresh and
+        # nothing else has had a chance to go wrong.
+        backed_up = run_daily_backup()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Daily backup failed (%s).", exc)
     try:
         summarised = run_digests()
     except Exception as exc:  # noqa: BLE001 - a summary must not stop the work
@@ -111,6 +120,7 @@ def run_money_pass() -> dict:
         "collections": chased,
         "conversion": asked,
         "digests": summarised,
+        "backup": backed_up,
         "mail_queue": flushed,
     }
 

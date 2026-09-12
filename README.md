@@ -44,6 +44,7 @@ ask for.
 | Outbound Mail | `/api/mail` | The transport, the queue, and who has asked us to stop |
 | Trial Conversion | `/api/conversion` | The trial asks for the order itself |
 | Digests & Reports | `/api/digest` | The book by email, and the customer's weekly evidence |
+| Backups | `/api/admin` | Verified snapshots of the one file that is the company |
 
 ### The look
 
@@ -1034,6 +1035,34 @@ reported and then stopped: the first is an installation somebody did not
 finish, the second is hardware that has failed, and calling them the same
 thing produces a number that is always non-zero and therefore always
 ignored.
+
+## Backups
+
+Every tenant, every sensor, every reading, every invoice and the whole
+hash-chained vault live in one SQLite file. It survives a restart. It does
+not survive a deleted volume, a mistyped `rm`, or the disk it sits on —
+and the vault is the part that hurts, because a customer's evidence that
+their freezer held temperature for two years cannot be reconstructed from
+anywhere else. An insurer will not accept "we lost it".
+
+A snapshot is taken daily by the same pass that bills, and on demand at
+`POST /api/admin/backups`. Three deliberate choices:
+
+* **SQLite's own online backup, never a file copy.** `cp` on a live
+  database can catch a torn page or a WAL that has not been checkpointed,
+  and produce a file that looks like a backup right up until the
+  afternoon somebody needs it.
+* **Every snapshot is verified before it counts** — reopened, integrity
+  checked, rows counted. An unread backup is a guess.
+* **Retention is by count, oldest first**, so the snapshots cannot fill
+  the disk the live database is also on and turn a backup policy into an
+  outage.
+
+`CYBERLOGIX_BACKUP_DIR` defaults to a directory beside the database, which
+survives a bad migration and not a lost disk; `GET /api/admin/backups`
+says so out loud when that is the case. Copy them off the machine on a
+schedule — a backup that only exists next to the thing it is backing up
+is not one.
 
 ## The agreements
 

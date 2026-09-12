@@ -35,6 +35,7 @@ from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
+from backup import router as backup_router
 from conversion import router as conversion_router
 from digest import router as digest_router
 from legal import router as legal_router
@@ -130,6 +131,7 @@ app.include_router(signup_router)
 app.include_router(mail_router)
 app.include_router(conversion_router)
 app.include_router(digest_router)
+app.include_router(backup_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -163,6 +165,7 @@ MODULES_ACTIVE = [
     "outbound_mail",
     "trial_conversion_sequence",
     "operator_digest_and_customer_reports",
+    "verified_database_snapshots",
 ]
 
 
