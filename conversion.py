@@ -185,6 +185,12 @@ def _setup_steps(tenant: Tenant) -> str:
         command = step.get("command")
         if command:
             lines.append(f"   {command.replace('$HOST', host)}")
+        # A step with no command is one that needs a signed-in person.
+        # There is no session to print into an email, so it points at
+        # the console rather than at a command that would 401.
+        where = step.get("where")
+        if where:
+            lines.append(f"   {where.replace('$HOST', host)}")
         lines.append("")
     if not lines:
         return f"Open {_console_url()} and register your first unit."

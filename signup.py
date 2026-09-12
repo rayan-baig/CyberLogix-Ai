@@ -287,7 +287,11 @@ def start_trial(payload: SignupRequest, request: Request):
         # Shown once, exactly as the provisioning endpoint does. A sensor
         # cannot report without it and no later endpoint will echo it.
         "api_key": tenant.api_key,
-        "next_steps": first_steps(tenant.api_key, example_vertical),
+        # The session just created, so the one step that needs a
+        # signed-in person is a command they can actually paste.
+        "next_steps": first_steps(
+            tenant.api_key, example_vertical, bearer_token=session.token
+        ),
     }
 
 
@@ -352,7 +356,9 @@ def record_acceptance(tenant, user) -> None:
         )
 
 
-def first_steps(api_key: str, vertical: str) -> Dict[str, Any]:
+def first_steps(
+    api_key: str, vertical: str, bearer_token: Optional[str] = None
+) -> Dict[str, Any]:
     """The shortest path from signing up to seeing the product work.
 
     Real readings on their own estate, not seeded demo sensors. A fake
@@ -360,6 +366,16 @@ def first_steps(api_key: str, vertical: str) -> Dict[str, Any]:
     reporting itself offline into the compliance log — and a monitoring
     product whose first act is a false alarm has taught the wrong lesson
     on day one.
+
+    Every command here has to run with the credential printed in it.
+    Step one did not: it sent only the tenant API key at `/api/contacts`,
+    which requires an operator role, so the first instruction we gave
+    every new customer answered `401 Missing bearer token`. Found by
+    running it. The roster is deliberately not editable with a machine
+    key — deciding who gets phoned at 3am is a person's decision — so
+    the fix is to print the credential that works, and when there is no
+    session to print, to send them to the console instead of to a
+    command that cannot succeed.
     """
     profile = INDUSTRY_PROFILES[vertical]
     above = profile.get("danger_above")
@@ -391,14 +407,26 @@ def first_steps(api_key: str, vertical: str) -> Dict[str, Any]:
                 "detail": (
                     "An alert with nobody on the roster reaches only the "
                     "contact captured at sign-up."
+                    + (
+                        ""
+                        if bearer_token
+                        else " The roster needs a signed-in person rather "
+                        "than an API key, so this one is a click."
+                    )
                 ),
                 "command": (
-                    "curl -X POST $HOST/api/contacts "
-                    f'-H "X-CyberLogix-Key: {api_key}" '
-                    '-H "Content-Type: application/json" '
-                    '-d \'{"full_name":"You","phone":"+15550100",'
-                    '"role":"owner"}\''
+                    (
+                        "curl -X POST $HOST/api/contacts "
+                        f'-H "X-CyberLogix-Key: {api_key}" '
+                        f'-H "Authorization: Bearer {bearer_token}" '
+                        '-H "Content-Type: application/json" '
+                        '-d \'{"full_name":"You","phone":"+15550100",'
+                        '"role":"owner"}\''
+                    )
+                    if bearer_token
+                    else None
                 ),
+                "where": None if bearer_token else "$HOST/console",
             },
             {
                 "title": "Register a sensor",
