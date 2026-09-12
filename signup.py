@@ -224,6 +224,7 @@ def start_trial(payload: SignupRequest, request: Request):
         contact_phone=payload.contact_phone.strip(),
         contact_email=email,
         plan=PUBLIC_PLAN,
+        industry_vertical=vertical or None,
     )
 
     try:
@@ -266,6 +267,12 @@ def start_trial(payload: SignupRequest, request: Request):
         tenant.company_name, email, tenant.tenant_id,
     )
 
+    # The one moment they are certainly paying attention. Waiting for the
+    # hourly sweep to say hello would spend it. This never raises and
+    # never blocks the sign-up: an account that exists matters more than
+    # a greeting that arrived.
+    send_welcome(tenant)
+
     tier = PLAN_TIERS[PUBLIC_PLAN]
     example_vertical = vertical or "restaurant"
     return {
@@ -282,6 +289,29 @@ def start_trial(payload: SignupRequest, request: Request):
         "api_key": tenant.api_key,
         "next_steps": first_steps(tenant.api_key, example_vertical),
     }
+
+
+def send_welcome(tenant) -> None:
+    """Post the four setup commands to the address that just signed up.
+
+    Imported here rather than at module scope so that the public door
+    does not drag the whole conversion ladder — and, through it, pricing
+    — into its import graph.
+
+    Guarded for the same reason as the acceptance record: the account
+    existing is what matters. A mail host having a bad afternoon must not
+    turn a successful sign-up into a 500 and a customer who thinks the
+    product is broken before they have seen it.
+    """
+    try:
+        from conversion import welcome
+
+        welcome(tenant)
+    except Exception:  # noqa: BLE001 - a greeting must never fail a sign-up
+        logger.exception(
+            "Welcome mail failed for %s; the trial is live regardless.",
+            tenant.tenant_id,
+        )
 
 
 def record_acceptance(tenant, user) -> None:

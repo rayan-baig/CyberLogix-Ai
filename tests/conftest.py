@@ -278,3 +278,58 @@ def owner_headers(api):
         return {"Authorization": f"Bearer {signed_in.json()['token']}"}
 
     return _make
+
+
+@pytest.fixture()
+def mailbox(monkeypatch):
+    """A configured mail transport that captures instead of sending.
+
+    Everything above the socket runs for real: the claim, the suppression
+    check, the header assembly, the retry accounting. Only the last
+    function — the one that opens the connection — is replaced, so a test
+    that says a chase went out is asserting on the message that would
+    actually have left the building.
+    """
+    import mail
+
+    sent = []
+
+    class _Mailbox(list):
+        def __init__(self):
+            super().__init__()
+            self.fail_with = None
+            self.fail_times = 0
+
+        def subjects(self):
+            return [m["Subject"] for m in self]
+
+        def bodies(self):
+            return [m.get_content() for m in self]
+
+        def to(self, address):
+            return [m for m in self if m["To"] == address]
+
+    box = _Mailbox()
+
+    def _capture(message):
+        if box.fail_times:
+            box.fail_times -= 1
+            raise box.fail_with or OSError("simulated mail outage")
+        box.append(message)
+        sent.append(message)
+
+    monkeypatch.setattr(mail, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(mail, "MAIL_FROM", "billing@cyberlogix.example")
+    monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://hub.example")
+    monkeypatch.setattr(mail, "_transport", _capture)
+    return box
+
+
+@pytest.fixture()
+def no_mail_transport(monkeypatch):
+    """A deployment where nobody has configured SMTP yet."""
+    import mail
+
+    monkeypatch.setattr(mail, "SMTP_HOST", "")
+    monkeypatch.setattr(mail, "MAIL_FROM", "")
+    return mail

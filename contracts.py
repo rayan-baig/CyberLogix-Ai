@@ -56,6 +56,9 @@ from auth import (
     write_audit,
 )
 from invoicing import PAYMENT_TERMS_DAYS, build_lines
+from mail import payment_instructions
+from mail import send as send_mail
+from mail import status as mail_status
 from store import (
     INDUSTRY_PROFILES,
     MAX_CATCHUP_PERIODS,
@@ -532,10 +535,15 @@ def issue_late_fee(tenant: Tenant, invoice: Invoice) -> Optional[Invoice]:
 def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
     """Chase everything overdue, and issue the late fees that have fallen due.
 
-    Returns the queue of notices to send. There is no mail transport in
-    this system yet, so the notices are recorded, logged and handed back
-    rather than delivered — the stage is claimed either way, so wiring a
-    sender in later cannot replay a month of chases at a customer.
+    Each notice is sent, not merely composed. For a long time it was
+    merely composed: the ladder ran, the stages were claimed, the text was
+    appended to a list and handed back to whoever called the endpoint, and
+    the customer was never told they owed anything. A collections process
+    the debtor cannot see is not a collections process.
+
+    The stage claim still comes first and the send is keyed on it, so a
+    pass replayed after a crash chases nobody twice, and a mail host that
+    is down queues the notice rather than losing it.
     """
     now = now or utc_now()
     notices: List[Dict[str, Any]] = []
@@ -567,6 +575,37 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
             if not STORE.claim_reminder(invoice, stage):
                 continue
 
+            text = REMINDER_TONE[stage].format(
+                number=invoice.number,
+                balance=invoice.balance_usd,
+                due=iso(invoice.due_at),
+                days=days,
+                fee_percent=f"{LATE_FEE_MONTHLY_PERCENT:g}",
+                delinquent=DELINQUENT_AFTER_DAYS,
+            )
+            # The stage is already claimed, so this cannot chase twice
+            # even if the send is retried; the dedupe key is belt and
+            # braces against a stage claim that is rolled back by a
+            # restart mid-pass. An invoice notice is transactional: an
+            # unsubscribe does not stop it, and must not.
+            delivery = send_mail(
+                to_address=tenant.contact_email,
+                subject=(
+                    f"{tenant.company_name}: invoice {invoice.number}, "
+                    f"${invoice.balance_usd:,.2f} outstanding"
+                ),
+                body=(
+                    f"{tenant.contact_name},\n\n{text}\n\n"
+                    f"{payment_instructions()}\n\n"
+                    "If this has already been paid, or if something on it "
+                    "is wrong, reply to this message and we will sort it "
+                    "out rather than keep chasing."
+                ),
+                dedupe_key=f"dunning:{invoice.invoice_id}:{stage}",
+                klass="transactional",
+                tenant_id=tenant.tenant_id,
+            )
+
             notices.append(
                 {
                     "invoice_id": invoice.invoice_id,
@@ -577,14 +616,9 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
                     "stage": stage,
                     "days_overdue": days,
                     "balance_usd": invoice.balance_usd,
-                    "message": REMINDER_TONE[stage].format(
-                        number=invoice.number,
-                        balance=invoice.balance_usd,
-                        due=iso(invoice.due_at),
-                        days=days,
-                        fee_percent=f"{LATE_FEE_MONTHLY_PERCENT:g}",
-                        delinquent=DELINQUENT_AFTER_DAYS,
-                    ),
+                    "message": text,
+                    "delivered": delivery["sent"],
+                    "delivery_status": delivery["status"],
                 }
             )
             logger.warning(
@@ -606,11 +640,8 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
         "notices_count": len(notices),
         "late_fees_issued": fees,
         "failed_invoices": failures,
-        "transport": (
-            "No mail transport is configured. Notices are recorded and "
-            "returned for sending; each stage is claimed once, so nothing "
-            "is chased twice when one is wired in."
-        ),
+        "sent": sum(1 for n in notices if n["delivered"]),
+        "transport": mail_status(),
     }
 
 

@@ -35,7 +35,10 @@ from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
+from conversion import router as conversion_router
 from legal import router as legal_router
+from mail import router as mail_router
+from mail import status as mail_status
 from notifications import delivery_ready
 from partners import router as partners_router
 import scheduler
@@ -123,6 +126,8 @@ app.include_router(enterprise_router)
 app.include_router(contracts_router)
 app.include_router(legal_router)
 app.include_router(signup_router)
+app.include_router(mail_router)
+app.include_router(conversion_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -153,6 +158,8 @@ MODULES_ACTIVE = [
     "generated_legal_terms",
     "self_serve_signup",
     "revenue_worklist",
+    "outbound_mail",
+    "trial_conversion_sequence",
 ]
 
 
@@ -283,6 +290,7 @@ def health_check():
         "gemini_model": GEMINI_MODEL,
         "gemini_dispatch": "ready" if dispatch_ready() else "fallback_template",
         "message_delivery": "twilio" if delivery_ready() else "dry_run",
+        "email_delivery": "smtp" if mail_status()["configured"] else "queued",
         "autopilot_scheduler": scheduler.status(),
         "timestamp": iso(utc_now()),
     }

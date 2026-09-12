@@ -61,6 +61,26 @@ def _parse(value: Optional[str]) -> Optional[datetime]:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def mask_email(address: str) -> str:
+    """Render an address for a log line without reprinting it in full.
+
+    The mail log is read by whoever holds the platform key, from a
+    browser, over a screen share. It needs to answer "did the chase to
+    Northgate go out", not to hand every customer's contact address to
+    whoever is looking over a shoulder. Enough of the local part survives
+    to recognise an address you already know.
+    """
+    address = (address or "").strip()
+    if "@" not in address:
+        return "(no address)" if not address else address[:1] + "***"
+    local, _, domain = address.partition("@")
+    if len(local) <= 2:
+        keep = local[:1]
+    else:
+        keep = local[:2]
+    return f"{keep}{'*' * max(len(local) - len(keep), 1)}@{domain}"
+
+
 # Readings are stored in Fahrenheit throughout and converted only for
 # display, so a tenant switching units never rewrites its own history.
 TEMPERATURE_UNITS = ("F", "C")
@@ -621,6 +641,12 @@ class Tenant:
     # refrigeration servicer with 200 clients is one relationship for us
     # and 200 accounts on the books.
     partner_id: Optional[str] = None
+    # What they said they monitor, captured at sign-up. Nothing is
+    # enforced from it — every sensor carries its own vertical and that is
+    # what prices and alarms it. This is so the product can talk to them
+    # about freezers rather than about "units" before they have registered
+    # anything at all.
+    industry_vertical: Optional[str] = None
 
     @property
     def expired(self) -> bool:
@@ -647,6 +673,7 @@ class Tenant:
             "suspended": self.suspended,
             "temperature_unit": self.temperature_unit,
             "partner_id": self.partner_id,
+            "industry_vertical": self.industry_vertical,
         }
 
     @classmethod
@@ -664,6 +691,7 @@ class Tenant:
             suspended=row.get("suspended", False),
             temperature_unit=row.get("temperature_unit", "F"),
             partner_id=row.get("partner_id"),
+            industry_vertical=row.get("industry_vertical"),
         )
 
     def public(self, sensor_count: int) -> Dict[str, Any]:
@@ -683,6 +711,7 @@ class Tenant:
             "expires_at": iso(self.expires_at),
             "temperature_unit": self.temperature_unit,
             "partner_id": self.partner_id,
+            "industry_vertical": self.industry_vertical,
             "seats_used": sensor_count,
             "seats_total": tier["max_sensors"],
             "seats_remaining": max(0, tier["max_sensors"] - sensor_count),
@@ -2022,6 +2051,155 @@ class Subscription:
 
 
 
+
+# How many times a queued message is attempted before it is given up on.
+# Two retries past the first try: enough to ride out a restarting mail
+# host, not enough to hammer one that is refusing us.
+MAIL_MAX_ATTEMPTS = 3
+
+# A message that has sat in the queue longer than this is never sent. The
+# queue exists so that a mail outage does not lose a chase; it must not
+# become a machine that fires a month of stale notices at a customer the
+# afternoon somebody finally configures SMTP.
+MAIL_MAX_AGE_HOURS = 72
+
+
+@dataclass
+class MailMessage:
+    """One outbound email, and what became of it.
+
+    Every send is written down before it is attempted. That is what makes
+    the transport safe to call from the billing pass: the claim on
+    `dedupe_key` happens under the store's lock, so two overlapping passes
+    produce one message, and a crash between claiming and sending leaves a
+    queued row that the next pass retries rather than a chase nobody has
+    any record of.
+    """
+
+    message_id: str
+    dedupe_key: str
+    to_address: str
+    subject: str
+    body: str
+    # "transactional" is mail the customer's own account produced — an
+    # invoice, a receipt, a security notice. "commercial" is mail we chose
+    # to send them. The distinction is not decoration: it decides whether
+    # an unsubscribe stops it.
+    klass: str
+    created_at: datetime
+    status: str = "queued"  # queued | sent | failed
+    attempts: int = 0
+    detail: str = ""
+    sent_at: Optional[datetime] = None
+    tenant_id: Optional[str] = None
+
+    def age_hours(self, now: Optional[datetime] = None) -> float:
+        now = now or utc_now()
+        return (now - self.created_at).total_seconds() / 3600.0
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "message_id": self.message_id,
+            "dedupe_key": self.dedupe_key,
+            "to_address": self.to_address,
+            "subject": self.subject,
+            "body": self.body,
+            "klass": self.klass,
+            "created_at": iso(self.created_at),
+            "status": self.status,
+            "attempts": self.attempts,
+            "detail": self.detail,
+            "sent_at": iso(self.sent_at) if self.sent_at else None,
+            "tenant_id": self.tenant_id,
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "MailMessage":
+        return cls(
+            message_id=row["message_id"],
+            dedupe_key=row["dedupe_key"],
+            to_address=row["to_address"],
+            subject=row["subject"],
+            body=row["body"],
+            klass=row.get("klass", "transactional"),
+            created_at=_parse(row["created_at"]),
+            status=row.get("status", "queued"),
+            attempts=row.get("attempts", 0),
+            detail=row.get("detail", ""),
+            sent_at=_parse(row["sent_at"]) if row.get("sent_at") else None,
+            tenant_id=row.get("tenant_id"),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        """The log line. Deliberately without the body.
+
+        The operator needs to know that a chase went out, to whom, and
+        whether it landed. Replaying the full text of every notice we have
+        ever sent every customer through one admin endpoint is a much
+        larger disclosure than that question needs.
+        """
+        return {
+            "message_id": self.message_id,
+            "to": mask_email(self.to_address),
+            "subject": self.subject,
+            "klass": self.klass,
+            "status": self.status,
+            "attempts": self.attempts,
+            "detail": self.detail,
+            "created_at": iso(self.created_at),
+            "sent_at": iso(self.sent_at) if self.sent_at else None,
+            "tenant_id": self.tenant_id,
+        }
+
+
+@dataclass
+class MailSuppression:
+    """An address we have stopped writing to, and why.
+
+    Two reasons, and they do not mean the same thing. `unsubscribed` is the
+    customer declining mail they did not have to receive; it stops
+    commercial mail and nothing else, because an unsubscribe link cannot
+    be a way to stop being invoiced. `bounced` is the mail host telling us
+    the address does not exist; that stops everything, because continuing
+    to send to it is how a sending domain gets blacklisted and then none
+    of our mail reaches anybody.
+    """
+
+    address: str
+    reason: str
+    created_at: datetime
+    detail: str = ""
+
+    @property
+    def blocks_everything(self) -> bool:
+        return self.reason == "bounced"
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "address": self.address,
+            "reason": self.reason,
+            "created_at": iso(self.created_at),
+            "detail": self.detail,
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "MailSuppression":
+        return cls(
+            address=row["address"],
+            reason=row["reason"],
+            created_at=_parse(row["created_at"]),
+            detail=row.get("detail", ""),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        return {
+            "address": mask_email(self.address),
+            "reason": self.reason,
+            "created_at": iso(self.created_at),
+            "detail": self.detail,
+        }
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -2051,6 +2229,10 @@ class HubStore:
         self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
         self._ai_cache: Dict[str, str] = {}
+        self._mail: Dict[str, MailMessage] = {}
+        # dedupe key -> message id. The index that makes a send idempotent.
+        self._mail_keys: Dict[str, str] = {}
+        self._suppressions: Dict[str, MailSuppression] = {}
         self._counter = 0
         self._db = db if db is not None else Database()
         self.load()
@@ -2159,6 +2341,15 @@ class HubStore:
             for row in self._db.all("aicache"):
                 self._ai_cache[row["key"]] = row["text"]
 
+            for row in self._db.all("mail"):
+                message = MailMessage.from_row(row)
+                self._mail[message.message_id] = message
+                self._mail_keys[message.dedupe_key] = message.message_id
+
+            for row in self._db.all("mailblock"):
+                block = MailSuppression.from_row(row)
+                self._suppressions[block.address] = block
+
             # Identifiers are sequential and share one counter, so a restart
             # must resume past the highest one ever issued. Getting this
             # wrong is not a cosmetic bug: ids are the primary key, so a
@@ -2193,6 +2384,7 @@ class HubStore:
                     + list(self._subscriptions)
                     + list(self._anchors)
                     + list(self._audit)
+                    + list(self._mail)
                     + [r.reading_id for bucket in self._readings.values()
                        for r in bucket]
                 )
@@ -2237,6 +2429,9 @@ class HubStore:
             self._resets.clear()
             self._usage.clear()
             self._ai_cache.clear()
+            self._mail.clear()
+            self._mail_keys.clear()
+            self._suppressions.clear()
             self._counter = 0
             self._db.clear()
             # clear() drops the meta row along with everything else, so the
@@ -2263,6 +2458,7 @@ class HubStore:
         contact_phone: str,
         contact_email: str,
         plan: str,
+        industry_vertical: Optional[str] = None,
     ) -> Tenant:
         with self._lock:
             now = utc_now()
@@ -2276,6 +2472,7 @@ class HubStore:
                 api_key=f"clx_{secrets.token_urlsafe(32)}",
                 activated_at=now,
                 expires_at=now + timedelta(days=PLAN_TIERS[plan]["term_days"]),
+                industry_vertical=industry_vertical,
             )
             self._tenants[tenant.tenant_id] = tenant
             self._keys[tenant.api_key] = tenant.tenant_id
@@ -3792,6 +3989,162 @@ class HubStore:
                 live.setup_billed = True
                 self._db.put("subscription", live.subscription_id, live.to_row())
             sub.setup_billed = True
+
+    # ---- outbound mail --------------------------------------------------
+
+    def is_suppressed(self, address: str, klass: str) -> Optional[MailSuppression]:
+        """The block that stops this message, if there is one.
+
+        An unsubscribe stops commercial mail. A bounce stops everything —
+        including the invoice, because an address that does not exist
+        cannot receive one, and continuing to send at it is how the
+        sending domain ends up on a blocklist and the mail that *does*
+        matter stops arriving for every other customer too.
+        """
+        with self._lock:
+            block = self._suppressions.get((address or "").strip().lower())
+        if block is None:
+            return None
+        if block.blocks_everything or klass == "commercial":
+            return block
+        return None
+
+    def suppress_address(
+        self, address: str, reason: str, detail: str = ""
+    ) -> MailSuppression:
+        """Stop writing to an address. Idempotent, and it never downgrades.
+
+        An address that bounced and then unsubscribes stays bounced: the
+        stronger block wins, because the weaker one would quietly start
+        letting invoices through to a mailbox that does not exist.
+        """
+        address = (address or "").strip().lower()
+        with self._lock:
+            existing = self._suppressions.get(address)
+            if existing is not None and existing.blocks_everything:
+                return existing
+            block = MailSuppression(
+                address=address,
+                reason=reason,
+                created_at=utc_now(),
+                detail=detail,
+            )
+            self._suppressions[address] = block
+            self._db.put("mailblock", address, block.to_row())
+            return block
+
+    def unsuppress_address(self, address: str) -> bool:
+        """Let an address back in. The operator's undo, not a customer's."""
+        address = (address or "").strip().lower()
+        with self._lock:
+            if address not in self._suppressions:
+                return False
+            self._suppressions.pop(address)
+            self._db.delete("mailblock", address)
+            return True
+
+    def list_suppressions(self) -> List[MailSuppression]:
+        with self._lock:
+            return sorted(
+                self._suppressions.values(),
+                key=lambda b: b.created_at,
+                reverse=True,
+            )
+
+    def claim_message(
+        self,
+        *,
+        dedupe_key: str,
+        to_address: str,
+        subject: str,
+        body: str,
+        klass: str,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[MailMessage]:
+        """Reserve the right to send this exact message, once.
+
+        Returns None if the key has been claimed before — by an earlier
+        pass, by another thread, or by the run that crashed before it got
+        to the mail host. The caller must treat None as "already handled",
+        not as an error: the whole point is that a second billing pass
+        cannot produce a second copy of the same chase.
+
+        The claim and the row are one operation under one lock. Checking
+        for the key and then writing it would leave the window that two
+        hourly passes on a slow disk actually hit.
+        """
+        with self._lock:
+            if dedupe_key in self._mail_keys:
+                return None
+            message = MailMessage(
+                message_id=self._next_id("msg"),
+                dedupe_key=dedupe_key,
+                to_address=(to_address or "").strip(),
+                subject=subject,
+                body=body,
+                klass=klass,
+                created_at=utc_now(),
+                tenant_id=tenant_id,
+            )
+            self._mail[message.message_id] = message
+            self._mail_keys[dedupe_key] = message.message_id
+            self._db.put("mail", message.message_id, message.to_row())
+            return message
+
+    def record_attempt(
+        self, message: MailMessage, status: str, detail: str = ""
+    ) -> MailMessage:
+        """Write down what the mail host said.
+
+        `queued` means try again later; the attempt count is what stops
+        that being forever.
+        """
+        with self._lock:
+            live = self._mail.get(message.message_id) or message
+            live.attempts += 1
+            live.status = status
+            live.detail = detail
+            if status == "sent":
+                live.sent_at = utc_now()
+            self._db.put("mail", live.message_id, live.to_row())
+            message.attempts = live.attempts
+            message.status = live.status
+            message.detail = live.detail
+            message.sent_at = live.sent_at
+            return live
+
+    def pending_mail(self, now: Optional[datetime] = None) -> List[MailMessage]:
+        """Messages still worth another attempt, oldest first.
+
+        Age and attempt count are both checked here rather than at the
+        send site so that there is one answer to "will this ever go out",
+        and the queue cannot grow a class of message that is retried
+        forever.
+        """
+        now = now or utc_now()
+        with self._lock:
+            waiting = [
+                m for m in self._mail.values()
+                if m.status == "queued"
+                and m.attempts < MAIL_MAX_ATTEMPTS
+                and m.age_hours(now) <= MAIL_MAX_AGE_HOURS
+            ]
+        return sorted(waiting, key=lambda m: m.created_at)
+
+    def mail_log(self, limit: int = 100) -> List[MailMessage]:
+        with self._lock:
+            everything = sorted(
+                self._mail.values(), key=lambda m: m.created_at, reverse=True
+            )
+        return everything[: max(limit, 0)]
+
+    def mail_counts(self) -> Dict[str, int]:
+        with self._lock:
+            counts: Dict[str, int] = {}
+            for message in self._mail.values():
+                counts[message.status] = counts.get(message.status, 0) + 1
+            return counts
+
 
     def set_subscription_add_ons(
         self, sub: Subscription, add_ons: List[str]

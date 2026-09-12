@@ -25,6 +25,8 @@ from typing import Optional
 
 from automation import sweep_tenant
 from contracts import run_billing, run_dunning
+from conversion import run_trial_conversion
+from mail import flush_queue
 from store import STORE
 
 logger = logging.getLogger("cyberlogix.scheduler")
@@ -52,9 +54,17 @@ def run_money_pass() -> dict:
     same rule: it runs unattended, so a failure in one account must not
     stop the others. This is the function that decides whether the company
     gets paid, and until it existed the answer was "if somebody remembers".
+
+    Four steps, in the order that matters: issue what is due, chase what
+    is late, ask the trials that are ending for the order, then push
+    anything that queued because the mail host was briefly down. Each is
+    guarded separately — a company that stops selling because collections
+    threw is worse off than one that does neither well.
     """
     billed = {"invoices_issued": 0, "billed_usd": 0.0}
     chased = {"notices_count": 0, "late_fees_issued": []}
+    asked = {"sent_count": 0}
+    flushed = {"attempted": 0, "sent": 0}
     try:
         billed = run_billing()
     except Exception as exc:  # noqa: BLE001 - collections must still run
@@ -63,17 +73,38 @@ def run_money_pass() -> dict:
         chased = run_dunning()
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Collections pass failed (%s).", exc)
+    try:
+        asked = run_trial_conversion()
+    except Exception as exc:  # noqa: BLE001 - selling must not stop collecting
+        logger.exception("Trial conversion pass failed (%s).", exc)
+    try:
+        # Last, so that anything the three passes above queued against a
+        # mail host that was briefly down gets one more attempt in the
+        # same hour rather than waiting for the next.
+        flushed = flush_queue()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Mail queue flush failed (%s).", exc)
 
-    if billed.get("invoices_issued") or chased.get("notices_count"):
+    if (
+        billed.get("invoices_issued")
+        or chased.get("notices_count")
+        or asked.get("sent_count")
+    ):
         logger.info(
             "Money pass: %d invoice(s) for $%.2f issued, %d chase(s) due, "
-            "%d late fee(s).",
+            "%d late fee(s), %d trial(s) asked for the order.",
             billed.get("invoices_issued", 0),
             billed.get("billed_usd", 0.0),
             chased.get("notices_count", 0),
             len(chased.get("late_fees_issued", [])),
+            asked.get("sent_count", 0),
         )
-    return {"billing": billed, "collections": chased}
+    return {
+        "billing": billed,
+        "collections": chased,
+        "conversion": asked,
+        "mail_queue": flushed,
+    }
 
 
 def run_one_pass() -> dict:
