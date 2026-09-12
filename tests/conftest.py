@@ -25,6 +25,12 @@ os.environ["CYBERLOGIX_SWEEP_SECONDS"] = "0"
 # refused, which is what the test for that asserts.
 os.environ["CYBERLOGIX_PROVISIONING_KEY"] = "test-provisioning-key"
 
+# The platform operator's own credential. Issuing an invoice and recording
+# a payment are the vendor's side of the transaction, so the suite has to
+# hold this to exercise them at all — which is the point of the change
+# that introduced it.
+os.environ["CYBERLOGIX_ADMIN_KEY"] = "test-admin-key"
+
 import gemini  # noqa: E402
 from main import app  # noqa: E402
 from store import STORE  # noqa: E402
@@ -56,6 +62,30 @@ def clean_rate_limits():
 @pytest.fixture()
 def api():
     return TestClient(app)
+
+
+@pytest.fixture()
+def admin_headers():
+    """The platform operator, who acts for the vendor rather than a tenant."""
+    return {"X-CyberLogix-Admin": "test-admin-key"}
+
+
+@pytest.fixture()
+def settle(api, admin_headers):
+    """Record a payment the way the vendor does: with the operator key."""
+
+    def _settle(tenant_id, invoice_id, reference="WIRE-1", amount_usd=None):
+        body = {"reference": reference}
+        if amount_usd is not None:
+            body["amount_usd"] = amount_usd
+        return api.post(
+            f"/api/invoices/{invoice_id}/paid",
+            params={"tenant_id": tenant_id},
+            headers=admin_headers,
+            json=body,
+        )
+
+    return _settle
 
 
 class _StubModels:

@@ -99,8 +99,21 @@ def test_downgrade_blocked_when_seats_would_strand(
     for index in range(6):
         sensor_factory(headers, sensor_id=f"S-{index}")
 
-    resp = api.post("/api/licenses/me/plan", headers=owner_headers(headers),
-                    json={"plan": "trial"})
+    # Self-service refuses this before it ever reaches the seat check: a
+    # customer cannot put themselves back on a trial at all.
+    refused = api.post("/api/licenses/me/plan", headers=owner_headers(headers),
+                       json={"plan": "trial"})
+    assert refused.status_code == 409
+    assert "Trials run once" in refused.json()["detail"]
+
+    # The operator can move a tenant down — and then the seat guard is the
+    # thing that stops it, because six sensors do not fit five seats.
+    resp = api.post(
+        "/api/licenses/me/plan",
+        headers={**owner_headers(headers),
+                 "X-CyberLogix-Provisioning": "test-provisioning-key"},
+        json={"plan": "trial"},
+    )
     assert resp.status_code == 409
     assert "Cannot downgrade" in resp.json()["detail"]
 
@@ -186,3 +199,59 @@ def test_tenants_cannot_see_each_others_sensors(
         json={"sensor_id": "ALICE-1", "temperature_fahrenheit": 95.0},
     )
     assert resp.status_code == 404
+
+
+def test_a_customer_cannot_quietly_drop_a_tier(
+    api, tenant_factory, sensor_factory, owner_headers
+):
+    """Downgrading resets the licence clock and changes what was agreed.
+
+    `change_plan` sets expires_at to now plus the new tier's term, so a
+    self-service downgrade is not just a smaller bill — it is a fresh
+    licence period the customer granted themselves. It is a conversation,
+    and the operator can still do it.
+    """
+    headers, tenant = tenant_factory(plan="enterprise")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    owner = owner_headers(headers)
+
+    refused = api.post("/api/licenses/me/plan", headers=owner,
+                       json={"plan": "growth"})
+    assert refused.status_code == 409
+    assert "not a self-service change" in refused.json()["detail"]
+    assert STORE.get_tenant(tenant["tenant_id"]).plan == "enterprise"
+
+    allowed = api.post(
+        "/api/licenses/me/plan",
+        headers={**owner, "X-CyberLogix-Provisioning": "test-provisioning-key"},
+        json={"plan": "growth"},
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert STORE.get_tenant(tenant["tenant_id"]).plan == "growth"
+
+
+def test_upgrading_is_always_self_service(
+    api, tenant_factory, sensor_factory, owner_headers
+):
+    """The direction that makes money must never need a person."""
+    headers, tenant = tenant_factory(plan="trial")
+    owner = owner_headers(headers)
+    for target in ("growth", "enterprise"):
+        resp = api.post("/api/licenses/me/plan", headers=owner,
+                        json={"plan": target})
+        assert resp.status_code == 200, resp.text
+        assert STORE.get_tenant(tenant["tenant_id"]).plan == target
+
+
+def test_a_wrong_provisioning_key_does_not_unlock_a_downgrade(
+    api, tenant_factory, sensor_factory, owner_headers
+):
+    headers, tenant = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    resp = api.post(
+        "/api/licenses/me/plan",
+        headers={**owner, "X-CyberLogix-Provisioning": "guessed-it"},
+        json={"plan": "growth"},
+    )
+    assert resp.status_code == 409
+    assert STORE.get_tenant(tenant["tenant_id"]).plan == "enterprise"

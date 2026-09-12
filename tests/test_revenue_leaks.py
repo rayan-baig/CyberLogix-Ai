@@ -11,14 +11,14 @@ from datetime import timedelta
 import pytest
 
 import costs
-import partners
+import auth
 from contracts import run_billing
 from store import STORE, add_months, utc_now
 
 
 @pytest.fixture()
 def admin_headers(monkeypatch):
-    monkeypatch.setattr(partners, "PLATFORM_ADMIN_KEY", "root-key")
+    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "root-key")
     return {"X-CyberLogix-Admin": "root-key"}
 
 
@@ -53,7 +53,7 @@ def _age_one_period(tenant_id, sensor_prefix, at_fraction):
 
 
 def test_units_added_mid_period_are_charged_for_the_days_they_ran(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """Measured before the fix: $17,980 of service delivered, never billed.
 
@@ -84,7 +84,7 @@ def test_units_added_mid_period_are_charged_for_the_days_they_ran(
 
 
 def test_nobody_is_charged_for_days_before_their_sensor_existed(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """The other direction, which would be a genuine overcharge."""
     headers, owner, tenant = _estate(
@@ -107,7 +107,7 @@ def test_nobody_is_charged_for_days_before_their_sensor_existed(
 
 
 def test_a_sensor_registered_before_the_period_is_not_charged_twice(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
@@ -128,7 +128,7 @@ def test_a_sensor_registered_before_the_period_is_not_charged_twice(
 
 
 def test_the_first_invoice_has_no_arrears_to_carry(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """There is no previous period, so there is nothing to catch up on."""
     headers, owner, tenant = _estate(
@@ -143,7 +143,7 @@ def test_the_first_invoice_has_no_arrears_to_carry(
 
 
 def test_voiding_an_invoice_puts_its_period_back_to_be_billed(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """Measured before the fix: $4,197 that could never be re-issued.
 
@@ -158,7 +158,8 @@ def test_voiding_an_invoice_puts_its_period_back_to_be_billed(
     original = STORE.invoices_for(tenant["tenant_id"])[0]
 
     api.post(f"/api/invoices/{original.invoice_id}/void",
-             headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
 
     assert run_billing()["invoices_issued"] == 1, (
         "The voided month was never re-billed."
@@ -172,7 +173,7 @@ def test_voiding_an_invoice_puts_its_period_back_to_be_billed(
 
 
 def test_the_commissioning_fee_is_not_charged_twice_on_a_re_bill(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
@@ -182,7 +183,8 @@ def test_the_commissioning_fee_is_not_charged_twice_on_a_re_bill(
     assert [l for l in original.lines if l["kind"] == "setup"]
 
     api.post(f"/api/invoices/{original.invoice_id}/void",
-             headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
     run_billing()
 
     reissued = [
@@ -195,7 +197,7 @@ def test_the_commissioning_fee_is_not_charged_twice_on_a_re_bill(
 
 
 def test_a_re_billed_period_is_only_re_billed_once(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
@@ -203,7 +205,8 @@ def test_a_re_billed_period_is_only_re_billed_once(
     run_billing()
     original = STORE.invoices_for(tenant["tenant_id"])[0]
     api.post(f"/api/invoices/{original.invoice_id}/void",
-             headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
 
     assert run_billing()["invoices_issued"] == 1
     assert run_billing()["invoices_issued"] == 0
@@ -211,7 +214,7 @@ def test_a_re_billed_period_is_only_re_billed_once(
 
 
 def test_voiding_an_old_invoice_does_not_re_issue_the_newer_ones(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """Why the hole is recorded rather than the counter rewound."""
     headers, owner, tenant = _estate(
@@ -225,7 +228,8 @@ def test_voiding_an_old_invoice_does_not_re_issue_the_newer_ones(
 
     oldest = min(STORE.invoices_for(tenant["tenant_id"]), key=lambda i: i.number)
     api.post(f"/api/invoices/{oldest.invoice_id}/void",
-             headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
 
     assert run_billing()["invoices_issued"] == 1, (
         "Rewinding the counter re-issued every period after the hole too."
@@ -234,13 +238,15 @@ def test_voiding_an_old_invoice_does_not_re_issue_the_newer_ones(
 
 
 def test_a_voided_manual_invoice_touches_no_subscription(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """An invoice raised by hand has no period to hand back."""
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
     )
-    manual = api.post("/api/invoices", headers={**headers, **owner},
+    manual = api.post("/api/invoices",
+                      params={"tenant_id": tenant["tenant_id"]},
+                      headers=admin_headers,
                       json={"period_days": 30}).json()
     assert manual["billing_period"] is None
     api.post(f"/api/invoices/{manual['invoice_id']}/void",
@@ -249,7 +255,7 @@ def test_a_voided_manual_invoice_touches_no_subscription(
 
 
 def test_the_rebill_list_survives_a_restart(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
@@ -257,7 +263,8 @@ def test_the_rebill_list_survives_a_restart(
     run_billing()
     original = STORE.invoices_for(tenant["tenant_id"])[0]
     api.post(f"/api/invoices/{original.invoice_id}/void",
-             headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
 
     STORE._subscriptions.clear()
     STORE.load()
@@ -357,7 +364,7 @@ def test_a_cap_change_reaches_the_code_that_enforces_it(
 
 
 def test_nobody_is_billed_for_days_before_the_contract_existed(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """The realistic shape of this: sensors are fitted during evaluation.
 
@@ -417,13 +424,15 @@ def test_a_part_paid_invoice_that_is_voided_earns_no_commission(
              headers=admin_headers, json={"tenant_id": tenant["tenant_id"]})
 
     api.post(f"/api/invoices/{invoice.invoice_id}/paid",
-             headers={**headers, **owner},
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers,
              json={"reference": "WIRE-1", "amount_usd": 500.0})
     assert api.get("/api/partners/me/statement",
                    headers=partner_key).json()["commission_usd"] == 100.0
 
     voided = api.post(f"/api/invoices/{invoice.invoice_id}/void",
-                      headers={**headers, **owner}, json={})
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
     assert voided.status_code == 200, voided.text
     assert api.get("/api/partners/me/statement",
                    headers=partner_key).json()["commission_usd"] == 0.0, (
@@ -459,7 +468,7 @@ def test_the_fleet_can_be_billed_from_outside(
 
 
 def test_the_fleet_billing_route_is_not_a_tenants_to_call(
-    api, tenant_factory, owner_headers, sensor_factory
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
 ):
     """It runs across every account, so it is not a customer's button."""
     headers, owner, _ = _estate(

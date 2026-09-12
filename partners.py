@@ -18,7 +18,6 @@ for accounts that stay, not for a loss that happened to be large.
 
 from __future__ import annotations
 
-import hmac
 import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
@@ -26,6 +25,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
+from auth import require_platform_admin
 from store import (
     DEFAULT_PARTNER_COMMISSION_PERCENT,
     STORE,
@@ -40,11 +40,8 @@ logger = logging.getLogger("cyberlogix.partners")
 router = APIRouter(prefix="/api/partners", tags=["Reseller Channel"])
 
 # Creating a partner is an act of the platform operator, not of a
-# customer, so it sits behind a separate root credential rather than any
+# customer, so it sits behind the platform credential rather than any
 # tenant's key.
-import os
-
-PLATFORM_ADMIN_KEY = os.environ.get("CYBERLOGIX_ADMIN_KEY", "").strip()
 
 
 class PartnerCreate(BaseModel):
@@ -60,33 +57,9 @@ class TenantLink(BaseModel):
     tenant_id: str = Field(..., min_length=1)
 
 
-def require_admin(
-    x_cyberlogix_admin: Optional[str] = Header(None, alias="X-CyberLogix-Admin"),
-) -> None:
-    """Gate the platform-operator endpoints.
-
-    With no admin key configured the endpoints are closed rather than open.
-    A deployment that forgot to set the variable must not hand out the
-    ability to mint resellers.
-    """
-    if not PLATFORM_ADMIN_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "No platform admin key is configured, so partner "
-                "administration is closed. Set CYBERLOGIX_ADMIN_KEY."
-            ),
-        )
-    # compare_digest, because this is the credential that mints resellers
-    # and a short-circuiting compare leaks its length and prefix to anyone
-    # who can time the response.
-    if not x_cyberlogix_admin or not hmac.compare_digest(
-        x_cyberlogix_admin, PLATFORM_ADMIN_KEY
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="A valid X-CyberLogix-Admin header is required.",
-        )
+# Kept as a name here because every route in this module already asks for
+# it; the credential itself now lives in auth.py alongside the others.
+require_admin = require_platform_admin
 
 
 def require_partner(

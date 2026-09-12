@@ -14,6 +14,7 @@ actions get attributed to a name instead of "Console operator".
 
 from __future__ import annotations
 
+import hmac
 import math
 import os
 from datetime import timedelta
@@ -101,6 +102,40 @@ def _reject_inactive(tenant: Tenant) -> Tenant:
             ),
         )
     return tenant
+
+
+# The platform operator's own credential. Not a tenant's, not a partner's:
+# this is the person who runs the service, and it gates the routes that
+# act on the *vendor's* side of a transaction — issuing an invoice,
+# recording that money arrived, voiding a document, minting a reseller.
+#
+# Unset means those routes are closed rather than open. A deployment that
+# forgot the variable must not hand out the ability to write off its own
+# invoices.
+PLATFORM_ADMIN_KEY = os.environ.get("CYBERLOGIX_ADMIN_KEY", "").strip()
+
+
+def require_platform_admin(
+    x_cyberlogix_admin: Optional[str] = Header(None, alias="X-CyberLogix-Admin"),
+) -> None:
+    """Gate a route that acts for the vendor rather than for a customer."""
+    if not PLATFORM_ADMIN_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No platform admin key is configured, so operator routes are "
+                "closed. Set CYBERLOGIX_ADMIN_KEY."
+            ),
+        )
+    # compare_digest, because a short-circuiting compare leaks the key's
+    # length and prefix to anyone who can time the response.
+    if not x_cyberlogix_admin or not hmac.compare_digest(
+        x_cyberlogix_admin, PLATFORM_ADMIN_KEY
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="A valid X-CyberLogix-Admin header is required.",
+        )
 
 
 def require_tenant_any_state(

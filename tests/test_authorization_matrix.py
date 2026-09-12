@@ -54,7 +54,13 @@ def _gates(route):
     def walk(dep):
         call = getattr(dep, "call", None)
         name = getattr(call, "__qualname__", "") or ""
-        if "require_role" in name or "require_admin" in name:
+        if (
+            "require_role" in name
+            or "require_admin" in name
+            # The platform operator's own gate. A route behind it is not
+            # ungated — it is gated harder than any tenant role can be.
+            or "require_platform_admin" in name
+        ):
             found.append(name)
         for sub in getattr(dep, "dependencies", []):
             walk(sub)

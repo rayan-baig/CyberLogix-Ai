@@ -417,27 +417,11 @@
             <span class="card-note" id="invoice-note"></span>
           </div>
           <div id="invoice-body"></div>
-          <form id="invoice-form" style="margin-top:12px">
-            <div class="row">
-              <label class="sr" for="inv-addons">Add-ons to bill</label>
-              <select id="inv-addons" class="grow"
-                      style="padding:9px 11px;background:var(--sunken);
-                      border:1px solid var(--border);border-radius:9px;color:var(--ink)">
-                <option value="">Subscription only</option>
-                <option value="assurance">+ Loss assurance</option>
-                <option value="vault">+ Compliance vault</option>
-                <option value="assurance,vault">+ Assurance and vault</option>
-                <option value="assurance,vault,benchmarks,equipment_intelligence">
-                  + Everything
-                </option>
-              </select>
-              <button class="btn btn-sm" type="submit">Issue</button>
-            </div>
-            <label class="row" style="margin-top:8px;font-size:12px;color:var(--muted)">
-              <input type="checkbox" id="inv-setup" style="width:auto">
-              Include one-time commissioning
-            </label>
-          </form>
+          <p class="card-note" style="margin-top:10px">
+            Invoices are raised by the contract, not from here. A customer
+            issuing and settling their own is the ledger being writable by
+            the party it bills.
+          </p>
         </section>
 
         <section class="card">
@@ -3005,22 +2989,6 @@ $("contact-form").addEventListener("submit", (event) => {
     });
     event.target.reset();
   }, "Added to the roster.");
-});
-
-$("invoice-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  act(async () => {
-    const issued = await api("/api/invoices", {
-      method: "POST",
-      body: JSON.stringify({
-        include_add_ons: $("inv-addons").value,
-        include_setup: $("inv-setup").checked,
-        period_days: 30,
-      }),
-    });
-    $("inv-setup").checked = false;
-    return issued;
-  }, "Invoice issued and frozen at today's figures.");
 });
 
 $("site-form").addEventListener("submit", (event) => {

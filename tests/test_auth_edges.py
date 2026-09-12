@@ -84,8 +84,6 @@ def test_a_viewer_can_read_but_never_write(api, operator_factory,
         ("post", "/api/contacts", {"full_name": "P", "phone": "+15550001"}),
         ("post", "/api/webhooks", {"kind": "slack",
                                    "target": "https://hooks.slack.com/a/b/c"}),
-        ("post", "/api/invoices", {"include_add_ons": "",
-                                   "include_setup": False, "period_days": 30}),
         ("post", "/api/accounts/users", {"email": "x@example.com",
                                          "full_name": "X", "role": "owner",
                                          "password": "correct-horse-battery"}),
@@ -114,9 +112,12 @@ def test_an_operator_cannot_do_an_owners_work(api, operator_factory,
     assert api.post("/api/sites", headers=operator,
                     json={"name": "A Site"}).status_code == 201
     # Refused: the money and the people.
-    assert api.post("/api/invoices", headers=operator,
-                    json={"include_add_ons": "", "include_setup": False,
-                          "period_days": 30}).status_code == 403
+    #
+    # Invoicing is not on this list any more, and that is a stronger
+    # statement than it being an owner-only route: issuing an invoice and
+    # recording a payment are the *vendor's* side of the transaction, so
+    # no tenant role reaches them at all. The check for that lives in
+    # test_invoicing.py.
     assert api.post("/api/accounts/users", headers=operator,
                     json={"email": "z@example.com", "full_name": "Z",
                           "role": "owner",

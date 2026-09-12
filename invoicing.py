@@ -27,12 +27,15 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from accounts import require_role
-from auth import require_tenant, require_tenant_any_state, write_audit
-from store import STORE, Tenant, User, iso
+from auth import (
+    require_platform_admin,
+    require_tenant_any_state,
+    write_audit,
+)
+from store import STORE, Tenant, iso
 
 logger = logging.getLogger("cyberlogix.invoicing")
 
@@ -89,6 +92,22 @@ class InvoiceRequest(BaseModel):
 class PaymentRecord(BaseModel):
     reference: str = Field(..., min_length=1, max_length=120)
     amount_usd: Optional[float] = Field(None, ge=0)
+
+
+def _tenant_or_404(tenant_id: str) -> Tenant:
+    """Resolve the estate an operator route names.
+
+    The operator routes take the tenant as a parameter rather than from a
+    credential, because the credential is the platform's and speaks for
+    every estate at once.
+    """
+    tenant = STORE.get_tenant((tenant_id or "").strip())
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No such tenant '{tenant_id}'.",
+        )
+    return tenant
 
 
 def _load(invoice_id: str, tenant: Tenant):
@@ -198,10 +217,16 @@ def list_invoices(tenant: Tenant = Depends(require_tenant_any_state)):
 @router.post("", status_code=status.HTTP_201_CREATED)
 def issue_invoice(
     payload: InvoiceRequest,
-    tenant: Tenant = Depends(require_tenant),
-    operator: User = Depends(require_role("owner")),
+    tenant_id: str = Query(..., description="Which estate to bill."),
+    _: None = Depends(require_platform_admin),
 ):
     """Issue an invoice for the current period.
+
+    Platform operator only. This was `require_role("owner")` — which is
+    the *customer's* owner, on the other side of the transaction. Issuing
+    an invoice and recording that it was paid are things the vendor does;
+    a customer being able to do either is not a permissions nicety, it is
+    the ledger being writable by the party it bills.
 
     Figures are snapshotted now and never recomputed: an invoice whose
     total moves after it was sent is a dispute, and the customer would be
@@ -209,6 +234,7 @@ def issue_invoice(
     """
     from pricing import ADD_ONS
 
+    tenant = _tenant_or_404(tenant_id)
     wanted = [k.strip() for k in (payload.include_add_ons or "").split(",") if k.strip()]
     unknown = [k for k in wanted if k not in ADD_ONS]
     if unknown:
@@ -235,8 +261,9 @@ def issue_invoice(
         purchase_order=payload.purchase_order,
     )
     write_audit(
-        tenant, operator, "invoice.issued",
+        tenant, None, "invoice.issued",
         f"{invoice.number} for ${invoice.total_usd:,.2f}, due {iso(invoice.due_at)}.",
+        fallback_actor="Platform operator",
     )
     logger.info(
         "Invoice issued: %s tenant=%s total=%.2f",
@@ -268,16 +295,23 @@ def read_invoice(invoice_id: str, tenant: Tenant = Depends(require_tenant_any_st
 def mark_paid(
     invoice_id: str,
     payload: PaymentRecord,
-    tenant: Tenant = Depends(require_tenant_any_state),
-    operator: User = Depends(require_role("owner")),
+    tenant_id: str = Query(..., description="Which estate the invoice belongs to."),
+    _: None = Depends(require_platform_admin),
 ):
     """Record settlement.
+
+    Platform operator only, and this is the one that mattered most.
+    Measured before the fix: a customer's own owner could POST here with a
+    made-up reference and write off a $2,499 invoice in one call — the
+    balance went to zero, it dropped out of collections, and nothing
+    anywhere recorded that no money had arrived.
 
     Where a payment processor's webhook lands. Kept as a plain endpoint so
     the lifecycle is complete without one, and so a bank transfer — how
     most contracts at these sizes are actually settled — can be recorded
     the same way.
     """
+    tenant = _tenant_or_404(tenant_id)
     invoice = _load(invoice_id, tenant)
     if invoice.state == "void":
         raise HTTPException(
@@ -293,11 +327,12 @@ def mark_paid(
     STORE.settle_invoice(invoice, payload.reference, payload.amount_usd)
     settled = invoice.state == "paid"
     write_audit(
-        tenant, operator,
+        tenant, None,
         "invoice.paid" if settled else "invoice.part_paid",
         f"{invoice.number}: ${invoice.amount_paid_usd:,.2f} of "
         f"${invoice.total_usd:,.2f} received ({payload.reference})"
         + ("." if settled else f"; ${invoice.balance_usd:,.2f} still owed."),
+        fallback_actor="Platform operator",
     )
     return {
         "message": (
@@ -313,14 +348,15 @@ def mark_paid(
 @router.post("/{invoice_id}/void")
 def void_invoice(
     invoice_id: str,
-    tenant: Tenant = Depends(require_tenant),
-    operator: User = Depends(require_role("owner")),
+    tenant_id: str = Query(..., description="Which estate the invoice belongs to."),
+    _: None = Depends(require_platform_admin),
 ):
     """Void an invoice.
 
     Voided rather than deleted, and the number is never reissued: a gap in
     a sequence is the first thing an auditor asks about.
     """
+    tenant = _tenant_or_404(tenant_id)
     invoice = _load(invoice_id, tenant)
     if invoice.state == "paid":
         raise HTTPException(
@@ -331,5 +367,6 @@ def void_invoice(
             ),
         )
     STORE.void_invoice(invoice)
-    write_audit(tenant, operator, "invoice.voided", f"{invoice.number} voided.")
+    write_audit(tenant, None, "invoice.voided", f"{invoice.number} voided.",
+                fallback_actor="Platform operator")
     return {"message": f"{invoice.number} voided.", "invoice": invoice.public()}

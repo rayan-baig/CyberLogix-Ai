@@ -450,7 +450,7 @@ def test_nothing_is_chased_before_it_is_due(
 
 
 def test_a_paid_invoice_is_never_chased(
-    api, tenant_factory, sensor_factory, owner_headers
+    api, admin_headers, tenant_factory, sensor_factory, owner_headers
 ):
     headers, owner, tenant, invoice = _billed_tenant(
         api, tenant_factory, sensor_factory, owner_headers
@@ -458,14 +458,15 @@ def test_a_paid_invoice_is_never_chased(
     _age_invoice(invoice.invoice_id, 60)
     api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
-        headers={**headers, **owner},
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=admin_headers,
         json={"reference": "WIRE-1"},
     )
     assert run_dunning()["notices_count"] == 0
 
 
 def test_a_part_payment_is_still_chased_for_the_balance(
-    api, tenant_factory, sensor_factory, owner_headers
+    api, admin_headers, tenant_factory, sensor_factory, owner_headers
 ):
     headers, owner, tenant, invoice = _billed_tenant(
         api, tenant_factory, sensor_factory, owner_headers
@@ -473,7 +474,8 @@ def test_a_part_payment_is_still_chased_for_the_balance(
     _age_invoice(invoice.invoice_id, 10)
     api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
-        headers={**headers, **owner},
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=admin_headers,
         json={"reference": "PART-1", "amount_usd": 100.0},
     )
     notices = run_dunning()["notices"]
@@ -603,7 +605,7 @@ def test_a_delinquent_account_loses_its_reporting(
 
 
 def test_paying_up_restores_reporting_immediately(
-    api, tenant_factory, sensor_factory, owner_headers
+    api, admin_headers, tenant_factory, sensor_factory, owner_headers
 ):
     headers, owner, tenant, invoice = _billed_tenant(
         api, tenant_factory, sensor_factory, owner_headers
@@ -613,7 +615,8 @@ def test_paying_up_restores_reporting_immediately(
 
     api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
-        headers={**headers, **owner},
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=admin_headers,
         json={"reference": "WIRE-9"},
     )
     assert api.get("/api/vault/attestation", headers=headers).status_code == 200
@@ -710,14 +713,15 @@ def test_a_reminder_stage_is_claimable_exactly_once(
 
 
 def test_a_settled_invoice_refuses_a_reminder_claim(
-    api, tenant_factory, sensor_factory, owner_headers
+    api, admin_headers, tenant_factory, sensor_factory, owner_headers
 ):
-    headers, owner, _, invoice = _billed_tenant(
+    headers, owner, tenant, invoice = _billed_tenant(
         api, tenant_factory, sensor_factory, owner_headers
     )
     api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
-        headers={**headers, **owner},
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=admin_headers,
         json={"reference": "WIRE-2"},
     )
     assert STORE.claim_reminder(invoice, 1) is False

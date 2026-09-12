@@ -181,11 +181,63 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
     return tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id))
 
 
+# Which tiers are above which. Self-service moves up this list and never
+# down it, and never back onto the trial at all.
+PLAN_RANK = {"trial": 0, "growth": 1, "enterprise": 2}
+
+
+def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
+    """Stop a customer re-selecting a trial, or quietly dropping a tier.
+
+    `change_plan` sets `expires_at` to now plus the tier's term. So a
+    customer whose trial had run out could POST `{"plan": "trial"}` and
+    get a fresh fourteen days — and again, and again. Measured: a licence
+    forced to expire yesterday came back with a full new term and a state
+    of "active". The entire paid model was one API call wide, and making
+    this route reachable while lapsed (which it has to be, so somebody can
+    upgrade) is what put the last plank in.
+
+    Downgrading is refused too. Not because a customer may never move
+    down, but because doing it silently mid-term resets the licence clock
+    and changes what was agreed; it is a conversation, and the operator
+    can still do it with the provisioning key.
+    """
+    current = PLAN_RANK.get(tenant.plan, 0)
+    target = PLAN_RANK.get(plan, 0)
+
+    if plan == "trial":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A trial cannot be started again from here. Trials run once; "
+                "move onto a paid plan, or get in touch if you need longer."
+            ),
+        )
+    if target < current:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Moving from {PLAN_TIERS[tenant.plan]['name']} down to "
+                f"{PLAN_TIERS[plan]['name']} is not a self-service change, "
+                "because it resets the licence term and alters what was "
+                "agreed. Get in touch and we will do it."
+            ),
+        )
+
+
 @router.post("/me/plan")
 def change_plan(
     payload: PlanChange,
     tenant: Tenant = Depends(require_tenant_any_state),
     owner: User = Depends(require_role("owner")),
+    provisioning_key: Optional[str] = Header(
+        None,
+        alias="X-CyberLogix-Provisioning",
+        description=(
+            "Operator override: lets the platform move a tenant down a tier "
+            "or back onto a trial, which self-service cannot."
+        ),
+    ),
 ):
     """Move a tenant between tiers, refusing a downgrade that strands seats.
 
@@ -196,6 +248,15 @@ def change_plan(
     answering an email.
     """
     plan = _validate_plan(payload.plan)
+    operator_led = bool(
+        PROVISIONING_KEY
+        and provisioning_key
+        and secrets.compare_digest(provisioning_key.strip(), PROVISIONING_KEY)
+    )
+
+    if not operator_led:
+        _refuse_self_service_downgrade(tenant, plan)
+
     seats_used = STORE.seat_count(tenant.tenant_id)
     new_cap = PLAN_TIERS[plan]["max_sensors"]
 

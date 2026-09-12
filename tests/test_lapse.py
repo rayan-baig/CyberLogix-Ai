@@ -147,7 +147,9 @@ def test_upgrading_restores_monitoring_at_once(api, trial):
     }).status_code == 200
 
 
-def test_a_lapsed_customer_can_still_read_and_settle_invoices(api, trial):
+def test_a_lapsed_customer_can_still_read_and_settle_invoices(
+    api, admin_headers, trial
+):
     from contracts import run_billing
 
     key, bearer, tenant = trial
@@ -158,9 +160,13 @@ def test_a_lapsed_customer_can_still_read_and_settle_invoices(api, trial):
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
 
     _shift_expiry(tenant["tenant_id"], -(LICENCE_GRACE_DAYS + 30))
+    # The customer can still read the ledger...
     assert api.get("/api/invoices", headers=headers).status_code == 200
+    # ...and the operator can still record that the money arrived, which
+    # is the half of this that actually unblocks the account.
     paid = api.post(f"/api/invoices/{invoice.invoice_id}/paid",
-                    headers=headers, json={"reference": "WIRE-1"})
+                    params={"tenant_id": tenant["tenant_id"]},
+                    headers=admin_headers, json={"reference": "WIRE-1"})
     assert paid.status_code == 200, paid.text
 
 

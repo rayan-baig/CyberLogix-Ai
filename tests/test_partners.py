@@ -8,12 +8,13 @@ these check.
 
 import pytest
 
-import partners
+import auth
+from partners import COMMISSION_WINDOW_DAYS
 
 
 @pytest.fixture()
 def admin(monkeypatch):
-    monkeypatch.setattr(partners, "PLATFORM_ADMIN_KEY", "root-key")
+    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "root-key")
     return {"X-CyberLogix-Admin": "root-key"}
 
 
@@ -46,7 +47,7 @@ def test_minting_a_partner_needs_the_platform_key(api, admin):
 
 def test_no_admin_key_configured_closes_the_door(api, monkeypatch):
     """A deployment that forgot the variable must not be wide open."""
-    monkeypatch.setattr(partners, "PLATFORM_ADMIN_KEY", "")
+    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "")
     resp = api.post("/api/partners", headers={"X-CyberLogix-Admin": "anything"},
                     json={"company_name": "Rogue", "contact_name": "X",
                           "contact_email": "x@example.com"})
@@ -77,7 +78,8 @@ def _pay_an_invoice(api, headers, amount=None):
     )[0]
     paid = api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
-        headers=headers,
+        params={"tenant_id": invoice.tenant_id},
+        headers={"X-CyberLogix-Admin": "root-key"},
         json={"reference": "WIRE-1", **({"amount_usd": amount} if amount else {})},
     )
     assert paid.status_code == 200, paid.text
@@ -158,7 +160,9 @@ def test_a_voided_invoice_earns_no_commission(
     api.post("/api/contracts", headers=headers, json={"term_years": 1})
     run_billing()
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
-    api.post(f"/api/invoices/{invoice.invoice_id}/void", headers=headers)
+    api.post(f"/api/invoices/{invoice.invoice_id}/void",
+             params={"tenant_id": tenant["tenant_id"]},
+             headers={"X-CyberLogix-Admin": "root-key"})
 
     statement = api.get("/api/partners/me/statement", headers=key).json()
     assert statement["commission_usd"] == 0.0
@@ -183,14 +187,13 @@ def test_a_suspended_account_stops_earning_its_partner_a_commission(
 
     # Suspend, and age the payment out of the window.
     STORE.set_suspended(STORE.get_tenant(tenant["tenant_id"]), True)
-    import partners
     from datetime import timedelta
     from store import utc_now
 
     for invoice in STORE.invoices_for(tenant["tenant_id"]):
         if invoice.paid_at:
             invoice.paid_at = utc_now() - timedelta(
-                days=partners.COMMISSION_WINDOW_DAYS + 1
+                days=COMMISSION_WINDOW_DAYS + 1
             )
             STORE._db.put("invoice", invoice.invoice_id, invoice.to_row())
 

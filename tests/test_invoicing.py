@@ -13,12 +13,36 @@ def estate(api, operator_factory, sensor_factory, units=2, sites=1):
     return headers
 
 
+# Issuing, settling and voiding are the vendor's side of the transaction,
+# so the suite holds the platform credential to exercise them. A customer
+# reaching any of these is the thing test_the_customer_cannot_write_their
+# _own_ledger checks does not happen.
+ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+
+
+def tenant_id_of(api, headers):
+    return api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+
+
 def issue(api, headers, **params):
     body = {"include_add_ons": "", "include_setup": False, "period_days": 30}
     body.update(params)
-    resp = api.post("/api/invoices", headers=headers, json=body)
+    resp = api.post("/api/invoices", params={"tenant_id": tenant_id_of(api, headers)},
+                    headers=ADMIN, json=body)
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+def settle(api, headers, invoice_id, **body):
+    return api.post(f"/api/invoices/{invoice_id}/paid",
+                    params={"tenant_id": tenant_id_of(api, headers)},
+                    headers=ADMIN, json=body)
+
+
+def void(api, headers, invoice_id):
+    return api.post(f"/api/invoices/{invoice_id}/void",
+                    params={"tenant_id": tenant_id_of(api, headers)},
+                    headers=ADMIN, json={})
 
 
 def test_an_invoice_totals_its_lines(api, operator_factory, sensor_factory):
@@ -86,7 +110,7 @@ def test_numbers_are_sequential_and_never_reused(
     assert second["number"] == f"CLX-{year}-0002"
 
     # Voiding does not free the number.
-    api.post(f"/api/invoices/{second['invoice_id']}/void", headers=headers)
+    void(api, headers, second['invoice_id'])
     third = issue(api, headers)
     assert third["number"] == f"CLX-{year}-0003"
 
@@ -139,8 +163,7 @@ def test_a_short_payment_leaves_the_invoice_open(
     headers = estate(api, operator_factory, sensor_factory, units=2)
     invoice = issue(api, headers)          # 2 x $999 = $1,998
 
-    out = api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
-                   json={"reference": "WIRE-8823", "amount_usd": 1000.0}).json()
+    out = settle(api, headers, invoice['invoice_id'], **{"reference": "WIRE-8823", "amount_usd": 1000.0}).json()
     assert out["invoice"]["state"] == "part_paid"
     assert out["invoice"]["amount_paid_usd"] == 1000.0
     assert out["invoice"]["balance_usd"] == 998.0
@@ -161,10 +184,8 @@ def test_the_balance_settles_on_the_second_payment(
     invoice = issue(api, headers)
     iid = invoice["invoice_id"]
 
-    api.post(f"/api/invoices/{iid}/paid", headers=headers,
-             json={"reference": "WIRE-1", "amount_usd": 1000.0})
-    out = api.post(f"/api/invoices/{iid}/paid", headers=headers,
-                   json={"reference": "WIRE-2", "amount_usd": 998.0}).json()
+    settle(api, headers, iid, **{"reference": "WIRE-1", "amount_usd": 1000.0})
+    out = settle(api, headers, iid, **{"reference": "WIRE-2", "amount_usd": 998.0}).json()
 
     assert out["invoice"]["state"] == "paid"
     assert out["invoice"]["balance_usd"] == 0.0
@@ -183,8 +204,7 @@ def test_a_part_paid_invoice_still_goes_overdue(
 
     headers = estate(api, operator_factory, sensor_factory, units=2)
     invoice = issue(api, headers)
-    api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
-             json={"reference": "WIRE-1", "amount_usd": 500.0})
+    settle(api, headers, invoice['invoice_id'], **{"reference": "WIRE-1", "amount_usd": 500.0})
     STORE.get_invoice(invoice["invoice_id"]).due_at -= timedelta(days=45)
 
     ledger = api.get("/api/invoices", headers=headers).json()
@@ -197,10 +217,9 @@ def test_a_paid_invoice_cannot_be_voided(
 ):
     headers = estate(api, operator_factory, sensor_factory)
     invoice = issue(api, headers)
-    api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
-             json={"reference": "WIRE-1"})
+    settle(api, headers, invoice['invoice_id'], **{"reference": "WIRE-1"})
 
-    resp = api.post(f"/api/invoices/{invoice['invoice_id']}/void", headers=headers)
+    resp = void(api, headers, invoice['invoice_id'])
     assert resp.status_code == 409
     assert "credit note" in resp.json()["detail"]
 
@@ -210,17 +229,17 @@ def test_a_voided_invoice_cannot_be_paid(
 ):
     headers = estate(api, operator_factory, sensor_factory)
     invoice = issue(api, headers)
-    api.post(f"/api/invoices/{invoice['invoice_id']}/void", headers=headers)
+    void(api, headers, invoice['invoice_id'])
 
-    resp = api.post(f"/api/invoices/{invoice['invoice_id']}/paid", headers=headers,
-                    json={"reference": "WIRE-1"})
+    resp = settle(api, headers, invoice['invoice_id'], **{"reference": "WIRE-1"})
     assert resp.status_code == 409
 
 
 def test_billing_nothing_is_refused(api, operator_factory):
     """An invoice for zero is a mistake, not a document."""
-    headers, _, _ = operator_factory(plan="enterprise")
-    resp = api.post("/api/invoices", headers=headers,
+    headers, tenant, _ = operator_factory(plan="enterprise")
+    resp = api.post("/api/invoices", params={"tenant_id": tenant["tenant_id"]},
+                    headers=ADMIN,
                     json={"include_add_ons": "", "include_setup": False,
                           "period_days": 30})
     assert resp.status_code == 409
@@ -232,8 +251,7 @@ def test_the_ledger_reports_what_is_outstanding(
     headers = estate(api, operator_factory, sensor_factory, units=2)
     first = issue(api, headers)
     issue(api, headers)
-    api.post(f"/api/invoices/{first['invoice_id']}/paid", headers=headers,
-             json={"reference": "WIRE-1"})
+    settle(api, headers, first['invoice_id'], **{"reference": "WIRE-1"})
 
     ledger = api.get("/api/invoices", headers=headers).json()
     assert ledger["count"] == 2
@@ -257,24 +275,97 @@ def test_an_overdue_invoice_is_flagged(api, operator_factory, sensor_factory):
     assert ledger["invoices"][0]["days_until_due"] < 0
 
 
-def test_only_an_owner_can_issue(api, operator_factory, sensor_factory,
-                                 api_key_headers=None):
-    """Billing is an owner's act, not an operator's."""
+def test_the_customer_cannot_write_their_own_ledger(
+    api, operator_factory, sensor_factory
+):
+    """The one that matters most in this file.
+
+    Issuing an invoice and recording that it was paid used to be
+    `require_role("owner")` — which is the *customer's* owner, on the
+    other side of the transaction. Measured before the fix: a customer's
+    own owner could POST to /paid with a made-up reference and write off a
+    $2,499 invoice in one call. The balance went to zero, it dropped out
+    of collections, and nothing anywhere recorded that no money had
+    arrived.
+
+    No tenant role reaches these now, not even an owner, and not with the
+    tenant API key either.
+    """
     headers, tenant, _ = operator_factory(plan="enterprise")
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    invoice = issue(api, headers)
+    params = {"tenant_id": tenant["tenant_id"]}
 
-    api.post("/api/accounts/users", headers=headers,
-             json={"email": "ops@example.com", "full_name": "Sam Cole",
-                   "role": "operator", "password": "correct-horse-battery"})
-    signed = api.post("/api/accounts/login",
-                      json={"email": "ops@example.com",
-                            "password": "correct-horse-battery"}).json()
-    operator = {"Authorization": f"Bearer {signed['token']}"}
+    for label, call in (
+        ("issue", lambda h: api.post(
+            "/api/invoices", params=params, headers=h,
+            json={"include_add_ons": "", "include_setup": False,
+                  "period_days": 30})),
+        ("write off", lambda h: api.post(
+            f"/api/invoices/{invoice['invoice_id']}/paid", params=params,
+            headers=h, json={"reference": "i-said-so"})),
+        ("void", lambda h: api.post(
+            f"/api/invoices/{invoice['invoice_id']}/void", params=params,
+            headers=h, json={})),
+    ):
+        resp = call(headers)
+        assert resp.status_code in (401, 403), (
+            f"the customer's own owner could {label} an invoice: "
+            f"{resp.status_code}"
+        )
 
-    resp = api.post("/api/invoices", headers=operator,
-                    json={"include_add_ons": "", "include_setup": False,
-                          "period_days": 30})
-    assert resp.status_code == 403
+    # And the invoice is untouched by any of it.
+    fresh = api.get(f"/api/invoices/{invoice['invoice_id']}",
+                    headers=headers).json()
+    assert fresh["state"] == "issued"
+    assert fresh["amount_paid_usd"] == 0.0
+    assert fresh["balance_usd"] == invoice["total_usd"]
+
+
+def test_the_operator_key_is_what_reaches_the_ledger(
+    api, operator_factory, sensor_factory
+):
+    headers, tenant, _ = operator_factory(plan="enterprise")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    invoice = issue(api, headers)
+
+    settled = settle(api, headers, invoice["invoice_id"], reference="WIRE-1")
+    assert settled.status_code == 200, settled.text
+    assert settled.json()["invoice"]["state"] == "paid"
+
+
+def test_a_wrong_operator_key_is_refused(api, operator_factory, sensor_factory):
+    headers, tenant, _ = operator_factory(plan="enterprise")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    invoice = issue(api, headers)
+
+    resp = api.post(
+        f"/api/invoices/{invoice['invoice_id']}/paid",
+        params={"tenant_id": tenant["tenant_id"]},
+        headers={"X-CyberLogix-Admin": "not-the-key"},
+        json={"reference": "nice try"},
+    )
+    assert resp.status_code == 401
+
+
+def test_with_no_operator_key_configured_the_ledger_is_closed(
+    api, operator_factory, sensor_factory, monkeypatch
+):
+    """Unset must mean closed, not open."""
+    import auth
+
+    headers, tenant, _ = operator_factory(plan="enterprise")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    invoice = issue(api, headers)
+
+    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "")
+    resp = api.post(
+        f"/api/invoices/{invoice['invoice_id']}/paid",
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=ADMIN, json={"reference": "WIRE-1"},
+    )
+    assert resp.status_code == 503
+    assert "CYBERLOGIX_ADMIN_KEY" in resp.json()["detail"]
 
 
 def test_another_tenants_invoice_is_invisible(
