@@ -327,3 +327,34 @@ def test_one_failing_panel_cannot_blank_the_console(api):
         assert f'id="{element_id}"' in (ROOT / "static/console.html").read_text(), (
             f"OPTIONAL_PANELS points at #{element_id}, which is not on the page"
         )
+
+
+@pytest.mark.parametrize("surface", [
+    "static/index.html", "static/signup.html", "static/legal.html",
+])
+def test_every_public_page_has_a_phone_layout(surface):
+    """Measured at 390px: /signup ran to 405 and scrolled sideways.
+
+    On a marketing page that reads as broken; on the page that takes
+    somebody's money it reads as broken before they have typed anything.
+    The header is the thing that overflows every time — five words of
+    navigation plus a wordmark — so each page has to say what it does
+    about that.
+
+    Verified live in Chromium at 390x844 across /, /signup, /legal and
+    /console: document width equals viewport width on all four.
+    """
+    page = (ROOT / surface).read_text()
+    small = re.findall(r"@media \(max-width: (\d+)px\)\s*\{", page)
+    assert small, f"{surface} has no small-screen rules at all"
+    assert any(int(w) <= 760 for w in small), (
+        f"{surface} has no phone breakpoint; the widest is {max(small)}px"
+    )
+    # And that breakpoint has to do something about the header, which is
+    # what actually overflows.
+    header_rules = re.search(
+        r"@media \(max-width: 7[0-9]0px\)\s*\{(.*?)\n\}", page, re.S
+    )
+    assert header_rules and ".top" in header_rules.group(1), (
+        f"{surface} narrows the page but leaves the header at full width"
+    )

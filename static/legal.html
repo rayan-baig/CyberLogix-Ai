@@ -25,6 +25,17 @@
 .top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
 .top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
 .top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+/* Five words of navigation do not fit a phone. Measured at 390px the row
+   ran to 405 and the whole page scrolled sideways, which on the page that
+   takes somebody's money reads as broken before they have typed anything.
+   The brand shrinks to its mark and the links tighten; nothing is hidden,
+   because every one of them is a place somebody might need to get to. */
+@media (max-width: 720px) {
+  .top { padding: 14px 16px; gap: 10px; }
+  .top .brand-name { display: none; }
+  .top nav { gap: 14px; }
+  .top nav a { font-size: 13px; }
+}
 
 .shell { display: grid; grid-template-columns: 260px 1fr; gap: 44px;
          padding: 48px 0 90px; align-items: start; }
