@@ -1240,7 +1240,13 @@ def _rows_for(tenant, now) -> List[Dict[str, Any]]:
                 mrr * 12 * sub.rate_multiplier(sub.periods_billed),
                 "Renew before it lapses into a renegotiation.")
 
-    if mrr > 0:
+    # Expansion is for accounts that have already bought something.
+    # Offering a trial four add-ons it has no base contract to attach
+    # them to was noise on the worklist and, in the digest, a second row
+    # for the same company underneath the one that actually mattered —
+    # "their trial ends Thursday" followed by "sell them an upsell".
+    # Sell them the product first.
+    if mrr > 0 and tenant.plan != "trial":
         unsold = unsold_add_ons(tenant, sub, priced)
         if unsold:
             row("expansion", "low",

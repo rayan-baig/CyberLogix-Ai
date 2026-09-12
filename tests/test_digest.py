@@ -190,6 +190,63 @@ def test_a_quiet_day_says_so(mailbox, operator_address):
     assert "Nothing needs a person today" in mailbox[-1].get_content()
 
 
+def test_the_subject_leads_with_what_is_wrong(
+    mailbox, operator_address, paying, monkeypatch
+):
+    """It gets truncated, so the order decides what survives.
+
+    The first version read "CyberLogix: $35,964 booked, 3 need a person
+    (1 urgent), and something is broken" — folded across two header
+    lines and cut off by every client at roughly the point where it
+    stopped being reassuring.
+    """
+    send_operator_digest()
+
+    subject = mailbox[-1]["Subject"]
+    assert len(subject) < 78, subject
+    assert "\n" not in subject
+    assert subject.index("to fix") < subject.index("booked")
+
+
+def test_a_quiet_healthy_day_still_says_the_number(
+    mailbox, operator_address, monkeypatch
+):
+    import mail as mail_module
+
+    monkeypatch.setattr(mail_module, "PAY_URL", "https://pay.example")
+    send_operator_digest()
+    assert "booked" in mailbox[-1]["Subject"]
+
+
+def test_an_estate_that_measured_nothing_is_not_told_it_was_fine(
+    mailbox, paying
+):
+    """The most damaging sentence a monitoring product can send.
+
+    "Everything stayed inside its limits" went to an estate that had
+    taken no readings at all. Nothing stayed inside anything — nothing
+    was measured.
+    """
+    send_customer_reports()
+
+    body = mailbox[-1].get_content()
+    assert "stayed inside its limits" not in body
+    assert "Nothing was measured this week" in body
+    assert "not the same as nothing going wrong" in body
+
+
+def test_an_estate_that_measured_something_clean_is_told_so(
+    api, mailbox, paying
+):
+    headers, _ = paying
+    api.post("/api/sensor-pulse", headers=headers,
+             json={"sensor_id": "RACK-01", "temperature_fahrenheit": 68.0})
+
+    send_customer_reports()
+
+    assert "stayed inside its limits" in mailbox[-1].get_content()
+
+
 def test_the_digest_waits_for_the_hour_it_was_asked_for(
     mailbox, operator_address, monkeypatch, paying
 ):

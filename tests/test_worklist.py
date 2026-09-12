@@ -249,3 +249,35 @@ def test_a_trial_on_its_first_afternoon_is_not_called_stalled(
     rows = api.get("/api/contracts/attention", headers=admin_headers).json()["rows"]
 
     assert [r["kind"] for r in rows] == ["trial_ending"]
+
+
+def test_a_trial_is_not_offered_add_ons_it_has_no_contract_to_hang_them_on(
+    api, tenant_factory, sensor_factory, admin_headers
+):
+    """Sell them the product before selling them the extras.
+
+    A trial was getting an expansion row for four add-ons it had no base
+    contract to attach them to — and in the daily digest that landed as
+    a second row for the same company, directly under the one that
+    actually mattered: "their trial ends Thursday", followed by "offer
+    them an upsell".
+    """
+    headers, _ = tenant_factory(plan="trial", company_name="Still Deciding")
+    sensor_factory(headers, "FRIDGE-1", "restaurant")
+
+    rows = api.get("/api/contracts/attention", headers=admin_headers).json()["rows"]
+    kinds = {r["kind"] for r in rows if r["company_name"] == "Still Deciding"}
+
+    assert "trial_ending" in kinds
+    assert "expansion" not in kinds
+
+
+def test_a_paying_account_is_still_offered_them(
+    api, tenant_factory, sensor_factory, admin_headers
+):
+    headers, _ = tenant_factory(plan="growth", company_name="Northgate Foods")
+    sensor_factory(headers, "FRIDGE-1", "restaurant")
+
+    rows = api.get("/api/contracts/attention", headers=admin_headers).json()["rows"]
+
+    assert any(r["kind"] == "expansion" for r in rows)

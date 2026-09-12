@@ -253,13 +253,22 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
 
     digest = operator_digest(now)
     urgent = sum(1 for r in digest["rows"] if r["urgency"] == "high")
-    subject = f"CyberLogix: ${digest['arr_usd']:,.0f} booked"
-    if digest["needs_a_person"]:
-        subject += f", {digest['needs_a_person']} need a person"
-        if urgent:
-            subject += f" ({urgent} urgent)"
+
+    # Ordered worst-first and kept short. The first version read
+    # "CyberLogix: $35,964 booked, 3 need a person (1 urgent), and
+    # something is broken" — folded across two header lines and truncated
+    # by every mail client at about the point where it stopped being
+    # reassuring. What is wrong goes first, because that is the half that
+    # survives the truncation.
+    parts = []
     if digest["warnings"]:
-        subject += ", and something is broken"
+        parts.append(f"{len(digest['warnings'])} to fix")
+    if urgent:
+        parts.append(f"{urgent} urgent")
+    elif digest["needs_a_person"]:
+        parts.append(f"{digest['needs_a_person']} to call")
+    parts.append(f"${digest['arr_usd']:,.0f} booked")
+    subject = "CyberLogix: " + ", ".join(parts)
 
     return send_mail(
         to_address=OPERATOR_EMAIL,
@@ -332,8 +341,18 @@ def _render_report(tenant: Tenant, report: Dict[str, Any]) -> str:
                 if report["escalated"] else ""
             )
         )
-    else:
+    elif report["readings"]:
         out.append("  No excursions. Everything stayed inside its limits.")
+    else:
+        # The line this replaces said "everything stayed inside its
+        # limits" to an estate that had taken no readings at all. Nothing
+        # stayed inside anything; nothing was measured. Telling a customer
+        # their unmonitored week went fine is the single most damaging
+        # sentence a monitoring product can send.
+        out.append(
+            "  Nothing was measured this week, so there is nothing here to "
+            "tell you. That is not the same as nothing going wrong."
+        )
 
     if report["offline"]:
         out += ["", "UNITS THAT HAVE STOPPED REPORTING:"]
