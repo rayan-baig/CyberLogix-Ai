@@ -476,3 +476,123 @@ def test_the_fleet_billing_route_is_not_a_tenants_to_call(
     )
     refused = api.post("/api/contracts/run", headers={**headers, **owner})
     assert refused.status_code in (401, 403, 503), refused.text
+
+
+# ---- a voided month must not leave with the contract -------------------
+
+
+def _voided_then(api, admin_headers, tenant_factory, owner_headers,
+                 sensor_factory, action):
+    headers, owner, tenant = _estate(
+        api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
+    )
+    run_billing()
+    original = STORE.invoices_for(tenant["tenant_id"])[0]
+    api.post(f"/api/invoices/{original.invoice_id}/void",
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
+    assert STORE.active_subscription(tenant["tenant_id"]).rebill_periods == [0]
+
+    resp = action(headers, owner)
+    assert resp.status_code == 200, resp.text
+    return tenant, original, resp.json()
+
+
+def test_renewing_does_not_carry_a_voided_month_away_with_it(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+):
+    """Found by the fuzzer: void, then renew, and the month vanished.
+
+    A voided invoice puts its period on the subscription's re-bill list.
+    Renewing supersedes that subscription, so the hole went with it and
+    $4,497 of delivered service was never charged for at all.
+    """
+    tenant, original, body = _voided_then(
+        api, admin_headers, tenant_factory, owner_headers, sensor_factory,
+        lambda h, o: api.post("/api/contracts/renew", headers={**h, **o},
+                              json={"term_years": 1}),
+    )
+    assert body["reissued"], "the voided month left with the old contract"
+
+    live = [i for i in STORE.invoices_for(tenant["tenant_id"])
+            if i.state != "void"]
+    assert len(live) == 1
+    # Re-issued against the old contract, at the rate that covered those
+    # days — and without a second commissioning fee.
+    assert live[0].total_usd == pytest.approx(3 * 899.0)
+    assert not [l for l in live[0].lines if l["kind"] == "setup"]
+
+
+def test_cancelling_does_not_carry_a_voided_month_away_either(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+):
+    tenant, original, body = _voided_then(
+        api, admin_headers, tenant_factory, owner_headers, sensor_factory,
+        lambda h, o: api.post("/api/contracts/cancel", headers={**h, **o},
+                              json={"reason": "leaving"}),
+    )
+    assert body["reissued"]
+    assert body["still_owed_usd"] == pytest.approx(3 * 899.0)
+
+
+def test_a_contract_with_no_hole_reissues_nothing(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+):
+    """The fix must not invent an invoice on every renewal."""
+    headers, owner, tenant = _estate(
+        api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
+    )
+    run_billing()
+    before = len(STORE.invoices_for(tenant["tenant_id"]))
+
+    body = api.post("/api/contracts/renew", headers={**headers, **owner},
+                    json={"term_years": 1}).json()
+    assert body["reissued"] == []
+    assert len(STORE.invoices_for(tenant["tenant_id"])) == before
+
+
+def test_a_failed_rebill_does_not_un_bill_the_month(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+):
+    """Seed 377, twenty-one operations in.
+
+    Claiming a period off the re-bill list does not move `periods_billed`,
+    because the period was billed once already. Releasing it did — so an
+    estate whose invoice was voided and whose sensors were then all
+    decommissioned came back with periods_billed=0 *and* period 0 still on
+    the re-bill list: the same month queued from both ends, ready to be
+    billed twice the moment a sensor came back.
+    """
+    headers, owner, tenant = _estate(
+        api, tenant_factory, owner_headers, sensor_factory, units=2, tag="A"
+    )
+    run_billing()
+    invoice = STORE.invoices_for(tenant["tenant_id"])[0]
+    api.post(f"/api/invoices/{invoice.invoice_id}/void",
+             params={"tenant_id": tenant["tenant_id"]},
+             headers=admin_headers, json={})
+
+    sub = STORE.active_subscription(tenant["tenant_id"])
+    assert sub.periods_billed == 1 and sub.rebill_periods == [0]
+
+    # Every sensor goes. The re-bill now has nothing to charge for.
+    for sensor in list(STORE.sensors_for(tenant["tenant_id"])):
+        api.delete(f"/api/licenses/me/sensors/{sensor.sensor_id}",
+                   headers={**headers, **owner})
+    run_billing()
+
+    after = STORE.active_subscription(tenant["tenant_id"])
+    assert after.periods_billed == 1, (
+        f"the counter rewound to {after.periods_billed}"
+    )
+    assert after.rebill_periods == [0], "the hole should still be waiting"
+
+    # And when a sensor comes back, that month bills exactly once.
+    sensor_factory(headers, "B-1", "cybersecurity")
+    run_billing()
+    live = [i for i in STORE.invoices_for(tenant["tenant_id"])
+            if i.state != "void"]
+    periods = [i.billing_period for i in live]
+    assert len(periods) == len(set(periods)), (
+        f"a period was billed twice: {periods}"
+    )

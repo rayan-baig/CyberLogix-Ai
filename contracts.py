@@ -406,6 +406,31 @@ def bill_period(
     return invoice
 
 
+def settle_outstanding_rebills(tenant: Tenant, sub: Subscription) -> List[str]:
+    """Re-issue any voided month before the contract goes away.
+
+    A voided invoice puts its period on a re-bill list. The list lives on
+    the subscription, and both renewing and cancelling supersede that
+    subscription — so the hole went with it and the month was never
+    charged for at all. Found by the fuzzer: void, then renew, and $4,497
+    of delivered service vanished.
+
+    Billed against the *old* contract, because that is the one that
+    covered those days and carries the rate they were sold at.
+    """
+    issued = []
+    for index in sorted(sub.rebill_periods):
+        invoice = bill_period(tenant, sub, index)
+        if invoice is not None:
+            issued.append(invoice.number)
+    if issued:
+        logger.info(
+            "Re-issued %s before superseding %s.",
+            ", ".join(issued), sub.subscription_id,
+        )
+    return issued
+
+
 def run_billing(now: Optional[datetime] = None) -> Dict[str, Any]:
     """Issue every invoice that has come due, across every tenant.
 
@@ -879,6 +904,7 @@ def renew(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="There is no live contract to renew.",
         )
+    reissued = settle_outstanding_rebills(tenant, sub)
     fresh = STORE.renew_subscription(sub, payload.term_years)
     write_audit(
         tenant,
@@ -888,8 +914,11 @@ def renew(
         f"x{fresh.carried_multiplier:g} of the rate card.",
     )
     return {
-        "message": f"Renewed for {payload.term_years} year(s).",
+        "message": f"Renewed for {payload.term_years} year(s)."
+        + (f" {len(reissued)} voided period(s) re-issued first."
+           if reissued else ""),
         "contract": fresh.public(),
+        "reissued": reissued,
         "schedule": term_schedule(tenant, fresh),
     }
 
@@ -907,6 +936,7 @@ def cancel(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="There is no live contract to cancel.",
         )
+    reissued = settle_outstanding_rebills(tenant, sub)
     STORE.cancel_subscription(sub, payload.reason or "cancelled by customer")
     write_audit(tenant, operator, "contract.cancelled", payload.reason or "")
     outstanding = round(
@@ -915,6 +945,7 @@ def cancel(
     return {
         "message": "Contract cancelled. Automatic billing has stopped.",
         "contract": sub.public(),
+        "reissued": reissued,
         "still_owed_usd": outstanding,
         "note": (
             "Cancelling stops future invoices. Invoices already issued "

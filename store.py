@@ -3758,10 +3758,28 @@ class HubStore:
         A claim that is never released is a month nobody is ever billed
         for — the failure mode this whole mechanism exists to avoid, just
         pointing the other way.
+
+        A *re-bill* claim is the exception, and getting that wrong was a
+        real bug. Claiming a period off the re-bill list does not move the
+        counter, because the period was already billed once; so releasing
+        it must not move the counter either. It did, and the counter went
+        backwards: an estate whose invoice was voided and whose sensors
+        were then all decommissioned came back with periods_billed=0 and
+        period 0 still on the re-bill list — the same month queued twice,
+        from both ends.
+
+        Found by the fuzzer at seed 377, after twenty-one operations.
         """
         with self._lock:
             live = self._subscriptions.get(sub.subscription_id)
-            if live is None or live.periods_billed != index + 1:
+            if live is None:
+                return
+            if index in live.rebill_periods:
+                # The claim never advanced anything. There is nothing to
+                # hand back, and the period stays on the list for the next
+                # run to try again.
+                return
+            if live.periods_billed != index + 1:
                 return
             live.periods_billed = index
             self._db.put("subscription", live.subscription_id, live.to_row())
