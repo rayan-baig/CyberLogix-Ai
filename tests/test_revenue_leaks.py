@@ -429,3 +429,41 @@ def test_a_part_paid_invoice_that_is_voided_earns_no_commission(
                    headers=partner_key).json()["commission_usd"] == 0.0, (
         "Commission was still owed on an invoice that was voided."
     )
+
+
+# ---- turning the loop off must not turn the money off ------------------
+
+
+def test_the_scheduler_says_that_turning_it_off_stops_billing_too(api):
+    """A perfectly good reason to disable the loop — more than one replica
+    — silently stopped the company invoicing, and the note only warned
+    about escalation. The only sign would have been an empty ledger."""
+    import scheduler
+
+    note = scheduler.status()["note"]
+    assert "/api/contracts/run" in note
+    assert "billing" in note.lower()
+    assert scheduler.status()["billing_interval_seconds"] > 0
+
+
+def test_the_fleet_can_be_billed_from_outside(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+):
+    headers, owner, tenant = _estate(
+        api, tenant_factory, owner_headers, sensor_factory, units=2, tag="A"
+    )
+    out = api.post("/api/contracts/run", headers=admin_headers)
+    assert out.status_code == 200, out.text
+    assert out.json()["billing"]["invoices_issued"] == 1
+    assert len(STORE.invoices_for(tenant["tenant_id"])) == 1
+
+
+def test_the_fleet_billing_route_is_not_a_tenants_to_call(
+    api, tenant_factory, owner_headers, sensor_factory
+):
+    """It runs across every account, so it is not a customer's button."""
+    headers, owner, _ = _estate(
+        api, tenant_factory, owner_headers, sensor_factory, units=2, tag="A"
+    )
+    refused = api.post("/api/contracts/run", headers={**headers, **owner})
+    assert refused.status_code in (401, 403, 503), refused.text

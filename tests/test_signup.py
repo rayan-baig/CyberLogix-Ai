@@ -436,3 +436,54 @@ def test_the_request_model_has_no_plan_field_to_honour(api):
         "The model now carries unknown fields, so `plan` is one edit away "
         "from being honoured."
     )
+
+
+def test_signing_up_records_which_terms_were_accepted(api):
+    """The page says so above the button; this makes it true of us too.
+
+    The sign-up form states that starting a trial accepts the agreement
+    and the privacy statement. Nothing recorded it, so the claim bound the
+    customer and not us — and the terms themselves promise the acceptance
+    is kept as a hash of the exact text.
+    """
+    import legal
+
+    body = _signup(api).json()
+    headers = {
+        "X-CyberLogix-Key": body["api_key"],
+        "Authorization": f"Bearer {body['token']}",
+    }
+    status = api.get("/api/legal/acceptance/status", headers=headers).json()
+    assert status["all_current"] is True
+    assert {row["slug"] for row in status["documents"]} == set(legal.DOCUMENTS)
+    assert all(row["accepted"] for row in status["documents"])
+
+
+def test_the_signup_page_says_what_it_is_recording(api):
+    page = api.get("/static/signup.html").text
+    assert "Master Subscription Agreement" in page
+    assert 'href="/legal"' in page
+
+
+def test_a_broken_legal_module_does_not_lose_the_signup(api, monkeypatch):
+    """The account matters more than the note about the account."""
+    import legal
+
+    monkeypatch.setattr(
+        legal, "current_hashes",
+        lambda: (_ for _ in ()).throw(RuntimeError("template blew up")),
+    )
+    resp = _signup(api)
+    assert resp.status_code == 201, resp.text
+
+    # Put the module back before asking it anything: the point is that the
+    # sign-up survived, not that a broken template stays broken.
+    monkeypatch.undo()
+    headers = {
+        "X-CyberLogix-Key": resp.json()["api_key"],
+        "Authorization": f"Bearer {resp.json()['token']}",
+    }
+    # And it says the acceptance is missing rather than pretending.
+    status = api.get("/api/legal/acceptance/status", headers=headers).json()
+    assert status["all_current"] is False
+    assert not any(row["accepted"] for row in status["documents"])

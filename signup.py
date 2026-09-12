@@ -243,6 +243,14 @@ def start_trial(payload: SignupRequest, request: Request):
         STORE.delete_tenant(tenant.tenant_id)
         raise
 
+    # The sign-up page says, above the button, that starting a trial
+    # accepts the agreement and the privacy statement. Nothing recorded
+    # that, so the claim was true of the customer and false of us: the
+    # terms themselves promise the acceptance is kept as a hash of the
+    # exact text, and there was no such record for anybody who came in
+    # through the front door.
+    record_acceptance(tenant, user)
+
     STORE.record_audit(
         tenant_id=tenant.tenant_id,
         actor=f"{user.full_name} <{user.email}>",
@@ -274,6 +282,44 @@ def start_trial(payload: SignupRequest, request: Request):
         "api_key": tenant.api_key,
         "next_steps": first_steps(tenant.api_key, example_vertical),
     }
+
+
+def record_acceptance(tenant, user) -> None:
+    """Write down which exact text this customer agreed to on the way in.
+
+    Imported here rather than at module scope: `legal` builds its
+    documents from half the application, and pulling it in at import time
+    would tie the sign-up door to modules it has no other reason to know
+    about.
+
+    A failure here must not lose the sign-up. The account existing matters
+    more than the record of the click, and the acceptance can be taken
+    again from the console — which is exactly what `/api/legal/
+    acceptance/status` will start saying if this is missing.
+    """
+    try:
+        import legal
+
+        accepted = legal.current_hashes()
+        STORE.record_audit(
+            tenant_id=tenant.tenant_id,
+            actor=f"{user.full_name} <{user.email}>",
+            actor_role="owner",
+            action="legal.accepted",
+            detail=(
+                f"{user.full_name} accepted v{legal.TERMS_VERSION} at "
+                "sign-up: "
+                + ", ".join(
+                    f"{slug}@{digest[:12]}"
+                    for slug, digest in sorted(accepted.items())
+                )
+            ),
+        )
+    except Exception:  # noqa: BLE001 - the account matters more than the note
+        logger.exception(
+            "Could not record terms acceptance for %s; the account stands.",
+            tenant.tenant_id,
+        )
 
 
 def first_steps(api_key: str, vertical: str) -> Dict[str, Any]:

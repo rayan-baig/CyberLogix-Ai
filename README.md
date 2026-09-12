@@ -37,6 +37,9 @@ ask for.
 | Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
+| Self-Serve Sign-up | `/api/signup` | A stranger becomes a customer without asking anyone |
+| Contracts & Collections | `/api/contracts` | The signed term, billing itself, and chasing what is late |
+| Agreements | `/api/legal` | Terms generated from the code they describe |
 
 ### The look
 
@@ -468,13 +471,15 @@ compliance report is only as good as its provenance.
 ## Quick start
 
 ```bash
-# 1. Onboard, and keep the api_key from the response
-curl -X POST localhost:8080/api/licenses/tenants -H 'Content-Type: application/json' -d '{
+# 1. Start a trial. Public, rate limited, and it returns a working session
+#    as well as the api_key — no second call to bootstrap an owner.
+curl -X POST localhost:8080/api/signup -H 'Content-Type: application/json' -d '{
   "company_name": "Blue Harbor Yacht Club",
-  "contact_name": "Dana Reyes",
+  "full_name": "Dana Reyes",
+  "email": "dana@blueharbor.example",
+  "password": "correct-horse-battery",
   "contact_phone": "+1-555-0100",
-  "contact_email": "ops@blueharbor.example",
-  "plan": "growth"
+  "industry_vertical": "country_club"
 }'
 
 # 2. Claim a seat for a sensor
@@ -489,6 +494,34 @@ curl -X POST localhost:8080/api/licenses/me/sensors \
 curl -X POST localhost:8080/api/sensor-pulse \
   -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 47.0}'
+
+# 4. Now break it. 61F is past the country-club limit, so this opens an
+#    incident and texts the roster.
+curl -X POST localhost:8080/api/sensor-pulse \
+  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 61.0}'
+```
+
+The sign-up response carries the same four commands with the key already
+filled in, so this is the same walkthrough the product hands a customer.
+
+**Provisioning a paid account is different.** `POST /api/licenses/tenants`
+still exists for it, and anything above a trial needs
+`X-CyberLogix-Provisioning` matching `CYBERLOGIX_PROVISIONING_KEY`. With
+that variable unset no paid account can be created at all, which is the
+right default: a deployment nobody has configured should refuse to hand
+out Enterprise licences rather than hand them to everybody.
+
+```bash
+curl -X POST localhost:8080/api/licenses/tenants \
+  -H "X-CyberLogix-Provisioning: $PROVISIONING_KEY" \
+  -H 'Content-Type: application/json' -d '{
+  "company_name": "Blue Harbor Yacht Club",
+  "contact_name": "Dana Reyes",
+  "contact_phone": "+1-555-0100",
+  "contact_email": "ops@blueharbor.example",
+  "plan": "growth"
+}'
 ```
 
 ## The escalation ladder
@@ -836,6 +869,102 @@ is where a webhook would land, and the lifecycle is complete without one —
 which is also how a bank transfer, how most contracts at these sizes are
 actually settled, gets recorded.
 
+## Contracts that bill themselves
+
+Everything above this could *quote*: a three-year term, a five percent
+annual escalator, a $1,500 commissioning fee, ten percent off for paying
+a year up front. Nothing carried any of it into an invoice. Billing was a
+button somebody had to remember to press, at the month-one rate, forever.
+On a $4,000-a-month estate signed to three escalating years the gap
+between the deal as quoted and the deal as billed is $7,320.
+
+`POST /api/contracts` makes the signed deal durable — term, escalator,
+prepay, add-ons — and from then on invoices issue themselves. The
+scheduler runs the billing pass hourly; `POST /api/contracts/billing-run`
+is the same code on demand for a month-end close. Running it twice issues
+nothing the second time: the claim on a period is atomic, so a scheduler
+tick landing on a manual catch-up cannot bill the same month twice.
+
+Three things it gets right that are easy to get wrong:
+
+- **The escalator reaches the invoice.** Year three of a five percent term
+  bills at 1.1025 times the rate card, and a renewal starts from where the
+  last term finished rather than back at the year-one number.
+- **Mid-period growth is charged.** Billing runs in advance, so a customer
+  who signs for five racks and rolls out twenty more the following week
+  was monitored on twenty-five and billed for five. Each invoice now
+  carries the part-period owed for anything registered during the previous
+  one, priced from the day it was registered.
+- **A voided invoice comes back.** `periods_billed` is a high-water mark,
+  so voiding one used to give that month away for good. The period goes on
+  a re-bill list instead — a list rather than a rewind, because the voided
+  invoice is not always the newest one.
+
+### Collections
+
+Reminders are staged by how late the invoice actually is, not by a counter
+that gets walked: an invoice ninety days overdue that nobody has chased
+gets the notice that fits ninety days, once, rather than four milder ones
+in the same afternoon. A late charge is issued as its own numbered
+document — an issued invoice whose total moves is a dispute. Past
+`DELINQUENT_AFTER_DAYS` the account is delinquent.
+
+There is no mail transport yet. `run_dunning()` records and returns the
+notices, and each stage is claimed once, so wiring a sender in later
+cannot replay a month of chases at a customer.
+
+**What delinquency does not do is stop the monitoring.** A freezer full of
+embryos does not stop being somebody's freezer because their finance
+department is slow. Alerting, escalation and ingest run for a delinquent
+account exactly as for a paid one; what is withheld is reporting —
+benchmarks, attestations, exports.
+
+### When a licence runs out
+
+Expiry is a grace window, not a cliff. For `CYBERLOGIX_LICENCE_GRACE_DAYS`
+the estate is watched exactly as before and only its reporting is
+withheld; past that, ingest stops and the refusal names the route that
+restores it.
+
+Every route that is the way *back* stays open at every point — signing in,
+changing plan, signing a contract, reading and settling an invoice,
+accepting the terms, and the console page that carries all of them.
+Refusing those because an account has lapsed is a deadlock: the customer
+cannot pay because they have not paid. Suspension is the exception, in
+both directions, because a lapse is something that happened to a customer
+and a suspension is something somebody decided about them.
+
+## The agreements
+
+`/legal` serves the Master Subscription Agreement, the Loss Assurance
+terms, the Service Level Commitment, the privacy and data-processing
+statement, and the acceptable-use policy. Readable without an account,
+because terms nobody can read before signing up are a surprise rather than
+terms.
+
+They are generated from the code they describe. The payout cap comes from
+`assurance.py`, the payment terms and late charge from the billing code,
+the delinquency threshold from `contracts.py`, and the cover exclusions
+from the function that actually applies them. Change a constant and the
+agreement says the new figure the same day, and the SHA-256 of the text
+moves so a customer can tell a rewording from a re-pricing.
+
+The clause that matters is the limitation of liability: twelve months of
+fees, with Loss Assurance deliberately outside it. A cryostorage
+customer's tank is worth more than this company will ever earn, and
+uncapped, one claim ends the company rather than the contract. Burying the
+guarantee under the general cap would have made the guarantee worthless.
+
+Acceptance records the SHA-256 of the exact text against the tenant's
+audit trail, at sign-up and through `POST /api/legal/accept`. An
+acceptance stops reading as current once the text moves, so the honest
+thing — asking again — is the visible thing.
+
+**Every document is a draft.** It is generated from the running system,
+not reviewed by a lawyer, and it says so on its own first line. A
+liability cap that turns out to be unenforceable is worse than none,
+because it was relied on.
+
 ## The reseller channel
 
 A refrigeration servicer with two hundred restaurant clients already visits
@@ -982,3 +1111,12 @@ Things this repository does not do for you, in the order they will bite:
 - **The LLC does not exist yet.** `CYBERLOGIX_LEGAL_NAME` and the other
   issuer fields go on every invoice; an invoice from an entity that cannot
   receive money is not a document anyone can pay.
+- **The agreements have not been read by a lawyer.** They are generated
+  from the running system so the figures cannot drift, and every one of
+  them says "draft" on its first line. The limitation of liability is the
+  clause to have checked first: one that turns out to be unenforceable is
+  worse than none, because it was relied on.
+- **`CYBERLOGIX_PROVISIONING_KEY` is unset.** No paid account can be
+  created until it is. That is the safe direction — the endpoint used to
+  be anonymous and took the plan as a parameter — but it does mean the
+  first real customer cannot be provisioned without setting it.

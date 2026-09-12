@@ -191,9 +191,13 @@ def status() -> dict:
         "enabled": interval > 0,
         "interval_seconds": interval,
         "running": _task is not None and not _task.done(),
+        "billing_interval_seconds": BILLING_EVERY_SECONDS,
         "note": (
-            "Sweeps run in-process. Set CYBERLOGIX_SWEEP_SECONDS=0 when an "
-            "external scheduler drives POST /api/autopilot/sweep, or when "
-            "running more than one replica."
+            "Sweeps run in-process, and so does billing. Turning this off "
+            "stops both: drive POST /api/autopilot/sweep for escalation "
+            "*and* POST /api/contracts/run for billing and collections, or "
+            "the company quietly stops invoicing. Set "
+            "CYBERLOGIX_SWEEP_SECONDS=0 when an external scheduler does "
+            "that, or when running more than one replica."
         ),
     }

@@ -50,6 +50,7 @@ from pydantic import BaseModel, Field
 from accounts import require_role
 from auth import require_tenant, require_tenant_any_state, write_audit
 from invoicing import PAYMENT_TERMS_DAYS, build_lines
+from partners import require_admin
 from store import (
     INDUSTRY_PROFILES,
     MAX_CATCHUP_PERIODS,
@@ -776,6 +777,33 @@ def billing_run(
         "invoices_issued": len(issued),
         "invoices": issued,
         "next_billing_at": iso(sub.period_start(sub.periods_billed)),
+    }
+
+
+@router.post("/run", tags=["Contracts & Collections"])
+def run_everything(_: None = Depends(require_admin)):
+    """Bill and chase the whole fleet. The external scheduler's entry point.
+
+    The in-process loop does this hourly, and a deployment that turns the
+    loop off — more than one replica, or an external scheduler — needs
+    somewhere to drive it from. Without this, disabling the sweep for a
+    perfectly good reason silently stopped the company invoicing, and the
+    only sign would have been an empty ledger at the end of the month.
+
+    Platform-operator credential, not a tenant's: this runs across every
+    account.
+    """
+    billed = run_billing()
+    chased = run_dunning()
+    return {
+        "billing": billed,
+        "collections": {
+            "notices_count": chased["notices_count"],
+            "late_fees_issued": chased["late_fees_issued"],
+            "failed_invoices": chased["failed_invoices"],
+            "notices": chased["notices"],
+        },
+        "ran_at": iso(utc_now()),
     }
 
 
