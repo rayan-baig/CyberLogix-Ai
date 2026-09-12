@@ -145,11 +145,84 @@ def test_the_terms_promise_alerting_survives_non_payment():
         )
 
 
-def test_both_sub_processors_are_named():
+# Every third party that receives customer data, and what reaches them.
+# This list is the reviewed one: a name here has been thought about. The
+# test below fails when the table gains or loses a row, which is the
+# point — the privacy statement went a whole release naming two
+# sub-processors while the mail host was reading every invoice, every
+# contact address and every weekly report, because nothing structural
+# was watching the table.
+DISCLOSED_SUB_PROCESSORS = {
+    "Twilio": "the mobile number and the text of the alert",
+    "Google (Gemini API)": "the wording of an alert being drafted",
+    "Our mail host": "the recipient's address and the whole message",
+}
+
+
+def _sub_processor_rows():
+    """The body rows of the sub-processor table, as (name, what, why)."""
+    rows = []
+    inside = False
+    for line in legal.privacy_statement().splitlines():
+        if line.startswith("| Sub-processor"):
+            inside = True
+            continue
+        if inside:
+            if not line.startswith("|"):
+                break
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if set("".join(cells)) <= set("-: "):
+                continue  # the header rule
+            rows.append(cells)
+    return rows
+
+
+def test_every_sub_processor_is_disclosed_and_no_more():
+    """A new third party with customer data must reach this document.
+
+    Structural rather than a list of names to grep for: the failure this
+    replaces was a table that stayed accurate about what it said and
+    silently stopped being complete.
+    """
+    named = [row[0] for row in _sub_processor_rows()]
+
+    assert named, "the privacy statement has no sub-processor table"
+    assert set(named) == set(DISCLOSED_SUB_PROCESSORS), (
+        "the sub-processor table and the reviewed list disagree. If a new "
+        "third party now receives customer data, disclose it in "
+        "privacy_statement() and add it here; if one is gone, remove both."
+    )
+    for row in _sub_processor_rows():
+        assert len(row) == 3 and all(row), (
+            f"a sub-processor row does not say what reaches them and why: {row}"
+        )
+
+
+def test_the_mail_host_disclosure_says_what_it_actually_gets():
+    """Not "email" — an invoice is what you owe, and a weekly report is
+    how much of your estate stopped reporting."""
     text = _flat(legal.privacy_statement())
-    assert "Twilio" in text
-    assert "Google" in text
+    assert "what you owe" in text
+    assert "which units went quiet" in text
+
+
+def test_backups_do_not_quietly_contradict_the_deletion_promise():
+    """"Ask us to delete and we delete everything" is untrue of any
+    system that can survive losing a disk — which is every system worth
+    trusting with a compliance record."""
+    from backup import BACKUP_KEEP
+
+    text = _flat(legal.privacy_statement())
+    assert "snapshot" in text
+    assert f"keep the last {BACKUP_KEEP}" in text
+    assert f"gone within {BACKUP_KEEP} days" in text
+    assert "do not restore a backup to bring back" in text
+
+
+def test_the_privacy_statement_still_refuses_the_obvious_things():
+    text = _flat(legal.privacy_statement())
     assert "do not sell" in text
+    assert "do not use it to train anything" in text
 
 
 def test_every_document_is_marked_a_draft():

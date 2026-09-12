@@ -46,6 +46,7 @@ from contracts import (
     LATE_FEE_MONTHLY_PERCENT,
     REMINDER_DAYS,
 )
+from backup import BACKUP_KEEP
 from invoicing import PAYMENT_TERMS_DAYS, issuer_block
 from store import (
     SENSOR_OFFLINE_AFTER_MINUTES,
@@ -62,8 +63,13 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # Bumped by hand when the *meaning* changes. The body hash moves on its own
 # whenever a figure underneath it does, which is the point: a customer can
 # tell a rewording from a re-pricing.
-TERMS_VERSION = "1.0"
-EFFECTIVE_DATE = "2026-09-08"
+# Bumped when the documents say something materially different, not when
+# a sentence is tidied. 1.1 added the mail host as a sub-processor and
+# said honestly what a backup does to a deletion request — both are
+# things a customer would want to be asked about again rather than have
+# quietly changed under an acceptance they already gave.
+TERMS_VERSION = "1.1"
+EFFECTIVE_DATE = "2026-09-12"
 
 # The single most valuable clause in the whole set, and the reason this
 # module exists at all.
@@ -349,6 +355,13 @@ can reach a human being when your equipment fails.
 **Operators.** Name, email and a hashed password for each person who signs
 in, plus an audit record of what they did.
 
+**Mail we send you.** The address, the subject and the body of every
+invoice, notice and report we send, and whether the mail host accepted
+it. We keep it so that "we never received that invoice" has an answer
+other than both of us guessing. If an address bounces or you unsubscribe,
+we keep that address on a suppression list — deleting the record of your
+having said stop would mean writing to you again.
+
 We do not sell any of it, and we do not use it to train anything.
 
 ## Who else sees it
@@ -357,6 +370,7 @@ We do not sell any of it, and we do not use it to train anything.
 |---|---|---|
 | Twilio | The mobile number, and the text of the alert (which names the site and the temperature) | Sending the text and placing the call |
 | Google (Gemini API) | The wording of an alert being drafted: the sector, the reading and the limit | Writing the alert in language the recipient will act on |
+| Our mail host | The recipient's address and the whole message, which for an invoice is what you owe and for a weekly report is how many readings your estate took and which units went quiet | Delivering it |
 
 Sensor readings in bulk, your customer list, and your operators'
 credentials are sent to neither.
@@ -376,6 +390,15 @@ years after it, because that is how long an insurer or an inspector may
 ask about an event. Audit records the same. Sign-in sessions expire on
 their own. Ask us to delete and we delete everything we are not required
 to keep.
+
+**Backups are the honest exception.** We take a verified snapshot of the
+whole database daily and keep the last {BACKUP_KEEP}. A deletion takes
+effect immediately in the live system and then propagates as those
+snapshots age out, so the last copy of deleted data is gone within
+{BACKUP_KEEP} days. We do not restore a backup to bring back something
+you asked us to delete. Saying "we delete everything" without this
+paragraph would have been untrue of any system that can survive losing a
+disk, which is every system worth trusting with a compliance record.
 
 ## Your rights
 

@@ -968,6 +968,24 @@ outlive the tab, and sends it as a header rather than a query string.
 
 ## Mail
 
+Adding this made the privacy statement wrong, which is worth saying
+plainly because it is the failure the module was built to prevent.
+`legal.py` generates the terms from the code they describe, and the
+sub-processor table named Twilio and Google while the mail host was
+receiving every contact address, every invoice — which is what a
+customer owes — and every weekly report, which is how much of their
+estate stopped reporting. The table is now checked structurally rather
+than by grepping for two names: a row added or removed without the
+reviewed list agreeing fails the suite.
+
+Backups had the same shape of problem. "Ask us to delete and we delete
+everything" is untrue of any system that can survive losing a disk, so
+the statement now says a deletion propagates as the daily snapshots age
+out and that we do not restore one to bring back something you asked us
+to delete. Both changes are material, so the terms version moved to 1.1
+and every acceptance of 1.0 now shows as not current — which is the
+mechanism working, not a bug in it.
+
 `mail.py` is the transport the money engine runs on: SMTP over STARTTLS,
 credentials from the environment, one message at a time. The interesting
 part is not the socket. An unattended billing pass with a mail socket has
