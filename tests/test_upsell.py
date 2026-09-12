@@ -208,3 +208,69 @@ def test_the_console_offers_a_button_for_every_priced_add_on():
     assert "/api/contracts/add-ons" in page
     # And it sends the whole set, not the one that was clicked.
     assert "new Set(contract.add_ons" in page
+
+
+def test_a_per_unit_add_on_owes_arrears_on_units_added_mid_period(
+    api, contracted
+):
+    """The cover ran on those units. Something has to charge for it.
+
+    Measured before the fix: six units added halfway through a month on an
+    estate carrying Loss Assurance produced $2,997 of arrears where $3,444
+    was owed. The subscription was caught up and the per-unit add-on was
+    not, so the guarantee was in force for half a month on six units for
+    nothing.
+    """
+    headers, tenant = contracted
+    api.post("/api/contracts/add-ons", headers=headers,
+             json={"add_ons": ["assurance"]})
+    run_billing()
+
+    for i in range(6):
+        api.post("/api/licenses/me/sensors", headers=headers, json={
+            "sensor_id": f"NEW-{i}", "industry_vertical": "restaurant",
+            "location_name": "Annexe"})
+
+    sub = STORE.active_subscription(tenant["tenant_id"])
+    sub.started_at = add_months(utc_now(), -1)
+    STORE.save_subscription(sub)
+    half = sub.period_start(0) + (sub.period_start(1) - sub.period_start(0)) / 2
+    for sensor in STORE.sensors_for(tenant["tenant_id"]):
+        if sensor.sensor_id.startswith("NEW-"):
+            sensor.registered_at = half
+            STORE._db.put("sensor", sensor.sensor_id, sensor.to_row())
+    run_billing()
+
+    invoice = max(STORE.invoices_for(tenant["tenant_id"]), key=lambda i: i.number)
+    arrears = [l for l in invoice.lines if l["kind"] == "arrears"][0]
+    # Six units, half a month, at the unit rate *plus* the per-unit add-on.
+    assert arrears["amount_usd"] == pytest.approx(
+        (999.0 + 149.0) * 6 * 0.5, rel=1e-3
+    )
+    assert "add-ons" in arrears["description"]
+
+
+def test_a_per_estate_add_on_owes_no_arrears(api, contracted):
+    """It is charged in full for the period whatever the unit count does."""
+    headers, tenant = contracted
+    api.post("/api/contracts/add-ons", headers=headers,
+             json={"add_ons": ["vault"]})
+    run_billing()
+
+    api.post("/api/licenses/me/sensors", headers=headers, json={
+        "sensor_id": "NEW-1", "industry_vertical": "restaurant",
+        "location_name": "Annexe"})
+    sub = STORE.active_subscription(tenant["tenant_id"])
+    sub.started_at = add_months(utc_now(), -1)
+    STORE.save_subscription(sub)
+    half = sub.period_start(0) + (sub.period_start(1) - sub.period_start(0)) / 2
+    for sensor in STORE.sensors_for(tenant["tenant_id"]):
+        if sensor.sensor_id == "NEW-1":
+            sensor.registered_at = half
+            STORE._db.put("sensor", sensor.sensor_id, sensor.to_row())
+    run_billing()
+
+    invoice = max(STORE.invoices_for(tenant["tenant_id"]), key=lambda i: i.number)
+    arrears = [l for l in invoice.lines if l["kind"] == "arrears"][0]
+    assert arrears["amount_usd"] == pytest.approx(999.0 * 0.5, rel=1e-3)
+    assert "add-ons" not in arrears["description"]

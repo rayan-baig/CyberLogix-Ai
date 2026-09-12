@@ -183,12 +183,29 @@ def arrears_lines(
             continue
         late.setdefault(sensor.industry_vertical, []).append(unbilled)
 
+    from pricing import ADD_ONS
+
+    # A per-unit add-on was in force on those units for the same days the
+    # subscription was, so it owes the same part period. Measured: six
+    # units added halfway through a month on an estate carrying Loss
+    # Assurance produced $2,997 of arrears where $3,444 was owed — the
+    # cover ran and nothing charged for it.
+    #
+    # Per-*estate* add-ons need nothing here: they are charged in full for
+    # the period whatever the unit count does, so there is no shortfall to
+    # catch up on.
+    per_unit_rate = sum(
+        ADD_ONS[key]["monthly_usd"]
+        for key in sub.add_ons
+        if key in ADD_ONS and ADD_ONS[key]["basis"] == "per covered unit"
+    )
+
     multiplier = sub.rate_multiplier(index - 1)
     lines: List[Dict[str, Any]] = []
     for vertical, fractions in sorted(late.items()):
         if vertical not in PRICE_BOOK:
             continue
-        rate = PRICE_BOOK[vertical]["monthly_usd"] * multiplier
+        rate = (PRICE_BOOK[vertical]["monthly_usd"] + per_unit_rate) * multiplier
         # Priced at the *previous* period's rate, because that is the
         # period being caught up on. Using this period's rate would apply
         # an escalator to days before it took effect.
@@ -208,6 +225,7 @@ def arrears_lines(
                     f"{INDUSTRY_PROFILES[vertical]['name']} — {count} "
                     f"{plural(vertical, count)} added mid-period, "
                     f"part period to {window_close.date().isoformat()}"
+                    + (" (incl. per-unit add-ons)" if per_unit_rate else "")
                 ),
                 "quantity": count,
                 "unit_price_usd": round(rate, 2),
