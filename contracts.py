@@ -45,7 +45,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from accounts import require_role
 from auth import require_tenant, require_tenant_any_state, write_audit
@@ -119,6 +119,19 @@ REMINDER_TONE = {
 
 
 class SignRequest(BaseModel):
+    # Unknown fields are refused, not dropped.
+    #
+    # Pydantic ignores extras by default, which on a model that carries a
+    # quantity or an amount is a silent, one-directional loss. Measured:
+    # posting {"reference": "STRIPE-1", "amount": 500.0} to /paid — the
+    # field a Stripe adapter would naturally use — left `amount_usd` unset,
+    # which means "paid in full", so $3,997 of a $4,497 invoice was written
+    # off and the invoice closed. Same shape on the cluster endpoint:
+    # `enrolled_branches: 12` alongside `total_branch_locations: 40` billed
+    # forty.
+    #
+    # On a money-bearing model a misspelt field has to be a 422.
+    model_config = ConfigDict(extra="forbid")
     term_years: int = Field(1, ge=1, le=MAX_TERM_YEARS)
     escalator_percent: float = Field(5.0, ge=0.0, le=25.0)
     annual_prepay: bool = False
@@ -128,10 +141,36 @@ class SignRequest(BaseModel):
 
 
 class RenewRequest(BaseModel):
+    # Unknown fields are refused, not dropped.
+    #
+    # Pydantic ignores extras by default, which on a model that carries a
+    # quantity or an amount is a silent, one-directional loss. Measured:
+    # posting {"reference": "STRIPE-1", "amount": 500.0} to /paid — the
+    # field a Stripe adapter would naturally use — left `amount_usd` unset,
+    # which means "paid in full", so $3,997 of a $4,497 invoice was written
+    # off and the invoice closed. Same shape on the cluster endpoint:
+    # `enrolled_branches: 12` alongside `total_branch_locations: 40` billed
+    # forty.
+    #
+    # On a money-bearing model a misspelt field has to be a 422.
+    model_config = ConfigDict(extra="forbid")
     term_years: int = Field(1, ge=1, le=MAX_TERM_YEARS)
 
 
 class CancelRequest(BaseModel):
+    # Unknown fields are refused, not dropped.
+    #
+    # Pydantic ignores extras by default, which on a model that carries a
+    # quantity or an amount is a silent, one-directional loss. Measured:
+    # posting {"reference": "STRIPE-1", "amount": 500.0} to /paid — the
+    # field a Stripe adapter would naturally use — left `amount_usd` unset,
+    # which means "paid in full", so $3,997 of a $4,497 invoice was written
+    # off and the invoice closed. Same shape on the cluster endpoint:
+    # `enrolled_branches: 12` alongside `total_branch_locations: 40` billed
+    # forty.
+    #
+    # On a money-bearing model a misspelt field has to be a 422.
+    model_config = ConfigDict(extra="forbid")
     reason: str = Field("", max_length=280)
 
 
@@ -705,6 +744,19 @@ def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
 
 
 class AddOnChange(BaseModel):
+    # Unknown fields are refused, not dropped.
+    #
+    # Pydantic ignores extras by default, which on a model that carries a
+    # quantity or an amount is a silent, one-directional loss. Measured:
+    # posting {"reference": "STRIPE-1", "amount": 500.0} to /paid — the
+    # field a Stripe adapter would naturally use — left `amount_usd` unset,
+    # which means "paid in full", so $3,997 of a $4,497 invoice was written
+    # off and the invoice closed. Same shape on the cluster endpoint:
+    # `enrolled_branches: 12` alongside `total_branch_locations: 40` billed
+    # forty.
+    #
+    # On a money-bearing model a misspelt field has to be a 422.
+    model_config = ConfigDict(extra="forbid")
     add_ons: List[str] = Field(
         ..., description="The full set to carry from now on, not a delta."
     )

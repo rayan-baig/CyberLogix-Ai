@@ -13,7 +13,7 @@ import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from accounts import require_role
 from auth import (
@@ -53,6 +53,19 @@ class UnitPreference(BaseModel):
 
 
 class PlanChange(BaseModel):
+    # Unknown fields are refused, not dropped.
+    #
+    # Pydantic ignores extras by default, which on a model that carries a
+    # quantity or an amount is a silent, one-directional loss. Measured:
+    # posting {"reference": "STRIPE-1", "amount": 500.0} to /paid — the
+    # field a Stripe adapter would naturally use — left `amount_usd` unset,
+    # which means "paid in full", so $3,997 of a $4,497 invoice was written
+    # off and the invoice closed. Same shape on the cluster endpoint:
+    # `enrolled_branches: 12` alongside `total_branch_locations: 40` billed
+    # forty.
+    #
+    # On a money-bearing model a misspelt field has to be a 422.
+    model_config = ConfigDict(extra="forbid")
     plan: str = Field(..., description="One of: trial, growth, enterprise")
 
 
