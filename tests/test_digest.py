@@ -29,7 +29,16 @@ from store import STORE, utc_now
 
 @pytest.fixture()
 def operator_address(monkeypatch):
+    """An operator to write to, and no hour to wait for.
+
+    The send hour is pinned as well as the address. Without it every
+    test in this file would pass or fail depending on what time of day
+    the suite happens to run, which is the kind of flake that costs an
+    afternoon to find and teaches somebody to rerun until it goes green.
+    The hour has its own tests, below.
+    """
     monkeypatch.setattr(digest, "OPERATOR_EMAIL", "founder@cyberlogix.example")
+    monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 0)
     return "founder@cyberlogix.example"
 
 
@@ -179,6 +188,44 @@ def test_a_long_book_is_trimmed_and_the_rest_counted(
 def test_a_quiet_day_says_so(mailbox, operator_address):
     send_operator_digest()
     assert "Nothing needs a person today" in mailbox[-1].get_content()
+
+
+def test_the_digest_waits_for_the_hour_it_was_asked_for(
+    mailbox, operator_address, monkeypatch, paying
+):
+    """The money pass runs hourly, so without a floor the digest arrives
+    whenever the process happened to start — and a 3am email is one
+    nobody reads and everybody learns to ignore."""
+    monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 7)
+    early = utc_now().replace(hour=3)
+
+    result = send_operator_digest(now=early)
+
+    assert result["sent"] is False
+    assert result["status"] == "too_early"
+    # The invoice from the fixture's billing run is in there; the digest
+    # is not.
+    assert not [m for m in mailbox if "booked" in m["Subject"]]
+
+
+def test_a_late_pass_still_sends_rather_than_skipping_the_day(
+    mailbox, operator_address, monkeypatch, paying
+):
+    """A floor, not an exact time. Missing a day because the process was
+    restarting at seven is worse than arriving at nine."""
+    monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 7)
+
+    assert send_operator_digest(now=utc_now().replace(hour=9))["sent"] is True
+
+
+def test_the_operator_pressing_the_button_is_not_told_to_come_back_later(
+    api, admin_headers, mailbox, operator_address, monkeypatch, paying
+):
+    """The hour is a floor on the unattended pass, not a rule about what
+    somebody may ask for at six in the morning."""
+    monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 23)
+
+    assert api.post("/api/digest/operator", headers=admin_headers).json()["sent"]
 
 
 # ---- the customer's weekly report ---------------------------------------

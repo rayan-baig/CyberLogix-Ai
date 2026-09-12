@@ -58,6 +58,7 @@ from auth import (
 from invoicing import (
     PAYMENT_TERMS_DAYS,
     build_lines,
+    invoice_date,
     issuer_block,
     render_invoice,
 )
@@ -428,15 +429,20 @@ def send_invoice(tenant: Tenant, invoice: Invoice) -> Dict[str, Any]:
     """
     return send_mail(
         to_address=tenant.contact_email,
+        # Deliberately ASCII. An em dash here is encoded as an RFC 2047
+        # word in the middle of the line, which is valid, decodes
+        # correctly in every client that bothers, and shows as mojibake
+        # in the ones that do not. A subject is the one header where
+        # that costs something.
         subject=(
             f"Invoice {invoice.number} from "
-            f"{issuer_block().get('legal_name', 'CyberLogix AI')} — "
+            f"{issuer_block().get('legal_name', 'CyberLogix AI')}: "
             f"${invoice.total_usd:,.2f}"
         ),
         body=(
             f"{tenant.contact_name},\n\n"
-            f"Attached below is invoice {invoice.number} for "
-            f"${invoice.total_usd:,.2f}, due {iso(invoice.due_at)} "
+            f"Below is invoice {invoice.number} for "
+            f"${invoice.total_usd:,.2f}, due {invoice_date(invoice.due_at)} "
             f"(net {invoice.terms_days}).\n\n"
             f"{render_invoice(invoice, tenant)}\n\n"
             f"{payment_instructions()}\n\n"

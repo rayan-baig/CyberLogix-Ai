@@ -42,6 +42,8 @@ import os
 import re
 import smtplib
 import ssl
+from email import policy as email_policy
+from email.headerregistry import HeaderRegistry
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 from typing import Any, Dict, List, Optional
@@ -90,6 +92,50 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
 # Long enough that the whole body is not one paragraph in a phone client,
 # short enough that no mail host wraps it for us and mangles a URL.
 WRAP_COLUMNS = 72
+
+class _RawHeader:
+    """A header emitted exactly as written: never folded, never encoded.
+
+    Found by reading a message that had actually gone over a socket, which
+    is the only way this was ever going to surface. Python's default
+    policy treats an unknown header as unstructured prose and, when the
+    value will not fit on one line, folds it using RFC 2047 encoded-words
+    — so `List-Unsubscribe` arrived as
+
+        List-Unsubscribe: =?utf-8?q?=3Chttps=3A//hub=2Ecyberlogix...
+
+    which is a perfectly valid way to encode text and completely useless
+    as a URL. A mail client parses that header to decide whether to show
+    its own unsubscribe button; given an encoded-word it shows nothing,
+    and the customer's only way out is the link in the footer. Fewer
+    people find that one, more of them press "spam" instead, and the
+    sending domain pays for it.
+
+    The value is a URL, so it is ASCII by construction and needs no
+    encoding at all. 143 characters on one header line is well inside the
+    998 that RFC 5322 allows.
+    """
+
+    max_count = 1
+
+    @classmethod
+    def parse(cls, value, kwds):
+        kwds["parse_tree"] = None
+        kwds["decoded"] = str(value)
+        kwds["defects"] = []
+
+    def fold(self, *, policy):
+        return f"{self.name}: {self}{policy.linesep}"
+
+
+_HEADERS = HeaderRegistry()
+_HEADERS.map_to_type("list-unsubscribe", _RawHeader)
+
+# Everything else keeps the default policy, so a subject with an accent in
+# it is still encoded the way it should be and the body still picks its
+# own transfer encoding.
+MAIL_POLICY = email_policy.default.clone(header_factory=_HEADERS)
+
 
 # Deliberately permissive: this is a sanity check to catch an empty field
 # or a stray comma, not an attempt to out-guess RFC 5322. The real
@@ -222,7 +268,7 @@ def compose(
     raise inside the billing pass is its own problem. Cleaning the value
     here means the send simply happens with a tidy subject.
     """
-    message = EmailMessage()
+    message = EmailMessage(policy=MAIL_POLICY)
     message["Subject"] = _one_line(subject)
     message["From"] = formataddr((MAIL_FROM_NAME, MAIL_FROM))
     message["To"] = _one_line(to_address)

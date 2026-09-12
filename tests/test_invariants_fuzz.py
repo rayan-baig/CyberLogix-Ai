@@ -32,7 +32,7 @@ import pytest
 import costs
 import signup
 from contracts import run_billing, run_dunning
-from store import PLAN_TIERS, STORE, add_months, utc_now
+from store import MAIL_MAX_ATTEMPTS, PLAN_TIERS, STORE, add_months, utc_now
 
 SCENARIOS = int(os.environ.get("CYBERLOGIX_FUZZ_SCENARIOS", "40"))
 STEPS = int(os.environ.get("CYBERLOGIX_FUZZ_STEPS", "22"))
@@ -57,6 +57,10 @@ class World:
         # Per subscription: a renewal starts a new one at zero, which is
         # not the counter going backwards.
         self.max_periods_billed: dict[str, int] = {}
+        # Per message: what the address was suppressed as when the send
+        # happened. A block added afterwards is not a violation of a
+        # message that went out before it.
+        self.suppressed_at_send: dict[str, str | None] = {}
 
         signup.reset_rate_limits()
         body = api.post("/api/signup", json={
@@ -196,10 +200,38 @@ class World:
         STORE.load()
         self.log.append("restart")
 
+    # ---- the mail the money engine now sends ---------------------------
+
+    def convert(self):
+        """The trial ladder, which writes to the same customer."""
+        from conversion import run_trial_conversion
+
+        run_trial_conversion()
+        self.log.append("convert")
+
+    def unsubscribe(self):
+        """The customer declines the mail they are allowed to decline."""
+        tenant = STORE.get_tenant(self.tenant_id)
+        STORE.suppress_address(tenant.contact_email, "unsubscribed")
+        self.log.append("unsubscribe")
+
+    def bounce(self):
+        """Their mail host says the address does not exist."""
+        tenant = STORE.get_tenant(self.tenant_id)
+        STORE.suppress_address(tenant.contact_email, "bounced")
+        self.log.append("bounce")
+
+    def flush(self):
+        from mail import flush_queue
+
+        flush_queue()
+        self.log.append("flush")
+
     OPS = ["add_sensor", "add_sensor", "add_sensor", "remove_sensor",
            "upgrade", "sign", "set_add_ons", "renew", "cancel",
            "bill", "bill", "chase", "pay", "void", "travel",
-           "age_invoices", "lapse", "pulse", "restart"]
+           "age_invoices", "lapse", "pulse", "restart",
+           "convert", "unsubscribe", "bounce", "flush"]
 
     def step(self):
         getattr(self, self.rng.choice(self.OPS))()
@@ -208,8 +240,50 @@ class World:
 # ---- the rules that must never break -----------------------------------
 
 
+def check_mail(world):
+    """The rules the outbound transport must never break.
+
+    Mail is the one part of the money engine whose mistakes are visible
+    to the customer and cannot be taken back. A duplicate invoice notice
+    reads as dishonest, and a message sent to an address that bounced is
+    how a sending domain stops being delivered for everybody.
+    """
+    messages = STORE.mail_log(limit=100000)
+
+    keys = [m.dedupe_key for m in messages]
+    assert len(keys) == len(set(keys)), (
+        f"the same message was composed twice: "
+        f"{[k for k in keys if keys.count(k) > 1][:3]}"
+    )
+
+    for message in messages:
+        assert message.status in ("queued", "sent", "failed")
+        assert message.attempts <= MAIL_MAX_ATTEMPTS, (
+            f"{message.message_id} was tried {message.attempts} times"
+        )
+        if message.status == "sent":
+            assert message.sent_at is not None
+            block = world.suppressed_at_send.get(message.dedupe_key)
+            assert block is None, (
+                f"{message.message_id} was delivered to an address "
+                f"suppressed as {block}"
+            )
+
+    # Whatever is suppressed now must not be written to from here on. The
+    # record is kept per message so that a suppression added *after* a
+    # send is not read as a violation of it.
+    tenant = STORE.get_tenant(world.tenant_id)
+    block = STORE.is_suppressed(tenant.contact_email, "transactional")
+    for message in messages:
+        if message.to_address == tenant.contact_email:
+            world.suppressed_at_send.setdefault(
+                message.dedupe_key, block.reason if block else None
+            )
+
+
 def check_invariants(world):
     """Everything that has to be true, whatever just happened."""
+    check_mail(world)
     tenant = STORE.get_tenant(world.tenant_id)
     invoices = STORE.invoices_for(world.tenant_id)
     sub = STORE.active_subscription(world.tenant_id)
@@ -315,8 +389,13 @@ def check_invariants(world):
 
 
 @pytest.mark.parametrize("seed", range(SCENARIOS))
-def test_a_random_lifetime_keeps_every_rule(api, seed):
+def test_a_random_lifetime_keeps_every_rule(api, mailbox, seed):
     """One seeded lifetime, checked after every step.
+
+    The mail transport is configured rather than left unset, so the sends
+    actually happen: with no transport every message merely queues, the
+    delivery rules are never reached, and the invariants about who was
+    written to would pass without ever being tested.
 
     On failure the operation log prints, so the sequence that broke it can
     be read straight off and replayed with the same seed.

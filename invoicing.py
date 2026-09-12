@@ -83,6 +83,18 @@ INVOICE_STATES = ("issued", "paid", "void")
 _AMOUNT_COLUMN = 62
 
 
+def invoice_date(moment) -> str:
+    """A date a person reads, not a timestamp a machine emits.
+
+    `2026-10-12T19:55:50Z` on a document whose only job is to be paid
+    tells a finance department the second it was generated and makes
+    them work out the day it is due. The seconds were never the point.
+    """
+    if moment is None:
+        return "—"
+    return f"{moment.day} {moment.strftime('%B %Y')}"
+
+
 def render_invoice(invoice, tenant) -> str:
     """The invoice as a customer reads it, in plain text.
 
@@ -108,8 +120,8 @@ def render_invoice(invoice, tenant) -> str:
         f"To:     {tenant.company_name}",
         f"        {tenant.contact_name}",
         "",
-        f"Issued: {iso(invoice.issued_at)}",
-        f"Due:    {iso(invoice.due_at)}  (net {invoice.terms_days})",
+        f"Issued: {invoice_date(invoice.issued_at)}",
+        f"Due:    {invoice_date(invoice.due_at)}  (net {invoice.terms_days})",
     ]
     if invoice.purchase_order:
         out.append(f"PO:     {invoice.purchase_order}")
@@ -446,7 +458,7 @@ def send_receipt(tenant, invoice, reference: str, settled: bool) -> None:
     from mail import send as send_mail
 
     if settled:
-        subject = f"{invoice.number} paid — thank you"
+        subject = f"{invoice.number} paid. Thank you."
         closing = "Nothing further is owed on this invoice."
     else:
         subject = (

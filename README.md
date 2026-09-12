@@ -991,6 +991,14 @@ every link already sitting in an inbox. It deliberately does not stop
 invoices — a footer link is not a way to opt out of being billed, and
 pretending otherwise would be worse for the customer than saying so.
 
+Two things were only ever going to surface by reading a message that had
+actually crossed a socket, and both did. `List-Unsubscribe` was arriving
+RFC 2047-encoded — valid, and useless as a URL, so a mail client showed
+no unsubscribe button and the customer's only way out was the footer
+link that fewer people find and more people replace with the spam
+button. And the invoice carried a timestamp to the second, on a document
+whose entire job is to be paid by somebody who wanted the date.
+
 Unconfigured, nothing is lost and nothing is pretended: notices queue,
 `/api/mail/status` names the missing settings, and the operator digest
 puts it in the subject line.

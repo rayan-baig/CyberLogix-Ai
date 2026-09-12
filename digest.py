@@ -43,6 +43,21 @@ import os  # noqa: E402  - read after the docstring for the same reason as below
 
 OPERATOR_EMAIL = os.environ.get("CYBERLOGIX_OPERATOR_EMAIL", "").strip()
 
+# The hour, UTC, that the digest is allowed to go out. The money pass
+# runs hourly, so without this the digest arrives at whatever time the
+# process happened to start — which after a deploy at midnight is a
+# 3am email nobody reads and everybody learns to ignore.
+#
+# A floor rather than an exact time: if nothing is running at the hour
+# named, the next pass after it sends. Missing a day because the process
+# was restarting is the one outcome worse than sending late.
+try:
+    DIGEST_HOUR_UTC = min(23, max(0, int(
+        os.environ.get("CYBERLOGIX_DIGEST_HOUR_UTC", "7")
+    )))
+except ValueError:
+    DIGEST_HOUR_UTC = 7
+
 # How many worklist rows the digest carries. Enough to be a morning's
 # work, few enough that the email is read rather than skimmed. The rest
 # are counted, not listed.
@@ -217,6 +232,15 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
     silently does not exist is exactly the failure the digest is for.
     """
     now = now or utc_now()
+    if now.hour < DIGEST_HOUR_UTC:
+        return {
+            "sent": False,
+            "status": "too_early",
+            "detail": (
+                f"The digest goes out from {DIGEST_HOUR_UTC:02d}:00 UTC "
+                "(CYBERLOGIX_DIGEST_HOUR_UTC)."
+            ),
+        }
     if not OPERATOR_EMAIL:
         return {
             "sent": False,
@@ -235,7 +259,7 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
         if urgent:
             subject += f" ({urgent} urgent)"
     if digest["warnings"]:
-        subject += " — and something is broken"
+        subject += ", and something is broken"
 
     return send_mail(
         to_address=OPERATOR_EMAIL,
@@ -431,8 +455,13 @@ def read_operator_digest(_: None = Depends(require_platform_admin)):
 
 @router.post("/operator")
 def push_operator_digest(_: None = Depends(require_platform_admin)):
-    """Send today's digest now, if it has not gone already."""
-    return send_operator_digest()
+    """Send today's digest now, whatever the hour, if it has not gone.
+
+    The hour is a floor on the *unattended* pass, not a rule about what
+    the operator may ask for. Somebody pressing this at six in the
+    morning wants it at six in the morning.
+    """
+    return send_operator_digest(now=utc_now().replace(hour=23))
 
 
 @router.post("/reports")

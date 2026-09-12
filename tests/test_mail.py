@@ -13,6 +13,7 @@ worse than silence.
   * let a value somebody typed into the sign-up form become a mail header.
 """
 
+import re
 import smtplib
 from datetime import timedelta
 
@@ -94,6 +95,35 @@ def test_the_invoice_is_sent_on_the_day_it_is_issued(
     assert f"${invoice.total_usd:,.2f}" in body
     # The rendered document, not just a figure in a sentence.
     assert "Total USD" in body
+
+
+def test_the_invoice_reads_like_a_document_a_person_would_pay(
+    api, tenant_factory, sensor_factory, owner_headers, mailbox
+):
+    """Three things that only show up by reading one that had been sent.
+
+    A timestamp to the second on a document whose whole job is to be
+    paid makes a finance department work out the due date themselves.
+    An em dash in the subject is encoded as an RFC 2047 word, which is
+    valid, decodes in every client that bothers, and is mojibake in the
+    ones that do not — and the subject is where that costs an open.
+    And nothing is attached to an email that says "attached below".
+    """
+    headers, _ = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    _sign(api, headers, owner)
+    run_billing()
+
+    subject = mailbox[0]["Subject"]
+    body = mailbox[0].get_content()
+
+    assert subject.isascii(), subject
+    assert "=?utf-8?" not in mailbox[0].as_string().split("\n\n", 1)[0]
+    # A date, not a timestamp.
+    assert "T00:" not in body and "Z\n" not in body
+    assert re.search(r"Due:\s+\d{1,2} [A-Z][a-z]+ \d{4}", body), body
+    assert "Attached below" not in body
 
 
 def test_the_invoice_is_not_sent_twice_by_a_second_billing_pass(
@@ -307,6 +337,50 @@ def test_commercial_mail_carries_an_unsubscribe_header(mailbox):
     )
     assert "List-Unsubscribe" in mailbox[0]
     assert "Stop these messages" in mailbox[0].get_content()
+
+
+def test_the_unsubscribe_header_survives_as_a_url(mailbox):
+    """Found by reading a message that had actually crossed a socket.
+
+    Python's default policy treats an unknown header as unstructured
+    prose and folds a long one with RFC 2047 encoded-words, so this
+    arrived as `=?utf-8?q?=3Chttps=3A//...` — valid encoded text and
+    completely useless as a URL. A mail client parses this header to
+    decide whether to show its own unsubscribe button; given an
+    encoded-word it shows none, and more people press "spam" instead.
+    """
+    mail.send(
+        to_address="dana@example.com",
+        subject="Your trial",
+        body="Hello",
+        dedupe_key="test:header",
+        klass="commercial",
+    )
+
+    raw = mailbox[0].as_string()
+    line = next(
+        l for l in raw.splitlines() if l.startswith("List-Unsubscribe:")
+    )
+    assert "=?utf-8?" not in line
+    assert line.startswith("List-Unsubscribe: <https://")
+    assert line.rstrip().endswith(">")
+    # One unfolded line, and well inside what RFC 5322 allows.
+    assert len(line) < 998
+
+
+def test_a_subject_with_an_accent_is_still_encoded(mailbox):
+    """The header fix is one header. Everything else keeps the default."""
+    mail.send(
+        to_address="dana@example.com",
+        subject="Café Nord: invoice CLX-2026-0001",
+        body="Hello",
+        dedupe_key="test:accent",
+        klass="transactional",
+    )
+
+    raw = mailbox[0].as_string()
+    assert "=?utf-8?" in raw.split("\n\n", 1)[0]
+    assert mailbox[0]["Subject"] == "Café Nord: invoice CLX-2026-0001"
 
 
 def test_transactional_mail_carries_no_unsubscribe_header(mailbox):
