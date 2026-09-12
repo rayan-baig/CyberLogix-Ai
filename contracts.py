@@ -1094,6 +1094,11 @@ def run_everything(_: None = Depends(require_platform_admin)):
 # notice to have the renewal conversation before it is a renegotiation.
 RENEWAL_HORIZON_DAYS = 30
 
+# A trial this old with nothing registered is not being evaluated. It is
+# stuck, and it is the most recoverable account on the whole book: they
+# wanted the product enough to sign up and have not seen it work yet.
+TRIAL_STALLED_AFTER_DAYS = 2
+
 
 def attention_rows(now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Every account that needs a person, ranked by what it is worth.
@@ -1172,7 +1177,26 @@ def _rows_for(tenant, now) -> List[Dict[str, Any]]:
             "Call today. After that the estate goes dark.")
     elif tenant.plan == "trial" and tenant.expires_at is not None:
         days = math.ceil((tenant.expires_at - now).total_seconds() / 86400)
-        if days <= RENEWAL_HORIZON_DAYS:
+        stalled = (
+            priced["units_total"] == 0
+            and (now - tenant.activated_at).days >= TRIAL_STALLED_AFTER_DAYS
+        )
+        if stalled:
+            # Ranked above a priced trial on purpose. Its dollar figure is
+            # zero because there is nothing registered to price, which
+            # sorted it to the bottom of a list ordered by what is at
+            # stake — so the one trial that is certainly not converting
+            # sat below every account that was fine. Urgency sorts first,
+            # and an empty trial with days on the clock is the most
+            # recoverable thing on this page.
+            row("trial_stalled", "high",
+                f"Trial has {max(days, 0)} day"
+                f"{'' if days == 1 else 's'} left and nothing registered. "
+                "They signed up and never got started.",
+                0.0,
+                "Call and set up one unit with them. It takes four "
+                "commands and it is the whole difference.")
+        elif days <= RENEWAL_HORIZON_DAYS:
             row("trial_ending", "high" if days <= 3 else "medium",
                 f"Trial ends in {max(days, 0)} day"
                 f"{'' if days == 1 else 's'}"

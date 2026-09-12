@@ -41,6 +41,9 @@ ask for.
 | Contracts & Collections | `/api/contracts` | The signed term, billing itself, and chasing what is late |
 | Agreements | `/api/legal` | Terms generated from the code they describe |
 | Revenue Worklist | `/book` | The operator's own view: who to call, and what it is worth |
+| Outbound Mail | `/api/mail` | The transport, the queue, and who has asked us to stop |
+| Trial Conversion | `/api/conversion` | The trial asks for the order itself |
+| Digests & Reports | `/api/digest` | The book by email, and the customer's weekly evidence |
 
 ### The look
 
@@ -910,9 +913,17 @@ in the same afternoon. A late charge is issued as its own numbered
 document — an issued invoice whose total moves is a dispute. Past
 `DELINQUENT_AFTER_DAYS` the account is delinquent.
 
-There is no mail transport yet. `run_dunning()` records and returns the
-notices, and each stage is claimed once, so wiring a sender in later
-cannot replay a month of chases at a customer.
+Every notice is sent. For a long time none of them were: the ladder ran,
+the stages were claimed, the text was appended to a list and handed back
+to whoever called the endpoint, and the customer was never told. A
+collections process the debtor cannot see is not a collections process.
+
+The invoice itself now goes out on the day it is issued, too. Before
+that, the first a customer heard about one was a chase for missing a
+demand nobody had sent them — net 30 starts when accounts payable sees
+the document, not when the ledger decides it exists. Recording a payment
+sends a receipt, which removes an entire category of email and is how a
+customer learns the chasing has stopped.
 
 **What delinquency does not do is stop the monitoring.** A freezer full of
 embryos does not stop being somebody's freezer because their finance
@@ -951,6 +962,78 @@ It spans every account, so it wants `CYBERLOGIX_ADMIN_KEY` rather than any
 one customer's credential. The page holds no secret: it renders nothing
 until the key is typed in, keeps it in `sessionStorage` so it does not
 outlive the tab, and sends it as a header rather than a query string.
+
+## Mail
+
+`mail.py` is the transport the money engine runs on: SMTP over STARTTLS,
+credentials from the environment, one message at a time. The interesting
+part is not the socket. An unattended billing pass with a mail socket has
+three ways to do real damage, and each has a guard:
+
+* **Sending twice.** Every send claims a `dedupe_key` under the store's
+  lock, and the claim is a persisted row — so a stage claim rolled back by
+  a restart still cannot produce a second demand.
+* **Sending nothing and reporting otherwise.** The message is written down
+  before it is attempted. A crash between the two leaves a queued row the
+  next pass retries; three attempts, then it is given up on, and never
+  after `MAIL_MAX_AGE_HOURS`, because firing a month of stale notices the
+  afternoon somebody configures SMTP is worse than sending none.
+* **Writing to people who said stop.** An unsubscribe suppresses
+  commercial mail. A bounce suppresses everything, invoices included: an
+  address the host has refused cannot receive one, and continuing to try
+  is how a sending domain stops being delivered for everybody.
+
+The unsubscribe link is HMAC-signed so it cannot be pointed at another
+customer, and the secret is persisted so a restart does not silently void
+every link already sitting in an inbox. It deliberately does not stop
+invoices — a footer link is not a way to opt out of being billed, and
+pretending otherwise would be worse for the customer than saying so.
+
+Unconfigured, nothing is lost and nothing is pretended: notices queue,
+`/api/mail/status` names the missing settings, and the operator digest
+puts it in the subject line.
+
+## Asking for the order
+
+`/book` can say *this trial ends Thursday, call them*, which assumes
+somebody opens it on Thursday. `conversion.py` is the other half: the
+trial talks to the customer itself, at six moments, each sent once.
+
+Welcome, the minute they sign up, carrying the same four setup commands
+the API returns — a trial with no sensor in it never converts, and the
+usual reason is that nobody got past step one. An activation nudge two
+days in with nothing registered. A week left, three days, the last day —
+each carrying what the trial has actually caught and the rate card
+applied to the units they have running, never a brochure figure. Then
+grace, and the day monitoring stops.
+
+A missed window is skipped, never caught up on. Three rungs of a ladder
+arriving in the same minute teaches the customer something true and
+fatal: nothing here is really watching anything.
+
+## Digests
+
+The person who owns this company is at school for six hours of every
+working day, which makes "open the dashboard" a plan that fails five days
+a week.
+
+`CYBERLOGIX_OPERATOR_EMAIL` gets the book once a day: what was billed,
+what arrived, who to call with their phone number, and — the part that
+matters most — what is quietly broken. Mail that cannot be sent looks
+exactly like mail nobody needed, so an unconfigured transport goes in the
+subject line rather than a log nobody opens.
+
+The other direction is a weekly report to each paying estate. A
+monitoring product that works is invisible by construction, and at
+renewal the customer cannot remember what they are paying for. Four
+thousand readings, two excursions caught, and any unit that has stopped
+reporting — that last line is worth more than the rest, because a silent
+sensor is the one failure a monitoring product cannot alarm on. Units
+that have *never* reported are counted separately from units that
+reported and then stopped: the first is an installation somebody did not
+finish, the second is hardware that has failed, and calling them the same
+thing produces a number that is always non-zero and therefore always
+ignored.
 
 ## The agreements
 
@@ -1072,9 +1155,11 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-735 tests across 50 files. Gemini and Twilio are both stubbed and the database
-is in-memory, so the suite runs without credentials, makes no network calls and
-touches no file on disk.
+813 tests across 53 files. Gemini, Twilio and SMTP are all stubbed and the
+database is in-memory, so the suite runs without credentials, makes no network
+calls and touches no file on disk. The mail fixture replaces only the function
+that opens the socket, so a test asserting that a chase went out is asserting
+on the message that would actually have left the building.
 
 ### The fuzzer
 

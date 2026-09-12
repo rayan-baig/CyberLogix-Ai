@@ -208,3 +208,44 @@ def test_one_broken_estate_does_not_hide_the_book(
     body = api.get("/api/contracts/attention", headers=ADMIN)
     assert body.status_code == 200
     assert body.json()["book"]["accounts"] == 1
+
+
+def test_a_trial_that_never_started_outranks_everything_priced(
+    api, tenant_factory, sensor_factory, admin_headers
+):
+    """The one account that is certainly not converting sorted last.
+
+    Its stake is zero because there is nothing registered to price, and
+    the book ranks by what is at stake — so a trial that signed up and
+    never got going sat below every account that was fine. It is also
+    the most recoverable thing on the page: they wanted the product
+    enough to sign up and have not seen it work yet.
+    """
+    from datetime import timedelta
+
+    from store import STORE, utc_now
+
+    healthy, _ = tenant_factory(plan="growth", company_name="Northgate Foods")
+    sensor_factory(healthy, "FRIDGE-1", "restaurant")
+
+    stalled, tenant = tenant_factory(plan="trial", company_name="Never Started")
+    live = STORE.get_tenant(tenant["tenant_id"])
+    live.activated_at = utc_now() - timedelta(days=4)
+
+    rows = api.get("/api/contracts/attention", headers=admin_headers).json()["rows"]
+
+    assert rows[0]["company_name"] == "Never Started"
+    assert rows[0]["kind"] == "trial_stalled"
+    assert rows[0]["urgency"] == "high"
+    assert "nothing registered" in rows[0]["headline"]
+
+
+def test_a_trial_on_its_first_afternoon_is_not_called_stalled(
+    api, tenant_factory, admin_headers
+):
+    """Signing up on a Friday and starting on Monday is not a failure."""
+    tenant_factory(plan="trial", company_name="Just Signed Up")
+
+    rows = api.get("/api/contracts/attention", headers=admin_headers).json()["rows"]
+
+    assert [r["kind"] for r in rows] == ["trial_ending"]

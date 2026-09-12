@@ -104,14 +104,29 @@ def _system_warnings() -> List[str]:
             "/api/mail/log."
         )
 
-    dark = [
-        s for s in STORE.all_sensors()
-        if s.offline()
-    ]
-    if dark:
+    # Two different problems wearing the same word. A sensor that has
+    # never reported is an installation somebody did not finish; one that
+    # reported and then stopped is a unit that has failed, or lost power,
+    # or been unplugged by a cleaner. Lumping them together produces a
+    # number that is always non-zero and therefore always ignored.
+    never = []
+    silent = []
+    for sensor in STORE.all_sensors():
+        if sensor.last_seen is None:
+            never.append(sensor)
+        elif sensor.offline():
+            silent.append(sensor)
+
+    if silent:
         warnings.append(
-            f"{len(dark)} sensor(s) across the fleet have stopped "
-            "reporting. A silent sensor cannot raise an alarm."
+            f"{len(silent)} sensor(s) reported and then stopped. A silent "
+            "sensor cannot raise an alarm, and the customer believes it is "
+            "watching."
+        )
+    if never:
+        warnings.append(
+            f"{len(never)} registered sensor(s) have never reported at "
+            "all — an installation that was started and not finished."
         )
     return warnings
 
@@ -251,7 +266,13 @@ def customer_report(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str,
                 breaches += 1
 
     incidents = STORE.incidents_for(tenant.tenant_id, since=since)
-    offline = [s for s in sensors if s.offline(now)]
+    # Same split as the operator digest: "never reported" is an
+    # installation to finish, "went quiet" is a unit that has failed.
+    # Telling a customer their brand-new sensor "has stopped reporting"
+    # reads as our fault, and telling them a failed one is "not set up
+    # yet" reads as theirs.
+    offline = [s for s in sensors if s.last_seen is not None and s.offline(now)]
+    never = [s for s in sensors if s.last_seen is None]
 
     return {
         "from": iso(since),
@@ -266,6 +287,7 @@ def customer_report(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str,
             {"sensor_id": s.sensor_id, "last_seen": iso(s.last_seen)}
             for s in offline
         ],
+        "never_reported": [s.sensor_id for s in never],
     }
 
 
@@ -290,17 +312,24 @@ def _render_report(tenant: Tenant, report: Dict[str, Any]) -> str:
         out.append("  No excursions. Everything stayed inside its limits.")
 
     if report["offline"]:
+        out += ["", "UNITS THAT HAVE STOPPED REPORTING:"]
         out += [
-            "",
-            "UNITS THAT HAVE STOPPED REPORTING:",
-        ]
-        out += [
-            f"  {u['sensor_id']} — last seen {u['last_seen'] or 'never'}"
+            f"  {u['sensor_id']} — last seen {u['last_seen']}"
             for u in report["offline"]
         ]
         out.append(
-            "\nA silent sensor cannot warn you about anything. These are "
-            "worth checking before they are the ones that matter."
+            "\nA silent sensor cannot warn you about anything, and it looks "
+            "exactly like one that is fine. These are worth checking before "
+            "they turn out to be the ones that mattered."
+        )
+
+    if report["never_reported"]:
+        out += ["", "UNITS THAT HAVE NEVER REPORTED:"]
+        out += [f"  {sensor_id}" for sensor_id in report["never_reported"]]
+        out.append(
+            "\nThese are registered but have never sent a reading, so they "
+            "are almost certainly an installation that was started and not "
+            "finished. Reply and we will walk through it."
         )
 
     out += [
@@ -341,7 +370,7 @@ def send_customer_reports(now: Optional[datetime] = None) -> Dict[str, Any]:
                         else "nothing out of range"
                     )
                     + (
-                        f", {len(report['offline'])} unit(s) silent"
+                        f", {len(report['offline'])} unit(s) gone quiet"
                         if report["offline"] else ""
                     )
                 ),

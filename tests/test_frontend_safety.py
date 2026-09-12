@@ -400,6 +400,9 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
         "esc(r.headline)", "esc(r.action)", "esc(r.contact_name)",
         "esc(r.contact_email)", "esc(r.contact_phone)", "esc(book.paying)",
         "esc(book.accounts)",
+        # a system warning from the digest — server-composed, but it
+        # quotes configuration values, so it is escaped like the rest
+        "esc(w)",
         # a rounded number this file produced from a JSON number
         "money(r.at_stake_usd)",
         # a count, into a template that never reaches innerHTML

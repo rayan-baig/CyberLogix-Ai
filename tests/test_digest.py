@@ -119,16 +119,43 @@ def test_the_digest_says_when_nobody_can_pay_us(operator_address, mailbox, payin
     assert any("No payment details" in w for w in warnings)
 
 
-def test_the_digest_counts_sensors_that_have_gone_silent(
+def test_a_sensor_that_went_quiet_is_not_confused_with_one_never_installed(
     mailbox, operator_address, paying, sensor_factory
 ):
-    """A silent sensor is the one failure the product cannot alarm on."""
+    """Two problems wearing the same word.
+
+    A sensor that has never reported is an installation somebody did not
+    finish. One that reported and then stopped is a unit that has failed.
+    Counted together the number is always non-zero and therefore always
+    ignored.
+    """
     headers, _ = paying
-    sensor = STORE.sensors_for(STORE.list_tenants()[0].tenant_id)[0]
-    sensor.last_seen = utc_now() - timedelta(days=5)
+    tenant_id = STORE.list_tenants()[0].tenant_id
+    sensor_factory(headers, "RACK-02", "cybersecurity")
+
+    quiet = STORE.sensors_for(tenant_id)[0]
+    quiet.last_seen = utc_now() - timedelta(days=5)
 
     warnings = operator_digest()["warnings"]
-    assert any("stopped reporting" in w for w in warnings)
+    assert any("reported and then stopped" in w for w in warnings)
+    assert any("never reported at all" in w for w in warnings)
+
+
+def test_the_customer_report_keeps_the_two_apart_as_well(
+    mailbox, paying, sensor_factory
+):
+    """Telling somebody their new sensor "stopped reporting" reads as our
+    fault; telling them a failed one is "not set up yet" reads as theirs."""
+    headers, tenant = paying
+    sensor_factory(headers, "RACK-02", "cybersecurity")
+    quiet = STORE.sensors_for(tenant["tenant_id"])[0]
+    quiet.last_seen = utc_now() - timedelta(days=5)
+
+    send_customer_reports()
+
+    body = mailbox[-1].get_content()
+    assert "UNITS THAT HAVE STOPPED REPORTING" in body
+    assert "UNITS THAT HAVE NEVER REPORTED" in body
 
 
 def test_a_long_book_is_trimmed_and_the_rest_counted(
