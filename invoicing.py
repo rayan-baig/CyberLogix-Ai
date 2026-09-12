@@ -77,6 +77,64 @@ def issuer_block() -> Dict[str, Any]:
 
 INVOICE_STATES = ("issued", "paid", "void")
 
+# How wide the amount column sits in the plain-text rendering. Wide enough
+# that a five-figure line does not shove the description around, so a
+# customer scanning the numbers reads a column rather than a zigzag.
+_AMOUNT_COLUMN = 62
+
+
+def render_invoice(invoice, tenant) -> str:
+    """The invoice as a customer reads it, in plain text.
+
+    An email is where most of these will actually be looked at, and a
+    finance department that has to log in to see what it owes pays later
+    than one that can forward the message to accounts payable. The
+    figures are the frozen ones on the document, never recomputed: an
+    invoice whose total moves between the API and the email is a dispute
+    waiting to be raised, and the customer would be right to raise it.
+    """
+    issuer = issuer_block()
+    out = [
+        f"INVOICE {invoice.number}",
+        "",
+        f"From:   {issuer.get('legal_name', 'CyberLogix AI')}",
+    ]
+    for line in (issuer.get("address") or "").splitlines():
+        if line.strip():
+            out.append(f"        {line.strip()}")
+    if issuer.get("tax_id"):
+        out.append(f"        Tax ID {issuer['tax_id']}")
+    out += [
+        f"To:     {tenant.company_name}",
+        f"        {tenant.contact_name}",
+        "",
+        f"Issued: {iso(invoice.issued_at)}",
+        f"Due:    {iso(invoice.due_at)}  (net {invoice.terms_days})",
+    ]
+    if invoice.purchase_order:
+        out.append(f"PO:     {invoice.purchase_order}")
+    out += ["", "-" * _AMOUNT_COLUMN]
+
+    for line in invoice.lines:
+        description = str(line.get("description", ""))[:48]
+        amount = f"${line.get('amount_usd', 0.0):,.2f}"
+        out.append(f"{description:<48}{amount:>14}")
+
+    out += [
+        "-" * _AMOUNT_COLUMN,
+        f"{'Total ' + invoice.currency:<48}{'$' + format(invoice.total_usd, ',.2f'):>14}",
+    ]
+    if invoice.amount_paid_usd:
+        out.append(
+            f"{'Received':<48}"
+            f"{'-$' + format(invoice.amount_paid_usd, ',.2f'):>14}"
+        )
+        out.append(
+            f"{'Balance':<48}"
+            f"{'$' + format(invoice.balance_usd, ',.2f'):>14}"
+        )
+    return "\n".join(out)
+
 
 class InvoiceRequest(BaseModel):
     # Unknown fields are refused, not dropped.
@@ -352,6 +410,7 @@ def mark_paid(
 
     STORE.settle_invoice(invoice, payload.reference, payload.amount_usd)
     settled = invoice.state == "paid"
+    send_receipt(tenant, invoice, payload.reference, settled)
     write_audit(
         tenant, None,
         "invoice.paid" if settled else "invoice.part_paid",
@@ -369,6 +428,55 @@ def mark_paid(
         ),
         "invoice": invoice.public(),
     }
+
+
+def send_receipt(tenant, invoice, reference: str, settled: bool) -> None:
+    """Confirm that the money arrived.
+
+    Cheap, and it removes an entire category of email: the customer who
+    paid three weeks ago and wants to know whether we noticed. It also
+    stops the most embarrassing thing a collections robot can do, which
+    is chase somebody who has already paid — the dunning ladder skips a
+    settled invoice, and this is how the customer finds out that it has.
+
+    Keyed on the amount received, so a part payment followed by the rest
+    produces two receipts rather than one, and a retried webhook produces
+    neither twice.
+    """
+    from mail import send as send_mail
+
+    if settled:
+        subject = f"{invoice.number} paid — thank you"
+        closing = "Nothing further is owed on this invoice."
+    else:
+        subject = (
+            f"{invoice.number}: ${invoice.amount_paid_usd:,.2f} received, "
+            f"${invoice.balance_usd:,.2f} outstanding"
+        )
+        closing = (
+            f"${invoice.balance_usd:,.2f} is still outstanding on this "
+            "invoice, so it stays open."
+        )
+
+    send_mail(
+        to_address=tenant.contact_email,
+        subject=subject,
+        body=(
+            f"{tenant.contact_name},\n\n"
+            f"We have recorded ${invoice.amount_paid_usd:,.2f} against "
+            f"{invoice.number} (reference {reference}).\n\n"
+            f"{closing}\n\n"
+            f"{render_invoice(invoice, tenant)}"
+        ),
+        # The amount is in the key: a part payment and the balance that
+        # follows are two different events and each deserves its own
+        # confirmation, while the same webhook delivered twice is one.
+        dedupe_key=(
+            f"receipt:{invoice.invoice_id}:{invoice.amount_paid_usd:.2f}"
+        ),
+        klass="transactional",
+        tenant_id=tenant.tenant_id,
+    )
 
 
 @router.post("/{invoice_id}/void")

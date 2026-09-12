@@ -40,8 +40,14 @@ def _age_invoice(invoice_id, days):
 
 
 @pytest.fixture()
-def overdue(api, tenant_factory, sensor_factory, owner_headers):
-    """A real tenant with a real invoice, thirty days past due."""
+def overdue(api, tenant_factory, sensor_factory, owner_headers, mailbox):
+    """A real tenant with a real invoice, thirty days past due.
+
+    Billing emails the invoice on the day it is issued, so the mailbox is
+    emptied afterwards: every test here is measuring what the *chase*
+    does, and starting each one at zero keeps that unambiguous. That the
+    invoice itself goes out is asserted on its own, below.
+    """
     headers, tenant = tenant_factory(plan="enterprise")
     owner = owner_headers(headers)
     sensor_factory(headers, "RACK-01", "cybersecurity")
@@ -49,7 +55,90 @@ def overdue(api, tenant_factory, sensor_factory, owner_headers):
     run_billing()
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
     _age_invoice(invoice.invoice_id, 30)
+    mailbox.clear()
     return tenant, invoice
+
+
+def _chases():
+    """Only the dunning notices, in the order they were composed."""
+    return [
+        m for m in reversed(STORE.mail_log(limit=1000))
+        if m.dedupe_key.startswith("dunning:")
+    ]
+
+
+# ---- the invoice itself ------------------------------------------------
+
+
+def test_the_invoice_is_sent_on_the_day_it_is_issued(
+    api, tenant_factory, sensor_factory, owner_headers, mailbox
+):
+    """Otherwise the first a customer hears of an invoice is a chase.
+
+    Net 30 starts when accounts payable sees the document, not when the
+    ledger decides it has been issued. Billing silently and then chasing
+    somebody for missing a demand they were never sent is the version of
+    this that loses customers rather than collecting from them.
+    """
+    headers, tenant = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    _sign(api, headers, owner)
+
+    run_billing()
+
+    invoice = STORE.invoices_for(tenant["tenant_id"])[0]
+    assert len(mailbox) == 1
+    body = mailbox[0].get_content()
+    assert invoice.number in mailbox[0]["Subject"]
+    assert f"${invoice.total_usd:,.2f}" in body
+    # The rendered document, not just a figure in a sentence.
+    assert "Total USD" in body
+
+
+def test_the_invoice_is_not_sent_twice_by_a_second_billing_pass(
+    api, tenant_factory, sensor_factory, owner_headers, mailbox
+):
+    headers, _ = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    _sign(api, headers, owner)
+
+    run_billing()
+    run_billing()
+
+    assert len(mailbox) == 1
+
+
+def test_a_payment_gets_a_receipt(api, admin_headers, settle, overdue, mailbox):
+    """Removes a whole category of email: "did you get my transfer?"."""
+    tenant, invoice = overdue
+
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="WIRE-9")
+
+    assert "paid" in mailbox[-1]["Subject"]
+    assert "WIRE-9" in mailbox[-1].get_content()
+
+
+def test_a_part_payment_says_what_is_still_owed(settle, overdue, mailbox):
+    """A receipt that reads "paid" on half the money is worse than none."""
+    tenant, invoice = overdue
+
+    settle(tenant["tenant_id"], invoice.invoice_id, amount_usd=100.0)
+
+    subject = mailbox[-1]["Subject"]
+    assert "$100.00 received" in subject
+    assert "outstanding" in subject
+
+
+def test_two_part_payments_produce_two_receipts(settle, overdue, mailbox):
+    """The same webhook twice is one event. Two payments are two."""
+    tenant, invoice = overdue
+
+    settle(tenant["tenant_id"], invoice.invoice_id, amount_usd=100.0)
+    settle(tenant["tenant_id"], invoice.invoice_id, amount_usd=50.0)
+
+    assert len(mailbox) == 2
 
 
 # ---- the chase actually leaves the building ----------------------------
@@ -66,6 +155,7 @@ def test_a_chase_reaches_the_customer(mailbox, overdue):
     assert len(mailbox) == 1
     assert mailbox[0]["To"] == tenant["contact_email"]
     assert invoice.number in mailbox[0].get_content()
+    assert "past due" in mailbox[0].get_content()
 
 
 def test_the_notice_says_how_to_pay(mailbox, overdue, monkeypatch):
@@ -309,11 +399,15 @@ def test_a_notice_composed_before_smtp_existed_is_not_lost(
     run_dunning()
     monkeypatch.setattr(mail, "SMTP_HOST", "smtp.example.com")
     assert mailbox == []
-    queued = STORE.mail_log()
-    assert len(queued) == 1 and queued[0].status == "queued"
+    # The chase queued, and so did the late-fee invoice the same pass
+    # issued — both composed against a deployment that could not send.
+    queued = [m for m in STORE.mail_log() if m.status == "queued"]
+    assert [m.status for m in _chases()] == ["queued"]
 
-    assert mail.flush_queue() == {"attempted": 1, "sent": 1}
-    assert len(mailbox) == 1
+    flushed = mail.flush_queue()
+    assert flushed == {"attempted": len(queued), "sent": len(queued)}
+    assert _chases()[0].status == "sent"
+    assert len(mailbox) == len(queued)
 
 
 def test_a_transient_failure_is_retried_and_then_given_up_on(mailbox, overdue):
@@ -324,7 +418,7 @@ def test_a_transient_failure_is_retried_and_then_given_up_on(mailbox, overdue):
     for _ in range(10):
         mail.flush_queue()
 
-    message = STORE.mail_log()[0]
+    message = _chases()[0]
     assert message.attempts == MAIL_MAX_ATTEMPTS
     assert message.status == "failed"
     assert mailbox == []

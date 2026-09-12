@@ -2687,6 +2687,11 @@ class HubStore:
                 self._db.delete_many("reading", [r.reading_id for r in evicted])
             return True
 
+    def all_sensors(self) -> List[Sensor]:
+        """Every sensor in the fleet, across every tenant."""
+        with self._lock:
+            return list(self._sensors.values())
+
     def sensors_for(self, tenant_id: str) -> List[Sensor]:
         with self._lock:
             return [
@@ -3441,6 +3446,11 @@ class HubStore:
         with self._lock:
             rows = [i for i in self._invoices.values() if i.tenant_id == tenant_id]
         return sorted(rows, key=lambda i: i.number, reverse=True)
+
+    def all_invoices(self) -> List[Invoice]:
+        """Every invoice on the books, for the fleet-wide passes."""
+        with self._lock:
+            return list(self._invoices.values())
 
     def claim_reminder(self, invoice: Invoice, stage: int) -> bool:
         """Reserve the right to send reminder `stage` for this invoice.

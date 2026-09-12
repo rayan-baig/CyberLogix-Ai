@@ -26,6 +26,7 @@ from typing import Optional
 from automation import sweep_tenant
 from contracts import run_billing, run_dunning
 from conversion import run_trial_conversion
+from digest import run_digests
 from mail import flush_queue
 from store import STORE
 
@@ -55,15 +56,17 @@ def run_money_pass() -> dict:
     stop the others. This is the function that decides whether the company
     gets paid, and until it existed the answer was "if somebody remembers".
 
-    Four steps, in the order that matters: issue what is due, chase what
-    is late, ask the trials that are ending for the order, then push
-    anything that queued because the mail host was briefly down. Each is
-    guarded separately — a company that stops selling because collections
-    threw is worse off than one that does neither well.
+    Five steps, in the order that matters: issue what is due, chase what
+    is late, ask the trials that are ending for the order, send the daily
+    and weekly summaries, then push anything that queued because the mail
+    host was briefly down. Each is guarded separately — a company that
+    stops selling because collections threw is worse off than one that
+    does neither well.
     """
     billed = {"invoices_issued": 0, "billed_usd": 0.0}
     chased = {"notices_count": 0, "late_fees_issued": []}
     asked = {"sent_count": 0}
+    summarised = {"operator": {"sent": False}, "customer_reports": {"sent_count": 0}}
     flushed = {"attempted": 0, "sent": 0}
     try:
         billed = run_billing()
@@ -78,9 +81,13 @@ def run_money_pass() -> dict:
     except Exception as exc:  # noqa: BLE001 - selling must not stop collecting
         logger.exception("Trial conversion pass failed (%s).", exc)
     try:
-        # Last, so that anything the three passes above queued against a
-        # mail host that was briefly down gets one more attempt in the
-        # same hour rather than waiting for the next.
+        summarised = run_digests()
+    except Exception as exc:  # noqa: BLE001 - a summary must not stop the work
+        logger.exception("Digest pass failed (%s).", exc)
+    try:
+        # Last, so that anything the passes above queued against a mail
+        # host that was briefly down gets one more attempt in the same
+        # hour rather than waiting for the next.
         flushed = flush_queue()
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Mail queue flush failed (%s).", exc)
@@ -103,6 +110,7 @@ def run_money_pass() -> dict:
         "billing": billed,
         "collections": chased,
         "conversion": asked,
+        "digests": summarised,
         "mail_queue": flushed,
     }
 

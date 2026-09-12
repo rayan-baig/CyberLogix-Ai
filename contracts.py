@@ -55,7 +55,12 @@ from auth import (
     require_tenant_any_state,
     write_audit,
 )
-from invoicing import PAYMENT_TERMS_DAYS, build_lines
+from invoicing import (
+    PAYMENT_TERMS_DAYS,
+    build_lines,
+    issuer_block,
+    render_invoice,
+)
 from mail import payment_instructions
 from mail import send as send_mail
 from mail import status as mail_status
@@ -406,7 +411,43 @@ def bill_period(
         invoice.number,
         invoice.total_usd,
     )
+    send_invoice(tenant, invoice)
     return invoice
+
+
+def send_invoice(tenant: Tenant, invoice: Invoice) -> Dict[str, Any]:
+    """Put the invoice in front of the customer on the day it is issued.
+
+    Until this existed, the first a customer heard about an invoice was a
+    dunning notice — the process billed them silently, waited for the due
+    date to pass, and then chased them for missing a demand they had
+    never been sent. Net 30 does not start when the ledger says so; it
+    starts when accounts payable sees the document.
+
+    Keyed on the invoice, so re-running the pass cannot send it twice.
+    """
+    return send_mail(
+        to_address=tenant.contact_email,
+        subject=(
+            f"Invoice {invoice.number} from "
+            f"{issuer_block().get('legal_name', 'CyberLogix AI')} — "
+            f"${invoice.total_usd:,.2f}"
+        ),
+        body=(
+            f"{tenant.contact_name},\n\n"
+            f"Attached below is invoice {invoice.number} for "
+            f"${invoice.total_usd:,.2f}, due {iso(invoice.due_at)} "
+            f"(net {invoice.terms_days}).\n\n"
+            f"{render_invoice(invoice, tenant)}\n\n"
+            f"{payment_instructions()}\n\n"
+            "Reply to this message if anything on it is wrong. We would "
+            "rather fix it now than chase something you were never going "
+            "to pay."
+        ),
+        dedupe_key=f"invoice:{invoice.invoice_id}",
+        klass="transactional",
+        tenant_id=tenant.tenant_id,
+    )
 
 
 def settle_outstanding_rebills(tenant: Tenant, sub: Subscription) -> List[str]:
