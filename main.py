@@ -183,6 +183,7 @@ PARTNER_HTML = STATIC_DIR / "partner.html"
 LEGAL_HTML = STATIC_DIR / "legal.html"
 SIGNUP_HTML = STATIC_DIR / "signup.html"
 BOOK_HTML = STATIC_DIR / "book.html"
+RESET_HTML = STATIC_DIR / "reset.html"
 
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
@@ -362,6 +363,18 @@ def book_page():
     that key. The page itself holds no secret.
     """
     return FileResponse(BOOK_HTML, media_type="text/html")
+
+
+@app.get("/reset", include_in_schema=False)
+def reset_page():
+    """Where a password reset link lands.
+
+    Its own page rather than a panel on the console, because the person
+    following the link is by definition the person who cannot get past
+    the console's sign-in form, and putting the way out behind the thing
+    they are locked out of is how an account becomes unreachable forever.
+    """
+    return FileResponse(RESET_HTML, media_type="text/html")
 
 
 @app.get("/legal", include_in_schema=False)

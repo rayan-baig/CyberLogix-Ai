@@ -22,7 +22,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from store import ROLES, STORE, LoginSession, Tenant, User, verify_password
 
@@ -420,6 +420,126 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
             "once, and expires in 24 hours."
         ),
     }
+
+
+class ForgotPassword(BaseModel):
+    """Just an address. Deliberately the only field.
+
+    Anything else — a tenant id, a company name — would be a second thing
+    an attacker could probe, and a second thing a locked-out customer
+    could get wrong while already frustrated.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+# A forgotten password is one request per address per window. Higher and
+# the endpoint is a way to mail-bomb somebody; lower and a customer who
+# does not see the first message cannot ask for a second.
+FORGOT_PER_ADDRESS_PER_HOUR = 3
+FORGOT_WINDOW_SECONDS = 3600
+_forgot_attempts: Dict[str, List[float]] = defaultdict(list)
+
+
+def reset_rate_limits() -> None:
+    """Clear the forgot-password window. For tests."""
+    _forgot_attempts.clear()
+
+
+@router.post("/forgot")
+def forgot_password(payload: ForgotPassword):
+    """Email a reset link to somebody who cannot sign in.
+
+    Until this existed, a reset could only be issued by an owner — which
+    is exactly the person who cannot ask for one when it is their own
+    password that is gone. A single-owner account whose owner forgot
+    their password was unreachable forever, and every one of those is a
+    customer lost for a reason that has nothing to do with the product.
+
+    The response never says whether the address is on file. An endpoint
+    that answers that question is a way to find out who our customers
+    are, one guess at a time, and the guess is free.
+    """
+    address = str(payload.email).strip().lower()
+
+    now = time.monotonic()
+    recent = [
+        t for t in _forgot_attempts[address]
+        if now - t < FORGOT_WINDOW_SECONDS
+    ]
+    _forgot_attempts[address] = recent
+    # Over the limit still gets the same answer as under it. Saying "too
+    # many requests" for one address and "check your email" for another
+    # answers the enumeration question the response is careful not to.
+    if len(recent) < FORGOT_PER_ADDRESS_PER_HOUR:
+        _forgot_attempts[address].append(now)
+        _send_reset(address)
+    else:
+        logger.warning(
+            "Password reset for %s refused: %d in the last hour.",
+            address, len(recent),
+        )
+
+    return {
+        "message": (
+            "If that address has an account, a reset link is on its way. "
+            "It works once and expires in 24 hours."
+        )
+    }
+
+
+def _send_reset(address: str) -> None:
+    """Issue and mail a token, if there is anybody to mail it to.
+
+    Silent about every failure by design: the caller must not be able to
+    tell an unknown address from a disabled account from a mail host
+    having a bad afternoon.
+    """
+    from mail import PUBLIC_BASE_URL
+    from mail import send as send_mail
+
+    user = STORE.user_by_email(address)
+    if user is None or user.disabled:
+        logger.info("Password reset asked for an address with no account.")
+        return
+
+    token = STORE.issue_reset(user)
+    where = (
+        f"{PUBLIC_BASE_URL}/reset?token={token}" if PUBLIC_BASE_URL
+        else f"Open /reset and paste this token: {token}"
+    )
+    tenant = STORE.get_tenant(user.tenant_id)
+
+    send_mail(
+        to_address=user.email,
+        subject="Reset your CyberLogix password",
+        body=(
+            f"{user.full_name},\n\n"
+            "Somebody asked to reset the password on your CyberLogix "
+            f"account{f' for {tenant.company_name}' if tenant else ''}.\n\n"
+            f"{where}\n\n"
+            "It works once and expires in 24 hours. Using it signs out "
+            "every other session on your account, which is what you want "
+            "if this was not you.\n\n"
+            "If it was not you, and you can still sign in, nothing has "
+            "happened — the link above is the only thing that changes "
+            "anything, and only whoever is reading this has it."
+        ),
+        # The token is in the key, so asking three times produces three
+        # different links rather than one email and two silences.
+        dedupe_key=f"reset:{token[:16]}",
+        klass="transactional",
+        tenant_id=user.tenant_id,
+    )
+    STORE.record_audit(
+        tenant_id=user.tenant_id,
+        actor=f"{user.full_name} <{user.email}>",
+        actor_role=user.role,
+        action="account.reset_requested",
+        detail="A password reset link was sent to the address on file.",
+    )
 
 
 @router.post("/reset")

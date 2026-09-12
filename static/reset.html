@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — Reset your password</title>
+<meta name="description" content="Set a new password on your CyberLogix AI account.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%20role%3D%22img%22%20aria-label%3D%22CyberLogix%20AI%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22clx-mark%22%20x1%3D%2216%22%20y1%3D%2229%22%20x2%3D%2216%22%20y2%3D%225%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237C3FE4%22%2F%3E%20%3Cstop%20offset%3D%220.5%22%20stop-color%3D%22%235A4DE8%22%2F%3E%20%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232F8BE8%22%2F%3E%20%3C%2FlinearGradient%3E%20%3C%2Fdefs%3E%20%3Cg%20fill%3D%22none%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%20%3Cpath%20d%3D%22M16%2029.5%20V6%22%20stroke-width%3D%223.6%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L9%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L23%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3Cg%20fill%3D%22%23FFFFFF%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-width%3D%222%22%3E%20%3Ccircle%20cx%3D%2216%22%20cy%3D%226%22%20r%3D%223.6%22%2F%3E%20%3Ccircle%20cx%3D%229%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3Ccircle%20cx%3D%2223%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3C%2Fsvg%3E">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.top {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 28px; border-bottom: 1px solid var(--border);
+}
+.top .brand { text-decoration: none; color: var(--ink); }
+.top .brand-name { font-size: 17px; }
+@media (max-width: 720px) {
+  .top { padding: 14px 16px; gap: 10px; }
+  .top .brand-name { display: none; }
+}
+
+main { max-width: 430px; margin: 0 auto; padding: 74px 20px 90px; }
+h1 {
+  font-family: var(--display); font-weight: 400; font-size: 28px;
+  margin: 0 0 10px; color: var(--ink);
+}
+p.lede { color: var(--muted); font-size: 14.5px; line-height: 1.65;
+         margin: 0 0 26px; }
+
+label { display: block; font-size: 13px; color: var(--muted);
+        margin: 0 0 6px; }
+input {
+  font: inherit; width: 100%; color: var(--ink); background: var(--sunken);
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px;
+  margin-bottom: 16px; box-sizing: border-box;
+}
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: inherit; font-weight: 600; width: 100%; cursor: pointer;
+  padding: 12px; border-radius: 9px; border: 0;
+  color: #05070D; background: var(--accent);
+}
+button[disabled] { opacity: .55; cursor: default; }
+
+.hint { font-size: 12.5px; color: var(--muted); margin: -8px 0 18px;
+        line-height: 1.55; }
+.note, .bad, .good {
+  margin: 0 0 20px; padding: 12px 15px; border-radius: 10px;
+  font-size: 13.5px; line-height: 1.6; color: var(--ink);
+}
+.bad {
+  border: 1px solid color-mix(in srgb, var(--critical, #E0534F) 45%, transparent);
+  background: color-mix(in srgb, var(--critical, #E0534F) 10%, transparent);
+}
+.good {
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-cyan) 9%, transparent);
+}
+.after { margin-top: 22px; text-align: center; font-size: 14px; }
+.after a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+</header>
+
+<main>
+  <!-- Two forms, one page. Which one you see depends on whether you
+       arrived from an email or from a login screen you could not get
+       past, and both end in the same place. -->
+  <form id="ask" hidden>
+    <h1>Forgotten password</h1>
+    <p class="lede">
+      Type the address you sign in with and we will send a link. It works
+      once and expires in a day.
+    </p>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required
+           placeholder="you@company.com">
+    <button type="submit" id="ask-go">Send the link</button>
+    <p class="after"><a href="/console">Back to sign in</a></p>
+  </form>
+
+  <form id="set" hidden>
+    <h1>Set a new password</h1>
+    <p class="lede">
+      This link works once. Using it signs out every other session on the
+      account, which is what you want if the reset was not your idea.
+    </p>
+    <label for="password">New password</label>
+    <input id="password" type="password" autocomplete="new-password"
+           minlength="10" required>
+    <p class="hint">At least ten characters. Longer beats cleverer.</p>
+    <label for="confirm">Type it again</label>
+    <input id="confirm" type="password" autocomplete="new-password"
+           minlength="10" required>
+    <button type="submit" id="set-go">Set the password</button>
+  </form>
+
+  <p class="good" id="good" hidden></p>
+  <p class="bad" id="bad" hidden></p>
+</main>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+
+function say(which, message) {
+  const other = which === "good" ? "bad" : "good";
+  $(other).hidden = true;
+  $(which).hidden = false;
+  // textContent, not innerHTML: this carries a server message and, on the
+  // failure path, whatever the browser said went wrong.
+  $(which).textContent = message;
+}
+
+async function detail(resp) {
+  try {
+    const body = await resp.json();
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/* The token arrives in the query string. It is read once and the URL is
+   scrubbed straight away, so a one-time credential does not sit in the
+   address bar to be shoulder-read, pasted into a support chat, or handed
+   to the next site in a Referer header. */
+const params = new URLSearchParams(location.search);
+const token = (params.get("token") || "").trim();
+if (token) {
+  history.replaceState(null, "", location.pathname);
+  $("set").hidden = false;
+} else {
+  $("ask").hidden = false;
+}
+
+$("ask").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("ask-go").disabled = true;
+  try {
+    const resp = await fetch("/api/accounts/forgot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("email").value.trim() }),
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(body.detail || `HTTP ${resp.status}`);
+    $("ask").hidden = true;
+    say("good", body.message);
+  } catch (err) {
+    $("ask-go").disabled = false;
+    say("bad", `That did not go through (${err.message}).`);
+  }
+});
+
+$("set").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if ($("password").value !== $("confirm").value) {
+    say("bad", "Those two do not match.");
+    return;
+  }
+  $("set-go").disabled = true;
+  try {
+    const resp = await fetch("/api/accounts/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, new_password: $("password").value }),
+    });
+    if (!resp.ok) {
+      const said = await detail(resp);
+      $("set-go").disabled = false;
+      say("bad", said || `That did not work (HTTP ${resp.status}).`);
+      return;
+    }
+    $("set").hidden = true;
+    say("good", "Password set. Sign in with it at /console.");
+  } catch (err) {
+    $("set-go").disabled = false;
+    say("bad", `That did not go through (${err.message}).`);
+  }
+});
+</script>
+</body>
+</html>

@@ -1037,6 +1037,27 @@ finish, the second is hardware that has failed, and calling them the same
 thing produces a number that is always non-zero and therefore always
 ignored.
 
+### Getting back in
+
+A password reset could only be issued by an owner, which is exactly the
+person who cannot ask for one when it is their own password that is
+gone. A single-owner account whose owner forgot their password was
+unreachable forever.
+
+`POST /api/accounts/forgot` takes an address and nothing else, and
+`/reset` is where the emailed link lands — its own page rather than a
+panel on the console, because the person following it is by definition
+the person who cannot get past the console's sign-in form.
+
+Three things it is careful not to become. It never says whether an
+address is on file, including when it is rate limited, because a 429 for
+one address and a 200 for another answers exactly the question the
+response is otherwise refusing. It is limited per address rather than
+globally, so one customer asking three times cannot lock out the next.
+And the page scrubs the token out of the URL as soon as it reads it: a
+one-time credential in the address bar is one screenshot or one Referer
+header away from being somebody else's.
+
 ## When somebody shares the link
 
 A product at this size is sold by a link pasted into a Slack channel or

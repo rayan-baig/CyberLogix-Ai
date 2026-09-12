@@ -35,6 +35,12 @@ UNGATED_BY_DESIGN = {
     "/api/accounts/logout": "ends your own session, nobody else's",
     "/api/accounts/me/password": "changes your own password",
     "/api/accounts/reset": "redeems a reset token; the token is the credential",
+    "/api/accounts/forgot": (
+        "asks for a reset link; the person calling it is by definition the "
+        "person who cannot authenticate. Guarded instead by never saying "
+        "whether the address exists, by rate limiting per address, and by "
+        "changing nothing until the emailed token is redeemed"
+    ),
     "/api/sensor-pulse": "machine ingest — this is what a sensor does",
     "/api/v1/bridge/sensor-webhook-ingest": "machine ingest from third-party hardware",
     "/api/v1/bridge/summarize-transcript": "produces a document, changes no state",
