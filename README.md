@@ -40,6 +40,7 @@ ask for.
 | Self-Serve Sign-up | `/api/signup` | A stranger becomes a customer without asking anyone |
 | Contracts & Collections | `/api/contracts` | The signed term, billing itself, and chasing what is late |
 | Agreements | `/api/legal` | Terms generated from the code they describe |
+| Revenue Worklist | `/book` | The operator's own view: who to call, and what it is worth |
 
 ### The look
 
@@ -934,6 +935,23 @@ cannot pay because they have not paid. Suspension is the exception, in
 both directions, because a lapse is something that happened to a customer
 and a suspension is something somebody decided about them.
 
+### The book
+
+Nothing gave the person who owns the company a view of their own
+customers. `/book` is that view, and `GET /api/contracts/attention` is the
+data behind it: every account that needs a person, ranked by urgency and
+then by what is at stake, with the contact details and the one action.
+Above it, the totals — paying accounts, MRR, ARR, cash outstanding, annual
+revenue at risk, identified expansion.
+
+Nothing on it is a forecast. Every figure is the rate card applied to
+units registered right now, or cash on an invoice already issued.
+
+It spans every account, so it wants `CYBERLOGIX_ADMIN_KEY` rather than any
+one customer's credential. The page holds no secret: it renders nothing
+until the key is typed in, keeps it in `sessionStorage` so it does not
+outlive the tab, and sends it as a header rather than a query string.
+
 ## The agreements
 
 `/legal` serves the Master Subscription Agreement, the Loss Assurance
@@ -1054,9 +1072,46 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-216 tests across the fourteen modules. Gemini and Twilio are both stubbed and
-the database is in-memory, so the suite runs without credentials, makes no
-network calls and touches no file on disk.
+735 tests across 50 files. Gemini and Twilio are both stubbed and the database
+is in-memory, so the suite runs without credentials, makes no network calls and
+touches no file on disk.
+
+### The fuzzer
+
+`tests/test_invariants_fuzz.py` drives the real application through seeded
+random sequences of the nineteen things a customer and an operator actually
+do — sign, bill, add sensors, void, lapse, upgrade, part-pay, buy add-ons,
+renew, cancel, restart from disk — and after **every step** asserts the rules
+that must never break:
+
+- an invoice's lines sum to its total, and its balance is what is left;
+- no period of a contract is ever billed twice;
+- `periods_billed` never goes backwards;
+- sensors never exceed the plan's seats;
+- an arrears line never exceeds a whole period for the same units;
+- an estate inside its grace window still accepts readings;
+- no tenant credential can settle or void an invoice.
+
+The suite runs forty scenarios so it stays quick. Run the full sweep when
+something underneath has changed:
+
+```bash
+CYBERLOGIX_FUZZ_SCENARIOS=1000 .venv/bin/python -m pytest \
+  tests/test_invariants_fuzz.py -q
+```
+
+A failure prints the seed and the whole operation log, so it replays exactly.
+Two money bugs were found this way that no hand-written test reached — a
+voided month disappearing when the contract was renewed, and a failed re-bill
+rewinding a counter it had never advanced, which left the same month queued
+from both ends.
+
+### Mutation testing
+
+Every fix in this repository was re-broken on purpose to confirm a test
+catches it. Where a mutation survived, that was treated as a gap in the tests
+rather than a false alarm — several of the sharper tests here exist because
+the obvious one passed against reintroduced bugs.
 
 ## Deploying
 
