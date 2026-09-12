@@ -190,6 +190,75 @@ RESET_HTML = STATIC_DIR / "reset.html"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+# --- security headers ----------------------------------------------------
+#
+# None of these was set. Each closes something specific:
+#
+# * `frame-ancestors` and X-Frame-Options stop the console being loaded
+#   invisibly inside somebody else's page — the attack where a customer
+#   thinks they are clicking one thing and are clicking "suspend this
+#   licence" on ours.
+# * `Referrer-Policy` is the other half of the password-reset fix. The
+#   reset page scrubs the token out of the address bar, and this stops it
+#   reaching a third party in a Referer header before the scrub — a
+#   one-time credential handed to whatever the page loads next.
+# * `nosniff` stops a browser deciding for itself that an uploaded blob
+#   or a JSON error is really HTML and running it.
+# * `base-uri 'none'` stops an injected `<base>` tag repointing every
+#   relative URL on the page, which turns one stray tag into a rewrite of
+#   the whole application's fetches.
+#
+# The stylesheet pulls its typefaces from Google Fonts, so the font and
+# style origins are named rather than pretending everything is same-origin
+# — a policy that blocks the product's own assets gets removed the first
+# time somebody notices, and then nothing is protecting anything.
+_FONT_CSS = "https://fonts.googleapis.com"
+_FONT_FILES = "https://fonts.gstatic.com"
+
+CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    # 'unsafe-inline' is honest rather than aspirational: every page here
+    # carries its own <script> and <style> block, and a policy written as
+    # though they did not would be a policy that has to be switched off.
+    # It still refuses script from any other origin, which is what stops
+    # an injected <script src> from reaching anywhere useful.
+    "script-src 'self' 'unsafe-inline'",
+    f"style-src 'self' 'unsafe-inline' {_FONT_CSS}",
+    f"font-src 'self' {_FONT_FILES}",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "object-src 'none'",
+])
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Set the headers that a browser can enforce on our behalf."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Referrer-Policy", "strict-origin-when-cross-origin"
+    )
+    response.headers.setdefault(
+        "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
+    )
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+
+    # HSTS only over HTTPS. Sent on a plain-http response it is either
+    # ignored or, worse, honoured by a browser that then cannot reach a
+    # development server on localhost at all — a header that makes the
+    # product unrunnable locally is one somebody deletes.
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     """Return a clean 422 for a malformed body, including a non-finite one.

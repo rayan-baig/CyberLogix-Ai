@@ -1037,6 +1037,31 @@ finish, the second is hardware that has failed, and calling them the same
 thing produces a number that is always non-zero and therefore always
 ignored.
 
+### Headers a browser can enforce
+
+Every response carries `nosniff`, `X-Frame-Options: DENY`, a
+`Referrer-Policy`, a `Permissions-Policy` and a content security policy
+with `frame-ancestors 'none'`, `base-uri 'none'` and `object-src 'none'`.
+HSTS is sent only over HTTPS — a browser that honours it on a plain-http
+response cannot then reach a development server, and a header that makes
+the product unrunnable locally is one somebody deletes rather than fixes.
+
+Two of these are not generic hygiene. `frame-ancestors` stops the console
+being loaded invisibly inside somebody else's page, where a customer
+thinks they are clicking one thing and is clicking *suspend this licence*
+on ours. `Referrer-Policy` is the other half of the password-reset fix:
+the reset page scrubs the token out of the address bar, and this stops it
+reaching a third party in a `Referer` header before the scrub happens.
+
+`script-src` is `'self' 'unsafe-inline'`, which is honest rather than
+aspirational — every page here carries its own script block, and a policy
+written as though they did not is a policy that gets switched off. It
+still refuses script from any other origin, which is what stops an
+injected `<script src>` from reaching anywhere useful. The typeface
+origins are named rather than pretended away, because a policy that
+blocks the product's own stylesheet protects nothing once somebody
+removes it.
+
 ### Getting back in
 
 A password reset could only be issued by an owner, which is exactly the
