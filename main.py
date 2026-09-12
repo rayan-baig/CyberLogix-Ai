@@ -152,6 +152,7 @@ MODULES_ACTIVE = [
     "collections_and_dunning",
     "generated_legal_terms",
     "self_serve_signup",
+    "revenue_worklist",
 ]
 
 
@@ -161,6 +162,7 @@ CONSOLE_HTML = STATIC_DIR / "console.html"
 PARTNER_HTML = STATIC_DIR / "partner.html"
 LEGAL_HTML = STATIC_DIR / "legal.html"
 SIGNUP_HTML = STATIC_DIR / "signup.html"
+BOOK_HTML = STATIC_DIR / "book.html"
 
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
@@ -233,6 +235,17 @@ def signup_page():
     page and wanted to buy had nowhere to go.
     """
     return FileResponse(SIGNUP_HTML, media_type="text/html")
+
+
+@app.get("/book", include_in_schema=False)
+def book_page():
+    """The operator's own view of the whole customer book.
+
+    Served to anyone; it renders nothing until the platform key is
+    supplied, and every figure on it comes from an endpoint that checks
+    that key. The page itself holds no secret.
+    """
+    return FileResponse(BOOK_HTML, media_type="text/html")
 
 
 @app.get("/legal", include_in_schema=False)

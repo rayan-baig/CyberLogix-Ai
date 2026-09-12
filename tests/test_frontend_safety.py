@@ -358,3 +358,62 @@ def test_every_public_page_has_a_phone_layout(surface):
     assert header_rules and ".top" in header_rules.group(1), (
         f"{surface} narrows the page but leaves the header at full width"
     )
+
+
+def test_the_book_page_holds_no_secret_and_keeps_none(api):
+    """The operator's own page: served to anyone, useful to nobody without
+    the platform key.
+
+    Verified live in Chromium: a wrong key leaves the gate up with the
+    server's own refusal shown, the right one renders five totals and the
+    worklist, and neither viewport scrolls sideways.
+    """
+    page = api.get("/book")
+    assert page.status_code == 200
+    body = page.text
+
+    # No credential may be baked into a page anyone can fetch.
+    for leak in ("CYBERLOGIX_ADMIN_KEY=", "X-CyberLogix-Admin: ",
+                 "test-admin-key"):
+        assert leak not in body, f"the page ships {leak!r}"
+
+    js = script_of(ROOT / "static/book.html")
+    # The key that reads every customer's contact details and what they owe
+    # must not outlive the tab it was typed into.
+    assert "sessionStorage." in js
+    # Usage, not the word: the file explains in a comment why it is
+    # sessionStorage and not localStorage, and that comment should not
+    # fail its own test.
+    assert "localStorage." not in js, (
+        "the platform key would survive the browser being closed"
+    )
+    # And it is sent as a header, never as a query string that lands in logs.
+    assert '"X-CyberLogix-Admin": key' in js
+    assert "admin=" not in js
+
+    # Every interpolation, named. The two that are not escaped at the
+    # point of use are listed with the reason, the way console.html lists
+    # its own — an allow-list nobody has to reason about is not one.
+    SAFE = {
+        # escaped where they are written
+        "esc(k)", "esc(v)", "esc(s)", "esc(r.urgency)", "esc(r.company_name)",
+        "esc(r.headline)", "esc(r.action)", "esc(r.contact_name)",
+        "esc(r.contact_email)", "esc(r.contact_phone)", "esc(book.paying)",
+        "esc(book.accounts)",
+        # a rounded number this file produced from a JSON number
+        "money(r.at_stake_usd)",
+        # a count, into a template that never reaches innerHTML
+        "rows.length",
+        # an HTTP status and an error string, both into fail(), which
+        # assigns to textContent — markup there is text, not markup
+        "resp.status", "err.message",
+    }
+    found = {m.strip() for m in re.findall(r"\$\{([^}]+)\}", js)}
+    assert found <= SAFE, (
+        f"new interpolation(s) in book.html nobody has checked: "
+        f"{sorted(found - SAFE)}"
+    )
+    # And fail() really does use textContent, which two of those rely on.
+    assert "errorEl.textContent = message" in js or (
+        '$("err").textContent = message' in js
+    )

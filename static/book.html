@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — The book</title>
+<meta name="description" content="Every account that needs a person, ranked by what is at stake.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%20role%3D%22img%22%20aria-label%3D%22CyberLogix%20AI%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22clx-mark%22%20x1%3D%2216%22%20y1%3D%2229%22%20x2%3D%2216%22%20y2%3D%225%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237C3FE4%22%2F%3E%20%3Cstop%20offset%3D%220.5%22%20stop-color%3D%22%235A4DE8%22%2F%3E%20%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232F8BE8%22%2F%3E%20%3C%2FlinearGradient%3E%20%3C%2Fdefs%3E%20%3Cg%20fill%3D%22none%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%20%3Cpath%20d%3D%22M16%2029.5%20V6%22%20stroke-width%3D%223.6%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L9%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L23%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3Cg%20fill%3D%22%23FFFFFF%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-width%3D%222%22%3E%20%3Ccircle%20cx%3D%2216%22%20cy%3D%226%22%20r%3D%223.6%22%2F%3E%20%3Ccircle%20cx%3D%229%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3Ccircle%20cx%3D%2223%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3C%2Fsvg%3E">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+
+.top {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 28px; border-bottom: 1px solid var(--border);
+}
+.top .brand { text-decoration: none; color: var(--ink); }
+.top .brand-name { font-size: 17px; }
+.top .spacer { margin-left: auto; }
+.top button {
+  font: inherit; font-size: 13px; cursor: pointer; color: var(--muted);
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px;
+}
+.top button:hover { color: var(--ink); }
+@media (max-width: 720px) {
+  .top { padding: 14px 16px; gap: 10px; }
+  .top .brand-name { display: none; }
+}
+
+/* --- the key gate ---------------------------------------------------- */
+.gate { max-width: 430px; margin: 90px auto; }
+.gate h1 {
+  font-family: var(--display); font-weight: 400; font-size: 27px;
+  margin: 0 0 8px; color: var(--ink);
+}
+.gate p { color: var(--muted); font-size: 14px; line-height: 1.6;
+          margin: 0 0 20px; }
+.gate input {
+  font: inherit; width: 100%; color: var(--ink); background: var(--sunken);
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px;
+  margin-bottom: 12px;
+}
+.gate button {
+  font: inherit; font-weight: 600; width: 100%; cursor: pointer;
+  padding: 12px; border-radius: 9px; border: 0;
+  color: #05070D; background: var(--accent);
+}
+
+/* --- the totals ------------------------------------------------------ */
+.totals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; margin: 26px 0 8px;
+}
+.total {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+.total .k {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); display: block;
+  margin-bottom: 6px;
+}
+.total .v {
+  font-family: var(--display); font-size: 25px; color: var(--ink);
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.total .s { font-size: 11.5px; color: var(--muted); display: block;
+            margin-top: 4px; }
+
+/* --- the worklist ---------------------------------------------------- */
+h2 {
+  font-family: var(--display); font-weight: 400; font-size: 19px;
+  margin: 30px 0 12px; color: var(--ink);
+}
+.rows { display: grid; gap: 8px; padding-bottom: 70px; }
+.row {
+  display: grid; grid-template-columns: 5px 1fr auto; gap: 14px;
+  align-items: start; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 11px;
+  padding: 13px 16px 13px 0; overflow: hidden;
+}
+.row .bar { align-self: stretch; border-radius: 11px 0 0 11px; }
+.row.high .bar { background: var(--critical, #E0534F); }
+.row.medium .bar { background: var(--warn, #E0A030); }
+.row.low .bar { background: var(--border); }
+.row .who { color: var(--ink); font-weight: 600; font-size: 14.5px; }
+.row .why { color: var(--muted); font-size: 13px; line-height: 1.55;
+            margin-top: 3px; }
+.row .do { color: var(--accent-cyan); font-size: 12.5px; margin-top: 5px; }
+.row .contact { font-family: var(--mono); font-size: 11.5px;
+                color: var(--muted); margin-top: 5px; }
+.row .amount {
+  font-variant-numeric: tabular-nums; color: var(--ink);
+  font-size: 15px; white-space: nowrap; padding-top: 1px;
+}
+.row .amount span { display: block; font-size: 10.5px; color: var(--muted);
+                    text-align: right; }
+@media (max-width: 620px) {
+  .row { grid-template-columns: 5px 1fr; }
+  .row .amount { grid-column: 2; text-align: left; padding-top: 6px; }
+  .row .amount span { text-align: left; }
+}
+.empty { color: var(--muted); padding: 30px 0; font-size: 14px; }
+.err {
+  margin: 20px 0; padding: 12px 15px; border-radius: 10px; font-size: 13.5px;
+  border: 1px solid color-mix(in srgb, var(--critical, #E0534F) 45%, transparent);
+  background: color-mix(in srgb, var(--critical, #E0534F) 10%, transparent);
+  color: var(--ink);
+}
+.note { color: var(--muted); font-size: 12px; line-height: 1.6;
+        margin: 14px 0 0; max-width: 70ch; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+  <span class="spacer"></span>
+  <button type="button" id="refresh" hidden>Refresh</button>
+  <button type="button" id="forget" hidden>Forget key</button>
+</header>
+
+<main class="wrap">
+  <form class="gate" id="gate">
+    <h1>The book</h1>
+    <p>
+      Every account that needs a person, ranked by what is at stake. This
+      spans every customer, so it wants the platform key rather than any
+      one of theirs — <code>CYBERLOGIX_ADMIN_KEY</code>.
+    </p>
+    <label class="sr" for="key">Platform admin key</label>
+    <input id="key" type="password" autocomplete="off"
+           placeholder="Platform admin key" required>
+    <button type="submit">Open</button>
+  </form>
+
+  <div id="board" hidden>
+    <div class="totals" id="totals"></div>
+    <h2 id="worklist-title">Needs a person</h2>
+    <div class="rows" id="rows"></div>
+    <p class="note" id="note"></p>
+  </div>
+
+  <p class="err" id="err" hidden></p>
+</main>
+
+<script>
+"use strict";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+}[c]));
+const $ = (id) => document.getElementById(id);
+const money = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
+
+/* The key lives in sessionStorage, not localStorage: this is the
+   credential that reads every customer's contact details and what they
+   owe, and it should not outlive the tab it was typed into. */
+const KEY = "clx-admin-key";
+function storedKey() {
+  try { return sessionStorage.getItem(KEY) || ""; } catch (err) { return ""; }
+}
+function rememberKey(value) {
+  try { sessionStorage.setItem(KEY, value); } catch (err) { /* private mode */ }
+}
+function forgetKey() {
+  try { sessionStorage.removeItem(KEY); } catch (err) { /* private mode */ }
+}
+
+function fail(message) {
+  $("err").hidden = false;
+  $("err").textContent = message;
+}
+
+function totals(book) {
+  const tiles = [
+    ["Annual run rate", money(book.arr_usd),
+     `${esc(book.paying)} of ${esc(book.accounts)} accounts paying`],
+    ["Monthly", money(book.mrr_usd), "at today's registered units"],
+    ["Owed", money(book.cash_outstanding_usd), "invoiced and unpaid"],
+    ["At risk", money(book.annual_revenue_at_risk_usd),
+     "a year, if nobody calls"],
+    ["Expansion", money(book.identified_expansion_usd),
+     "a year, already priced"],
+  ];
+  $("totals").innerHTML = tiles.map(([k, v, s]) => `
+    <div class="total">
+      <span class="k">${esc(k)}</span>
+      <span class="v">${esc(v)}</span>
+      <span class="s">${esc(s)}</span>
+    </div>`).join("");
+}
+
+function worklist(rows) {
+  $("worklist-title").textContent = rows.length
+    ? `Needs a person — ${rows.length}`
+    : "Needs a person";
+  if (!rows.length) {
+    $("rows").innerHTML =
+      `<p class="empty">Nothing needs a person today. Every account is
+       paying, in term, and carrying what it was sold.</p>`;
+    return;
+  }
+  $("rows").innerHTML = rows.map((r) => `
+    <article class="row ${esc(r.urgency)}">
+      <span class="bar" aria-hidden="true"></span>
+      <div>
+        <div class="who">${esc(r.company_name)}</div>
+        <div class="why">${esc(r.headline)}</div>
+        <div class="do">${esc(r.action)}</div>
+        <div class="contact">${esc(r.contact_name)} · ${
+          esc(r.contact_email)} · ${esc(r.contact_phone)}</div>
+      </div>
+      <div class="amount">${money(r.at_stake_usd)}<span>at stake</span></div>
+    </article>`).join("");
+}
+
+async function load() {
+  const key = storedKey();
+  if (!key) return;
+  $("err").hidden = true;
+  try {
+    const resp = await fetch("/api/contracts/attention", {
+      headers: { "X-CyberLogix-Admin": key },
+    });
+    if (resp.status === 401 || resp.status === 503) {
+      forgetKey();
+      $("gate").hidden = false;
+      $("board").hidden = true;
+      $("refresh").hidden = true;
+      $("forget").hidden = true;
+      const body = await resp.json().catch(() => ({}));
+      fail(typeof body.detail === "string" ? body.detail
+           : "That key was not accepted.");
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+
+    $("gate").hidden = true;
+    $("board").hidden = false;
+    $("refresh").hidden = false;
+    $("forget").hidden = false;
+    totals(body.book);
+    worklist(body.rows || []);
+    $("note").textContent = body.note || "";
+  } catch (err) {
+    fail(`The book could not be loaded (${err.message}).`);
+  }
+}
+
+$("gate").addEventListener("submit", (event) => {
+  event.preventDefault();
+  rememberKey($("key").value.trim());
+  $("key").value = "";
+  load();
+});
+$("refresh").addEventListener("click", load);
+$("forget").addEventListener("click", () => {
+  forgetKey();
+  location.reload();
+});
+
+load();
+</script>
+</body>
+</html>
