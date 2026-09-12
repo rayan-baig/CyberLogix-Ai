@@ -1921,7 +1921,15 @@ class Subscription:
         return not self.auto_renew and (now or utc_now()) >= self.ends_at
 
     def days_to_renewal(self, now: Optional[datetime] = None) -> int:
-        return int((self.ends_at - (now or utc_now())).total_seconds() // 86400)
+        """Days until the term ends; negative once it has.
+
+        Truncated toward zero rather than floored. `//` rounds *down*, so
+        a term that ended twenty-five hours ago came back as -2 and the
+        worklist said "ended 2 days ago". Toward zero reads correctly in
+        both directions: 5.9 days left is "ends in 5 days", which errs
+        early, and 1.04 days past is "ended 1 day ago".
+        """
+        return int((self.ends_at - (now or utc_now())).total_seconds() / 86400)
 
     def due_periods(self, now: Optional[datetime] = None) -> List[int]:
         """Period indices that have started and have not been invoiced.

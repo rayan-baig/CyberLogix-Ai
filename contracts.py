@@ -41,6 +41,7 @@ else.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -48,9 +49,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from accounts import require_role
-from auth import require_tenant, require_tenant_any_state, write_audit
+from auth import (
+    require_platform_admin,
+    require_tenant,
+    require_tenant_any_state,
+    write_audit,
+)
 from invoicing import PAYMENT_TERMS_DAYS, build_lines
-from partners import require_admin
 from store import (
     INDUSTRY_PROFILES,
     MAX_CATCHUP_PERIODS,
@@ -272,6 +277,35 @@ def arrears_lines(
             }
         )
     return lines
+
+
+def unsold_add_ons(tenant, sub, priced) -> List[Dict[str, Any]]:
+    """Add-ons on the rate card that this estate is not carrying.
+
+    One definition, used by the customer's own pipeline and by the
+    operator's worklist, so the two can never quote different numbers for
+    the same account.
+    """
+    from pricing import ADD_ONS, add_on_price
+
+    units = priced["units_total"]
+    attached = set(sub.add_ons) if sub else set()
+    rows = []
+    for key, entry in ADD_ONS.items():
+        if key in attached:
+            continue
+        monthly = add_on_price(key, units) if units else entry["monthly_usd"]
+        rows.append(
+            {
+                "kind": "add_on",
+                "key": key,
+                "name": entry["name"],
+                "monthly_usd": monthly,
+                "annual_usd": round(monthly * 12, 2),
+                "why": entry["description"],
+            }
+        )
+    return rows
 
 
 def bill_period(
@@ -927,7 +961,7 @@ def billing_run(
 
 
 @router.post("/run", tags=["Contracts & Collections"])
-def run_everything(_: None = Depends(require_admin)):
+def run_everything(_: None = Depends(require_platform_admin)):
     """Bill and chase the whole fleet. The external scheduler's entry point.
 
     The in-process loop does this hourly, and a deployment that turns the
@@ -953,6 +987,191 @@ def run_everything(_: None = Depends(require_admin)):
     }
 
 
+# How soon a term ending counts as needing attention. A month is enough
+# notice to have the renewal conversation before it is a renegotiation.
+RENEWAL_HORIZON_DAYS = 30
+
+
+def attention_rows(now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Every account that needs a person, ranked by what it is worth.
+
+    There was no fleet-wide view of anything. The scheduler iterated
+    tenants to escalate alarms and the benchmarks module aggregated them
+    into percentiles, but nothing anywhere told the person who owns the
+    company which of their customers is about to leave, which owes them
+    money, or which trial ends on Thursday. Every figure needed for that
+    already existed, one tenant at a time, behind a credential that
+    tenant holds.
+
+    For a company with one founder that is the difference between a
+    renewal conversation and a renegotiation.
+    """
+    now = now or utc_now()
+    rows: List[Dict[str, Any]] = []
+
+    for tenant in STORE.list_tenants():
+        try:
+            rows.extend(_rows_for(tenant, now))
+        except Exception:  # noqa: BLE001 - one estate must not hide the rest
+            # This is the screen somebody opens to find out what is wrong.
+            # Guarding only the pricing call left every other line in the
+            # loop able to take the whole book down with it, which is the
+            # one moment it must not.
+            logger.exception(
+                "Could not build a worklist row for %s.", tenant.tenant_id
+            )
+
+    order = {"high": 0, "medium": 1, "low": 2}
+    rows.sort(key=lambda r: (order[r["urgency"]], -r["at_stake_usd"]))
+    return rows
+
+
+def _rows_for(tenant, now) -> List[Dict[str, Any]]:
+    """Everything worth a person's time about one account."""
+    from auth import grace_days_left, licence_state
+    from pricing import build_subscription
+
+    rows: List[Dict[str, Any]] = []
+    priced = build_subscription(tenant)
+    mrr = priced["monthly_total_usd"]
+    state = licence_state(tenant, now)
+    money = delinquency(tenant.tenant_id, now)
+    sub = STORE.active_subscription(tenant.tenant_id)
+
+    def row(kind, urgency, headline, at_stake, action):
+        rows.append({
+            "tenant_id": tenant.tenant_id,
+            "company_name": tenant.company_name,
+            "contact_name": tenant.contact_name,
+            "contact_email": tenant.contact_email,
+            "contact_phone": tenant.contact_phone,
+            "plan": tenant.plan,
+            "kind": kind,
+            "urgency": urgency,
+            "headline": headline,
+            "at_stake_usd": round(at_stake, 2),
+            "action": action,
+        })
+
+    if state == "suspended":
+        row("suspended", "high",
+            "Licence suspended.", mrr * 12,
+            "Decide whether this account comes back.")
+    elif state == "lapsed":
+        row("lapsed", "high",
+            "Licence lapsed and monitoring has stopped.", mrr * 12,
+            "Call. They are unmonitored and not paying.")
+    elif state == "grace":
+        left = grace_days_left(tenant, now)
+        row("grace", "high",
+            f"Licence expired; {left} day{'' if left == 1 else 's'} of "
+            "monitoring left.", mrr * 12,
+            "Call today. After that the estate goes dark.")
+    elif tenant.plan == "trial" and tenant.expires_at is not None:
+        days = math.ceil((tenant.expires_at - now).total_seconds() / 86400)
+        if days <= RENEWAL_HORIZON_DAYS:
+            row("trial_ending", "high" if days <= 3 else "medium",
+                f"Trial ends in {max(days, 0)} day"
+                f"{'' if days == 1 else 's'}"
+                f" with {priced['units_total']} unit"
+                f"{'' if priced['units_total'] == 1 else 's'} live.",
+                mrr * 12,
+                "Ask for the order before the estate goes quiet.")
+
+    if money["overdue_usd"] > 0:
+        row("overdue", "high" if money["delinquent"] else "medium",
+            f"${money['overdue_usd']:,.2f} is {money['days_overdue']} "
+            "days past due.", money["overdue_usd"],
+            "Chase the invoice.")
+
+    if sub is not None:
+        days = sub.days_to_renewal(now)
+        # A term that has *already* run out is the urgent one, and a
+        # window of `0 <= days <= 30` dropped it silently — the row
+        # appeared for a month and then vanished on the day it started
+        # to matter. An auto-renewing contract keeps billing past its
+        # term, so nothing else would have raised a hand either.
+        if days < 0:
+            row("renewal", "high",
+                f"{sub.term_years}-year term ended {abs(days)} day"
+                f"{'' if abs(days) == 1 else 's'} ago"
+                + (" and is auto-renewing at the old rate."
+                   if sub.auto_renew else " and is not auto-renewing."),
+                mrr * 12 * sub.rate_multiplier(sub.periods_billed),
+                "Re-sign it. Every month it runs on is a month at a rate "
+                "nobody agreed to.")
+        elif days <= RENEWAL_HORIZON_DAYS:
+            row("renewal", "medium",
+                f"{sub.term_years}-year term ends in {days} day"
+                f"{'' if days == 1 else 's'}.",
+                mrr * 12 * sub.rate_multiplier(sub.periods_billed),
+                "Renew before it lapses into a renegotiation.")
+
+    if mrr > 0:
+        unsold = unsold_add_ons(tenant, sub, priced)
+        if unsold:
+            row("expansion", "low",
+                f"{len(unsold)} add-on{'' if len(unsold) == 1 else 's'} "
+                "not on this account.",
+                sum(o["annual_usd"] for o in unsold),
+                "Offer the one that fits what they store.")
+
+    return rows
+
+
+@router.get("/attention")
+def attention(_: None = Depends(require_platform_admin)):
+    """The whole book, ranked: who to call, why, and what it is worth.
+
+    Platform operator, because it spans every account.
+    """
+    from pricing import build_subscription
+
+    now = utc_now()
+    rows = attention_rows(now)
+
+    mrr = 0.0
+    for tenant in STORE.list_tenants():
+        try:
+            if tenant.plan != "trial" and not tenant.suspended:
+                mrr += build_subscription(tenant)["monthly_total_usd"]
+        except Exception:  # noqa: BLE001 - a total must not fail on one estate
+            logger.exception("Could not price %s for the book.", tenant.tenant_id)
+
+    outstanding = round(sum(i.balance_usd for i in STORE.open_invoices()), 2)
+    at_risk = round(
+        sum(r["at_stake_usd"] for r in rows
+            if r["kind"] in ("lapsed", "grace", "renewal", "trial_ending")),
+        2,
+    )
+    expansion = round(
+        sum(r["at_stake_usd"] for r in rows if r["kind"] == "expansion"), 2
+    )
+
+    return {
+        "generated_at": iso(now),
+        "book": {
+            "accounts": len(STORE.list_tenants()),
+            "paying": sum(
+                1 for t in STORE.list_tenants()
+                if t.plan != "trial" and not t.suspended
+            ),
+            "mrr_usd": round(mrr, 2),
+            "arr_usd": round(mrr * 12, 2),
+            "cash_outstanding_usd": outstanding,
+            "annual_revenue_at_risk_usd": at_risk,
+            "identified_expansion_usd": expansion,
+        },
+        "needs_a_person": len(rows),
+        "rows": rows,
+        "note": (
+            "Ranked by urgency then by what is at stake. Nothing here is a "
+            "forecast: every figure is the rate card applied to units that "
+            "are registered now, or cash on an invoice already issued."
+        ),
+    }
+
+
 @router.get("/pipeline")
 def pipeline(tenant: Tenant = Depends(require_tenant_any_state)):
     """Revenue this estate could produce that it currently does not.
@@ -962,28 +1181,11 @@ def pipeline(tenant: Tenant = Depends(require_tenant_any_state)):
     for, the value of the term at renewal, and sites carrying no sensor.
     Nothing here is a guess about a customer's budget.
     """
-    from pricing import ADD_ONS, add_on_price, build_subscription
+    from pricing import build_subscription
 
     priced = build_subscription(tenant)
-    units = priced["units_total"]
     sub = STORE.active_subscription(tenant.tenant_id)
-    attached = set(sub.add_ons) if sub else set()
-
-    opportunities = []
-    for key, entry in ADD_ONS.items():
-        if key in attached:
-            continue
-        monthly = add_on_price(key, units) if units else entry["monthly_usd"]
-        opportunities.append(
-            {
-                "kind": "add_on",
-                "key": key,
-                "name": entry["name"],
-                "monthly_usd": monthly,
-                "annual_usd": round(monthly * 12, 2),
-                "why": entry["description"],
-            }
-        )
+    opportunities = list(unsold_add_ons(tenant, sub, priced))
 
     if sub is not None:
         index = sub.periods_billed
