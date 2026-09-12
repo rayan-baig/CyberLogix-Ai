@@ -290,3 +290,40 @@ def test_the_agreement_renderer_escapes_before_it_marks_up(api):
         "strong", "code", "p", "h1", "h2", "ul", "li", "blockquote",
         "table", "thead", "tbody", "tr", "th", "td", "button",
     }, f"legal.html emits an unexpected tag: {sorted(emitted)}"
+
+
+def test_one_failing_panel_cannot_blank_the_console(api):
+    """The console fetches thirteen things. Five of them 402 on a lapsed
+    account, and a single `Promise.all` across all of them meant one 402
+    threw away the other eight — a blank page for the customer who most
+    needed to read it.
+
+    Verified live in Chromium: with a licence thirty days past its grace
+    window the console renders, the critical banner is shown, and the
+    panels that were refused say so where they would have been. This keeps
+    the structure that makes that true.
+    """
+    js = script_of(ROOT / "static/console.html")
+    body = js[js.index("async function refresh()"): js.index("/* ---------------- render")]
+
+    assert "Promise.allSettled" in body, (
+        "refresh() no longer tolerates a panel failing"
+    )
+
+    # Promise.all is still fine for the calls the page genuinely cannot do
+    # without — but only those, and there should be very few.
+    essential = re.search(r"Promise\.all\(\[(.*?)\]\)", body, re.S)
+    assert essential, "refresh() should still fetch its essentials together"
+    calls = re.findall(r'api\("([^"]+)"', essential.group(1))
+    assert set(calls) <= {"/api/console/overview", "/api/health"}, (
+        f"these are treated as must-succeed and should not be: {calls}"
+    )
+
+    # And every optional panel names an element to write the failure into,
+    # so a refusal is visible rather than silent.
+    panels = re.search(r"const OPTIONAL_PANELS = \{(.*?)\};", js, re.S)
+    assert panels, "no map from panel to its element"
+    for element_id in re.findall(r'"([a-z-]+-body)"', panels.group(1)):
+        assert f'id="{element_id}"' in (ROOT / "static/console.html").read_text(), (
+            f"OPTIONAL_PANELS points at #{element_id}, which is not on the page"
+        )

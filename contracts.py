@@ -780,7 +780,7 @@ def billing_run(
 
 
 @router.get("/pipeline")
-def pipeline(tenant: Tenant = Depends(require_tenant)):
+def pipeline(tenant: Tenant = Depends(require_tenant_any_state)):
     """Revenue this estate could produce that it currently does not.
 
     Built only from what the system actually knows: add-ons on the rate

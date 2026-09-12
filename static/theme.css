@@ -507,6 +507,33 @@ pre.snippet {
   border-color: rgba(224,179,65,0.28); background: rgba(224,179,65,0.05);
   color: #8FC4F5; padding: 13px 18px;
 }
+/* Louder, and only for the one thing that deserves it: the estate is
+   about to stop being watched, or already has. */
+.banner.critical {
+  border-color: rgba(224,83,79,0.42); background: rgba(224,83,79,0.09);
+  color: #FFC9C6; padding: 13px 18px;
+}
+.banner .banner-act {
+  display: inline-block; margin-left: 10px; font-weight: 600;
+  color: inherit; text-decoration: underline; cursor: pointer;
+  background: none; border: 0; font-size: inherit; font-family: inherit;
+  padding: 0;
+}
+
+/* ---------- contract ---------- */
+.term-table { width: 100%; border-collapse: collapse; font-size: 12.5px;
+              margin-top: 10px; }
+.term-table th, .term-table td {
+  text-align: right; padding: 6px 8px; color: var(--muted);
+  border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+.term-table th:first-child, .term-table td:first-child { text-align: left; }
+.term-table th { color: var(--ink); font-weight: 600; }
+.term-table tr.now td { color: var(--ink); }
+.opp { display: flex; align-items: baseline; gap: 9px; padding: 7px 0;
+       border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.opp .grow { color: var(--muted); }
+.opp b { color: var(--ink); font-weight: 600; }
 
 /* ---------- toast ---------- */
 #terminal {

@@ -123,6 +123,9 @@
 
   <main>
     <div id="stale-banner" class="banner stale" role="status" hidden></div>
+    <!-- First, because it is the only banner that can mean the estate is
+         about to stop being watched. -->
+    <div id="account-banner" class="banner warn" role="status" hidden></div>
     <div id="role-banner" class="banner warn" hidden></div>
     <div id="delivery-banner" class="banner warn" hidden></div>
 
@@ -398,6 +401,14 @@
               <button class="btn btn-sm" type="submit">Add</button>
             </div>
           </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Contract</span>
+            <span class="card-note" id="contract-note"></span>
+          </div>
+          <div id="contract-body"></div>
         </section>
 
         <section class="card">
@@ -784,42 +795,101 @@ async function loadIndustries() {
   calculateBilling();
 }
 
+/* Panels that are allowed to be missing, and what to say in their place.
+ *
+ * An account whose licence has lapsed gets a 402 from five of the calls
+ * this page makes — costs, roster, webhooks, assurance, pipeline — and
+ * with a single Promise.all one 402 threw away the other eight. The
+ * console rendered nothing at all for the one customer who most needed to
+ * read it, because the thing it would have told them is how to fix
+ * exactly that.
+ *
+ * So the overview is the only call that has to succeed. Everything else
+ * is a panel, and a panel that cannot load says so where it would have
+ * been rather than taking the page down with it. */
+const OPTIONAL_PANELS = {
+  costs: "cost-body", roster: "roster-body", team: "team-body",
+  hooks: "hook-body", cover: "assurance-body", invoices: "invoice-body",
+  audit: "audit-body",
+};
+
+function panelUnavailable(key, err) {
+  const id = OPTIONAL_PANELS[key];
+  const el = id && $(id);
+  if (!el) return;
+  const lapsed = /402/.test(String(err && err.message));
+  el.innerHTML = `<div class="empty" style="padding:16px 0">${
+    lapsed ? "Withheld while the licence is unpaid."
+           : "Could not be loaded."}
+    <span class="sub">${esc(lapsed
+      ? "Monitoring and alerting are unaffected."
+      : String((err && err.message) || "").slice(0, 120))}</span></div>`;
+}
+
 async function refresh() {
-  const [overview, health, costs, audit, me, roster, team, catalogue, hooks,
-         cover, invoices] =
-    await Promise.all([
+  // The one call the page cannot do without. If this fails the session is
+  // genuinely broken and the caller's error handling should see it.
+  const [overview, health] = await Promise.all([
     api("/api/console/overview"),
     api("/api/health"),
-    api("/api/costs?days=30"),
-    api("/api/accounts/audit?limit=8"),
-    state.user ? Promise.resolve({ user: state.user }) : api("/api/accounts/me"),
-    api("/api/contacts"),
-    api("/api/accounts/users"),
-    state.shortcutCatalogue
-      ? Promise.resolve(state.shortcutCatalogue)
-      : api("/api/shortcuts"),
-    api("/api/webhooks"),
-    api("/api/assurance/cover"),
-    api("/api/invoices"),
   ]);
-  state.shortcutCatalogue = catalogue;
+
+  const wanted = {
+    costs: () => api("/api/costs?days=30"),
+    audit: () => api("/api/accounts/audit?limit=8"),
+    me: () => (state.user ? Promise.resolve({ user: state.user })
+                          : api("/api/accounts/me")),
+    roster: () => api("/api/contacts"),
+    team: () => api("/api/accounts/users"),
+    catalogue: () => (state.shortcutCatalogue
+      ? Promise.resolve(state.shortcutCatalogue) : api("/api/shortcuts")),
+    hooks: () => api("/api/webhooks"),
+    cover: () => api("/api/assurance/cover"),
+    invoices: () => api("/api/invoices"),
+    contract: () => api("/api/contracts"),
+    pipeline: () => api("/api/contracts/pipeline"),
+  };
+  const keys = Object.keys(wanted);
+  const settled = await Promise.allSettled(keys.map((k) => wanted[k]()));
+  const got = {};
+  const failed = {};
+  keys.forEach((k, i) => {
+    if (settled[i].status === "fulfilled") got[k] = settled[i].value;
+    else failed[k] = settled[i].reason;
+  });
+
+  state.shortcutCatalogue = got.catalogue || state.shortcutCatalogue;
   state.data = overview;
-  state.user = me.user;
+  if (got.me) state.user = got.me.user;
   state.unit = overview.temperature_unit || "F";
+
   render(overview, health);
   renderSites(overview);
-  renderHooks(hooks);
-  renderAssurance(cover);
-  renderInvoices(invoices);
   renderVault();
   loadBenchmarks(overview);
   if (state.drawerSensor) openDrawer(state.drawerSensor, { quiet: true });
-  renderCosts(costs);
-  renderAudit(audit);
-  renderRoster(roster);
-  renderTeam(team);
   renderBilling(overview.subscription, overview.roi);
-  renderShortcuts(overview.sensors, catalogue);
+
+  const paint = (key, fn) => {
+    if (got[key] === undefined) { panelUnavailable(key, failed[key]); return; }
+    try { fn(); } catch (err) { panelUnavailable(key, err); }
+  };
+  paint("hooks", () => renderHooks(got.hooks));
+  paint("cover", () => renderAssurance(got.cover));
+  paint("invoices", () => renderInvoices(got.invoices));
+  paint("costs", () => renderCosts(got.costs));
+  paint("audit", () => renderAudit(got.audit));
+  paint("roster", () => renderRoster(got.roster));
+  paint("team", () => renderTeam(got.team));
+
+  // The contract card is where the way back lives, so it renders from
+  // whatever arrived rather than needing both halves.
+  if (got.contract) {
+    renderContract(got.contract, got.pipeline || { opportunities: [] });
+  }
+  if (state.shortcutCatalogue) {
+    renderShortcuts(overview.sensors, state.shortcutCatalogue);
+  }
 }
 
 /* ---------------- render ---------------- */
@@ -875,6 +945,26 @@ function render(d, health) {
   $("unit-toggle").title = state.unit === "C"
     ? "Showing Celsius. Click for Fahrenheit."
     : "Showing Fahrenheit. Click for Celsius.";
+
+  /* The licence. Loudest thing on the page when it needs to be, and
+     silent when it does not — a banner that is always on stops being
+     read well before the day it matters. */
+  const account = $("account-banner");
+  const a = d.account;
+  if (a && a.headline) {
+    account.className = "banner " + (a.severity === "critical" ? "critical" : "warn");
+    account.innerHTML = esc(a.headline)
+      + (a.alerting_continues
+          ? ` <span style="opacity:.75">Alerting is still running.</span>` : "")
+      + ` <button type="button" class="banner-act" id="account-act">${
+          a.on_trial ? "See what it costs" : "Sort it out"}</button>`;
+    account.hidden = false;
+    $("account-act").addEventListener("click", () => {
+      $("contract-body").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  } else {
+    account.hidden = true;
+  }
 
   const banner = $("delivery-banner");
   if (health.message_delivery !== "twilio") {
@@ -1570,6 +1660,153 @@ function renderRoster(roster) {
 /* ---------------- invoices ---------------- */
 
 const INVOICE_STATE_CLASS = { issued: "", paid: "good", void: "" };
+
+/* The contract: what was signed, what it bills, what it is not billing
+   yet, and how far behind it is.
+ *
+ * The three subsystems behind this — the self-billing contract, the
+ * collections ladder and the revenue pipeline — existed with no way to
+ * reach any of them from the product. An owner could be a month from the
+ * end of a term, with an overdue invoice and four add-ons nobody had
+ * offered them, and the console would show none of it.
+ */
+function renderContract(contract, pipeline) {
+  const body = $("contract-body");
+  const note = $("contract-note");
+  const c = contract.contract;
+  const money0 = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
+
+  const collections = (contract.collections || {});
+  const behind = collections.overdue_usd > 0
+    ? `<div class="card-note" style="color:var(--critical);margin-top:10px">
+         ${money(collections.overdue_usd)} overdue by ${
+           collections.days_overdue} days.
+         ${collections.withheld.length
+            ? "Reporting is withheld until it clears."
+            : ""}
+       </div>`
+    : "";
+
+  if (!c) {
+    note.textContent = "not signed";
+    body.innerHTML =
+      `<div class="empty" style="padding:18px 0">
+         Nothing bills itself yet.
+         <span class="sub">Sign a term and invoices issue on their own, at
+         the rate that was agreed, without anybody remembering to.</span>
+       </div>
+       <form id="contract-form" style="margin-top:12px">
+         <div class="row">
+           <label class="sr" for="term-years">Term</label>
+           <select id="term-years" class="grow"
+                   style="padding:9px 11px;background:var(--sunken);
+                   border:1px solid var(--border);border-radius:9px;color:var(--ink)">
+             <option value="1">1 year</option>
+             <option value="3" selected>3 years — 5% a year escalator</option>
+             <option value="5">5 years — 5% a year escalator</option>
+           </select>
+           <button class="btn btn-sm btn-primary" type="submit">Sign</button>
+         </div>
+         <label class="row" style="margin-top:8px;font-size:12px;color:var(--muted)">
+           <input type="checkbox" id="term-prepay" style="width:auto">
+           Pay annually — 10% off, one invoice a year
+         </label>
+       </form>` + behind + opportunities(pipeline);
+    wireContractForm();
+    return;
+  }
+
+  note.textContent = `${c.term_years}-year term · year ${
+    c.current_contract_year}`;
+
+  const rows = (contract.schedule || []).map((y) => `
+    <tr class="${y.year === c.current_contract_year ? "now" : ""}">
+      <td>Year ${y.year}</td>
+      <td>${money0(y.monthly_usd)}/mo</td>
+      <td>${y.prepay_discount_usd
+             ? "−" + money0(y.prepay_discount_usd) : "—"}</td>
+      <td>${money0(y.payable_usd)}</td>
+    </tr>`).join("");
+
+  const renewal = (pipeline.renewal || {});
+  body.innerHTML = `
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.6">
+      ${esc(c.billing_interval === "annual" ? "Billed annually" : "Billed monthly")},
+      ${c.escalator_percent}% a year, ${
+        c.auto_renew ? "renews automatically" : "does not auto-renew"}.
+      Next invoice ${esc((c.next_billing_at || "").slice(0, 10))}.
+    </div>
+    <table class="term-table">
+      <thead><tr><th>Term</th><th>Rate</th><th>Prepay</th><th>Payable</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="card-note" style="margin-top:9px">
+      Ends ${esc((c.ends_at || "").slice(0, 10))} —
+      ${renewal.days_away} days away.
+    </div>
+    ${behind}
+    ${opportunities(pipeline)}
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-sm" id="contract-bill">Bill what is due</button>
+      <button class="btn btn-sm" id="contract-renew">Renew</button>
+    </div>`;
+
+  $("contract-bill").addEventListener("click", async () => {
+    try {
+      const out = await api("/api/contracts/billing-run", { method: "POST" });
+      toast(out.invoices_issued
+        ? `${out.invoices_issued} invoice(s) issued.`
+        : "Nothing is due yet.", out.invoices_issued ? "ok" : "");
+      refresh();
+    } catch (err) { toast(err.message, "err"); }
+  });
+  $("contract-renew").addEventListener("click", async () => {
+    try {
+      await api("/api/contracts/renew", {
+        method: "POST", body: JSON.stringify({ term_years: c.term_years }) });
+      toast("Renewed at the rate the last term finished on.", "ok");
+      refresh();
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
+
+/* Revenue this estate could produce and does not. Only the quantified
+   rows are shown with a figure; a coverage gap has no unit count so it is
+   named rather than priced. */
+function opportunities(pipeline) {
+  const rows = (pipeline.opportunities || []).slice(0, 4);
+  if (!rows.length) return "";
+  return `<div style="margin-top:14px">
+    <div class="card-note" style="margin-bottom:4px">
+      Not on this contract${pipeline.identified_annual_usd
+        ? " — " + money(pipeline.identified_annual_usd) + " a year" : ""}
+    </div>
+    ${rows.map((o) => `<div class="opp">
+        <span class="grow">${esc(o.name)}</span>
+        <b>${o.annual_usd ? "$" + Math.round(o.annual_usd).toLocaleString()
+                            + "/yr" : "—"}</b>
+      </div>`).join("")}
+  </div>`;
+}
+
+function wireContractForm() {
+  const form = $("contract-form");
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/contracts", {
+        method: "POST",
+        body: JSON.stringify({
+          term_years: Number($("term-years").value),
+          annual_prepay: $("term-prepay").checked,
+        }),
+      });
+      toast("Signed. Invoices now issue themselves.", "ok");
+      refresh();
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
 
 function renderInvoices(ledger) {
   $("invoice-note").textContent = ledger.outstanding_count

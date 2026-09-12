@@ -253,3 +253,43 @@ def test_grace_days_left_is_zero_when_not_in_grace(api, trial):
     _, _, tenant = trial
     _shift_expiry(tenant["tenant_id"], 5)
     assert grace_days_left(STORE.get_tenant(tenant["tenant_id"])) == 0
+
+
+# ---- the console degrades instead of collapsing ------------------------
+
+
+def test_the_pipeline_survives_a_lapse(api, trial):
+    """It is the thing that prices carrying on."""
+    key, _, tenant = trial
+    _shift_expiry(tenant["tenant_id"], -(LICENCE_GRACE_DAYS + 30))
+    body = api.get("/api/contracts/pipeline", headers=key)
+    assert body.status_code == 200, body.text
+    assert body.json()["current_mrr_usd"] > 0
+
+
+def test_only_two_calls_are_essential_to_the_console(api, trial):
+    """Five of the calls the console makes 402 on a lapsed account.
+
+    With one Promise.all across all thirteen, a single 402 threw away the
+    other eight and the page rendered nothing — for the one customer who
+    most needed to read it, about the thing they most needed to fix.
+    """
+    key, bearer, tenant = trial
+    headers = {**key, **bearer}
+    _shift_expiry(tenant["tenant_id"], -(LICENCE_GRACE_DAYS + 30))
+
+    essential = ["/api/console/overview", "/api/health"]
+    for path in essential:
+        assert api.get(path, headers=headers).status_code == 200, path
+
+    refused = [
+        path for path in (
+            "/api/costs?days=30", "/api/contacts", "/api/webhooks",
+            "/api/assurance/cover",
+        )
+        if api.get(path, headers=headers).status_code == 402
+    ]
+    assert refused, (
+        "This test is only meaningful while some panels do refuse a lapsed "
+        "account; if none do, the console no longer needs to degrade."
+    )
