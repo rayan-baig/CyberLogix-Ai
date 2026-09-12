@@ -16,7 +16,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
 from accounts import require_role
-from auth import require_entitlement, require_role_or_machine, require_tenant
+from auth import (
+    require_entitlement,
+    require_role_or_machine,
+    require_tenant,
+    require_tenant_any_state,
+)
 
 # Re-exported: several routers import these from here rather than reaching
 # past this module into auth, so the dependency reads in one direction.
@@ -179,10 +184,17 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
 @router.post("/me/plan")
 def change_plan(
     payload: PlanChange,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     owner: User = Depends(require_role("owner")),
 ):
-    """Move a tenant between tiers, refusing a downgrade that strands seats."""
+    """Move a tenant between tiers, refusing a downgrade that strands seats.
+
+    Reachable even when the licence has lapsed. Refusing it would be a
+    deadlock — the customer cannot pay because they have not paid — and it
+    was a real one: an expired trial could not upgrade itself, so the only
+    route from a finished trial to a paying customer ran through somebody
+    answering an email.
+    """
     plan = _validate_plan(payload.plan)
     seats_used = STORE.seat_count(tenant.tenant_id)
     new_cap = PLAN_TIERS[plan]["max_sensors"]

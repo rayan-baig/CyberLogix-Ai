@@ -7,14 +7,17 @@ to a single request per poll instead of one per sensor.
 
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forecaster import forecast_sensor
+from auth import require_tenant_any_state
 from licenses import require_tenant
 from store import (
+    PLAN_TIERS,
     INDUSTRY_PROFILES,
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
@@ -30,12 +33,124 @@ router = APIRouter(prefix="/api/console", tags=["Operations Console"])
 SPARKLINE_POINTS = 12
 
 
+
+# How close to the end of a term counts as "ending soon". A fortnight is
+# long enough to get a purchase order signed and short enough that the
+# warning still means something.
+#
+# Capped at half the term, because a flat fortnight put a 14-day trial in
+# its "ending soon" state on the first morning. A banner that is on from
+# the moment you arrive is not a warning, it is decoration, and it stops
+# being read well before the day it matters.
+RENEWAL_WARNING_DAYS = 14
+
+
+def warning_window(tenant) -> int:
+    term = PLAN_TIERS.get(tenant.plan, {}).get("term_days", 365)
+    return max(1, min(RENEWAL_WARNING_DAYS, term // 2))
+
+
+def account_state(tenant, now=None) -> Dict[str, Any]:
+    """Whether this estate is about to stop being watched, and what to do.
+
+    The console had no idea about any of this. A trial ran out overnight
+    and the only sign was that everything started returning 402 the next
+    morning — no warning the day before, no figure for what it would cost
+    to carry on, and nothing on the page that would take the money.
+    """
+    from auth import LICENCE_GRACE_DAYS, grace_days_left, licence_state
+    from contracts import delinquency
+    from pricing import build_subscription
+
+    now = now or utc_now()
+    state = licence_state(tenant, now)
+    # Rounded up, not truncated. Six days minus a few seconds is not five
+    # days, and this figure goes straight onto a banner.
+    hours_left = (
+        (tenant.expires_at - now).total_seconds() / 3600
+        if tenant.expires_at
+        else None
+    )
+    days_left = None if hours_left is None else math.ceil(hours_left / 24)
+    money = delinquency(tenant.tenant_id, now)
+    subscription = build_subscription(tenant)
+    contract = STORE.active_subscription(tenant.tenant_id)
+
+    if state == "suspended":
+        headline = "This licence is suspended. Get in touch to restore it."
+        severity = "critical"
+    elif state == "lapsed":
+        headline = (
+            "This estate is no longer being monitored. Move onto a paid "
+            "plan to restore it."
+        )
+        severity = "critical"
+    elif state == "grace":
+        left = grace_days_left(tenant, now)
+        headline = (
+            f"The licence expired. Monitoring continues for {left} more "
+            f"day{'' if left == 1 else 's'}, then stops. Reporting is "
+            "withheld until it is renewed."
+        )
+        severity = "critical"
+    elif days_left is not None and days_left <= warning_window(tenant):
+        subject = "The trial" if tenant.plan == "trial" else "This licence"
+        # Measured in hours, because a day count cannot tell "this evening"
+        # from "tomorrow evening" — and those read very differently to
+        # somebody deciding whether to deal with it now.
+        when = (
+            "ends today" if hours_left < 24
+            else "ends tomorrow" if hours_left < 48
+            else f"ends in {days_left} days"
+        )
+        headline = (
+            f"{subject} {when}. After that there are {LICENCE_GRACE_DAYS} "
+            "days of grace, then monitoring stops."
+        )
+        severity = "warning"
+    elif money["delinquent"]:
+        headline = (
+            f"${money['overdue_usd']:,.2f} is {money['days_overdue']} days "
+            "past due. Reporting is withheld until it clears."
+        )
+        severity = "warning"
+    else:
+        headline = None
+        severity = "ok"
+
+    return {
+        "licence_state": state,
+        "severity": severity,
+        "headline": headline,
+        "plan": tenant.plan,
+        "on_trial": tenant.plan == "trial",
+        "days_to_expiry": days_left,
+        "warning_window_days": warning_window(tenant),
+        "grace_days_left": grace_days_left(tenant, now),
+        "expires_at": iso(tenant.expires_at),
+        "has_contract": contract is not None,
+        # What carrying on would cost, priced from the estate they have
+        # actually built rather than from a tier they have to guess at.
+        "monthly_if_paid_usd": subscription["monthly_total_usd"],
+        "annual_if_paid_usd": subscription["annual_total_usd"],
+        "collections": money,
+        # Always true, and worth saying on the page rather than only in the
+        # agreement: none of this touches the alarm.
+        "alerting_continues": state != "lapsed",
+    }
+
+
 @router.get("/overview")
 def console_overview(
     compliance_days: int = Query(7, ge=1, le=90),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
 ) -> Dict[str, Any]:
-    """Everything the console renders, in one payload."""
+    """Everything the console renders, in one payload.
+
+    Readable even when the licence has lapsed. This is the page that says
+    what happened and carries the button that fixes it — refusing it left
+    a customer with a blank 402 and no way to work out what to do next.
+    """
     now = utc_now()
     entitlements = tenant.entitlements()
     forecasting = entitlements["predictive_forecasting"]
@@ -119,6 +234,7 @@ def console_overview(
     return {
         "generated_at": iso(now),
         "tenant": tenant.public(sensor_count=len(sensors)),
+        "account": account_state(tenant, now),
         "subscription": subscription,
         "roi": roi,
         "entitlements": {

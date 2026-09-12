@@ -23,14 +23,6 @@ GOOD = {
 }
 
 
-@pytest.fixture(autouse=True)
-def clean_rate_limits():
-    """The window is process-global, so one test must not spend another's."""
-    signup.reset_rate_limits()
-    yield
-    signup.reset_rate_limits()
-
-
 def _signup(api, **overrides):
     return api.post("/api/signup", json={**GOOD, **overrides})
 

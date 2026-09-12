@@ -48,7 +48,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from accounts import require_role
-from auth import require_tenant, write_audit
+from auth import require_tenant, require_tenant_any_state, write_audit
 from invoicing import PAYMENT_TERMS_DAYS, build_lines
 from store import (
     INDUSTRY_PROFILES,
@@ -498,22 +498,36 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
 
 
 def delinquency(tenant_id: str, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """How far behind this account is, and what that withholds."""
+    """How far behind this account is, and what that withholds.
+
+    Two ways to be behind, and they are withheld the same way: an invoice
+    nobody paid, and a licence that ran out. Treating only the first would
+    have meant a lapsed trial kept its benchmarks and attestations for
+    free during the grace period.
+    """
+    from auth import grace_days_left, licence_state
+
     now = now or utc_now()
+    tenant = STORE.get_tenant(tenant_id)
     open_invoices = STORE.open_invoices(tenant_id)
     overdue = [i for i in open_invoices if i.overdue(now)]
     worst = max((i.days_overdue(now) for i in overdue), default=0)
+
+    state = licence_state(tenant, now) if tenant is not None else "active"
+    lapsed = state in ("grace", "lapsed")
+    behind = worst >= DELINQUENT_AFTER_DAYS or lapsed
+
     return {
         "outstanding_usd": round(sum(i.balance_usd for i in open_invoices), 2),
         "overdue_usd": round(sum(i.balance_usd for i in overdue), 2),
         "overdue_count": len(overdue),
         "days_overdue": worst,
-        "delinquent": worst >= DELINQUENT_AFTER_DAYS,
-        "withheld": (
-            ["benchmarks", "vault_attestation"]
-            if worst >= DELINQUENT_AFTER_DAYS
-            else []
+        "licence_state": state,
+        "grace_days_left": (
+            grace_days_left(tenant, now) if tenant is not None else 0
         ),
+        "delinquent": behind,
+        "withheld": ["benchmarks", "vault_attestation"] if behind else [],
         "never_withheld": [
             "telemetry ingest",
             "breach detection",
@@ -535,16 +549,26 @@ def require_current(feature: str):
 
     def dependency(tenant: Tenant = Depends(require_tenant)) -> Tenant:
         state = delinquency(tenant.tenant_id)
-        if state["delinquent"]:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=(
-                    f"{feature} is withheld while ${state['overdue_usd']:,.2f} "
-                    f"is {state['days_overdue']} days past due. Monitoring, "
-                    "alerting and escalation are unaffected and still running."
-                ),
+        if not state["delinquent"]:
+            return tenant
+        if state["licence_state"] in ("grace", "lapsed"):
+            because = (
+                f"the licence expired on {tenant.expires_at.date()}"
+                if tenant.expires_at
+                else "the licence has lapsed"
             )
-        return tenant
+        else:
+            because = (
+                f"${state['overdue_usd']:,.2f} is "
+                f"{state['days_overdue']} days past due"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"{feature} is withheld while {because}. Monitoring, alerting "
+                "and escalation are unaffected and still running."
+            ),
+        )
 
     return dependency
 
@@ -555,7 +579,7 @@ def require_current(feature: str):
 @router.post("", status_code=status.HTTP_201_CREATED)
 def sign(
     payload: SignRequest,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """Countersign a contract. From here the estate bills itself."""
@@ -611,7 +635,7 @@ def sign(
 
 
 @router.get("")
-def read(tenant: Tenant = Depends(require_tenant)):
+def read(tenant: Tenant = Depends(require_tenant_any_state)):
     """The live contract, its schedule, and everything signed before it."""
     sub = STORE.active_subscription(tenant.tenant_id)
     return {
@@ -664,7 +688,7 @@ def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
 @router.post("/renew")
 def renew(
     payload: RenewRequest,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """Start a fresh term from where the last one finished."""
@@ -692,7 +716,7 @@ def renew(
 @router.post("/cancel")
 def cancel(
     payload: CancelRequest,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """End the contract. Invoices already issued stay owed."""
@@ -720,7 +744,7 @@ def cancel(
 
 @router.post("/billing-run")
 def billing_run(
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """Bill this estate's outstanding periods now.

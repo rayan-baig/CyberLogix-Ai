@@ -1,6 +1,6 @@
 """Corporate license management: keys, seats and entitlements."""
 
-from store import STORE
+from store import STORE, utc_now
 
 
 def test_plan_catalogue_is_public(api):
@@ -138,14 +138,39 @@ def test_suspension_locks_the_whole_platform(
     assert resp.status_code == 402
 
 
-def test_expired_license_is_refused(api, tenant_factory):
+def test_a_licence_that_lapsed_today_is_still_monitored(api, tenant_factory):
+    """Expiry is a grace period, not a cliff.
+
+    The day after a trial ended, a vaccine fridge reporting 75°F used to
+    get a 402 and nobody was told anything — the exact failure the product
+    exists to prevent, caused by the product.
+    """
+    from auth import LICENCE_GRACE_DAYS
+
     headers, tenant = tenant_factory()
     stored = STORE.get_tenant(tenant["tenant_id"])
     stored.expires_at = stored.activated_at
 
+    assert LICENCE_GRACE_DAYS > 0
+    assert api.get("/api/licenses/me", headers=headers).status_code == 200
+
+
+def test_expired_license_is_refused_once_the_grace_period_runs_out(
+    api, tenant_factory
+):
+    from datetime import timedelta
+
+    from auth import LICENCE_GRACE_DAYS
+
+    headers, tenant = tenant_factory()
+    stored = STORE.get_tenant(tenant["tenant_id"])
+    stored.expires_at = utc_now() - timedelta(days=LICENCE_GRACE_DAYS + 1)
+
     resp = api.get("/api/licenses/me", headers=headers)
     assert resp.status_code == 402
     assert "expired" in resp.json()["detail"].lower()
+    # And it says how to get back, because that route still works.
+    assert "/api/licenses/me/plan" in resp.json()["detail"]
 
 
 def test_tenants_cannot_see_each_others_sensors(

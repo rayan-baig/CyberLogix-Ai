@@ -37,6 +37,22 @@ def clean_store():
     STORE.reset()
 
 
+@pytest.fixture(autouse=True)
+def clean_rate_limits():
+    """The sign-up window is process-global, not per-store.
+
+    STORE.reset() does not touch it, so without this the fourth test in a
+    file that signs anybody up starts getting 429s from the third test's
+    traffic — and the failure surfaces as a KeyError on the response body,
+    miles from the cause.
+    """
+    import signup
+
+    signup.reset_rate_limits()
+    yield
+    signup.reset_rate_limits()
+
+
 @pytest.fixture()
 def api():
     return TestClient(app)

@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from accounts import require_role
-from auth import require_tenant, write_audit
+from auth import require_tenant, require_tenant_any_state, write_audit
 from store import STORE, Tenant, User, iso
 
 logger = logging.getLogger("cyberlogix.invoicing")
@@ -177,7 +177,7 @@ def build_lines(
 
 
 @router.get("")
-def list_invoices(tenant: Tenant = Depends(require_tenant)):
+def list_invoices(tenant: Tenant = Depends(require_tenant_any_state)):
     """Every invoice ever issued to this tenant, newest first."""
     invoices = STORE.invoices_for(tenant.tenant_id)
     # `open` rather than `state == "issued"`, so a part-paid invoice stays
@@ -246,7 +246,7 @@ def issue_invoice(
 
 
 @router.get("/{invoice_id}")
-def read_invoice(invoice_id: str, tenant: Tenant = Depends(require_tenant)):
+def read_invoice(invoice_id: str, tenant: Tenant = Depends(require_tenant_any_state)):
     """One invoice, as issued."""
     invoice = _load(invoice_id, tenant)
     return {
@@ -268,7 +268,7 @@ def read_invoice(invoice_id: str, tenant: Tenant = Depends(require_tenant)):
 def mark_paid(
     invoice_id: str,
     payload: PaymentRecord,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """Record settlement.

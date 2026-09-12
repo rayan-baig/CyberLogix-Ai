@@ -40,7 +40,7 @@ from assurance import (
     DISPATCH_SLA_SECONDS,
 )
 from accounts import require_role
-from auth import require_tenant, write_audit
+from auth import require_tenant_any_state, write_audit
 from contracts import (
     DELINQUENT_AFTER_DAYS,
     LATE_FEE_MONTHLY_PERCENT,
@@ -512,7 +512,7 @@ def read_document(slug: str):
 @router.post("/accept", status_code=status.HTTP_201_CREATED)
 def accept(
     payload: Acceptance,
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_tenant_any_state),
     operator: User = Depends(require_role("owner")),
 ):
     """Record which exact text this customer agreed to.
@@ -551,7 +551,7 @@ def accept(
 
 
 @router.get("/acceptance/status")
-def acceptance_status(tenant: Tenant = Depends(require_tenant)):
+def acceptance_status(tenant: Tenant = Depends(require_tenant_any_state)):
     """Whether this customer has accepted the text that is live today.
 
     A stale acceptance is worth knowing about: if the payout cap moved

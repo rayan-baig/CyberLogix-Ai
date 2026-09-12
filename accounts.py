@@ -121,7 +121,21 @@ def require_session(
 
 
 def require_operator(session: LoginSession = Depends(require_session)) -> User:
-    """The signed-in user, rejecting a disabled account or a lapsed license."""
+    """The signed-in user. Says who they are, not whether they have paid.
+
+    This used to refuse anyone whose licence was not active, which put a
+    billing check on the identity layer and produced a deadlock: an
+    expired trial could not sign in, so it could not reach the page that
+    would have taken its money. The customer's only route back was to
+    email somebody.
+
+    Entitlement is `require_tenant`'s job, and every route that reads or
+    changes estate data already asks for it. What stays here is
+    suspension, because that is a deliberate act — abuse, fraud, or the
+    customer's own request — rather than a bill nobody got round to.
+    """
+    from auth import licence_state
+
     user = STORE.get_user(session.user_id)
     if user is None or user.disabled:
         STORE.revoke_session(session.token)
@@ -135,10 +149,10 @@ def require_operator(session: LoginSession = Depends(require_session)) -> User:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown tenant."
         )
-    if not tenant.active:
+    if licence_state(tenant) == "suspended":
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"License for {tenant.company_name} is not active.",
+            detail=f"License for {tenant.company_name} is suspended.",
         )
     return user
 
@@ -247,8 +261,13 @@ def login(payload: LoginRequest):
 
     _clear_failures(throttle_key)
 
+    # Signing in survives a lapse. Somebody whose trial ended has to be
+    # able to get in and buy something; locking them out is how a finished
+    # trial becomes a lost customer rather than a paying one.
+    from auth import licence_state
+
     tenant = STORE.get_tenant(user.tenant_id)
-    if tenant is None or not tenant.active:
+    if tenant is None or licence_state(tenant) == "suspended":
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="The license for this account is not active.",

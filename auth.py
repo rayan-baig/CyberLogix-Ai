@@ -14,27 +14,121 @@ actions get attributed to a name instead of "Console operator".
 
 from __future__ import annotations
 
+import math
+import os
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, status
 
-from store import STORE, Tenant, User
+from store import STORE, Tenant, User, utc_now
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# How long an estate keeps being *watched* after its licence runs out.
+#
+# Before this, expiry was a cliff: the day after a trial ended, a vaccine
+# fridge reporting 75°F got a 402 and nobody was told anything. That is
+# the exact failure the product exists to prevent, caused by the product,
+# and it directly contradicts the Master Subscription Agreement this same
+# codebase generates — which promises in section 5 that monitoring and
+# alerting are never withheld for non-payment.
+#
+# During the grace window the estate is monitored exactly as before.
+# What it loses is the reporting: benchmarks, attestations, exports. Those
+# are the things whose absence costs money and nothing else, which is the
+# same line delinquency draws in contracts.py.
+LICENCE_GRACE_DAYS = _env_int("CYBERLOGIX_LICENCE_GRACE_DAYS", 14)
+
+
+def licence_state(tenant: Tenant, now=None) -> str:
+    """"active", "grace", "lapsed" or "suspended"."""
+    if tenant.suspended:
+        return "suspended"
+    if not tenant.expired:
+        return "active"
+    now = now or utc_now()
+    if tenant.expires_at is None:
+        return "lapsed"
+    if now <= tenant.expires_at + timedelta(days=LICENCE_GRACE_DAYS):
+        return "grace"
+    return "lapsed"
+
+
+def grace_days_left(tenant: Tenant, now=None) -> int:
+    """Days of monitoring left after expiry, or 0 if it is not in grace.
+
+    Rounded up. Truncating says "9 days" when there are ten days minus a
+    few seconds, and the figure goes straight onto a banner telling
+    somebody how long they have.
+    """
+    if licence_state(tenant, now) != "grace":
+        return 0
+    ends = tenant.expires_at + timedelta(days=LICENCE_GRACE_DAYS)
+    return max(0, math.ceil((ends - (now or utc_now())).total_seconds() / 86400))
 
 
 def _reject_inactive(tenant: Tenant) -> Tenant:
-    """Distinguish a billing lapse from a bad credential."""
-    if tenant.suspended:
+    """Distinguish a billing lapse from a bad credential.
+
+    A lapse inside the grace window is not a refusal: the estate is still
+    watched. Past the window it is, and the message says the two things
+    somebody in that position needs — that monitoring has stopped, and
+    exactly which route restores it, because that route is deliberately
+    still open.
+    """
+    state = licence_state(tenant)
+    if state == "suspended":
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"License for {tenant.company_name} is suspended.",
         )
-    if tenant.expired:
+    if state == "lapsed":
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
                 f"License for {tenant.company_name} expired on "
-                f"{tenant.expires_at.date()}."
+                f"{tenant.expires_at.date()} and the "
+                f"{LICENCE_GRACE_DAYS}-day grace period has run out, so this "
+                "estate is no longer being monitored. POST /api/licenses/me/"
+                "plan to move onto a paid plan — that route still works."
             ),
+        )
+    return tenant
+
+
+def require_tenant_any_state(
+    x_cyberlogix_key: Optional[str] = Header(
+        None, description="Tenant API key issued at onboarding."
+    ),
+    authorization: Optional[str] = Header(None),
+) -> Tenant:
+    """Resolve the tenant without checking whether it has paid.
+
+    For the handful of routes that are the way *back*: changing plan,
+    signing a contract, settling an invoice, reading and accepting the
+    terms, and the console page that carries all of those. Refusing them
+    because the account has lapsed is a deadlock — the customer cannot pay
+    because they have not paid — and it was a real one: an expired trial
+    could not upgrade itself, so the only route from a finished trial to a
+    paying customer ran through a human being.
+
+    Suspension is still refused. A lapse is something that happened to a
+    customer; a suspension is something somebody decided about them —
+    abuse, fraud, or their own request — and undoing it is a conversation
+    rather than a card payment.
+    """
+    tenant = _resolve_tenant(x_cyberlogix_key, authorization)
+    if tenant.suspended:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"License for {tenant.company_name} is suspended.",
         )
     return tenant
 
@@ -87,6 +181,13 @@ def require_tenant(
     ),
 ) -> Tenant:
     """Resolve the calling tenant from either credential."""
+    return _reject_inactive(_resolve_tenant(x_cyberlogix_key, authorization))
+
+
+def _resolve_tenant(
+    x_cyberlogix_key: Optional[str], authorization: Optional[str]
+) -> Tenant:
+    """Credential to tenant. Says nothing about whether they have paid."""
     token = _bearer(authorization)
     if token:
         session = STORE.session_by_token(token)
@@ -107,7 +208,7 @@ def require_tenant(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown tenant."
             )
-        return _reject_inactive(tenant)
+        return tenant
 
     if not x_cyberlogix_key:
         raise HTTPException(
@@ -124,7 +225,7 @@ def require_tenant(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unrecognised API key.",
         )
-    return _reject_inactive(tenant)
+    return tenant
 
 
 class IngestPrincipal:
