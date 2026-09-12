@@ -9,15 +9,22 @@ forecasting.
 import logging
 import math
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
 # Import all modular system routers
@@ -214,8 +221,104 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+# --- public pages, with their own absolute URL in them -------------------
+#
+# A link preview needs absolute URLs: og:image and og:url are fetched by a
+# scraper that has no page to resolve a relative path against, so a
+# relative one is silently dropped and the card renders as a bare link.
+# The deployment's own address is the one thing a static file cannot know,
+# so it is substituted at serve time.
+#
+# The request's own base URL is used when PUBLIC_BASE_URL is unset, which
+# means previews work on a laptop and on a preview deployment without
+# anybody configuring anything — and the configured value still wins,
+# because behind a proxy the request's idea of its own host is whatever
+# the proxy passed on.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+_BASE_TOKEN = "%%BASE_URL%%"
+
+# The browser-chrome colour is the one value a page cannot take from the
+# stylesheet: `theme-color` is a meta tag and will not read a CSS
+# variable. Rather than let two pages keep their own copy of the
+# background — which is exactly the drift the shared stylesheet exists to
+# prevent — it is read out of theme.css at startup and substituted in.
+_THEME_TOKEN = "%%THEME_COLOR%%"
+_page_cache: Dict[str, str] = {}
+
+
+def _background_colour() -> str:
+    """The --bg token from the one stylesheet that defines the palette."""
+    css = (STATIC_DIR / "theme.css").read_text(encoding="utf-8")
+    found = re.search(r"--bg:\s*(#[0-9A-Fa-f]{6})", css)
+    if not found:  # pragma: no cover - the token has been there since day one
+        raise RuntimeError(
+            "theme.css no longer defines --bg, so no page can know what "
+            "colour the browser chrome should be."
+        )
+    return found.group(1)
+
+
+def _serve_page(path: Path, request: Request) -> HTMLResponse:
+    """Read a public page, substitute the deployment's own URL, serve it."""
+    source = _page_cache.get(str(path))
+    if source is None:
+        source = path.read_text(encoding="utf-8")
+        _page_cache[str(path)] = source
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return HTMLResponse(
+        source.replace(_BASE_TOKEN, base)
+              .replace(_THEME_TOKEN, _background_colour())
+    )
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots(request: Request):
+    """What a crawler may index, and where the map is.
+
+    The console, the reseller portal and the operator's book are not
+    secret — every one of them refuses to render without a credential —
+    but they are not pages anybody should arrive at from a search result
+    either. A password field is a bad first impression of a product, and
+    it is what the front door used to be.
+    """
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    body = "\n".join([
+        "User-agent: *",
+        "Allow: /$",
+        "Allow: /signup",
+        "Allow: /legal",
+        "Disallow: /console",
+        "Disallow: /partners",
+        "Disallow: /book",
+        "Disallow: /api/",
+        "",
+        f"Sitemap: {base}/sitemap.xml",
+        "",
+    ])
+    return PlainTextResponse(body)
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap(request: Request):
+    """The three pages worth finding: what it is, how to buy, and the terms."""
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    pages = [("/", "1.0"), ("/signup", "0.9"), ("/legal", "0.4")]
+    entries = "".join(
+        f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
+        for path, weight in pages
+    )
+    return Response(
+        content=(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"{entries}</urlset>"
+        ),
+        media_type="application/xml",
+    )
+
+
 @app.get("/", include_in_schema=False)
-def landing_page():
+def landing_page(request: Request):
     """The front door.
 
     This used to be the console, which meant everybody who arrived at the
@@ -224,7 +327,7 @@ def landing_page():
     password was for. The console has moved to /console, where the people
     who have one will look for it.
     """
-    return FileResponse(LANDING_HTML, media_type="text/html")
+    return _serve_page(LANDING_HTML, request)
 
 
 @app.get("/console", include_in_schema=False)
@@ -240,14 +343,14 @@ def partner_portal():
 
 
 @app.get("/signup", include_in_schema=False)
-def signup_page():
+def signup_page(request: Request):
     """Where a prospect becomes a customer.
 
     Until this existed every call to action on the landing page pointed at
     /console, which is a password field. Somebody who had read the whole
     page and wanted to buy had nowhere to go.
     """
-    return FileResponse(SIGNUP_HTML, media_type="text/html")
+    return _serve_page(SIGNUP_HTML, request)
 
 
 @app.get("/book", include_in_schema=False)

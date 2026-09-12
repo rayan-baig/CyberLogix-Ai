@@ -135,6 +135,21 @@ def test_every_surface_shares_one_stylesheet(api):
         # a stale literal behind on one surface — the favicon's data-URI
         # is the one exemption, since it must be self-contained.
         body = re.sub(r'<link rel="icon"[^>]*>', "", page)
+
+        # The second exemption, and it is not a copy: `theme-color` is a
+        # meta tag that will not read a CSS variable, so the value is
+        # substituted out of theme.css when the page is served. Asserted
+        # against the stylesheet rather than merely stripped, so a palette
+        # change cannot leave one behind.
+        for colour in re.findall(
+            r'<meta name="theme-color" content="(#[0-9A-Fa-f]{6})">', body
+        ):
+            assert colour.upper() in theme.text.upper(), (
+                f"{path} sets a browser-chrome colour that theme.css does "
+                f"not define: {colour}"
+            )
+        body = re.sub(r'<meta name="theme-color"[^>]*>', "", body)
+
         strays = set(re.findall(r"#[0-9A-Fa-f]{6}\b", body))
         assert not strays, f"{path} defines its own colours: {sorted(strays)}"
 

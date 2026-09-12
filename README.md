@@ -45,6 +45,7 @@ ask for.
 | Trial Conversion | `/api/conversion` | The trial asks for the order itself |
 | Digests & Reports | `/api/digest` | The book by email, and the customer's weekly evidence |
 | Backups | `/api/admin` | Verified snapshots of the one file that is the company |
+| Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
 
 ### The look
 
@@ -1035,6 +1036,28 @@ reported and then stopped: the first is an installation somebody did not
 finish, the second is hardware that has failed, and calling them the same
 thing produces a number that is always non-zero and therefore always
 ignored.
+
+## When somebody shares the link
+
+A product at this size is sold by a link pasted into a Slack channel or
+an email to whoever signs things off. A link that renders as a bare URL
+has spent the introduction the sender was making.
+
+The two public pages carry a full Open Graph and Twitter card, and
+`/static/og.png` is the image. The trap is quiet and total: those URLs
+are fetched by a scraper with no page to resolve a relative path
+against, so a relative one is silently dropped and the card falls back
+to nothing. The deployment's own address is the one thing a static file
+cannot know, so it is substituted when the page is served — from the
+request itself when `PUBLIC_BASE_URL` is unset, so previews work on a
+laptop without anybody configuring anything, and from the variable when
+it is set, because behind a proxy the request's idea of its own host is
+whatever the proxy passed on.
+
+`/robots.txt` keeps crawlers off `/console`, `/partners` and `/book`.
+None of them is secret — each renders nothing without a credential — but
+a search result that lands somebody on a password field has taught them
+nothing about the product and asked them for a credential.
 
 ## Backups
 
