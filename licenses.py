@@ -8,9 +8,11 @@ for that customer at the door.
 
 from __future__ import annotations
 
+import os
+import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
 from accounts import require_role
@@ -94,14 +96,66 @@ def list_plans():
     }
 
 
+# Provisioning a *paid* account is an internal act, and this endpoint used
+# to be an anonymous one. Unauthenticated, unthrottled, and it took the
+# plan as a parameter — so anyone who read the API docs could mint
+# themselves an unlimited Enterprise licence, for free, in a loop, and
+# there was nothing in the system that would have noticed.
+#
+# A trial still needs no credential: that is what the public sign-up door
+# at POST /api/signup creates, and it is rate limited there. Anything paid
+# now needs this key.
+#
+# Unset means no paid plan can be provisioned at all. That default is
+# deliberate: a deployment nobody has configured should refuse to hand out
+# Enterprise accounts rather than hand them to everybody.
+PROVISIONING_KEY = os.environ.get("CYBERLOGIX_PROVISIONING_KEY", "").strip()
+
+
+def _require_provisioning(supplied: Optional[str], plan: str) -> None:
+    """Refuse to provision a paid plan without the provisioning key."""
+    if plan == "trial":
+        return
+    if not PROVISIONING_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Provisioning a {PLAN_TIERS[plan]['name']} account requires "
+                "CYBERLOGIX_PROVISIONING_KEY to be configured. Trials are "
+                "created at POST /api/signup and need no key."
+            ),
+        )
+    if not secrets.compare_digest((supplied or "").strip(), PROVISIONING_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "A valid X-CyberLogix-Provisioning header is required to "
+                "create a paid account."
+            ),
+        )
+
+
 @router.post("/tenants", status_code=status.HTTP_201_CREATED)
-def onboard_tenant(payload: TenantCreate):
+def onboard_tenant(
+    payload: TenantCreate,
+    provisioning_key: Optional[str] = Header(
+        None,
+        alias="X-CyberLogix-Provisioning",
+        description="Required to provision anything above a trial.",
+    ),
+):
     """Onboard a customer and issue its API key.
 
     The key is returned exactly once, at creation, and is never echoed by
     any later endpoint.
+
+    A paid plan needs the provisioning key. A trial does not, but the
+    public route to one is POST /api/signup, which is rate limited and
+    also creates the owner — this endpoint leaves a tenant nobody can sign
+    into until somebody bootstraps it.
     """
     plan = _validate_plan(payload.plan)
+    _require_provisioning(provisioning_key, plan)
     tenant = STORE.create_tenant(
         company_name=payload.company_name,
         contact_name=payload.contact_name,

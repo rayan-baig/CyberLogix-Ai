@@ -199,7 +199,7 @@ footer a:hover, footer a:focus-visible { color: var(--ink); }
       afford to lose, and keeps waking people until one of them answers.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="/console">Open the console</a>
+      <a class="btn btn-primary" href="/signup">Start a free trial</a>
       <a class="btn" href="#how">See how it works</a>
       <span class="cta-note">Fourteen-day trial. No card.</span>
     </div>
@@ -325,7 +325,7 @@ footer a:hover, footer a:focus-visible { color: var(--ink); }
       Onboard a company, register a sensor, and send it a reading that should
       not be possible. Everything after that happens on its own.
     </p>
-    <a class="btn btn-primary" href="/console">Open the console</a>
+    <a class="btn btn-primary" href="/signup">Start a free trial</a>
   </div>
 </section>
 
@@ -405,7 +405,7 @@ async function paintPlans() {
                 : "Annual term"}</li>
         </ul>
         <a class="btn ${p.plan === "growth" ? "btn-primary" : ""}"
-           href="/console">Start on ${esc(p.name)}</a>
+           href="/signup">Start on ${esc(p.name)}</a>
       </article>`).join("");
   } catch (err) {
     grid.innerHTML = `<p class="empty">Plans could not be loaded

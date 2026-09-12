@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — Start a trial</title>
+<meta name="description" content="Start a free CyberLogix AI trial. One form, and the estate is live — no call, no invoice, no waiting for somebody to set it up.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%20role%3D%22img%22%20aria-label%3D%22CyberLogix%20AI%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22clx-mark%22%20x1%3D%2216%22%20y1%3D%2229%22%20x2%3D%2216%22%20y2%3D%225%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237C3FE4%22%2F%3E%20%3Cstop%20offset%3D%220.5%22%20stop-color%3D%22%235A4DE8%22%2F%3E%20%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232F8BE8%22%2F%3E%20%3C%2FlinearGradient%3E%20%3C%2Fdefs%3E%20%3Cg%20fill%3D%22none%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%20%3Cpath%20d%3D%22M16%2029.5%20V6%22%20stroke-width%3D%223.6%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L9%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L23%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3Cg%20fill%3D%22%23FFFFFF%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-width%3D%222%22%3E%20%3Ccircle%20cx%3D%2216%22%20cy%3D%226%22%20r%3D%223.6%22%2F%3E%20%3Ccircle%20cx%3D%229%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3Ccircle%20cx%3D%2223%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3C%2Fsvg%3E">
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/circuit.js" defer></script>
+<style>
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.top .brand { text-decoration: none; color: var(--ink); }
+.top .brand-name { font-size: 17px; }
+.top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+
+.shell { display: grid; grid-template-columns: 1fr 420px; gap: 56px;
+         padding: 56px 0 90px; align-items: start; }
+@media (max-width: 960px) { .shell { grid-template-columns: 1fr; gap: 34px; } }
+
+h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(30px, 4.2vw, 46px); line-height: 1.08;
+  letter-spacing: -0.015em; margin: 0 0 18px; color: var(--ink);
+}
+.lede { font-size: 17px; line-height: 1.65; color: var(--muted);
+        max-width: 52ch; margin: 0 0 30px; }
+.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.points li { color: var(--muted); font-size: 14.5px; line-height: 1.6;
+             padding-left: 24px; position: relative; }
+.points li::before {
+  content: ""; position: absolute; left: 4px; top: 8px;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+}
+.points b { color: var(--ink); font-weight: 600; }
+
+/* --- the form ------------------------------------------------------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px;
+}
+.card h2 {
+  font-family: var(--display); font-weight: 400; font-size: 20px;
+  margin: 0 0 6px; color: var(--ink);
+}
+.card .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field label { font-size: 12.5px; color: var(--muted); letter-spacing: .02em; }
+.field input, .field select {
+  font: inherit; font-size: 14.5px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 9px; padding: 11px 13px; width: 100%;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+}
+.field .hint { font-size: 12px; color: var(--muted); }
+button.go {
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  width: 100%; padding: 13px; border-radius: 10px; border: none;
+  color: #05070D; background: var(--accent); margin-top: 6px;
+}
+button.go:disabled { opacity: .55; cursor: progress; }
+.small { font-size: 12.5px; color: var(--muted); margin: 16px 0 0;
+         line-height: 1.6; }
+.small a { color: var(--accent-cyan); }
+
+.error {
+  margin: 0 0 18px; padding: 12px 15px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger, #E0534F) 45%, transparent);
+  background: color-mix(in srgb, var(--danger, #E0534F) 10%, transparent);
+  color: var(--ink); font-size: 13.5px; line-height: 1.55;
+}
+
+/* --- what you get after signing up ---------------------------------- */
+.done h2 { font-family: var(--display); font-weight: 400; font-size: 22px;
+           margin: 0 0 8px; color: var(--ink); }
+.keybox {
+  margin: 20px 0; padding: 15px 17px; border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--warn, #E0A030) 40%, transparent);
+  background: color-mix(in srgb, var(--warn, #E0A030) 8%, transparent);
+}
+.keybox .lbl { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
+.keybox code {
+  font-family: var(--mono); font-size: 13px; color: var(--ink);
+  word-break: break-all; display: block; margin-bottom: 10px;
+}
+.step { margin: 0 0 22px; }
+.step .n { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+.step h3 { font-size: 15px; margin: 3px 0 4px; color: var(--ink);
+           font-weight: 600; }
+.step p { font-size: 13.5px; color: var(--muted); margin: 0 0 9px;
+          line-height: 1.55; }
+.step pre {
+  margin: 0; padding: 12px 14px; border-radius: 9px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  line-height: 1.55; white-space: pre-wrap; word-break: break-all;
+}
+
+footer {
+  border-top: 1px solid var(--border); padding: 26px 0;
+  color: var(--muted); font-size: 13px;
+}
+footer nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover, footer a:focus-visible { color: var(--ink); }
+</style>
+</head>
+<body>
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+  <nav aria-label="Elsewhere">
+    <a href="/">Home</a>
+    <a href="/legal">Agreements</a>
+    <a href="/console">Sign in</a>
+  </nav>
+</header>
+
+<main class="wrap shell">
+  <section>
+    <h1>A fridge fails at two.<br>Nobody finds out at seven.</h1>
+    <p class="lede" id="lede">
+      Start monitoring in the next five minutes. No call, no invoice, and
+      nobody has to set it up for you.
+    </p>
+    <ul class="points">
+      <li><b>No card.</b> The trial takes no payment details, because a
+        trial that asks for a card is not a trial.</li>
+      <li><b>Your own data.</b> No demo sensors in your account — you send
+        a real reading and watch a real incident open.</li>
+      <li><b>Alerting never stops for money.</b> Even a badly overdue
+        account keeps being monitored. That is written into the
+        <a href="/legal">agreement</a>, not just meant.</li>
+      <li><b>Leave whenever.</b> Everything is exportable through the API
+        without asking us.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="panel">
+    <h2>Start a trial</h2>
+    <p class="sub" id="sub">Loading…</p>
+    <p class="error" id="error" hidden></p>
+
+    <form id="form">
+      <div class="field">
+        <label for="company_name">Company</label>
+        <input id="company_name" name="company_name" required maxlength="160"
+               autocomplete="organization">
+      </div>
+      <div class="field">
+        <label for="full_name">Your name</label>
+        <input id="full_name" name="full_name" required maxlength="120"
+               autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="email">Work email</label>
+        <input id="email" name="email" type="email" required
+               autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="contact_phone">Mobile — where an alert would reach you</label>
+        <input id="contact_phone" name="contact_phone" required
+               maxlength="40" autocomplete="tel" placeholder="+1 555 010 0000">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required
+               autocomplete="new-password">
+        <span class="hint" id="pw-hint"></span>
+      </div>
+      <div class="field">
+        <label for="industry_vertical">What are you storing?</label>
+        <select id="industry_vertical" name="industry_vertical">
+          <option value="">Choose a sector…</option>
+        </select>
+      </div>
+      <button class="go" type="submit" id="go">Start the trial</button>
+    </form>
+
+    <p class="small">
+      By starting a trial you accept the
+      <a href="/legal">Master Subscription Agreement</a> and the
+      <a href="/legal#privacy">privacy statement</a>. Already have an
+      account? <a href="/console">Sign in</a>.
+    </p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;width:100%">
+    <span>CyberLogix AI</span>
+    <span class="lineage">A Cybersalus company</span>
+    <nav aria-label="Elsewhere">
+      <a href="/">Home</a>
+      <a href="/legal">Agreements</a>
+      <a href="/console">Console</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+}[c]));
+
+const $ = (id) => document.getElementById(id);
+const errorEl = $("error");
+
+function fail(message) {
+  errorEl.hidden = false;
+  errorEl.textContent = message;
+  errorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+async function boot() {
+  try {
+    const resp = await fetch("/api/signup/sectors");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const info = await resp.json();
+
+    $("sub").textContent =
+      `${info.trial_days} days, up to ${info.max_sensors} sensors, no card.`;
+    $("pw-hint").textContent =
+      `At least ${info.min_password_length} characters.`;
+    $("password").minLength = info.min_password_length;
+
+    const select = $("industry_vertical");
+    for (const sector of info.sectors) {
+      const option = document.createElement("option");
+      // textContent, not innerHTML: an <option> is still a place a tag
+      // would be parsed.
+      option.value = sector.key;
+      option.textContent = sector.name;
+      select.appendChild(option);
+    }
+  } catch (err) {
+    $("sub").textContent = "";
+    fail(`The sector list could not be loaded (${err.message}). The form `
+       + "still works — leave the sector blank and set it later.");
+  }
+}
+
+function stepsHtml(next) {
+  return (next.steps || []).map((step, i) => `
+    <div class="step">
+      <div class="n">STEP ${i + 1}</div>
+      <h3>${esc(step.title)}</h3>
+      <p>${esc(step.detail)}</p>
+      <pre>${esc(step.command)}</pre>
+    </div>`).join("");
+}
+
+function showDone(body) {
+  const next = body.next_steps || {};
+  $("panel").classList.add("done");
+  $("panel").innerHTML = `
+    <h2>${esc(body.tenant.company_name)} is live</h2>
+    <p class="sub">${esc(body.message)}</p>
+
+    <div class="keybox">
+      <p class="lbl">Your API key — shown once, and never again. Copy it now.</p>
+      <code id="apikey">${esc(body.api_key)}</code>
+      <button class="go" type="button" id="copy">Copy the key</button>
+    </div>
+
+    <p class="sub">${esc(next.summary || "")}</p>
+    ${stepsHtml(next)}
+    <p class="small">${esc(next.then || "")}</p>
+    <button class="go" type="button" id="open-console">Open the console</button>`;
+
+  $("copy").addEventListener("click", async () => {
+    const key = $("apikey").textContent;
+    try {
+      await navigator.clipboard.writeText(key);
+      $("copy").textContent = "Copied";
+    } catch (err) {
+      // Clipboard access is refused in plenty of ordinary situations —
+      // an insecure origin, a browser setting. Select it so the key is
+      // still one keystroke away rather than telling them it failed.
+      const range = document.createRange();
+      range.selectNodeContents($("apikey"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      $("copy").textContent = "Selected — press Ctrl/Cmd+C";
+    }
+  });
+
+  $("open-console").addEventListener("click", () => {
+    location.href = "/console";
+  });
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  errorEl.hidden = true;
+  $("go").disabled = true;
+  $("go").textContent = "Starting…";
+
+  const form = new FormData(event.target);
+  const payload = Object.fromEntries(form.entries());
+  if (!payload.industry_vertical) delete payload.industry_vertical;
+
+  try {
+    const resp = await fetch("/api/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json();
+    if (!resp.ok) {
+      const detail = body.detail;
+      throw new Error(
+        typeof detail === "string"
+          ? detail
+          : (Array.isArray(detail) && detail[0] && detail[0].msg)
+            || `Sign-up failed (HTTP ${resp.status}).`
+      );
+    }
+    showDone(body);
+  } catch (err) {
+    fail(err.message);
+    $("go").disabled = false;
+    $("go").textContent = "Start the trial";
+  }
+});
+
+boot();
+</script>
+</body>
+</html>

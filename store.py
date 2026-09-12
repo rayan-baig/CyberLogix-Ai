@@ -2258,6 +2258,36 @@ class HubStore:
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
 
+    def delete_tenant(self, tenant_id: str) -> bool:
+        """Remove a tenant that was never really created.
+
+        Narrow on purpose: this exists to undo a sign-up that failed
+        half-way, so it refuses any tenant that has grown anything. A
+        tenant with no users cannot be signed into and is otherwise dead
+        weight in the fleet forever; a tenant with users, sensors or
+        invoices is a customer, and deleting one of those is not something
+        an exception handler should be able to do.
+        """
+        with self._lock:
+            tenant = self._tenants.get(tenant_id)
+            if tenant is None:
+                return False
+            has_history = (
+                any(u.tenant_id == tenant_id for u in self._users.values())
+                or any(s.tenant_id == tenant_id for s in self._sensors.values())
+                or any(i.tenant_id == tenant_id for i in self._invoices.values())
+            )
+            if has_history:
+                logger.error(
+                    "Refusing to delete tenant %s: it already has users, "
+                    "sensors or invoices.", tenant_id,
+                )
+                return False
+            self._keys.pop(tenant.api_key, None)
+            self._tenants.pop(tenant_id, None)
+            self._db.delete("tenant", tenant_id)
+            return True
+
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         with self._lock:
             return self._tenants.get(tenant_id)

@@ -22,7 +22,14 @@ MUTATING = {"POST", "PATCH", "PUT", "DELETE"}
 # reason. Anything not on this list must carry a gate; adding a route
 # here is a decision somebody has to write down.
 UNGATED_BY_DESIGN = {
-    "/api/licenses/tenants": "public onboarding: there is no account yet",
+    "/api/licenses/tenants": (
+        "provisioning: a trial needs no account to exist yet, and anything "
+        "paid needs the provisioning key instead of a role"
+    ),
+    "/api/signup": (
+        "the public front door — there is by definition no account to hold "
+        "a role yet. Guarded instead by being trial-only and rate limited"
+    ),
     "/api/accounts/bootstrap": "creates the first owner, gated by the tenant API key",
     "/api/accounts/login": "public by definition",
     "/api/accounts/logout": "ends your own session, nobody else's",

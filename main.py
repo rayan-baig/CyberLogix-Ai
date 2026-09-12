@@ -42,6 +42,7 @@ import scheduler
 from licenses import router as license_router
 from pricing import router as billing_router
 from shortcuts import router as shortcuts_router
+from signup import router as signup_router
 from sites import router as sites_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
@@ -121,6 +122,7 @@ app.include_router(invoicing_router)
 app.include_router(enterprise_router)
 app.include_router(contracts_router)
 app.include_router(legal_router)
+app.include_router(signup_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -149,6 +151,7 @@ MODULES_ACTIVE = [
     "self_billing_contracts",
     "collections_and_dunning",
     "generated_legal_terms",
+    "self_serve_signup",
 ]
 
 
@@ -157,6 +160,7 @@ LANDING_HTML = STATIC_DIR / "index.html"
 CONSOLE_HTML = STATIC_DIR / "console.html"
 PARTNER_HTML = STATIC_DIR / "partner.html"
 LEGAL_HTML = STATIC_DIR / "legal.html"
+SIGNUP_HTML = STATIC_DIR / "signup.html"
 
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
@@ -218,6 +222,17 @@ def operations_console():
 def partner_portal():
     """Serve the reseller portal, which is a different principal entirely."""
     return FileResponse(PARTNER_HTML, media_type="text/html")
+
+
+@app.get("/signup", include_in_schema=False)
+def signup_page():
+    """Where a prospect becomes a customer.
+
+    Until this existed every call to action on the landing page pointed at
+    /console, which is a password field. Somebody who had read the whole
+    page and wanted to buy had nowhere to go.
+    """
+    return FileResponse(SIGNUP_HTML, media_type="text/html")
 
 
 @app.get("/legal", include_in_schema=False)

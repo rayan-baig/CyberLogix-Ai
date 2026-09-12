@@ -19,6 +19,12 @@ os.environ["CYBERLOGIX_DB_PATH"] = ":memory:"
 # to track down. The scheduler is tested directly instead.
 os.environ["CYBERLOGIX_SWEEP_SECONDS"] = "0"
 
+# Provisioning a paid plan needs the key. The suite provisions Enterprise
+# tenants constantly, so it sets one — and the fact that every one of those
+# calls now has to carry it is the point: without the header they are
+# refused, which is what the test for that asserts.
+os.environ["CYBERLOGIX_PROVISIONING_KEY"] = "test-provisioning-key"
+
 import gemini  # noqa: E402
 from main import app  # noqa: E402
 from store import STORE  # noqa: E402
@@ -117,6 +123,7 @@ def tenant_factory(api):
     def _make(plan="enterprise", company_name="Acme Cold Storage"):
         resp = api.post(
             "/api/licenses/tenants",
+            headers={"X-CyberLogix-Provisioning": "test-provisioning-key"},
             json={
                 "company_name": company_name,
                 "contact_name": "Dana Reyes",
