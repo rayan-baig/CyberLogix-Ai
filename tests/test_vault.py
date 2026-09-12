@@ -147,3 +147,90 @@ def test_verify_refuses_a_malformed_body(api):
     assert api.post("/api/vault/verify", json={"readings": []}).status_code == 400
     assert api.post("/api/vault/verify",
                     json={"readings": [{"nope": 1}]}).status_code == 400
+
+
+def _estate_with_history(api, tenant_factory, owner_headers, sensor_factory,
+                         readings=(-320.0, -318.0, -315.0, -100.0)):
+    headers, tenant = tenant_factory(plan="growth")
+    sensor_factory(headers, "TANK-1", "cryostorage")
+    for temperature in readings:
+        api.post("/api/sensor-pulse", headers=headers, json={
+            "sensor_id": "TANK-1", "temperature_fahrenheit": temperature})
+    return headers, tenant
+
+
+def test_the_exported_chain_verifies_in_the_public_verifier(
+    api, tenant_factory, owner_headers, sensor_factory
+):
+    """The whole promise of the vault, end to end.
+
+    `build_chain` omitted `sensor_id`, which `digest_reading` hashes. So a
+    recipient was handed a document missing one of the inputs to its own
+    hash, and /api/vault/verify answered 400 on the very packet
+    /api/vault/attestation had just produced. A recipient who trusts
+    neither party could not do the arithmetic — which is the only thing
+    the feature is for.
+    """
+    headers, _ = _estate_with_history(
+        api, tenant_factory, owner_headers, sensor_factory
+    )
+    attested = api.get("/api/vault/attestation/TANK-1?include_chain=true",
+                       headers=headers).json()
+
+    # No credentials at all: this is the insurer, not the customer.
+    checked = api.post("/api/vault/verify", json={
+        "readings": attested["chain"],
+        "chain_head": attested["chain_head"],
+    })
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["matches"] is True
+    assert checked.json()["links_checked"] == len(attested["chain"])
+
+
+def test_every_link_carries_every_input_to_its_own_digest(
+    api, tenant_factory, owner_headers, sensor_factory
+):
+    """A link missing a hashed field is a link nobody can re-derive."""
+    headers, _ = _estate_with_history(
+        api, tenant_factory, owner_headers, sensor_factory
+    )
+    chain = api.get("/api/vault/attestation/TANK-1?include_chain=true",
+                    headers=headers).json()["chain"]
+    for link in chain:
+        for field in ("sensor_id", "at", "temperature_fahrenheit",
+                      "humidity_percent", "breached", "previous", "digest"):
+            assert field in link, f"the chain omits {field}, which is hashed"
+
+
+def test_a_doctored_packet_is_rejected_by_the_public_verifier(
+    api, tenant_factory, owner_headers, sensor_factory
+):
+    headers, _ = _estate_with_history(
+        api, tenant_factory, owner_headers, sensor_factory
+    )
+    attested = api.get("/api/vault/attestation/TANK-1?include_chain=true",
+                       headers=headers).json()
+    doctored = [dict(link) for link in attested["chain"]]
+    doctored[1]["temperature_fahrenheit"] = -320.0
+
+    checked = api.post("/api/vault/verify", json={
+        "readings": doctored, "chain_head": attested["chain_head"]}).json()
+    assert checked["matches"] is False
+    assert "NOT produce" in checked["verdict"]
+
+
+def test_swapping_a_link_to_another_sensor_is_caught(
+    api, tenant_factory, owner_headers, sensor_factory
+):
+    """Now that sensor_id travels with the link, it has to be checked."""
+    headers, _ = _estate_with_history(
+        api, tenant_factory, owner_headers, sensor_factory
+    )
+    attested = api.get("/api/vault/attestation/TANK-1?include_chain=true",
+                       headers=headers).json()
+    doctored = [dict(link) for link in attested["chain"]]
+    doctored[2]["sensor_id"] = "TANK-2"
+
+    checked = api.post("/api/vault/verify", json={
+        "readings": doctored, "chain_head": attested["chain_head"]}).json()
+    assert checked["matches"] is False

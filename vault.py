@@ -111,6 +111,15 @@ def build_chain(readings: List[Reading]) -> List[Dict[str, Any]]:
         link = digest_reading(previous, reading)
         chain.append(
             {
+                # The sensor id is part of the digest, so a link without it
+                # cannot be re-derived by anybody. It was missing, which
+                # meant the chain this product exports could not be checked
+                # by this product's own public verifier: /api/vault/verify
+                # answered 400 on the very document /api/vault/attestation
+                # had just produced. The whole promise of the feature is
+                # that a recipient who trusts neither party can do the
+                # arithmetic themselves, and they could not.
+                "sensor_id": reading.sensor_id,
                 "at": iso(reading.recorded_at),
                 "temperature_fahrenheit": reading.temperature_fahrenheit,
                 "humidity_percent": reading.humidity_percent,
