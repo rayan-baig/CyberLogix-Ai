@@ -1695,7 +1695,7 @@ function renderContract(contract, pipeline) {
            <input type="checkbox" id="term-prepay" style="width:auto">
            Pay annually — 10% off, one invoice a year
          </label>
-       </form>` + behind + opportunities(pipeline);
+       </form>` + behind + opportunities(pipeline, null);
     wireContractForm();
     return;
   }
@@ -1729,11 +1729,13 @@ function renderContract(contract, pipeline) {
       ${renewal.days_away} days away.
     </div>
     ${behind}
-    ${opportunities(pipeline)}
+    ${opportunities(pipeline, c)}
     <div class="row" style="margin-top:12px">
       <button class="btn btn-sm" id="contract-bill">Bill what is due</button>
       <button class="btn btn-sm" id="contract-renew">Renew</button>
     </div>`;
+
+  wireAddOnButtons(c);
 
   $("contract-bill").addEventListener("click", async () => {
     try {
@@ -1754,12 +1756,20 @@ function renderContract(contract, pipeline) {
   });
 }
 
-/* Revenue this estate could produce and does not. Only the quantified
-   rows are shown with a figure; a coverage gap has no unit count so it is
-   named rather than priced. */
-function opportunities(pipeline) {
+/* Revenue this estate could produce and does not.
+ *
+ * This list could say "not buying Loss Assurance, $8,940 a year" from the
+ * day it shipped, with nothing anywhere that would let anybody buy it.
+ * Every sale had to go through a conversation, which for a company with
+ * one founder means most of them never happened. Each priced row is a
+ * button now.
+ *
+ * A coverage gap has no unit count, so it is named rather than priced and
+ * has nothing to press. */
+function opportunities(pipeline, contract) {
   const rows = (pipeline.opportunities || []).slice(0, 4);
   if (!rows.length) return "";
+  const attached = (contract && contract.add_ons) || [];
   return `<div style="margin-top:14px">
     <div class="card-note" style="margin-bottom:4px">
       Not on this contract${pipeline.identified_annual_usd
@@ -1769,8 +1779,36 @@ function opportunities(pipeline) {
         <span class="grow">${esc(o.name)}</span>
         <b>${o.annual_usd ? "$" + Math.round(o.annual_usd).toLocaleString()
                             + "/yr" : "—"}</b>
+        ${o.kind === "add_on" && contract
+          ? `<button class="btn btn-sm" data-buy="${esc(o.key)}"
+                     title="Added to the next invoice, never backdated"
+             >Add</button>`
+          : ""}
       </div>`).join("")}
   </div>`;
+}
+
+/* Buying is the whole set, not a delta: two people clicking at once must
+   not land on a contract neither of them chose. */
+function wireAddOnButtons(contract) {
+  for (const button of document.querySelectorAll("[data-buy]")) {
+    button.addEventListener("click", async () => {
+      const wanted = new Set(contract.add_ons || []);
+      wanted.add(button.dataset.buy);
+      button.disabled = true;
+      try {
+        const out = await api("/api/contracts/add-ons", {
+          method: "POST",
+          body: JSON.stringify({ add_ons: [...wanted] }),
+        });
+        toast(out.message, "ok");
+        refresh();
+      } catch (err) {
+        button.disabled = false;
+        toast(err.message, "err");
+      }
+    });
+  }
 }
 
 function wireContractForm() {

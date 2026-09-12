@@ -186,6 +186,55 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
 PLAN_RANK = {"trial": 0, "growth": 1, "enterprise": 2}
 
 
+def next_tier_above(plan: str) -> Optional[str]:
+    """The cheapest plan with more room than this one."""
+    here = PLAN_RANK.get(plan, 0)
+    above = sorted(
+        (rank, key) for key, rank in PLAN_RANK.items() if rank > here
+    )
+    return above[0][1] if above else None
+
+
+def seat_limit_message(tenant: Tenant, cap: int, vertical: str) -> str:
+    """Refuse the seat, and answer the question the refusal creates.
+
+    Somebody hitting this is standing in a walk-in with a sensor in their
+    hand. It is the highest-intent moment the product ever gets, and the
+    message was "Upgrade to add more" — no tier named, no price, no route.
+    A refusal that does not say what to do next is a lost sale dressed up
+    as an error.
+
+    Every figure here comes from the price book and the plan tiers, so it
+    cannot promise a number the invoice will not honour.
+    """
+    from pricing import PRICE_BOOK
+
+    here = tenant.entitlements()["name"]
+    nxt = next_tier_above(tenant.plan)
+    if nxt is None:
+        return (
+            f"Seat limit reached: the {here} plan allows {cap} sensors, and "
+            "it is the largest one. Get in touch and we will size a "
+            "contract for the estate you actually have."
+        )
+
+    tier = PLAN_TIERS[nxt]
+    rate = PRICE_BOOK.get(vertical, {}).get("monthly_usd")
+    price = (
+        f" A {PRICE_BOOK[vertical]['unit']} is ${rate:,.0f} a month at the "
+        "rate card."
+        if rate
+        else ""
+    )
+    return (
+        f"Seat limit reached: the {here} plan allows {cap} sensors and all "
+        f"{cap} are in use. {tier['name']} allows "
+        f"{tier['max_sensors']:,}.{price} "
+        f"POST /api/licenses/me/plan with {{\"plan\": \"{nxt}\"}} to move "
+        "up, then register this sensor again — nothing is lost."
+    )
+
+
 def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
     """Stop a customer re-selecting a trial, or quietly dropping a tier.
 
@@ -342,10 +391,7 @@ def register_sensor(
     except SeatClaimRefused as refused:
         detail = refused.detail
         if refused.reason == "no_seats":
-            detail = (
-                f"Seat limit reached: the {tenant.entitlements()['name']} plan "
-                f"allows {cap} sensors. Upgrade to add more."
-            )
+            detail = seat_limit_message(tenant, cap, payload.industry_vertical)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=detail
         ) from None

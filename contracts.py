@@ -686,6 +686,82 @@ def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
     return rows
 
 
+class AddOnChange(BaseModel):
+    add_ons: List[str] = Field(
+        ..., description="The full set to carry from now on, not a delta."
+    )
+
+
+@router.post("/add-ons")
+def set_add_ons(
+    payload: AddOnChange,
+    tenant: Tenant = Depends(require_tenant_any_state),
+    operator: User = Depends(require_role("owner")),
+):
+    """Attach or drop add-ons on the live contract.
+
+    The pipeline has been able to say "this estate is not buying Loss
+    Assurance, and that is $8,940 a year" since the day it shipped, with
+    nothing anywhere that would let anybody buy it. Every sale had to go
+    through a conversation, which for a company with one founder means
+    most of them never happened.
+
+    The full set rather than a delta, so two people clicking at once
+    cannot produce a contract neither of them chose. Priced from the next
+    invoice — never backdated, because charging for a month of something
+    that was not switched on is exactly the kind of line that starts a
+    dispute.
+    """
+    from pricing import ADD_ONS
+
+    sub = STORE.active_subscription(tenant.tenant_id)
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "There is no live contract to attach an add-on to. Sign one "
+                "at POST /api/contracts first."
+            ),
+        )
+
+    wanted = sorted({k.strip() for k in payload.add_ons if k.strip()})
+    unknown = [k for k in wanted if k not in ADD_ONS]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
+        )
+
+    before = set(sub.add_ons)
+    updated = STORE.set_subscription_add_ons(sub, wanted)
+    added = sorted(set(wanted) - before)
+    dropped = sorted(before - set(wanted))
+
+    if added or dropped:
+        write_audit(
+            tenant,
+            operator,
+            "contract.add_ons",
+            ", ".join(
+                [f"+{ADD_ONS[k]['name']}" for k in added]
+                + [f"-{ADD_ONS[k]['name']}" for k in dropped]
+            ),
+        )
+
+    return {
+        "message": (
+            "Contract updated. The change appears on the next invoice."
+            if added or dropped
+            else "Nothing changed."
+        ),
+        "added": added,
+        "dropped": dropped,
+        "contract": updated.public(),
+        "schedule": term_schedule(tenant, updated),
+        "effective_from": iso(updated.period_start(updated.periods_billed)),
+    }
+
+
 @router.post("/renew")
 def renew(
     payload: RenewRequest,

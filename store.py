@@ -3767,6 +3767,22 @@ class HubStore:
                 self._db.put("subscription", live.subscription_id, live.to_row())
             sub.setup_billed = True
 
+    def set_subscription_add_ons(
+        self, sub: Subscription, add_ons: List[str]
+    ) -> Subscription:
+        """Replace the attached add-ons. The whole set, never a delta.
+
+        A delta would let two people clicking at once land on a contract
+        neither of them chose; replacing the set makes the last write the
+        one that stands, which is at least a state somebody asked for.
+        """
+        with self._lock:
+            live = self._subscriptions.get(sub.subscription_id) or sub
+            live.add_ons = sorted(set(add_ons))
+            self._db.put("subscription", live.subscription_id, live.to_row())
+            sub.add_ons = list(live.add_ons)
+            return live
+
     def cancel_subscription(self, sub: Subscription, reason: str) -> Subscription:
         with self._lock:
             live = self._subscriptions.get(sub.subscription_id) or sub
