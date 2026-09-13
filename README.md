@@ -1133,6 +1133,35 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## The books
+
+Tax is not a cost this codebase can cut. It is a share of profit, and
+the levers on it — entity structure, timing, deductions — depend on
+facts that live outside this repository and belong to an accountant.
+
+What is in scope is making that person cheap and making sure nothing is
+left on the table. `/api/books` produces the sales ledger, the cash book
+and both as CSV, because an accountant handed a reconciled ledger costs
+less than one handed a database, and a deduction nobody evidenced is a
+deduction nobody claims.
+
+It reports the period on **both bases and picks neither**. An invoice
+issued on 28 December and paid on 4 January is revenue in one tax year
+under accrual and the next under cash; which applies is a question about
+the entity, not about the data. The cash book is only possible because
+each payment is now kept with its own date and reference — while an
+invoice had a single `payment_reference` that every payment overwrote,
+no cash-basis figure could be derived from it at all.
+
+The expense side says plainly that it is partial. The application knows
+what it spends on models, telephony and infrastructure; it has no idea
+about hardware, professional fees, software or travel, which are
+probably the larger half. Presenting the metered spend as the whole
+expense side would cost more in unclaimed deductions than the export
+saves in effort.
+
+Nothing here computes anybody's tax, and nothing here is a return.
+
 ## Where the money actually goes
 
 `/api/margin` ranks the cost lines against the rate card. The order is
