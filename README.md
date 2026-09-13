@@ -1216,6 +1216,31 @@ combined, and no statement shows it, because nobody invoices you for
 revenue you never charged. The metered spend this codebase has an entire
 module of controls for is a rounding error.
 
+### Measured, not assumed
+
+Bad debt and the card share started as constants in a settings file.
+That is defensible on day one and indefensible once there is a year of
+invoices in the database — and worse, a guess is the one number that can
+be improved by editing it, which improves nothing except the dashboard.
+
+Both are now computed from the ledger once there are twenty invoices old
+enough to judge (past terms plus the delinquency window, so last week's
+billing is not counted as a loss). Under that floor the configured
+assumption is used and the report says which and why: three customers
+where one paid late is not a 33% bad-debt rate, it is three customers.
+
+**Measuring is allowed to make the number worse, and on the first real
+ledger it did.** The assumption was 3%; the ledger said 6.67%. Had the
+constant been lowered to hit a target, the dashboard would have read 96%
+while the business made 91.7%.
+
+`/api/margin` reports the pre-tax margin against
+`CYBERLOGIX_TARGET_MARGIN_PERCENT`, names the single largest line
+standing in the way rather than listing four, says what bad-debt rate
+would meet the target with everything else held, and — because nobody
+collects from a percentage — names the accounts, what they owe, how late
+they are and how to reach them.
+
 `margin.prepay_verdict()` asks whether the discount pays for itself. A
 discount is a purchase — certainty and cash, bought with margin — worth
 the bad debt it avoids, the card fees it avoids, and whatever holding

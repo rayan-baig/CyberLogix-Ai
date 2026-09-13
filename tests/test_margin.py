@@ -13,6 +13,7 @@ for.
 import pytest
 
 import margin
+from store import STORE
 
 
 def test_the_prepay_discount_is_the_largest_line(api):
@@ -167,3 +168,155 @@ def test_with_neither_it_still_admits_it(monkeypatch):
     monkeypatch.setattr(mail, "PAY_URL", "")
 
     assert "not configured" in mail.payment_instructions()
+
+
+# ---- measuring, rather than assuming ------------------------------------
+
+
+def _traded(store, *, invoices=30, unpaid=2, by_card=0, price=999.0):
+    """A history of real invoices, some paid by wire, some by card, some not."""
+    from datetime import timedelta
+
+    from store import utc_now
+
+    tenant = store.create_tenant(
+        company_name="Northgate", contact_name="Dana",
+        contact_phone="+15550100", contact_email="d@north.example",
+        plan="growth",
+    )
+    slow = store.create_tenant(
+        company_name="Slow Payer Ltd", contact_name="Kim",
+        contact_phone="+15550199", contact_email="k@slow.example",
+        plan="growth",
+    )
+    now = utc_now()
+    for index in range(invoices):
+        owes = index >= invoices - unpaid
+        invoice = store.create_invoice(
+            tenant=slow if owes else tenant,
+            lines=[{"kind": "subscription", "description": "Monitoring",
+                    "quantity": 1, "unit_price_usd": price,
+                    "amount_usd": price}],
+            period_days=30, terms_days=30,
+        )
+        invoice.issued_at = now - timedelta(days=120 + index)
+        store._db.put("invoice", invoice.invoice_id, invoice.to_row())
+        if owes:
+            continue
+        reference = (f"evt_stripe_{index}" if index < by_card
+                     else f"WIRE-{index}")
+        store.settle_invoice(invoice, reference, price)
+    return tenant, slow
+
+
+def test_a_thin_ledger_says_so_instead_of_inventing_a_rate(api):
+    """Three customers where one paid late is not a 33% bad-debt rate.
+    It is three customers."""
+    rates = margin.measured_rates()
+
+    assert rates["measuring_bad_debt"] is False
+    assert rates["bad_debt_percent_used"] == margin.BAD_DEBT_PERCENT
+    assert "noise" in rates["why"]
+
+
+def test_a_real_ledger_is_measured_rather_than_assumed(api):
+    _traded(STORE)
+
+    rates = margin.measured_rates()
+
+    assert rates["measuring_bad_debt"] is True
+    assert rates["measured_bad_debt_percent"] == pytest.approx(6.67, abs=0.01)
+    assert rates["bad_debt_percent_used"] == rates["measured_bad_debt_percent"]
+
+
+def test_measuring_is_allowed_to_make_the_number_worse(api):
+    """The entire reason to measure.
+
+    The assumption was 3%. This ledger says 6.67%. A margin that
+    improves whenever somebody edits a constant is a dashboard, not a
+    measurement — and had the constant been lowered to hit the target,
+    it would have read 96% while the business made 91.7%.
+    """
+    assumed = margin.statement("restaurant", 1)["before_tax_percent"]
+    _traded(STORE)
+    measured = margin.statement("restaurant", 1)["before_tax_percent"]
+
+    assert margin.measured_rates()["measured_bad_debt_percent"] > \
+        margin.BAD_DEBT_PERCENT
+    assert measured < assumed
+
+
+def test_the_card_fee_follows_who_actually_used_a_card(api):
+    """Invoices lead with bank transfer. Assuming everybody wires it is
+    as wrong as assuming everybody swipes."""
+    _traded(STORE, invoices=30, unpaid=0, by_card=28)
+    mostly_card = margin.effective_card_percent()
+
+    STORE.reset()
+    _traded(STORE, invoices=30, unpaid=0, by_card=0)
+    all_wire = margin.effective_card_percent()
+
+    assert mostly_card > all_wire
+    assert all_wire == 0.0
+    assert mostly_card <= margin.CARD_PERCENT
+
+
+# ---- the target ---------------------------------------------------------
+
+
+def test_the_target_is_missed_honestly_and_the_gap_is_named(api):
+    _traded(STORE)
+
+    verdict = margin.target("restaurant", 1)
+
+    assert verdict["met"] is False
+    assert verdict["gap_points"] > 0
+    assert verdict["biggest_lever"]["line"] == "bad debt"
+
+
+def test_good_collection_meets_the_target_without_touching_a_setting(api):
+    """Which is the only way it is allowed to be met."""
+    _traded(STORE, invoices=40, unpaid=0)
+
+    verdict = margin.target("restaurant", 1)
+
+    assert verdict["achieved_percent"] >= 95.0
+    assert verdict["met"] is True
+
+
+def test_it_says_what_bad_debt_rate_would_meet_the_target(api):
+    """A target without a number to aim at is a mood."""
+    _traded(STORE)
+
+    ceiling = margin.target("restaurant", 1)["bad_debt_ceiling_percent"]
+
+    assert 2.0 < ceiling < 5.0
+    assert margin.measured_rates()["measured_bad_debt_percent"] > ceiling
+
+
+def test_the_bad_debt_is_named_because_nobody_collects_from_a_percentage(api):
+    _traded(STORE)
+
+    owed = margin.target("restaurant", 1)["who_owes_it"]
+
+    assert [r["company_name"] for r in owed] == ["Slow Payer Ltd"]
+    assert owed[0]["owed_usd"] == 1998.0
+    assert owed[0]["invoices"] == 2
+    assert owed[0]["oldest_days"] > 100
+    assert owed[0]["contact_email"] == "k@slow.example"
+
+
+def test_a_recent_unpaid_invoice_is_not_bad_debt_yet(api):
+    """Counting last week's invoices as bad debt would make the rate a
+    function of how recently anybody was billed."""
+    tenant, _ = _traded(STORE, invoices=30, unpaid=0)
+    fresh = STORE.create_invoice(
+        tenant=tenant,
+        lines=[{"kind": "subscription", "description": "Monitoring",
+                "quantity": 1, "unit_price_usd": 999.0, "amount_usd": 999.0}],
+        period_days=30, terms_days=30,
+    )
+
+    assert fresh.state == "issued"
+    assert margin.measured_rates()["measured_bad_debt_percent"] == 0.0
+    assert margin.target("restaurant", 1)["who_owes_it"] == []
