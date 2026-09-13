@@ -22,6 +22,8 @@ because an ROI page built on invented figures is worse than one that says
 
 from __future__ import annotations
 
+import os
+
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -169,9 +171,21 @@ assert set(PRICE_BOOK) == set(INDUSTRY_PROFILES), (
 # paid to be installed does not churn casually.
 SETUP_FEE_PER_SITE_USD = 1500.0
 
-# Paying a year up front is worth more than the ten percent it costs: it
-# removes the collections problem and fixes the customer for twelve months.
-ANNUAL_PREPAY_DISCOUNT_PERCENT = 10.0
+# Paying a year up front removes the collections problem on that unit and
+# fixes the customer for twelve months. Whether it is worth ten percent
+# is a different question, and `margin.prepay_verdict()` answers it with
+# arithmetic rather than the assertion this comment used to make: the
+# discount buys the bad debt it avoids, the card fees it avoids, and
+# whatever holding the cash early is worth. At the current defaults that
+# is 5.9%, so ten is four points of pure gift — the largest cost in the
+# business and the only one nobody sends an invoice for.
+#
+# Left at ten, and made a setting instead of a constant, because a
+# smaller discount is only a saving if the customer still prepays. That
+# is a commercial call, not a code change.
+ANNUAL_PREPAY_DISCOUNT_PERCENT = float(
+    os.environ.get("CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT", "10.0")
+)
 
 # Written into multi-year contracts. Uncontroversial at signature and
 # compounding: three years at five percent is sixteen percent more

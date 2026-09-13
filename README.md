@@ -1133,6 +1133,43 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## Where the money actually goes
+
+`/api/margin` ranks the cost lines against the rate card. The order is
+not the one anybody guesses, per restaurant location per year:
+
+| line | cost | of revenue |
+|---|---|---|
+| Annual prepay discount (10%) | $1,198.80 | 10.00% |
+| Bad debt (3%) | $359.64 | 3.00% |
+| Card fees (2.9% + 30¢) | $351.25 | 2.93% |
+| Metered usage (AI, SMS, voice) | $5.60 | 0.05% |
+
+The discount we *choose* to give away costs more than every real cost
+combined, and no statement shows it, because nobody invoices you for
+revenue you never charged. The metered spend this codebase has an entire
+module of controls for is a rounding error.
+
+`margin.prepay_verdict()` asks whether the discount pays for itself. A
+discount is a purchase — certainty and cash, bought with margin — worth
+the bad debt it avoids, the card fees it avoids, and whatever holding
+the money early is worth. At the defaults that is 5.9%, so ten is four
+points of gift. The financing term is zero unless somebody sets it,
+because a company with these margins and no capital needs is not short
+of cash, and assuming otherwise is how a discount justifies itself.
+
+Nothing here changes a price. The discount became a setting with its
+current value as the default: a smaller one is only a saving if the
+customer still prepays, which is a commercial call rather than a code
+change. And nothing here models tax, which is larger than every
+operating cost put together and belongs to an accountant.
+
+The one cut actually made: invoices now lead with bank transfer and
+offer card second. Most finance departments pay by whichever method the
+invoice leads with, and a card processor takes 2.9% of everything it
+touches — $348 a year per location for a convenience nobody asked for on
+contracts that settle by wire anyway.
+
 ## Taking payment
 
 An invoice went out and somebody had to notice the money and type it in.

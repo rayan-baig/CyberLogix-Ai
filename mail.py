@@ -236,11 +236,22 @@ def payment_instructions(invoice=None) -> str:
     remit_to = (ISSUER.get("remit_to") or "").strip()
     lines = []
     link = pay_link(invoice)
-    if link:
-        lines.append(f"Pay online: {link}")
+
+    # Bank transfer first, card second, and that order is worth real
+    # money. A card processor takes about 2.9% of everything it touches;
+    # on a $999 location that is $348 a year, per unit, for a
+    # convenience nobody asked for — contracts at this size are settled
+    # by wire anyway. Putting the wire details first is the whole
+    # intervention: most finance departments pay by whichever method the
+    # invoice leads with.
     if remit_to:
-        lines.append("Remit to:")
+        lines.append("Pay by bank transfer:")
         lines.extend(f"  {line}" for line in remit_to.splitlines() if line.strip())
+        if link:
+            lines.append("")
+            lines.append(f"Or by card, if that is easier: {link}")
+    elif link:
+        lines.append(f"Pay online: {link}")
     if not lines:
         return (
             "Payment details are not configured on this deployment "
