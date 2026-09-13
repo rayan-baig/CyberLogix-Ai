@@ -1421,7 +1421,17 @@ class Invoice:
     issued_at: Optional[datetime] = None
     due_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
+    # The most recent reference, kept for the documents that print one.
+    # It is not the record of what was paid — `payments` is. This field
+    # alone was the record, and it was overwritten by each payment, so
+    # after three part payments the ledger knew the total and the last
+    # reference and nothing else. Reconciling that against a bank
+    # statement is guesswork.
     payment_reference: Optional[str] = None
+    # Every payment applied, in order: reference, amount, when. The
+    # reference is the payment's identity, which is what makes applying
+    # one twice detectable.
+    payments: List[Dict[str, Any]] = field(default_factory=list)
     amount_paid_usd: float = 0.0
     voided_at: Optional[datetime] = None
     # What issued it: a subscription id, or "manual" when a human did.
@@ -1487,6 +1497,7 @@ class Invoice:
             "due_at": iso(self.due_at),
             "paid_at": iso(self.paid_at),
             "payment_reference": self.payment_reference,
+            "payments": list(self.payments),
             "amount_paid_usd": self.amount_paid_usd,
             "voided_at": iso(self.voided_at),
             "source": self.source,
@@ -1515,6 +1526,10 @@ class Invoice:
             due_at=_parse(row.get("due_at")),
             paid_at=_parse(row.get("paid_at")),
             payment_reference=row.get("payment_reference"),
+            # Defaulted, so an invoice written before payments were kept
+            # loads rather than exploding. Its history starts empty and
+            # its total is still right.
+            payments=list(row.get("payments", [])),
             amount_paid_usd=row.get("amount_paid_usd", 0.0),
             voided_at=_parse(row.get("voided_at")),
             source=row.get("source", "manual"),
@@ -2198,6 +2213,23 @@ class MailSuppression:
             "created_at": iso(self.created_at),
             "detail": self.detail,
         }
+
+
+def _mirror_payment(caller: "Invoice", live: "Invoice") -> None:
+    """Copy the settled state back onto whatever object the caller holds.
+
+    Callers routinely keep the Invoice they were handed and read it after
+    settling. The store works on its own live object, so without this the
+    caller sees stale figures and reports a payment that did or did not
+    happen based on a copy.
+    """
+    if caller is live:
+        return
+    caller.payments = list(live.payments)
+    caller.amount_paid_usd = live.amount_paid_usd
+    caller.payment_reference = live.payment_reference
+    caller.paid_at = live.paid_at
+    caller.state = live.state
 
 
 class HubStore:
@@ -3500,8 +3532,8 @@ class HubStore:
 
     def settle_invoice(
         self, invoice: Invoice, reference: str, amount_usd: Optional[float] = None
-    ) -> Invoice:
-        """Record a payment, in full or in part.
+    ) -> "tuple[Invoice, bool]":
+        """Record a payment, in full or in part. Returns (invoice, applied).
 
         A part payment must not close the invoice. The comment here used
         to say exactly that while the code did the opposite: state went to
@@ -3510,22 +3542,51 @@ class HubStore:
         `overdue_count`. Paying $1 against $48,000 stopped the remaining
         $47,999 from ever being chased, and the only record of it was
         English inside a reference field.
+
+        **The reference is the payment's identity, and the same one is
+        never applied twice.** Every payment processor delivers webhooks
+        at least once — a retry is ordinary, not exceptional — and this
+        endpoint is where a Stripe adapter lands. Measured before the
+        fix: the same $100 event delivered three times recorded $300, so
+        an invoice went to "paid" on a third of the money and dropped
+        out of collections for good. That is the same hole as a customer
+        writing off their own invoice, dug from our side.
+
+        `applied` is False for a repeat. The caller answers 200 anyway,
+        because a webhook told it did not work retries, and retrying is
+        the thing that caused this.
         """
         with self._lock:
-            paid = invoice.total_usd if amount_usd is None else round(amount_usd, 2)
-            invoice.amount_paid_usd = round(invoice.amount_paid_usd + paid, 2)
-            invoice.payment_reference = reference
-            invoice.paid_at = utc_now()
+            live = self._invoices.get(invoice.invoice_id, invoice)
+            reference = (reference or "").strip()
+            if any(p.get("reference") == reference for p in live.payments):
+                logger.info(
+                    "Payment %s against %s was already recorded; ignoring the "
+                    "repeat.", reference, live.number,
+                )
+                _mirror_payment(invoice, live)
+                return live, False
+
+            paid = live.total_usd if amount_usd is None else round(amount_usd, 2)
+            live.payments.append({
+                "reference": reference,
+                "amount_usd": paid,
+                "at": iso(utc_now()),
+            })
+            live.amount_paid_usd = round(live.amount_paid_usd + paid, 2)
+            live.payment_reference = reference
+            live.paid_at = utc_now()
 
             # A hair's rounding either way still settles it; a real
             # shortfall leaves it open and chaseable.
-            if invoice.amount_paid_usd + 0.005 >= invoice.total_usd:
-                invoice.state = "paid"
+            if live.amount_paid_usd + 0.005 >= live.total_usd:
+                live.state = "paid"
             else:
-                invoice.state = "part_paid"
+                live.state = "part_paid"
 
-            self._db.put("invoice", invoice.invoice_id, invoice.to_row())
-            return invoice
+            self._db.put("invoice", live.invoice_id, live.to_row())
+            _mirror_payment(invoice, live)
+            return live, True
 
     def void_invoice(self, invoice: Invoice) -> Invoice:
         """Void an invoice, and hand its billing period back to be re-issued.

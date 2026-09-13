@@ -414,3 +414,169 @@ def test_unconfigured_issuer_details_say_so_rather_than_printing_blanks(
 
     assert "address" not in doc["issued_by"]
     assert "before sending an invoice" in doc["issued_by"]["note"]
+
+
+# ---- a payment is applied once, however many times it arrives ----------
+
+
+def _billed(api, tenant_factory, sensor_factory, owner_headers):
+    from contracts import run_billing
+    from store import STORE
+
+    headers, tenant = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    resp = api.post(
+        "/api/contracts",
+        headers={**headers, **owner},
+        json={"term_years": 1, "escalator_percent": 5.0},
+    )
+    assert resp.status_code == 201, resp.text
+    run_billing()
+    return headers, tenant, STORE.invoices_for(tenant["tenant_id"])[0]
+
+
+def test_the_same_payment_reference_is_only_applied_once(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    """Every payment processor delivers at least once.
+
+    A Stripe retry is ordinary, not exceptional, and this endpoint is
+    where a Stripe adapter lands. Measured before the fix: the same $100
+    event delivered three times recorded $300, which took the invoice to
+    "paid" on a third of the money and dropped it out of collections for
+    good. That is a customer writing off their own invoice, dug from our
+    side.
+    """
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+
+    for _ in range(3):
+        resp = settle(
+            tenant["tenant_id"], invoice.invoice_id,
+            reference="STRIPE-EVT-1", amount_usd=100.0,
+        )
+        assert resp.status_code == 200, resp.text
+
+    from store import STORE
+
+    live = STORE.get_invoice(invoice.invoice_id)
+    assert live.amount_paid_usd == 100.0
+    assert len(live.payments) == 1
+    assert live.state == "part_paid"
+
+
+def test_a_repeat_answers_200_so_the_processor_stops_retrying(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    """Tell a webhook its delivery failed and it delivers again, which is
+    the thing this refusal exists to survive."""
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="EVT-1",
+           amount_usd=50.0)
+    again = settle(tenant["tenant_id"], invoice.invoice_id, reference="EVT-1",
+                   amount_usd=50.0)
+
+    assert again.status_code == 200
+    body = again.json()
+    assert body["already_recorded"] is True
+    assert "give it its own reference" in body["message"]
+
+
+def test_different_references_are_two_different_payments(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="WIRE-1",
+           amount_usd=100.0)
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="WIRE-2",
+           amount_usd=250.0)
+
+    from store import STORE
+
+    live = STORE.get_invoice(invoice.invoice_id)
+    assert live.amount_paid_usd == 350.0
+    assert [p["reference"] for p in live.payments] == ["WIRE-1", "WIRE-2"]
+
+
+def test_every_payment_is_kept_not_just_the_last(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    """`payment_reference` was the whole record and each payment
+    overwrote it, so after three part payments the ledger knew the total
+    and the last reference. Reconciling that against a bank statement is
+    guesswork."""
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+
+    for index, amount in enumerate((100.0, 200.0, 300.0), start=1):
+        settle(tenant["tenant_id"], invoice.invoice_id,
+               reference=f"WIRE-{index}", amount_usd=amount)
+
+    from store import STORE
+
+    live = STORE.get_invoice(invoice.invoice_id)
+    assert [(p["reference"], p["amount_usd"]) for p in live.payments] == [
+        ("WIRE-1", 100.0), ("WIRE-2", 200.0), ("WIRE-3", 300.0),
+    ]
+    assert all(p["at"] for p in live.payments)
+
+
+def test_the_customer_can_see_their_own_payment_history(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="WIRE-1",
+           amount_usd=100.0)
+
+    body = api.get(f"/api/invoices/{invoice.invoice_id}", headers=headers).json()
+
+    assert [p["reference"] for p in body["payments"]] == ["WIRE-1"]
+
+
+def test_the_payment_history_survives_a_restart(
+    api, tenant_factory, sensor_factory, owner_headers, settle
+):
+    """Otherwise a restart re-arms the duplicate."""
+    headers, tenant, invoice = _billed(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="EVT-1",
+           amount_usd=100.0)
+
+    from store import STORE
+
+    STORE._invoices.clear()
+    STORE.load()
+
+    settle(tenant["tenant_id"], invoice.invoice_id, reference="EVT-1",
+           amount_usd=100.0)
+
+    assert STORE.get_invoice(invoice.invoice_id).amount_paid_usd == 100.0
+
+
+def test_an_invoice_written_before_payments_were_kept_still_loads(api):
+    """Old rows have no payments list. They must not explode on read."""
+    from store import Invoice
+
+    row = {
+        "invoice_id": "INV-000999", "tenant_id": "TEN-000001",
+        "number": "CLX-2026-0999", "company_name": "Legacy",
+        "lines": [], "subtotal_usd": 100.0, "total_usd": 100.0,
+        "amount_paid_usd": 40.0, "payment_reference": "WIRE-OLD",
+        "state": "part_paid",
+    }
+    restored = Invoice.from_row(row)
+
+    assert restored.payments == []
+    assert restored.amount_paid_usd == 40.0

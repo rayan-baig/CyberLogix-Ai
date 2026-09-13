@@ -420,7 +420,25 @@ def mark_paid(
             "invoice": invoice.public(),
         }
 
-    STORE.settle_invoice(invoice, payload.reference, payload.amount_usd)
+    invoice, applied = STORE.settle_invoice(
+        invoice, payload.reference, payload.amount_usd
+    )
+    if not applied:
+        # 200, deliberately. A payment processor that is told its
+        # delivery failed will deliver it again, and delivering it again
+        # is what this refusal exists to survive. Nothing is written and
+        # no second receipt goes out.
+        return {
+            "message": (
+                f"Payment {payload.reference} was already recorded against "
+                f"{invoice.number}. Nothing changed. If this is a genuinely "
+                "different payment, give it its own reference — the "
+                "reference is how one payment is told from another."
+            ),
+            "already_recorded": True,
+            "invoice": invoice.public(),
+        }
+
     settled = invoice.state == "paid"
     send_receipt(tenant, invoice, payload.reference, settled)
     write_audit(
@@ -438,6 +456,7 @@ def mark_paid(
             else f"{invoice.number} part paid. "
                  f"${invoice.balance_usd:,.2f} is still outstanding."
         ),
+        "already_recorded": False,
         "invoice": invoice.public(),
     }
 

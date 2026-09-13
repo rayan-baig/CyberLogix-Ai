@@ -162,13 +162,32 @@ def test_a_part_payment_says_what_is_still_owed(settle, overdue, mailbox):
 
 
 def test_two_part_payments_produce_two_receipts(settle, overdue, mailbox):
-    """The same webhook twice is one event. Two payments are two."""
+    """Two genuinely different payments are two events.
+
+    Different references, because the reference is how one payment is
+    told from another — sending the same one twice is a retry, and gets
+    the treatment a retry deserves.
+    """
     tenant, invoice = overdue
 
-    settle(tenant["tenant_id"], invoice.invoice_id, amount_usd=100.0)
-    settle(tenant["tenant_id"], invoice.invoice_id, amount_usd=50.0)
+    settle(tenant["tenant_id"], invoice.invoice_id,
+           reference="WIRE-1", amount_usd=100.0)
+    settle(tenant["tenant_id"], invoice.invoice_id,
+           reference="WIRE-2", amount_usd=50.0)
 
     assert len(mailbox) == 2
+
+
+def test_a_retried_payment_produces_no_second_receipt(settle, overdue, mailbox):
+    """Nothing was recorded, so nothing should be confirmed."""
+    tenant, invoice = overdue
+
+    settle(tenant["tenant_id"], invoice.invoice_id,
+           reference="STRIPE-EVT-1", amount_usd=100.0)
+    settle(tenant["tenant_id"], invoice.invoice_id,
+           reference="STRIPE-EVT-1", amount_usd=100.0)
+
+    assert len(mailbox) == 1
 
 
 # ---- the chase actually leaves the building ----------------------------
