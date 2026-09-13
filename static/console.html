@@ -779,6 +779,86 @@ async function loadIndustries() {
     .join("");
   $("tx-vertical").innerHTML = plain;
   $("calc-vertical").innerHTML = plain;
+  // The overview may already have landed; if it has, this is the call
+  // that actually sets the sector.
+  preferSector(state.data);
+  calculateBilling();
+}
+
+$("add-vertical").addEventListener("change", (event) => {
+  showSectorExample(event.target.value);
+});
+
+/* Open every sector picker on the sector this customer actually runs.
+ *
+ * Called from both the industry load and the overview load, because it
+ * needs both and they race. Measured: the first overview lands before
+ * the industry list, so a version wired only into refresh() saw zero
+ * industries, matched nothing, and left the picker exactly where it
+ * started. Whichever finishes last does the work, and the flag means it
+ * happens once however the race falls out.
+ *
+ * They tell us at sign-up. The audit trail records it. And then the
+ * first form they saw defaulted to whatever happened to be first in the
+ * list — for a restaurant that signed up ten seconds earlier, "CyberTech
+ * Data Centers".
+ *
+ * That is not a cosmetic default. A walk-in freezer registered under the
+ * data-centre sector is monitored against a 78F limit instead of 32F, so
+ * it alarms long after the food is gone. The one number that has to be
+ * right on this form was being chosen by list order.
+ *
+ * Applied once per session, never on a poll: refresh() runs on a timer,
+ * and re-selecting the dropdown every few seconds would yank it back
+ * from somebody halfway through registering a unit in a second sector. */
+/* The example unit in the form follows the sector it is registering.
+ *
+ * A cryostorage customer should not be shown a restaurant's walk-in as
+ * the thing to type, and once somebody changes the picker by hand the
+ * form has to stay coherent with what they chose. Placeholders only, so
+ * this can never overwrite something already typed. */
+function showSectorExample(vertical) {
+  const profile = (state.industries || []).find((i) => i.vertical === vertical);
+  if (!profile || !profile.asset_noun) return;
+  const noun = profile.asset_noun;
+  const idField = $("add-id");
+  const locField = $("add-loc");
+  if (idField) {
+    idField.placeholder =
+      `${noun.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-01`;
+  }
+  if (locField) locField.placeholder = `Main site / ${noun}`;
+}
+
+
+function preferSector(overview) {
+  if (state.sectorChosen) return;
+  // Nothing to choose from yet: the other caller will come back.
+  if (!state.industries || !state.industries.length) return;
+  if (!overview) return;
+
+  const stated = overview && overview.tenant
+    && overview.tenant.industry_vertical;
+  // Then whatever they have actually registered most of, so an estate
+  // that grew past what it said at sign-up still opens on itself.
+  const counts = {};
+  (overview && overview.sensors ? overview.sensors : []).forEach((s) => {
+    counts[s.industry_vertical] = (counts[s.industry_vertical] || 0) + 1;
+  });
+  const dominant = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1]).map(([key]) => key)[0];
+
+  const known = new Set((state.industries || []).map((i) => i.vertical));
+  const wanted = [stated, dominant].find((v) => v && known.has(v));
+  if (!wanted) return;
+
+  ["add-vertical", "tx-vertical", "calc-vertical"].forEach((id) => {
+    const select = $(id);
+    if (select) select.value = wanted;
+  });
+
+  showSectorExample(wanted);
+  state.sectorChosen = true;
   calculateBilling();
 }
 
@@ -847,6 +927,7 @@ async function refresh() {
 
   state.shortcutCatalogue = got.catalogue || state.shortcutCatalogue;
   state.data = overview;
+  preferSector(overview);
   if (got.me) state.user = got.me.user;
   state.unit = overview.temperature_unit || "F";
 

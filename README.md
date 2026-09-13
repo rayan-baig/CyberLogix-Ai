@@ -1133,6 +1133,35 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## The first form a customer sees
+
+They tell us their sector at sign-up. The audit trail records it. And
+until now every sector picker in the console opened on whatever happened
+to be first in the list — for a restaurant that signed up ten seconds
+earlier, "CyberTech Data Centers".
+
+That is not a cosmetic default. A walk-in freezer registered under the
+data-centre sector is monitored against a **78°F** limit instead of
+**32°F**. It alarms long after the food is gone, the product's one
+promise fails silently, and the customer cannot see that it has. The
+worst version of this bug is the one where nobody notices they picked
+wrong.
+
+The console now opens on what they said, falling back to whatever they
+have actually registered most of, so an estate that grew past its
+sign-up answer still opens on itself. The example unit in the form
+follows the sector — a cryostorage customer is shown a tank, not a
+walk-in — and follows it again if they change the picker by hand.
+
+Two details that took longer than the fix. It is wired into both the
+industry load and the overview load, because those race and the overview
+wins: a version hooked only to the overview saw zero industries, matched
+nothing, and left the picker exactly where it started, which looks
+identical to not having written it. And it applies once per session
+rather than on every poll, because `refresh()` runs on a timer and
+re-selecting the dropdown every few seconds would yank it back from
+somebody halfway through registering a unit in a second sector.
+
 ## The books
 
 Tax is not a cost this codebase can cut. It is a share of profit, and
