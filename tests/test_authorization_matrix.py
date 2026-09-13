@@ -35,6 +35,12 @@ UNGATED_BY_DESIGN = {
     "/api/accounts/logout": "ends your own session, nobody else's",
     "/api/accounts/me/password": "changes your own password",
     "/api/accounts/reset": "redeems a reset token; the token is the credential",
+    "/api/payments/stripe": (
+        "Stripe's webhook. It holds no credential of ours, so the request "
+        "signature is the authentication — verified over the raw bytes, "
+        "with a timestamp tolerance so a captured signature cannot be "
+        "replayed. Unset secret means the endpoint refuses everything"
+    ),
     "/api/accounts/forgot": (
         "asks for a reset link; the person calling it is by definition the "
         "person who cannot authenticate. Guarded instead by never saying "

@@ -125,6 +125,19 @@ def _system_warnings() -> List[str]:
 
     warnings.extend(watchdog_warnings())
 
+    # Money we have taken and cannot account for. Every line here is a
+    # customer who has paid and is still being chased for it.
+    from payments import unmatched as unmatched_payments
+
+    stranded = unmatched_payments()
+    if stranded:
+        total = sum(row.get("amount_usd") or 0 for row in stranded)
+        warnings.append(
+            f"{len(stranded)} payment(s) totalling ${total:,.2f} could not be "
+            "matched to an invoice. Each one is somebody who has paid and is "
+            "still being chased. See /api/payments/unmatched."
+        )
+
     # Two different problems wearing the same word. A sensor that has
     # never reported is an installation somebody did not finish; one that
     # reported and then stopped is a unit that has failed, or lost power,

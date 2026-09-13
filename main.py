@@ -45,6 +45,7 @@ from invoicing import router as invoicing_router
 from backup import router as backup_router
 from conversion import router as conversion_router
 from digest import router as digest_router
+from payments import router as payments_router
 from watchdog import router as watchdog_router
 from legal import router as legal_router
 from mail import router as mail_router
@@ -141,6 +142,7 @@ app.include_router(conversion_router)
 app.include_router(digest_router)
 app.include_router(backup_router)
 app.include_router(watchdog_router)
+app.include_router(payments_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -176,6 +178,7 @@ MODULES_ACTIVE = [
     "operator_digest_and_customer_reports",
     "verified_database_snapshots",
     "dead_mans_switch",
+    "payment_reconciliation",
 ]
 
 

@@ -447,7 +447,7 @@ def send_invoice(tenant: Tenant, invoice: Invoice) -> Dict[str, Any]:
             f"${invoice.total_usd:,.2f}, due {invoice_date(invoice.due_at)} "
             f"(net {invoice.terms_days}).\n\n"
             f"{render_invoice(invoice, tenant)}\n\n"
-            f"{payment_instructions()}\n\n"
+            f"{payment_instructions(invoice)}\n\n"
             "Reply to this message if anything on it is wrong. We would "
             "rather fix it now than chase something you were never going "
             "to pay."
@@ -645,7 +645,7 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
                 ),
                 body=(
                     f"{tenant.contact_name},\n\n{text}\n\n"
-                    f"{payment_instructions()}\n\n"
+                    f"{payment_instructions(invoice)}\n\n"
                     "If this has already been paid, or if something on it "
                     "is wrong, reply to this message and we will sort it "
                     "out rather than keep chasing."

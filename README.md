@@ -1133,6 +1133,44 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## Taking payment
+
+An invoice went out and somebody had to notice the money and type it in.
+`payments.py` closes that loop: a Stripe webhook at
+`/api/payments/stripe`, written without the Stripe SDK because the
+signature is thirty lines of HMAC and a dependency that must be
+installed before the tests run is a dependency that makes them optional.
+
+Three things carry it.
+
+**The signature is the authentication.** The endpoint takes no
+credential of ours, because Stripe holds none — so without the check the
+URL is a button for marking every invoice in the system paid, which is a
+better attack than breaking in because it looks like being paid. It is
+verified over the exact bytes received (re-serialising the JSON breaks
+it, which is how this check usually gets "fixed" into uselessness) and
+with a timestamp tolerance, because a valid signature replayed next week
+is still a valid signature. Unset secret means the endpoint refuses
+everything rather than trusting the body.
+
+**Retries are free.** Stripe delivers at least once and retries any
+non-2xx for days. The event id is the payment reference, so the ledger's
+own duplicate check settles a storm of retries exactly once — and an
+event we do not handle gets a polite 200 rather than a refusal Stripe
+will keep re-sending.
+
+**Unmatched money is visible.** A payment that names no invoice, names
+one that does not exist, arrives in another currency, or belongs to a
+voided invoice is recorded rather than dropped, and never guessed at.
+Guessing is how a customer gets credited for a payment they did not make
+and chased for one they did. Every row on `/api/payments/unmatched` is
+somebody who has paid and is still being chased, so it goes in the daily
+digest too.
+
+For any of that to match, the payment has to say which invoice it is
+for: `CYBERLOGIX_PAY_URL` may contain `{invoice}`, which becomes the
+invoice id — for a Stripe payment link, `?client_reference_id={invoice}`.
+
 ## Numbers that cannot be stored
 
 JSON has no literal for infinity, but every parser invents one: `1e400`

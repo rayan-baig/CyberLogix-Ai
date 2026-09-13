@@ -204,7 +204,26 @@ def unsubscribe_link(address: str) -> Optional[str]:
 # --- composing ------------------------------------------------------------
 
 
-def payment_instructions() -> str:
+def pay_link(invoice=None) -> str:
+    """The link a customer follows, carrying which invoice it is for.
+
+    `CYBERLOGIX_PAY_URL` may contain `{invoice}`, which is replaced with
+    the invoice id. That is not decoration: the payment webhook matches
+    an incoming payment to an invoice by the reference the payment
+    carries, and a Stripe payment link passes `client_reference_id`
+    straight through. Without it every payment arrives unlabelled and
+    lands on the unmatched list for somebody to reconcile by hand —
+    which is the manual work the webhook exists to remove.
+    """
+    if not PAY_URL:
+        return ""
+    if invoice is None:
+        # A generic link, for a notice that is not about one invoice.
+        return PAY_URL.replace("{invoice}", "")
+    return PAY_URL.replace("{invoice}", invoice.invoice_id)
+
+
+def payment_instructions(invoice=None) -> str:
     """How to pay, or an honest admission that nobody has said.
 
     This block goes on every invoice notice. An unconfigured deployment
@@ -216,8 +235,9 @@ def payment_instructions() -> str:
 
     remit_to = (ISSUER.get("remit_to") or "").strip()
     lines = []
-    if PAY_URL:
-        lines.append(f"Pay online: {PAY_URL}")
+    link = pay_link(invoice)
+    if link:
+        lines.append(f"Pay online: {link}")
     if remit_to:
         lines.append("Remit to:")
         lines.extend(f"  {line}" for line in remit_to.splitlines() if line.strip())
