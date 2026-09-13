@@ -145,8 +145,8 @@ def test_the_cost_side_says_what_it_cannot_see(api, billed):
     """
     costs = books.summary(since="2000-01-01", until="2200-01-01")["known_costs"]
 
-    assert "almost certainly the larger half" in costs["warning"]
-    assert "goes unclaimed" in costs["warning"]
+    assert "only if somebody entered it" in costs["warning"]
+    assert "nobody claims" in costs["warning"]
     assert costs["fixed_infrastructure_usd"] > 0
 
 
@@ -196,3 +196,120 @@ def test_the_books_need_the_platform_key(api):
     """Every customer's name and what they owe, in one file."""
     for path in ("", "/ledger", "/cash", "/ledger.csv", "/cash.csv"):
         assert api.get(f"/api/books{path}").status_code == 401, path
+
+
+# ---- the expense side, which is the actual tax lever -------------------
+
+
+def test_an_expense_lowers_the_profit_the_return_is_based_on(api, admin_headers):
+    """Tax is charged on profit. Profit is revenue minus what you can
+    evidence. This is the whole mechanism, and until there was somewhere
+    to put them, everything bought on a card the app never sees existed
+    only in somebody's memory at filing time."""
+    before = api.get("/api/books", headers=admin_headers).json()
+
+    made = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 1499.00, "category": "hardware",
+        "description": "Laptop", "supplier": "Apple", "receipt": "receipts/2026/laptop.pdf",
+    })
+    assert made.status_code == 201, made.text
+
+    after = api.get("/api/books", headers=admin_headers).json()
+    assert (after["known_costs"]["known_total_usd"]
+            - before["known_costs"]["known_total_usd"]) == pytest.approx(1499.0)
+    assert after["known_costs"]["by_category"]["hardware"] == 1499.0
+
+
+def test_an_expense_without_a_receipt_is_flagged_not_refused(api, admin_headers):
+    """It is still a real expense. It is just one you may not get to keep
+    if anybody asks."""
+    made = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 40.0, "category": "software", "description": "Editor",
+    })
+
+    assert made.status_code == 201
+    assert "No receipt reference" in made.json()["note"]
+    body = api.get("/api/books", headers=admin_headers).json()
+    assert body["known_costs"]["without_a_receipt"] == 1
+    assert "cannot evidence" in body["known_costs"]["warning"]
+
+
+def test_an_invented_category_is_refused_with_the_real_ones(api, admin_headers):
+    resp = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 10.0, "category": "miscellaneous", "description": "x",
+    })
+
+    assert resp.status_code == 422
+    assert "'other' is a real answer" in resp.json()["detail"]
+
+
+def test_an_expense_cannot_be_dated_in_the_future(api, admin_headers):
+    """Which year an expense falls in is which year it reduces."""
+    resp = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 10.0, "category": "other", "description": "x",
+        "spent_at": "2199-01-01",
+    })
+
+    assert resp.status_code == 422
+    assert "future" in resp.json()["detail"]
+
+
+def test_a_misspelt_amount_field_is_refused(api, admin_headers):
+    """Silently dropping it would record a deduction worth nothing."""
+    resp = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount": 500.0, "category": "other", "description": "x",
+    })
+
+    assert resp.status_code == 422
+
+
+def test_expenses_land_in_the_year_they_were_spent(api, admin_headers):
+    api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 100.0, "category": "travel", "description": "Site visit",
+        "spent_at": "2026-03-04",
+    })
+
+    assert api.get("/api/books?year=2026",
+                   headers=admin_headers).json()[
+        "known_costs"]["recorded_expenses_usd"] == 100.0
+    assert api.get("/api/books?year=2025",
+                   headers=admin_headers).json()[
+        "known_costs"]["recorded_expenses_usd"] == 0.0
+
+
+def test_an_expense_entered_by_mistake_can_be_removed(api, admin_headers):
+    made = api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 10.0, "category": "other", "description": "oops",
+    }).json()["expense"]
+
+    gone = api.request("DELETE", f"/api/books/expenses/{made['expense_id']}",
+                       headers=admin_headers)
+
+    assert gone.status_code == 200
+    assert api.get("/api/books/expenses",
+                   headers=admin_headers).json()["count"] == 0
+
+
+def test_expenses_download_as_a_csv(api, admin_headers):
+    api.post("/api/books/expenses", headers=admin_headers, json={
+        "amount_usd": 1499.0, "category": "hardware", "description": "Laptop",
+        "supplier": "Apple", "receipt": "receipts/laptop.pdf",
+    })
+
+    resp = api.get("/api/books/expenses.csv", headers=admin_headers)
+
+    assert resp.status_code == 200
+    assert "Laptop" in resp.text and "receipts/laptop.pdf" in resp.text
+
+
+def test_the_expense_ledger_needs_the_platform_key(api):
+    assert api.get("/api/books/expenses").status_code == 401
+    assert api.post("/api/books/expenses", json={
+        "amount_usd": 1.0, "category": "other", "description": "x"}).status_code == 401
+
+
+def test_the_categories_are_offered_rather_than_guessed_at(api, admin_headers):
+    body = api.get("/api/books/expense-categories", headers=admin_headers).json()
+
+    assert "professional_fees" in body["categories"]
+    assert "other" in body["categories"]

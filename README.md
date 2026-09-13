@@ -1145,6 +1145,14 @@ and both as CSV, because an accountant handed a reconciled ledger costs
 less than one handed a database, and a deduction nobody evidenced is a
 deduction nobody claims.
 
+Expenses go in at `POST /api/books/expenses` and come out at
+`/api/books/expenses.csv`. That endpoint is the only genuine lever on a
+tax bill that is actually in your hands: tax is charged on profit,
+profit is revenue minus what you can evidence, and an expense nobody
+records is a deduction nobody claims. Entries without a receipt
+reference are flagged rather than refused — still a real expense, just
+one you may not get to keep if anybody asks.
+
 It reports the period on **both bases and picks neither**. An invoice
 issued on 28 December and paid on 4 January is revenue in one tax year
 under accrual and the next under cash; which applies is a question about

@@ -2079,6 +2079,81 @@ MAIL_MAX_ATTEMPTS = 3
 MAIL_MAX_AGE_HOURS = 72
 
 
+# The categories an expense usually falls into. Not a tax schedule and
+# not jurisdiction-specific — a filing cabinet with labelled drawers, so
+# that whoever prepares the return can map them onto whatever the local
+# form actually calls these things.
+EXPENSE_CATEGORIES = (
+    "hardware",            # sensors, laptop, phone, test equipment
+    "software",            # subscriptions, tooling, hosting bought elsewhere
+    "infrastructure",      # servers, domains, certificates
+    "telephony",           # Twilio and anything like it
+    "ai_and_apis",         # model providers, third-party data
+    "professional_fees",   # accountant, lawyer, filing fees
+    "marketing",           # advertising, events, printing
+    "travel",              # getting to a customer site
+    "insurance",
+    "bank_and_payment_fees",
+    "other",
+)
+
+
+@dataclass
+class Expense:
+    """Something the business paid for, and the evidence that it did.
+
+    Kept because a deduction you cannot evidence is a deduction you do
+    not get. The application already knew what it spent on models and
+    telephony; everything bought on a card it never sees — the laptop,
+    the accountant, the domain — existed only in somebody's memory at
+    filing time, which is the same as not existing.
+
+    `receipt` is deliberately a plain string rather than a file. What
+    matters here is that the record points at where the evidence is; a
+    document store for receipts is a different job, and pretending to be
+    one would be worse than being honest about not being one.
+    """
+
+    expense_id: str
+    spent_at: datetime
+    amount_usd: float
+    category: str
+    description: str
+    supplier: str = ""
+    receipt: str = ""
+    recorded_at: Optional[datetime] = None
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "expense_id": self.expense_id,
+            "spent_at": iso(self.spent_at),
+            "amount_usd": self.amount_usd,
+            "category": self.category,
+            "description": self.description,
+            "supplier": self.supplier,
+            "receipt": self.receipt,
+            "recorded_at": iso(self.recorded_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "Expense":
+        return cls(
+            expense_id=row["expense_id"],
+            spent_at=_parse(row["spent_at"]),
+            amount_usd=row["amount_usd"],
+            category=row.get("category", "other"),
+            description=row.get("description", ""),
+            supplier=row.get("supplier", ""),
+            receipt=row.get("receipt", ""),
+            recorded_at=_parse(row.get("recorded_at")),
+        )
+
+    def public(self) -> Dict[str, Any]:
+        row = self.to_row()
+        row["has_receipt"] = bool(self.receipt.strip())
+        return row
+
+
 @dataclass
 class MailMessage:
     """One outbound email, and what became of it.
@@ -2261,6 +2336,7 @@ class HubStore:
         self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
         self._ai_cache: Dict[str, str] = {}
+        self._expenses: Dict[str, Expense] = {}
         self._mail: Dict[str, MailMessage] = {}
         # dedupe key -> message id. The index that makes a send idempotent.
         self._mail_keys: Dict[str, str] = {}
@@ -2373,6 +2449,10 @@ class HubStore:
             for row in self._db.all("aicache"):
                 self._ai_cache[row["key"]] = row["text"]
 
+            for row in self._db.all("expense"):
+                expense = Expense.from_row(row)
+                self._expenses[expense.expense_id] = expense
+
             for row in self._db.all("mail"):
                 message = MailMessage.from_row(row)
                 self._mail[message.message_id] = message
@@ -2417,6 +2497,7 @@ class HubStore:
                     + list(self._anchors)
                     + list(self._audit)
                     + list(self._mail)
+                    + list(self._expenses)
                     + [r.reading_id for bucket in self._readings.values()
                        for r in bucket]
                 )
@@ -2461,6 +2542,7 @@ class HubStore:
             self._resets.clear()
             self._usage.clear()
             self._ai_cache.clear()
+            self._expenses.clear()
             self._mail.clear()
             self._mail_keys.clear()
             self._suppressions.clear()
@@ -4093,6 +4175,51 @@ class HubStore:
                 live.setup_billed = True
                 self._db.put("subscription", live.subscription_id, live.to_row())
             sub.setup_billed = True
+
+    # ---- expenses ---------------------------------------------------------
+
+    def record_expense(
+        self,
+        *,
+        spent_at: datetime,
+        amount_usd: float,
+        category: str,
+        description: str,
+        supplier: str = "",
+        receipt: str = "",
+    ) -> Expense:
+        with self._lock:
+            expense = Expense(
+                expense_id=self._next_id("EXP"),
+                spent_at=spent_at,
+                amount_usd=round(amount_usd, 2),
+                category=category,
+                description=description,
+                supplier=supplier,
+                receipt=receipt,
+                recorded_at=utc_now(),
+            )
+            self._db.put("expense", expense.expense_id, expense.to_row())
+            self._expenses[expense.expense_id] = expense
+            return expense
+
+    def delete_expense(self, expense_id: str) -> bool:
+        with self._lock:
+            if expense_id not in self._expenses:
+                return False
+            self._expenses.pop(expense_id)
+            self._db.delete("expense", expense_id)
+            return True
+
+    def expenses_between(
+        self, start: datetime, end: datetime
+    ) -> List[Expense]:
+        with self._lock:
+            found = [
+                e for e in self._expenses.values()
+                if e.spent_at is not None and start <= e.spent_at < end
+            ]
+        return sorted(found, key=lambda e: (e.spent_at, e.expense_id))
 
     # ---- outbound mail --------------------------------------------------
 

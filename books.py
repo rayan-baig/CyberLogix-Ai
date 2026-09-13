@@ -32,10 +32,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, ConfigDict, Field
+
+from models import Finite
 
 from auth import require_platform_admin
-from store import STORE, iso, utc_now
+from store import EXPENSE_CATEGORIES, STORE, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.books")
 
@@ -141,14 +144,18 @@ def write_offs(start: datetime, end: datetime) -> List[Dict[str, Any]]:
 
 
 def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
-    """What the business spent, as far as this application knows it.
+    """What the business spent: metered, fixed, and recorded by hand.
 
-    Deliberately incomplete, and it says so. The application meters what
-    it spends on models and telephony and knows its own fixed costs; it
-    has no idea what was paid for a laptop, an accountant, a domain
-    bought on a card it never sees, or anything else. Presenting this as
-    the whole expense side would cost more in unclaimed deductions than
-    it saves in effort.
+    Tax is charged on profit, and profit is revenue minus what you can
+    evidence. That makes recorded expenses the largest legitimate lever
+    on a tax bill that anybody actually controls — and until there was
+    somewhere to put them, everything bought on a card this application
+    never sees existed only in somebody's memory at filing time, which
+    is the same as not existing.
+
+    Still says what it cannot see. An expense nobody enters is still
+    invisible, so the warning stays until the entered total stops
+    looking implausibly small.
     """
     from costs import RATE_AI_CALL, RATE_SMS, RATE_VOICE_CALL
     from margin import FIXED_MONTHLY_USD
@@ -170,19 +177,37 @@ def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
         )
 
     fixed = round(FIXED_MONTHLY_USD * months, 2)
+
+    recorded = STORE.expenses_between(start, end)
+    by_category: Dict[str, float] = {}
+    for expense in recorded:
+        by_category[expense.category] = round(
+            by_category.get(expense.category, 0.0) + expense.amount_usd, 2
+        )
+    entered = round(sum(e.amount_usd for e in recorded), 2)
+    missing_receipts = [e for e in recorded if not e.receipt.strip()]
+
     return {
         "metered_usage_usd": round(metered, 2),
         "fixed_infrastructure_usd": fixed,
-        "known_total_usd": round(metered + fixed, 2),
+        "recorded_expenses_usd": entered,
+        "recorded_expense_count": len(recorded),
+        "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
+        "known_total_usd": round(metered + fixed + entered, 2),
         "months_covered": round(months, 2),
+        "without_a_receipt": len(missing_receipts),
         "warning": (
-            "This is only what the application can see: model calls, "
-            "telephony, and the infrastructure figure in "
-            "CYBERLOGIX_FIXED_MONTHLY_USD. Hardware, professional fees, "
-            "software, travel and everything else bought outside this "
-            "system are missing and are almost certainly the larger half. "
-            "Every one of them is a deduction that goes unclaimed if it "
-            "is not given to whoever files the return."
+            "Metered spend and infrastructure are counted automatically; "
+            "everything else is counted only if somebody entered it at "
+            "POST /api/books/expenses. An expense nobody enters is a "
+            "deduction nobody claims, and it is the largest lever on a "
+            "tax bill that is actually in your hands."
+            + (
+                f" {len(missing_receipts)} recorded expense(s) have no "
+                "receipt reference, and a deduction you cannot evidence "
+                "is one you may not get to keep."
+                if missing_receipts else ""
+            )
         ),
     }
 
@@ -250,6 +275,29 @@ def _csv(rows: List[Dict[str, Any]], columns: List[str]) -> str:
     return buffer.getvalue()
 
 
+class ExpenseEntry(BaseModel):
+    """Something the business paid for.
+
+    Extras are refused rather than dropped, as on every money-bearing
+    model here: a misspelt amount field that is silently ignored is a
+    deduction quietly worth nothing.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount_usd: Finite = Field(..., gt=0, le=10_000_000)
+    category: str = Field(..., description="One of the known categories.")
+    description: str = Field(..., min_length=1, max_length=300)
+    spent_at: Optional[str] = Field(
+        None, description="YYYY-MM-DD. Defaults to today."
+    )
+    supplier: str = Field("", max_length=200)
+    receipt: str = Field(
+        "", max_length=300,
+        description="Where the evidence is: a filename, a link, a folder.",
+    )
+
+
 # --- routes ---------------------------------------------------------------
 
 
@@ -288,6 +336,107 @@ def read_cash(
     start, end, label = _window(year, since, until)
     rows = cash_book(start, end)
     return {"period": label, "count": len(rows), "payments": rows}
+
+
+@router.get("/expense-categories")
+def read_categories(_: None = Depends(require_platform_admin)):
+    """The drawers of the filing cabinet.
+
+    Not a tax schedule: whoever prepares the return maps these onto
+    whatever the local form calls them.
+    """
+    return {"categories": list(EXPENSE_CATEGORIES)}
+
+
+@router.post("/expenses", status_code=201)
+def add_expense(
+    payload: ExpenseEntry, _: None = Depends(require_platform_admin)
+):
+    """Record something the business paid for."""
+    category = payload.category.strip().lower()
+    if category not in EXPENSE_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{payload.category}' is not a category. Use one of "
+                f"{list(EXPENSE_CATEGORIES)} — 'other' is a real answer."
+            ),
+        )
+    spent_at = _parse_or(payload.spent_at, utc_now())
+    if spent_at > utc_now():
+        raise HTTPException(
+            status_code=422,
+            detail="That expense is dated in the future.",
+        )
+
+    expense = STORE.record_expense(
+        spent_at=spent_at,
+        amount_usd=payload.amount_usd,
+        category=category,
+        description=payload.description.strip(),
+        supplier=payload.supplier.strip(),
+        receipt=payload.receipt.strip(),
+    )
+    return {
+        "expense": expense.public(),
+        "note": (
+            "Keep the receipt where the reference points. A deduction you "
+            "cannot evidence is one you may not get to keep."
+            if expense.receipt else
+            "No receipt reference on this one. Worth adding before the "
+            "year ends, while you still remember where it is."
+        ),
+    }
+
+
+@router.get("/expenses")
+def read_expenses(
+    year: Optional[int] = Query(None, ge=2000, le=2200),
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    _: None = Depends(require_platform_admin),
+):
+    """Everything recorded in the period."""
+    start, end, label = _window(year, since, until)
+    rows = STORE.expenses_between(start, end)
+    return {
+        "period": label,
+        "count": len(rows),
+        "total_usd": round(sum(e.amount_usd for e in rows), 2),
+        "expenses": [e.public() for e in rows],
+    }
+
+
+@router.delete("/expenses/{expense_id}")
+def remove_expense(
+    expense_id: str, _: None = Depends(require_platform_admin)
+):
+    """Remove one entered by mistake."""
+    if not STORE.delete_expense(expense_id):
+        raise HTTPException(status_code=404, detail="No such expense.")
+    return {"expense_id": expense_id, "deleted": True}
+
+
+@router.get("/expenses.csv")
+def expenses_csv(
+    year: Optional[int] = Query(None, ge=2000, le=2200),
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    _: None = Depends(require_platform_admin),
+):
+    """The expense ledger as a file an accountant can open."""
+    start, end, label = _window(year, since, until)
+    rows = [e.public() for e in STORE.expenses_between(start, end)]
+    body = _csv(rows, [
+        "spent_at", "category", "description", "supplier",
+        "amount_usd", "receipt",
+    ])
+    return Response(
+        content=body, media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="expenses-{label}.csv"'
+        },
+    )
 
 
 @router.get("/ledger.csv")
