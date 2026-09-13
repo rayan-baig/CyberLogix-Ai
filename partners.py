@@ -25,6 +25,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
+from models import Finite
+
 from auth import require_platform_admin
 from store import (
     DEFAULT_PARTNER_COMMISSION_PERCENT,
@@ -48,7 +50,7 @@ class PartnerCreate(BaseModel):
     company_name: str = Field(..., min_length=1, max_length=160)
     contact_name: str = Field(..., min_length=1, max_length=120)
     contact_email: EmailStr
-    commission_percent: float = Field(
+    commission_percent: Finite = Field(
         DEFAULT_PARTNER_COMMISSION_PERCENT, ge=0.0, le=50.0
     )
 

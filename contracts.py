@@ -48,6 +48,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from models import Finite
+
 from accounts import require_role
 from auth import (
     require_platform_admin,
@@ -147,7 +149,7 @@ class SignRequest(BaseModel):
     # On a money-bearing model a misspelt field has to be a 422.
     model_config = ConfigDict(extra="forbid")
     term_years: int = Field(1, ge=1, le=MAX_TERM_YEARS)
-    escalator_percent: float = Field(5.0, ge=0.0, le=25.0)
+    escalator_percent: Finite = Field(5.0, ge=0.0, le=25.0)
     annual_prepay: bool = False
     add_ons: List[str] = Field(default_factory=list)
     purchase_order: Optional[str] = Field(None, max_length=64)

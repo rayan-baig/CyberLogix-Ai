@@ -16,7 +16,7 @@ import math
 import secrets
 import threading
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Deque, Dict, List, Optional
 
@@ -3568,23 +3568,38 @@ class HubStore:
                 return live, False
 
             paid = live.total_usd if amount_usd is None else round(amount_usd, 2)
-            live.payments.append({
+            now = utc_now()
+            payments = list(live.payments) + [{
                 "reference": reference,
                 "amount_usd": paid,
-                "at": iso(utc_now()),
-            })
-            live.amount_paid_usd = round(live.amount_paid_usd + paid, 2)
-            live.payment_reference = reference
-            live.paid_at = utc_now()
-
+                "at": iso(now),
+            }]
+            total_paid = round(live.amount_paid_usd + paid, 2)
             # A hair's rounding either way still settles it; a real
             # shortfall leaves it open and chaseable.
-            if live.amount_paid_usd + 0.005 >= live.total_usd:
-                live.state = "paid"
-            else:
-                live.state = "part_paid"
+            state = "paid" if total_paid + 0.005 >= live.total_usd else "part_paid"
 
-            self._db.put("invoice", live.invoice_id, live.to_row())
+            # Persisted before it is committed to the live object, for the
+            # same reason as the sensor overrides above: a write the
+            # database refuses must not leave the ledger holding a figure
+            # that cannot be stored. Infinity through `amount_usd` did
+            # exactly that, and every read of the invoice — and of the
+            # customer's whole invoice list — answered 500 afterwards.
+            candidate = replace(
+                live,
+                payments=payments,
+                amount_paid_usd=total_paid,
+                payment_reference=reference,
+                paid_at=now,
+                state=state,
+            )
+            self._db.put("invoice", candidate.invoice_id, candidate.to_row())
+
+            live.payments = payments
+            live.amount_paid_usd = total_paid
+            live.payment_reference = reference
+            live.paid_at = now
+            live.state = state
             _mirror_payment(invoice, live)
             return live, True
 
@@ -3821,10 +3836,28 @@ class HubStore:
         above: Optional[float],
         below: Optional[float],
     ) -> Sensor:
+        """Retune one sensor's limits, or restore the sector defaults.
+
+        Written to disk before it is committed to the live object. The
+        order matters more than it looks: this used to mutate first, and
+        a value the database refused — infinity arrived through the API
+        as `1e400` — left the sensor poisoned in memory while disk stayed
+        clean. Every subsequent read of that sensor answered 500, and so
+        did `/api/sensor-pulse` for it, so the device kept reporting into
+        nothing and the freezer was silently unmonitored until somebody
+        restarted the process.
+
+        The boundary now refuses non-finite numbers, which is the real
+        fix. This is the second lock on the same door: whatever the
+        reason a write fails — a full disk, a value nobody anticipated —
+        the working set must not be left holding something that cannot be
+        persisted.
+        """
         with self._lock:
+            candidate = replace(sensor, override_above=above, override_below=below)
+            self._db.put("sensor", candidate.sensor_id, candidate.to_row())
             sensor.override_above = above
             sensor.override_below = below
-            self._db.put("sensor", sensor.sensor_id, sensor.to_row())
             return sensor
 
     # ---- password resets -------------------------------------------------

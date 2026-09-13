@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
+from models import Finite
+
 from gemini import safe_generate
 from auth import optional_operator
 from licenses import require_tenant
@@ -75,7 +77,9 @@ class GenericWebhookPayload(BaseModel):
         "off-the-shelf sensors cannot set custom request headers. A "
         "first-party client may send an Authorization bearer token instead.",
     )
-    reading_value: float = Field(..., description="Raw metric value reported by hardware")
+    reading_value: Finite = Field(
+        ..., description="Raw metric value reported by hardware"
+    )
 
     @field_validator("reading_value")
     @classmethod

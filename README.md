@@ -1133,6 +1133,35 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## Numbers that cannot be stored
+
+JSON has no literal for infinity, but every parser invents one: `1e400`
+reads back as `inf`, and Python's own json accepts a bare `NaN`.
+Pydantic's bounds do not stop them, because `inf >= 0` is True — a field
+declared `ge=0` lets infinity straight through.
+
+Two live consequences, both found by throwing hostile values at a
+running server. `{"amount_usd": 1e400}` on a payment set an invoice's
+paid amount to infinity; the database refused the write, so disk stayed
+clean and memory did not, and every read of that invoice *and of the
+customer's whole invoice list* answered 500 until a restart.
+`{"danger_above": 1e400}` did the same to a sensor — and that one stops
+`/api/sensor-pulse` answering for it, so the device keeps reporting into
+nothing and the freezer is silently unmonitored. An operator role is
+enough to do it.
+
+`models.Finite` refuses both at the door on every float the API accepts.
+Behind it, the two writes that take a caller-supplied number now persist
+before committing to the live object, so a value the database refuses —
+for any reason, not just this one — cannot leave the working set holding
+something that will not store.
+
+The test that matters is neither of those. It walks every Pydantic model
+the application defines, finds every float field, and asserts each
+refuses a non-finite value. A new model with a plain `float` on it fails
+the suite by name. Both of these bugs were written by somebody who did
+not think about infinity, which is everybody, always.
+
 ## The dead man's switch
 
 The product's whole promise is that something runs when nobody is

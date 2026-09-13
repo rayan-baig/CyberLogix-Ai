@@ -15,6 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from models import Finite
+
 from accounts import require_role
 from auth import (
     require_entitlement,
@@ -72,10 +74,10 @@ class PlanChange(BaseModel):
 class ThresholdOverride(BaseModel):
     """Null clears an override and restores the industry default."""
 
-    danger_above: Optional[float] = Field(
+    danger_above: Optional[Finite] = Field(
         None, description="Upper bound in °F. Null restores the sector default."
     )
-    danger_below: Optional[float] = Field(
+    danger_below: Optional[Finite] = Field(
         None, description="Lower bound in °F. Null restores the sector default."
     )
 

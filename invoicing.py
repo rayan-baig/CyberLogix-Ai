@@ -30,6 +30,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from models import Finite
+
 from auth import (
     require_platform_admin,
     require_tenant_any_state,
@@ -187,7 +189,7 @@ class PaymentRecord(BaseModel):
     # On a money-bearing model a misspelt field has to be a 422.
     model_config = ConfigDict(extra="forbid")
     reference: str = Field(..., min_length=1, max_length=120)
-    amount_usd: Optional[float] = Field(None, ge=0)
+    amount_usd: Optional[Finite] = Field(None, ge=0)
 
 
 def _tenant_or_404(tenant_id: str) -> Tenant:

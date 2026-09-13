@@ -17,6 +17,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from models import Finite
+
 from gemini import safe_generate
 from auth import IngestPrincipal, require_ingest
 from notifications import send_sms
@@ -55,19 +57,19 @@ class SensorReading(BaseModel):
     sensor_id: str = Field(
         ..., min_length=1, description="Unique hardware sensor identifier, e.g. RACK-01"
     )
-    temperature_fahrenheit: Optional[float] = Field(
+    temperature_fahrenheit: Optional[Finite] = Field(
         None, description="Current ambient temperature reading, in Fahrenheit"
     )
-    temperature_celsius: Optional[float] = Field(
+    temperature_celsius: Optional[Finite] = Field(
         None, description="Current ambient temperature reading, in Celsius"
     )
-    humidity_percent: Optional[float] = Field(
+    humidity_percent: Optional[Finite] = Field(
         50.0, ge=0.0, le=100.0, description="Optional relative humidity percentage"
     )
-    battery_percent: Optional[float] = Field(
+    battery_percent: Optional[Finite] = Field(
         None, ge=0.0, le=100.0, description="Sensor battery level"
     )
-    signal_percent: Optional[float] = Field(
+    signal_percent: Optional[Finite] = Field(
         None, ge=0.0, le=100.0, description="Sensor signal strength"
     )
 
