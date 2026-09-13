@@ -45,6 +45,7 @@ ask for.
 | Trial Conversion | `/api/conversion` | The trial asks for the order itself |
 | Digests & Reports | `/api/digest` | The book by email, and the customer's weekly evidence |
 | Backups | `/api/admin` | Verified snapshots of the one file that is the company |
+| Watchdog | `/api/watchdog` | Whether the thing that watches the freezers is running |
 | Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
 
 ### The look
@@ -1131,6 +1132,49 @@ whatever the proxy passed on.
 None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
+
+## The dead man's switch
+
+The product's whole promise is that something runs when nobody is
+looking. Nothing checked that it was. A process that died at 2am took
+the sweep with it — no escalation, no invoices — and every customer's
+console still said ONLINE, because the console reads the database and
+the database was fine. A monitoring product that fails silently is worse
+than none: the customer has stopped checking the freezer themselves.
+
+The hard part is that **nothing inside a process can report its own
+death**. So there are two halves, and only the second one survives the
+machine going away:
+
+* **A heartbeat, published.** Each sweep writes down that it happened,
+  and `GET /api/watchdog` answers **503** once that has gone stale. The
+  status code is the whole interface, because the free tier of every
+  uptime service and a one-line cron running `curl -f` understand a
+  status code and nothing else. It is unauthenticated and carries
+  timings only — no tenant counts, no revenue — so it is safe in a
+  stranger's logs, and nobody has to hand a third party the platform key
+  to check we are alive.
+* **A ping, outbound.** After every successful sweep the app calls
+  `CYBERLOGIX_HEARTBEAT_URL`. The alarm is the *absence* of that call,
+  armed by a service that is not this one.
+
+Between them sits the sneakiest failure of the three: the web process
+serving requests perfectly while the sweep task inside it has died.
+Everything looks alive, `/api/health` is 200, and no alarm has been
+raised in six hours. The heartbeat is written by the sweep and never by
+a request handler precisely so that this state is visible, and there is
+a test that hammers `/api/health` and asserts the watchdog still says
+503.
+
+Staleness scales with the configured interval — three missed sweeps,
+floored at four minutes — because an alarm that fires on one slow
+SQLite checkpoint gets muted, and a muted alarm is the same as no alarm.
+
+Verified against a live process: booted and answered 503 before the
+first sweep, 200 after, three pings landed on a real switch, and when
+the process was killed the endpoint stopped answering entirely while the
+pings stopped dead — which is exactly the state the external service
+alarms on.
 
 ## Backups
 

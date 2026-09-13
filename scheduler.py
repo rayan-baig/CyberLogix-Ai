@@ -29,6 +29,7 @@ from conversion import run_trial_conversion
 from backup import run_daily_backup
 from digest import run_digests
 from mail import flush_queue
+import watchdog
 from store import STORE
 
 logger = logging.getLogger("cyberlogix.scheduler")
@@ -115,6 +116,7 @@ def run_money_pass() -> dict:
             len(chased.get("late_fees_issued", [])),
             asked.get("sent_count", 0),
         )
+    watchdog.record_money_pass()
     return {
         "billing": billed,
         "collections": chased,
@@ -164,11 +166,16 @@ def run_one_pass() -> dict:
             calls,
             swept,
         )
-    return {
+    result = {
         "tenants_swept": swept,
         "voice_calls_placed": calls,
         "failed_tenants": failures,
     }
+    # Written by the sweep, never by a request handler. A process that
+    # answers HTTP while this task is dead has to look dead to the
+    # watchdog, because for every freezer on the fleet it is.
+    watchdog.record_sweep(result)
+    return result
 
 
 async def _loop(interval: int) -> None:

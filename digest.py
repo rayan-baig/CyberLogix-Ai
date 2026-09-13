@@ -119,6 +119,12 @@ def _system_warnings() -> List[str]:
             "/api/mail/log."
         )
 
+    # The one that explains why none of the others reached anybody: if
+    # the sweep has stopped, this email is the last thing still running.
+    from watchdog import warnings as watchdog_warnings
+
+    warnings.extend(watchdog_warnings())
+
     # Two different problems wearing the same word. A sensor that has
     # never reported is an installation somebody did not finish; one that
     # reported and then stopped is a unit that has failed, or lost power,
@@ -232,15 +238,14 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
     silently does not exist is exactly the failure the digest is for.
     """
     now = now or utc_now()
-    if now.hour < DIGEST_HOUR_UTC:
-        return {
-            "sent": False,
-            "status": "too_early",
-            "detail": (
-                f"The digest goes out from {DIGEST_HOUR_UTC:02d}:00 UTC "
-                "(CYBERLOGIX_DIGEST_HOUR_UTC)."
-            ),
-        }
+
+    # The configuration fault is reported before the transient one. Both
+    # are true before seven in the morning, and only one of them will
+    # still be true tomorrow: "too early" resolves itself in a few hours,
+    # a missing address never does. Checking the hour first hid the
+    # permanent fault behind the temporary one for seven hours of every
+    # day — including every hour anybody was likely to be looking at a
+    # fresh deployment.
     if not OPERATOR_EMAIL:
         return {
             "sent": False,
@@ -248,6 +253,15 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
             "detail": (
                 "Set CYBERLOGIX_OPERATOR_EMAIL and the daily digest starts "
                 "arriving. Until then the book only exists in a browser."
+            ),
+        }
+    if now.hour < DIGEST_HOUR_UTC:
+        return {
+            "sent": False,
+            "status": "too_early",
+            "detail": (
+                f"The digest goes out from {DIGEST_HOUR_UTC:02d}:00 UTC "
+                "(CYBERLOGIX_DIGEST_HOUR_UTC)."
             ),
         }
 

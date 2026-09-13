@@ -98,10 +98,17 @@ def test_only_one_digest_a_day(mailbox, operator_address, paying):
 def test_a_missing_operator_address_is_reported_rather_than_ignored(
     mailbox, monkeypatch
 ):
-    """A digest that silently does not exist is the failure it exists for."""
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "")
+    """A digest that silently does not exist is the failure it exists for.
 
-    result = send_operator_digest()
+    The hour is pinned so this asserts on the ordering rather than on
+    what time the suite happens to run: before seven in the morning both
+    faults are true, and the one that will still be true tomorrow is the
+    one worth reporting.
+    """
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "")
+    monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 7)
+
+    result = send_operator_digest(now=utc_now().replace(hour=3))
 
     assert result["sent"] is False
     assert result["status"] == "no_operator_address"
