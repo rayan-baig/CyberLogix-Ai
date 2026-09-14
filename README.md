@@ -1133,6 +1133,38 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## Evidence outlives the rolling window
+
+Readings are a ring buffer: the oldest are deleted once a sensor passes
+`CYBERLOGIX_READINGS_PER_SENSOR`, which at a five-minute pulse is under
+two days. That is a reasonable thing for a bounded store to do. Two
+things built on top of it were not.
+
+**The insurance claim packet read readings live.** So a customer whose
+freezer failed, and who filed the claim a week later the way people
+actually do, got a packet containing five hundred healthy readings with
+the breach deleted — and `excursions_in_window: 0` on the one document
+whose purpose is to prove an excursion happened. Not an empty packet,
+which somebody would have questioned: a complete-looking one, arguing
+against the claim it was attached to.
+
+The readings around an incident are now copied onto the incident when it
+opens and again when it resolves, so the lead-up and the recovery both
+survive. Incidents are kept for years; readings are not. The fix is
+deliberately bounded to the window the document shows — kilobytes on an
+object that already exists, rather than turning the ring buffer off and
+holding every reading for every sensor forever.
+
+**The compliance report presented a truncated period as a whole one.** A
+30-day report answered from 41 hours of data is not wrong to exist; it
+is wrong to say nothing about it. Every report and export now states the
+window it can answer for, and the CSV carries an `INCOMPLETE RECORD` row
+on its face so somebody opening it in Excel sees it without going to
+ask.
+
+And the privacy statement promised seven years of readings the system
+kept for 41 hours. It now says what actually happens.
+
 ## One estate, one scale
 
 Readings are stored in Fahrenheit and converted for display. The console

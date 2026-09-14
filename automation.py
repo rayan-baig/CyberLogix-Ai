@@ -39,6 +39,56 @@ logger = logging.getLogger("cyberlogix.autopilot")
 router = APIRouter(prefix="/api/autopilot", tags=["Autonomous Compliance Clerk"])
 
 
+def retention_coverage(tenant, since) -> Dict[str, Any]:
+    """Whether the retained readings actually cover the period asked for.
+
+    Readings are a bounded ring buffer: the oldest are deleted once a
+    sensor passes MAX_READINGS_PER_SENSOR. At the default of 500 and a
+    five-minute pulse that is about 41 hours, so "the last 30 days"
+    was being answered from under two days of data — and the report said
+    nothing at all about the difference.
+
+    A compliance document that silently under-reports is worse than no
+    document. An inspector reading "500 readings, 100% compliant over 30
+    days" reasonably believes that is the whole period; nobody reading it
+    can tell that the first 28 days were deleted. So every artifact that
+    counts readings now carries this, and says plainly when the window
+    it was asked about is longer than the window it can answer for.
+    """
+    from store import MAX_READINGS_PER_SENSOR
+
+    oldest = None
+    at_capacity = []
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        readings = STORE.readings_for(sensor.sensor_id)
+        if not readings:
+            continue
+        first = readings[0].recorded_at
+        if oldest is None or (first is not None and first < oldest):
+            oldest = first
+        if len(readings) >= MAX_READINGS_PER_SENSOR:
+            at_capacity.append(sensor.sensor_id)
+
+    complete = not at_capacity or (oldest is not None and oldest <= since)
+    return {
+        "readings_retained_per_sensor": MAX_READINGS_PER_SENSOR,
+        "oldest_reading_held": iso(oldest),
+        "period_start": iso(since),
+        "covers_the_whole_period": complete,
+        "sensors_at_capacity": at_capacity,
+        "caveat": (
+            ""
+            if complete else
+            f"This does not cover the whole period. {len(at_capacity)} "
+            f"sensor(s) hold the most recent {MAX_READINGS_PER_SENSOR} "
+            "readings only, and older ones have been deleted, so the "
+            f"figures below start at {iso(oldest)} rather than "
+            f"{iso(since)}. Raise CYBERLOGIX_READINGS_PER_SENSOR to keep "
+            "more, or export on a schedule that fits the window retained."
+        ),
+    }
+
+
 def _sensor_compliance(sensor, since, unit: str = "F") -> Dict[str, Any]:
     """Compliance statistics for one sensor, in the customer's own unit.
 
@@ -123,6 +173,8 @@ def compliance_report(
         "period_start": iso(since),
         "period_end": iso(utc_now()),
         "sensors_monitored": len(sensors),
+        # Whether these figures actually span the period requested.
+        "retention": retention_coverage(tenant, since),
         # Without this the temperatures below are numbers with no scale.
         # A document that cannot say whether 78 is a catastrophe or an
         # ordinary afternoon is not evidence of anything.
@@ -267,6 +319,15 @@ def compliance_csv(
 
     logged = sum(r["readings_logged"] for r in rows)
     breached = sum(r["readings_breached"] for r in rows)
+
+    # On the face of the document, not in an appendix. Somebody opening
+    # this in Excel to check a period must be able to see that the
+    # period is not fully covered without going and asking.
+    coverage = retention_coverage(tenant, since)
+    if not coverage["covers_the_whole_period"]:
+        writer.writerow([])
+        writer.writerow(["INCOMPLETE RECORD", csv_safe(coverage["caveat"])])
+
     writer.writerow([])
     writer.writerow(
         [

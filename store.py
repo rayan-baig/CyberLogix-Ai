@@ -12,6 +12,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import logging
+import os
 import math
 import secrets
 import threading
@@ -24,9 +25,27 @@ from db import Database
 
 logger = logging.getLogger("cyberlogix.store")
 
-# Readings retained per sensor. At a 5-minute pulse this is ~41 hours of
-# history, which comfortably covers the forecaster's trend window.
-MAX_READINGS_PER_SENSOR = 500
+# Readings retained per sensor, newest first; older ones are dropped from
+# memory and deleted from the database.
+#
+# The default covers the forecaster's trend window and little else. At a
+# five-minute pulse 500 readings is about 41 hours — so a compliance
+# report asked for "the last 30 days" is answered from under two days of
+# data, and used to say so nowhere. That is the dangerous part, not the
+# cap itself: a bounded ring buffer is a reasonable thing to have, and a
+# document that presents a truncated record as a complete one is not.
+#
+# Every artifact that counts readings now states the retained window and
+# flags a period it cannot actually cover. Raise this to keep more, at
+# the cost of memory — every retained reading is held in a deque as well
+# as on disk, so a thousand sensors at 50,000 each is fifty million
+# objects in RAM, not merely a larger file.
+try:
+    MAX_READINGS_PER_SENSOR = max(
+        1, int(os.environ.get("CYBERLOGIX_READINGS_PER_SENSOR", "500"))
+    )
+except ValueError:
+    MAX_READINGS_PER_SENSOR = 500
 
 # A sensor silent for longer than this is treated as offline by the
 # autonomous compliance clerk.
@@ -957,6 +976,22 @@ class Incident:
     voice_dispatch_source: Optional[str] = None
     resolved_at: Optional[datetime] = None
     ack_token: Optional[str] = None
+    # The readings that prove this event, copied onto the incident when it
+    # opens and again when it resolves.
+    #
+    # Readings are a rolling window: the oldest are deleted once a sensor
+    # passes MAX_READINGS_PER_SENSOR, which at a five-minute pulse is
+    # under two days. The insurance claim packet was reading them live,
+    # so a claim filed a week after the failure assembled a window full of
+    # healthy readings with the breach deleted — and reported
+    # "excursions_in_window: 0" on a document whose entire purpose is to
+    # prove an excursion happened. Not an empty packet, which somebody
+    # would have questioned. A complete-looking one, arguing against the
+    # claim it was attached to.
+    #
+    # Incidents are kept for years; readings are not. So the evidence for
+    # an event that mattered is copied onto the thing that survives.
+    evidence_readings: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def open(self) -> bool:
@@ -1031,6 +1066,7 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "ack_token": self.ack_token,
+            "evidence_readings": list(self.evidence_readings),
         }
 
     @classmethod
@@ -1057,6 +1093,10 @@ class Incident:
             voice_dispatch_source=row.get("voice_dispatch_source"),
             resolved_at=_parse(row.get("resolved_at")),
             ack_token=row.get("ack_token"),
+            # Defaulted, so incidents written before evidence was
+            # preserved still load. Theirs is gone; nothing can bring it
+            # back, and the packet says so rather than implying otherwise.
+            evidence_readings=list(row.get("evidence_readings", [])),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -2971,6 +3011,10 @@ class HubStore:
             )
             self._incidents[incident.incident_id] = incident
             self._db.put("incident", incident.incident_id, incident.to_row())
+            # The lead-up, captured now. The readings that show a freezer
+            # drifting out of band are the evidence an adjuster asks for,
+            # and they are the first ones the ring buffer will delete.
+            self.preserve_evidence(incident)
             return incident
 
     def _save_incident(self, incident: Incident) -> Incident:
@@ -3088,6 +3132,51 @@ class HubStore:
             self._save_incident(incident)
             return incident, True
 
+    def preserve_evidence(
+        self, incident: Incident, before_hours: float = 12.0,
+        after_hours: float = 12.0,
+    ) -> Incident:
+        """Copy the readings around this incident onto the incident itself.
+
+        Called when it opens and again when it resolves, so the lead-up
+        and the recovery are both kept. Merged by reading id, because the
+        two calls overlap and an adjuster counting the same reading twice
+        is its own problem.
+
+        Bounded by the same window the claim packet uses, so this stores
+        what the document will show and not the whole history: a handful
+        of kilobytes on an object that already exists, rather than
+        turning off the ring buffer and holding every reading for every
+        sensor forever.
+        """
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            start = live.opened_at - timedelta(hours=before_hours)
+            end = (
+                live.resolved_at or live.acknowledged_at or utc_now()
+            ) + timedelta(hours=after_hours)
+
+            kept = {r.get("reading_id"): r for r in live.evidence_readings}
+            for reading in self._readings.get(live.sensor_id, ()):
+                if reading.recorded_at is None:
+                    continue
+                if start <= reading.recorded_at <= end:
+                    kept[reading.reading_id] = {
+                        "reading_id": reading.reading_id,
+                        "sensor_id": reading.sensor_id,
+                        "temperature_fahrenheit": reading.temperature_fahrenheit,
+                        "humidity_percent": reading.humidity_percent,
+                        "breached": reading.breached,
+                        "recorded_at": iso(reading.recorded_at),
+                    }
+
+            live.evidence_readings = sorted(
+                kept.values(), key=lambda r: (r["recorded_at"], r["reading_id"])
+            )
+            self._save_incident(live)
+            incident.evidence_readings = list(live.evidence_readings)
+            return live
+
     def resolve_incident(self, incident: Incident, actor: str) -> Incident:
         """Close an incident, acknowledging it first if nobody had."""
         with self._lock:
@@ -3098,6 +3187,9 @@ class HubStore:
                     incident.acknowledged_by = actor
                 incident.resolved_at = now
                 self._save_incident(incident)
+                # The recovery is evidence too: an adjuster asks how long
+                # it was out of band and when it came back.
+                self.preserve_evidence(incident)
             return incident
 
     def get_incident(self, incident_id: str) -> Optional[Incident]:

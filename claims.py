@@ -46,6 +46,32 @@ router = APIRouter(prefix="/api/claims", tags=["Insurance Claim Packets"])
 # How much history either side of the event goes in the packet. Wide enough
 # to show the run-up and the recovery, narrow enough that an adjuster reads
 # it rather than filing it.
+def _evidence_window(incident, start, end):
+    """The readings for this event, preserved copy merged with live ones.
+
+    Returned as Reading objects so everything downstream — the hash
+    chain, the peak, the excursion count — is unchanged. Merged by id,
+    because the preserved snapshot and the live buffer overlap while an
+    incident is recent.
+    """
+    from store import Reading
+
+    found = {}
+    for row in incident.evidence_readings:
+        try:
+            found[row["reading_id"]] = Reading.from_row(row)
+        except Exception:  # noqa: BLE001 - one malformed row must not
+            continue      # empty the evidence for the whole claim
+    for reading in STORE.readings_for(incident.sensor_id, since=start):
+        if reading.recorded_at <= end:
+            found[reading.reading_id] = reading
+    return sorted(
+        (r for r in found.values()
+         if r.recorded_at is not None and start <= r.recorded_at <= end),
+        key=lambda r: (r.recorded_at, r.reading_id),
+    )
+
+
 WINDOW_HOURS_BEFORE = 12.0
 WINDOW_HOURS_AFTER = 12.0
 
@@ -93,11 +119,17 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
     end = (incident.resolved_at or incident.acknowledged_at or utc_now()) + timedelta(
         hours=WINDOW_HOURS_AFTER
     )
-    window = [
-        r
-        for r in STORE.readings_for(incident.sensor_id, since=start)
-        if r.recorded_at <= end
-    ]
+    # The preserved copy first, live readings second.
+    #
+    # Readings roll off: the oldest are deleted once a sensor passes its
+    # retention cap, which at a five-minute pulse is under two days. This
+    # window was built from live readings alone, so a claim filed a week
+    # after the failure assembled a packet full of healthy readings with
+    # the breach deleted — and reported zero excursions on the document
+    # sent to the insurer to prove one. The evidence is now copied onto
+    # the incident when it opens and when it resolves, and the incident
+    # is kept for years.
+    window = _evidence_window(incident, start, end)
     excursions = [r for r in window if r.breached]
 
     # Where the operator was already told something was wrong before this

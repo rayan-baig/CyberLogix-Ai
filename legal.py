@@ -49,6 +49,7 @@ from contracts import (
 from backup import BACKUP_KEEP
 from invoicing import PAYMENT_TERMS_DAYS, issuer_block
 from store import (
+    MAX_READINGS_PER_SENSOR,
     SENSOR_OFFLINE_AFTER_MINUTES,
     STORE,
     Tenant,
@@ -385,11 +386,25 @@ Once mixed, a contribution cannot be extracted again.
 
 ## How long
 
-Readings and incidents are kept for the life of the account and for seven
-years after it, because that is how long an insurer or an inspector may
-ask about an event. Audit records the same. Sign-in sessions expire on
-their own. Ask us to delete and we delete everything we are not required
-to keep.
+**Readings are a rolling window, not an archive.** We keep the most
+recent {MAX_READINGS_PER_SENSOR} readings per sensor and delete the rest.
+At a five-minute pulse that is under two days. This paragraph used to
+promise seven years of them, which was not true of anything the system
+actually did — so if you need a longer record, export it on a schedule
+that fits the window we keep. Every report and attestation states the
+window it can answer for and says plainly when the period you asked
+about is longer than that.
+
+Incidents, invoices and audit records are different: those are kept for
+the life of the account and for seven years after it, because that is
+how long an insurer or an inspector may ask about an event. When an
+incident opens, and again when it is resolved, the readings around it
+are copied onto the incident itself — so the evidence for an event that
+mattered survives the rolling window even though the routine readings
+either side of it do not.
+
+Sign-in sessions expire on their own. Ask us to delete and we delete
+everything we are not required to keep.
 
 **Backups are the honest exception.** We take a verified snapshot of the
 whole database daily and keep the last {BACKUP_KEEP}. A deletion takes

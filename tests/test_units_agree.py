@@ -197,3 +197,64 @@ def test_the_per_sensor_attestation_verifies_for_this_customer(api, cellar):
     assert body["verifiable"] is True
     assert body["intact"] is True
     assert body["rederived_head"] == body["attested_head"]
+
+
+# ---- a record must not present a truncated period as a whole one -------
+
+
+def test_the_report_declares_the_window_it_can_answer_for(
+    api, tenant_factory, sensor_factory
+):
+    """Readings roll off. A 30-day report answered from 41 hours of data
+    is not wrong to exist — it is wrong to say nothing about it.
+
+    An inspector reading "500 readings, 100% compliant over 30 days"
+    reasonably believes that is the whole period, and nobody looking at
+    it could tell the first 28 days had been deleted.
+    """
+    from store import MAX_READINGS_PER_SENSOR
+
+    headers, _ = tenant_factory(plan="enterprise")
+    sensor_factory(headers, "FRZ-1", "cryostorage")
+    for _ in range(MAX_READINGS_PER_SENSOR + 20):
+        api.post("/api/sensor-pulse", headers=headers,
+                 json={"sensor_id": "FRZ-1", "temperature_fahrenheit": -200.0})
+
+    report = api.get("/api/autopilot/compliance?days=30", headers=headers).json()
+    coverage = report["retention"]
+
+    assert coverage["covers_the_whole_period"] is False
+    assert coverage["readings_retained_per_sensor"] == MAX_READINGS_PER_SENSOR
+    assert "FRZ-1" in coverage["sensors_at_capacity"]
+    assert "does not cover the whole period" in coverage["caveat"]
+
+
+def test_a_period_within_the_window_is_reported_as_complete(
+    api, tenant_factory, sensor_factory
+):
+    headers, _ = tenant_factory(plan="enterprise")
+    sensor_factory(headers, "FRZ-1", "cryostorage")
+    api.post("/api/sensor-pulse", headers=headers,
+             json={"sensor_id": "FRZ-1", "temperature_fahrenheit": -200.0})
+
+    report = api.get("/api/autopilot/compliance?days=30", headers=headers).json()
+
+    assert report["retention"]["covers_the_whole_period"] is True
+    assert report["retention"]["caveat"] == ""
+
+
+def test_the_csv_carries_the_warning_on_its_face(
+    api, tenant_factory, sensor_factory
+):
+    """Somebody opening this in Excel must see it without going to ask."""
+    from store import MAX_READINGS_PER_SENSOR
+
+    headers, _ = tenant_factory(plan="enterprise")
+    sensor_factory(headers, "FRZ-1", "cryostorage")
+    for _ in range(MAX_READINGS_PER_SENSOR + 20):
+        api.post("/api/sensor-pulse", headers=headers,
+                 json={"sensor_id": "FRZ-1", "temperature_fahrenheit": -200.0})
+
+    text = api.get("/api/autopilot/compliance.csv?days=30", headers=headers).text
+
+    assert "INCOMPLETE RECORD" in text
