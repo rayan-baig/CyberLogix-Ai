@@ -1133,6 +1133,32 @@ None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
 
+## One estate, one scale
+
+Readings are stored in Fahrenheit and converted for display. The console
+did that. The 3am text did that. The compliance export did not.
+
+So a cellar in Bordeaux set its account to Celsius, saw Celsius
+everywhere it looked, was texted `25.56°C` when a cave went warm — and
+then handed an inspector a document headed **`Min °F`** reading **78.0**
+for the same event. Two documents about the same freezer, disagreeing,
+which is the exact thing a compliance record exists to prevent. And
+"78" in a wine cellar is a catastrophe or an ordinary afternoon
+depending only on which scale the reader assumes; the export never said
+which.
+
+The compliance CSV and report now render in the account's unit, label it
+on every row, and the JSON carries `temperature_unit` so a figure lifted
+into a spreadsheet takes its scale with it.
+
+Two things were checked and deliberately left alone. The attestation was
+already converting and its safe band already carried an explicit `unit`.
+And the vault's hash chain stays in Fahrenheit: its field is literally
+named `temperature_fahrenheit`, the hash covers that value, and
+converting it would break every chain already exported — including ones
+customers have handed to insurers, which is the one thing the feature
+promises cannot happen.
+
 ## The first form a customer sees
 
 They tell us their sector at sign-up. The audit trail records it. And

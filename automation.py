@@ -28,6 +28,7 @@ from store import (
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
+    display_temperature,
     iso,
     utc_now,
 )
@@ -38,15 +39,30 @@ logger = logging.getLogger("cyberlogix.autopilot")
 router = APIRouter(prefix="/api/autopilot", tags=["Autonomous Compliance Clerk"])
 
 
-def _sensor_compliance(sensor, since) -> Dict[str, Any]:
-    """Compliance statistics for one sensor over the reporting period."""
+def _sensor_compliance(sensor, since, unit: str = "F") -> Dict[str, Any]:
+    """Compliance statistics for one sensor, in the customer's own unit.
+
+    Readings are stored in Fahrenheit and converted only for display, so
+    this is display — and it had never been told which unit to display
+    in. A cellar in Bordeaux set its account to Celsius, saw Celsius on
+    the console, was texted Celsius at 3am, and then handed an inspector
+    a compliance export reading `Min °F 78.0` for a cellar its own
+    records said had reached 25.56.
+
+    Two documents about the same event that disagree is the exact thing
+    a compliance record exists to prevent, and "78" in a wine cellar
+    reads as a catastrophe or an ordinary afternoon depending entirely on
+    which scale the reader assumes.
+    """
     readings = STORE.readings_for(sensor.sensor_id, since=since)
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
     total = len(readings)
     breaches = sum(1 for r in readings if r.breached)
     in_band = total - breaches
 
-    temps = [r.temperature_fahrenheit for r in readings]
+    temps = [
+        display_temperature(r.temperature_fahrenheit, unit) for r in readings
+    ]
 
     return {
         "sensor_id": sensor.sensor_id,
@@ -59,6 +75,9 @@ def _sensor_compliance(sensor, since) -> Dict[str, Any]:
         "min_temperature": min(temps) if temps else None,
         "max_temperature": max(temps) if temps else None,
         "mean_temperature": round(sum(temps) / len(temps), 2) if temps else None,
+        # Named on every row, so a figure lifted out of this into a
+        # spreadsheet or a report carries its scale with it.
+        "temperature_unit": unit,
         "last_seen": iso(sensor.last_seen),
         "currently_online": not sensor.offline(),
         "compliant": breaches == 0 and total > 0,
@@ -75,8 +94,9 @@ def compliance_report(
 ):
     """Assemble the inspector-ready temperature log for the period."""
     since = utc_now() - timedelta(days=days)
+    unit = tenant.temperature_unit
     sensors = STORE.sensors_for(tenant.tenant_id)
-    per_sensor = [_sensor_compliance(s, since) for s in sensors]
+    per_sensor = [_sensor_compliance(s, since, unit) for s in sensors]
 
     incidents = STORE.incidents_for(tenant.tenant_id, since=since)
     total_readings = sum(row["readings_logged"] for row in per_sensor)
@@ -103,6 +123,10 @@ def compliance_report(
         "period_start": iso(since),
         "period_end": iso(utc_now()),
         "sensors_monitored": len(sensors),
+        # Without this the temperatures below are numbers with no scale.
+        # A document that cannot say whether 78 is a catastrophe or an
+        # ordinary afternoon is not evidence of anything.
+        "temperature_unit": unit,
         "total_readings_logged": total_readings,
         "total_readings_breached": total_breached,
         "overall_compliance_percent": overall,
@@ -197,8 +221,9 @@ def compliance_csv(
     pack or opened in Excel without anyone re-typing figures.
     """
     since = utc_now() - timedelta(days=days)
+    unit = tenant.temperature_unit
     sensors = STORE.sensors_for(tenant.tenant_id)
-    rows = [_sensor_compliance(s, since) for s in sensors]
+    rows = [_sensor_compliance(s, since, unit) for s in sensors]
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -211,9 +236,11 @@ def compliance_csv(
             "Readings in band",
             "Excursions",
             "Compliance %",
-            "Min °F",
-            "Mean °F",
-            "Max °F",
+            # Labelled with the unit the figures are actually in, rather
+            # than the one they happen to be stored in.
+            f"Min °{unit}",
+            f"Mean °{unit}",
+            f"Max °{unit}",
             "Last seen (UTC)",
             "Online",
             "Compliant",
