@@ -407,9 +407,32 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
         "money(r.at_stake_usd)",
         # a count, into a template that never reaches innerHTML
         "rows.length",
-        # an HTTP status and an error string, both into fail(), which
-        # assigns to textContent — markup there is text, not markup
-        "resp.status", "err.message",
+
+        # --- the operator console ------------------------------------
+        # The page grew from one worklist into five panels over every
+        # platform endpoint that had no UI. Rather than add a dozen
+        # hand-written templates, it renders through three functions —
+        # so the audit surface is these, not the panels.
+        #
+        # span()/div() are the two primitives, and they escape both the
+        # class they are given and the text they wrap. An *optional*
+        # element is built by calling one of them rather than by a
+        # conditional inside a template, which is what keeps every
+        # entry in this list a single readable expression.
+        "esc(cls)", "esc(text)",
+        "span(\"s\", s)", "span(\"amount\", it.amount)",
+        "div(\"title\", it.title)", "div(\"detail\", it.detail)",
+        "div(\"meta\", it.meta)",
+        # the edge colour, and the empty-state sentence: both ours, both
+        # escaped anyway, because "ours" is how the other one got in
+        "esc(it.tone)", "esc(empty)",
+        # a button that changes something. The id is a customer-adjacent
+        # value — an expense id, a Stripe event id, a mail address that
+        # bounced — and it lands in an HTML attribute, so it is escaped
+        # at the point it is written like everything else.
+        "actionButton(it)", "esc(it.act)", "esc(it.id)", "esc(it.label)",
+        # an expense category, offered by the server rather than typed
+        "esc(opt)",
     }
     found = {m.strip() for m in re.findall(r"\$\{([^}]+)\}", js)}
     assert found <= SAFE, (

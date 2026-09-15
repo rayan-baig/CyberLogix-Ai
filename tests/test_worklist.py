@@ -171,6 +171,11 @@ def test_the_totals_are_the_sum_of_what_is_really_there(
 ):
     paying, _ = _account(api, tenant_factory, owner_headers, sensor_factory,
                          "Paying Co", plan="growth", units=4, tag="P")
+    # Signed, because "paying" now means it: an account with units and no
+    # contract is never invoiced at all, and used to be counted here as
+    # though it were a customer.
+    signed = api.post("/api/contracts", headers=paying, json={"term_years": 1})
+    assert signed.status_code == 201, signed.text
     _account(api, tenant_factory, owner_headers, sensor_factory,
              "Trial Co", plan="trial", units=2, tag="T")
 
@@ -211,7 +216,7 @@ def test_one_broken_estate_does_not_hide_the_book(
 
 
 def test_a_trial_that_never_started_outranks_everything_priced(
-    api, tenant_factory, sensor_factory, admin_headers
+    api, tenant_factory, sensor_factory, owner_headers, admin_headers
 ):
     """The one account that is certainly not converting sorted last.
 
@@ -225,8 +230,17 @@ def test_a_trial_that_never_started_outranks_everything_priced(
 
     from store import STORE, utc_now
 
-    healthy, _ = tenant_factory(plan="growth", company_name="Northgate Foods")
+    healthy, healthy_tenant = tenant_factory(plan="growth",
+                                             company_name="Northgate Foods")
     sensor_factory(healthy, "FRIDGE-1", "restaurant")
+    # Contracted, so that "everything priced" is an account that is
+    # actually being billed. Without one it raises its own high-urgency
+    # row for being served free, which would outrank the stalled trial
+    # on money and make this test about the wrong thing.
+    owner = owner_headers(healthy, email="northgate@example.com")
+    signed = api.post("/api/contracts", headers={**healthy, **owner},
+                      json={"term_years": 1})
+    assert signed.status_code == 201, signed.text
 
     stalled, tenant = tenant_factory(plan="trial", company_name="Never Started")
     live = STORE.get_tenant(tenant["tenant_id"])

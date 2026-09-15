@@ -127,6 +127,104 @@ h2 {
 }
 .note { color: var(--muted); font-size: 12px; line-height: 1.6;
         margin: 14px 0 0; max-width: 70ch; }
+
+/* --- the tabs -------------------------------------------------------- */
+.tabs {
+  display: flex; gap: 4px; margin: 22px 0 0; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.tabs button {
+  font: inherit; font-size: 13.5px; cursor: pointer; color: var(--muted);
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 9px 13px; margin-bottom: -1px;
+}
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] {
+  color: var(--ink); border-bottom-color: var(--accent);
+}
+.panel { padding-bottom: 70px; }
+
+/* --- a labelled line of figures -------------------------------------- */
+.lines { display: grid; gap: 1px; background: var(--border);
+         border: 1px solid var(--border); border-radius: 11px;
+         overflow: hidden; margin-top: 12px; }
+.line {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px 16px;
+  align-items: baseline; background: var(--surface); padding: 11px 15px;
+}
+.line .k { color: var(--ink); font-size: 13.5px; }
+.line .v { color: var(--ink); font-size: 14px; text-align: right;
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+.line .s { grid-column: 1 / -1; color: var(--muted); font-size: 12px;
+           line-height: 1.55; }
+@media (max-width: 520px) {
+  .line { grid-template-columns: 1fr; }
+  .line .v { text-align: left; }
+}
+
+/* --- a list of things that need an action ---------------------------- */
+.item {
+  display: grid; grid-template-columns: 4px 1fr auto; gap: 13px;
+  align-items: start; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 11px;
+  padding: 12px 15px 12px 0; overflow: hidden; margin-bottom: 8px;
+}
+.item .bar { align-self: stretch; border-radius: 11px 0 0 11px;
+             background: var(--border); }
+.item.bad .bar { background: var(--critical, #E0534F); }
+.item.warn .bar { background: var(--warn, #E0A030); }
+.item.good .bar { background: var(--accent-cyan, #3FD8C8); }
+.item .title { color: var(--ink); font-weight: 600; font-size: 14px; }
+.item .detail { color: var(--muted); font-size: 12.5px; line-height: 1.55;
+                margin-top: 3px; }
+.item .meta { font-family: var(--mono); font-size: 11px; color: var(--muted);
+              margin-top: 4px; }
+.item .right { text-align: right; display: grid; gap: 6px;
+               justify-items: end; }
+.item .amount { font-variant-numeric: tabular-nums; color: var(--ink);
+                font-size: 14px; white-space: nowrap; }
+@media (max-width: 560px) {
+  .item { grid-template-columns: 4px 1fr; }
+  .item .right { grid-column: 2; justify-items: start; text-align: left; }
+}
+
+/* --- buttons that change something ----------------------------------- */
+button.act {
+  font: inherit; font-size: 12px; cursor: pointer; color: var(--ink);
+  background: var(--sunken); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 11px; white-space: nowrap;
+}
+button.act:hover { border-color: var(--accent); }
+button.act[disabled] { opacity: .5; cursor: progress; }
+.bar-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0;
+               align-items: center; }
+
+/* --- entering an expense --------------------------------------------- */
+.entry {
+  display: grid; gap: 10px; margin-top: 12px; padding: 15px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; align-items: end;
+}
+.entry label { display: grid; gap: 5px; font-size: 11.5px;
+               color: var(--muted); }
+.entry input, .entry select {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--sunken); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 10px; width: 100%;
+}
+.entry .wide { grid-column: 1 / -1; }
+.entry button {
+  font: inherit; font-weight: 600; cursor: pointer; padding: 10px 16px;
+  border-radius: 8px; border: 0; color: #05070D; background: var(--accent);
+}
+.said { color: var(--accent-cyan); font-size: 12.5px; margin: 10px 0 0;
+        min-height: 1em; }
+.said.bad { color: var(--critical, #E0534F); }
+h3.sub {
+  font-family: var(--display); font-weight: 400; font-size: 15.5px;
+  margin: 26px 0 0; color: var(--ink);
+}
 </style>
 </head>
 <body>
@@ -155,14 +253,132 @@ h2 {
   </form>
 
   <div id="board" hidden>
-    <div class="totals" id="totals"></div>
-    <div class="broken" id="broken" hidden>
-      <h3>Needs fixing</h3>
-      <ul id="broken-list"></ul>
-    </div>
-    <h2 id="worklist-title">Needs a person</h2>
-    <div class="rows" id="rows"></div>
-    <p class="note" id="note"></p>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Operator views">
+      <button type="button" role="tab" data-panel="work"
+              aria-selected="true">Needs a person</button>
+      <button type="button" role="tab" data-panel="money"
+              aria-selected="false">Money</button>
+      <button type="button" role="tab" data-panel="books"
+              aria-selected="false">Books</button>
+      <button type="button" role="tab" data-panel="cash"
+              aria-selected="false">Unmatched cash</button>
+      <button type="button" role="tab" data-panel="health"
+              aria-selected="false">Health</button>
+    </nav>
+
+    <section class="panel" id="panel-work" role="tabpanel">
+      <div class="totals" id="totals"></div>
+      <div class="broken" id="broken" hidden>
+        <h3>Needs fixing</h3>
+        <ul id="broken-list"></ul>
+      </div>
+      <div class="bar-actions">
+        <button type="button" class="act" data-act="money-pass">
+          Bill and chase everyone now</button>
+      </div>
+      <p class="said" id="work-said"></p>
+      <h2 id="worklist-title">Needs a person</h2>
+      <div class="rows" id="rows"></div>
+      <p class="note" id="note"></p>
+    </section>
+
+    <section class="panel" id="panel-money" role="tabpanel" hidden>
+      <h2>What is left after costs</h2>
+      <div class="totals" id="margin-totals"></div>
+      <h3 class="sub">On one location, one month</h3>
+      <div class="lines" id="margin-statement"></div>
+      <h3 class="sub">The largest single line</h3>
+      <div class="lines" id="margin-lever"></div>
+      <h3 class="sub">The annual prepay discount</h3>
+      <div class="lines" id="margin-prepay"></div>
+      <p class="note" id="margin-note"></p>
+    </section>
+
+    <section class="panel" id="panel-books" role="tabpanel" hidden>
+      <h2>The books</h2>
+      <div class="bar-actions">
+        <label class="sr" for="books-year">Tax year</label>
+        <input id="books-year" type="number" inputmode="numeric"
+               placeholder="Whole history" min="2000" max="2100"
+               style="width:150px;font:inherit;font-size:13px;padding:7px 10px;
+                      border-radius:8px;border:1px solid var(--border);
+                      background:var(--sunken);color:var(--ink)">
+        <button type="button" class="act" data-act="books-year">Show year</button>
+        <button type="button" class="act" data-act="ledger-csv">Sales ledger CSV</button>
+        <button type="button" class="act" data-act="cash-csv">Cash book CSV</button>
+        <button type="button" class="act" data-act="expenses-csv">Expenses CSV</button>
+      </div>
+      <div class="totals" id="books-totals"></div>
+      <h3 class="sub">What it cost</h3>
+      <div class="lines" id="books-costs"></div>
+
+      <h3 class="sub">Record something you paid for</h3>
+      <form class="entry" id="expense-form">
+        <label>Amount (USD)
+          <input id="x-amount" type="number" step="0.01" min="0.01" required>
+        </label>
+        <label>Category
+          <select id="x-category" required></select>
+        </label>
+        <label>Date
+          <input id="x-date" type="date">
+        </label>
+        <label>Supplier
+          <input id="x-supplier" type="text" maxlength="200">
+        </label>
+        <label class="wide">What it was
+          <input id="x-description" type="text" maxlength="300" required>
+        </label>
+        <label class="wide">Where the receipt is
+          <input id="x-receipt" type="text" maxlength="300"
+                 placeholder="A filename, a link, a folder">
+        </label>
+        <button type="submit">Record it</button>
+      </form>
+      <p class="said" id="expense-said"></p>
+
+      <h3 class="sub">Recorded expenses</h3>
+      <div id="expense-list"></div>
+      <p class="note" id="books-note"></p>
+    </section>
+
+    <section class="panel" id="panel-cash" role="tabpanel" hidden>
+      <h2>Money we took and cannot account for</h2>
+      <div class="totals" id="cash-totals"></div>
+      <div id="cash-list"></div>
+      <p class="note" id="cash-note"></p>
+    </section>
+
+    <section class="panel" id="panel-health" role="tabpanel" hidden>
+      <h2>Is the machine running</h2>
+      <div class="totals" id="health-totals"></div>
+      <div id="health-list"></div>
+
+      <h3 class="sub">Backups</h3>
+      <div class="lines" id="backup-lines"></div>
+      <div class="bar-actions">
+        <button type="button" class="act" data-act="backup">Take a snapshot now</button>
+      </div>
+
+      <h3 class="sub">Mail</h3>
+      <div class="lines" id="mail-lines"></div>
+      <div class="bar-actions">
+        <button type="button" class="act" data-act="flush">Send what is queued</button>
+        <button type="button" class="act" data-act="reports">
+          Send this week's customer reports</button>
+      </div>
+      <div id="mail-log"></div>
+
+      <h3 class="sub">Addresses we have stopped writing to</h3>
+      <div id="suppression-list"></div>
+
+      <h3 class="sub">Trials the next pass would write to</h3>
+      <div class="bar-actions">
+        <button type="button" class="act" data-act="convert">Run the pass</button>
+      </div>
+      <div id="conversion-list"></div>
+      <p class="said" id="health-said"></p>
+    </section>
   </div>
 
   <p class="err" id="err" hidden></p>
@@ -176,6 +392,19 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
 }[c]));
 const $ = (id) => document.getElementById(id);
 const money = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
+const pct = (n) => (n === null || n === undefined || n === "")
+  ? "—" : (Math.round(Number(n) * 100) / 100) + "%";
+/* Unit economics, to the cent. Rounding to whole dollars turned a real
+   47c of metered usage into "-$0", which reads as free on the one page
+   whose entire subject is what each line costs. */
+const cents = (n) => "$" + Math.abs(Number(n || 0)).toFixed(2);
+const less = (n) => "−" + cents(n);
+const when = (iso) => {
+  if (!iso) return "—";
+  const at = new Date(iso);
+  return isNaN(at) ? String(iso) : at.toLocaleString();
+};
+const yesno = (v) => (v ? "yes" : "no");
 
 /* The key lives in sessionStorage, not localStorage: this is the
    credential that reads every customer's contact details and what they
@@ -196,8 +425,128 @@ function fail(message) {
   $("err").textContent = message;
 }
 
+/* A refused key is the same event whichever panel noticed it, so it is
+   handled once here rather than five times badly. */
+function locked(resp) {
+  return resp.status === 401 || resp.status === 403 || resp.status === 503;
+}
+function relock(detail) {
+  forgetKey();
+  $("gate").hidden = false;
+  $("board").hidden = true;
+  $("refresh").hidden = true;
+  $("forget").hidden = true;
+  fail(detail || "That key was not accepted.");
+}
+
+/* Every call carries the key as a header. Never as a query string: the
+   platform credential must not end up in an access log or a referrer. */
+async function api(path, options) {
+  const opts = options || {};
+  const key = storedKey();
+  const resp = await fetch(path, {
+    method: opts.method || "GET",
+    headers: Object.assign(
+      { "X-CyberLogix-Admin": key },
+      opts.body ? { "Content-Type": "application/json" } : {}
+    ),
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  return resp;
+}
+
+/* Reads a JSON endpoint, or throws something a person can read. The
+   watchdog answers 503 by design when the sweep has stopped, so a panel
+   that wants to *show* that has to be allowed to read the body rather
+   than be bounced to the gate. */
+async function read(path, tolerate) {
+  const resp = await api(path);
+  if (locked(resp) && !(tolerate || []).includes(resp.status)) {
+    const body = await resp.json().catch(() => ({}));
+    relock(typeof body.detail === "string" ? body.detail : "");
+    throw new Error("locked");
+  }
+  if (!resp.ok && !(tolerate || []).includes(resp.status)) {
+    throw new Error("HTTP " + resp.status);
+  }
+  return resp.json();
+}
+
+/* ---- renderers ------------------------------------------------------
+   Everything below takes plain arrays and escapes at the point of use.
+   The tiles and the lines share one shape, [label, value, sub], so the
+   whole console renders through two functions rather than fifteen. */
+
+/* Two primitives. An optional element is built by a function rather
+   than by a conditional inside a template, so every interpolation on
+   this page is one escaped expression that can be read at a glance --
+   which is the only way the allow-list in test_frontend_safety stays
+   worth anything. */
+function span(cls, text) {
+  return text ? `<span class="${esc(cls)}">${esc(text)}</span>` : "";
+}
+function div(cls, text) {
+  return text ? `<div class="${esc(cls)}">${esc(text)}</div>` : "";
+}
+function actionButton(it) {
+  if (!it.act) return "";
+  return `<button type="button" class="act" data-act="${esc(it.act)}"
+           data-id="${esc(it.id)}">${esc(it.label)}</button>`;
+}
+
+function tilesInto(el, list) {
+  $(el).innerHTML = list.map(([k, v, s]) => `
+    <div class="total">
+      <span class="k">${esc(k)}</span>
+      <span class="v">${esc(v)}</span>
+      <span class="s">${esc(s)}</span>
+    </div>`).join("");
+}
+
+function linesInto(el, list) {
+  $(el).innerHTML = list.map(([k, v, s]) => `
+    <div class="line">
+      <span class="k">${esc(k)}</span>
+      <span class="v">${esc(v)}</span>
+      ${span("s", s)}
+    </div>`).join("");
+}
+
+/* A list of things that may need an action. `tone` colours the edge,
+   `act` and `id` become a button the delegate below picks up. */
+function itemsInto(el, items, empty) {
+  if (!items.length) {
+    $(el).innerHTML = `<p class="empty">${esc(empty)}</p>`;
+    return;
+  }
+  const blank = { tone: "", title: "", detail: "", meta: "", amount: "" };
+  $(el).innerHTML = items.map((raw) => {
+    const it = Object.assign({}, blank, raw);
+    return `
+    <article class="item ${esc(it.tone)}">
+      <span class="bar" aria-hidden="true"></span>
+      <div>
+        ${div("title", it.title)}
+        ${div("detail", it.detail)}
+        ${div("meta", it.meta)}
+      </div>
+      <div class="right">
+        ${span("amount", it.amount)}
+        ${actionButton(it)}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function say(el, message, bad) {
+  $(el).textContent = message;
+  $(el).classList.toggle("bad", !!bad);
+}
+
+/* ---- the worklist (the page this file started as) ------------------- */
+
 function totals(book) {
-  const tiles = [
+  tilesInto("totals", [
     ["Annual run rate", money(book.arr_usd),
      `${esc(book.paying)} of ${esc(book.accounts)} accounts paying`],
     ["Monthly", money(book.mrr_usd), "at today's registered units"],
@@ -206,13 +555,11 @@ function totals(book) {
      "a year, if nobody calls"],
     ["Expansion", money(book.identified_expansion_usd),
      "a year, already priced"],
-  ];
-  $("totals").innerHTML = tiles.map(([k, v, s]) => `
-    <div class="total">
-      <span class="k">${esc(k)}</span>
-      <span class="v">${esc(v)}</span>
-      <span class="s">${esc(s)}</span>
-    </div>`).join("");
+    // The one that used to be invisible: an account being served with
+    // no contract is never invoiced at all, and was counted as paying.
+    ["Not being billed", money(book.unbilled_annual_usd),
+     book.unbilled_accounts + " account(s) served with no contract"],
+  ]);
 }
 
 function worklist(rows) {
@@ -242,13 +589,9 @@ function worklist(rows) {
 /* What is wrong with the machine rather than with a customer. Mail that
    cannot be sent looks exactly like mail nobody needed, so it is worth a
    band at the top rather than a line in a log nobody opens. */
-async function warnings(key) {
+async function warnings() {
   try {
-    const resp = await fetch("/api/digest/operator", {
-      headers: { "X-CyberLogix-Admin": key },
-    });
-    if (!resp.ok) return;
-    const rows = (await resp.json()).digest.warnings || [];
+    const rows = (await read("/api/digest/operator")).digest.warnings || [];
     $("broken").hidden = rows.length === 0;
     $("broken-list").innerHTML = rows.map((w) => `<li>${esc(w)}</li>`).join("");
   } catch (err) {
@@ -256,57 +599,453 @@ async function warnings(key) {
   }
 }
 
-async function load() {
-  const key = storedKey();
-  if (!key) return;
+async function loadWork() {
+  const body = await read("/api/contracts/attention");
+  totals(body.book);
+  worklist(body.rows || []);
+  $("note").textContent = body.note || "";
+  warnings();
+}
+
+/* ---- money ----------------------------------------------------------- */
+
+async function loadMoney() {
+  const b = await read("/api/margin");
+  const t = b.target || {};
+  const st = b.statement || {};
+  const rates = st.rates || {};
+
+  tilesInto("margin-totals", [
+    ["Target", pct(t.target_percent), "before tax"],
+    ["Achieved", pct(t.achieved_percent),
+     t.met ? "target met" : "short by " + pct(t.gap_points).replace("%", "") + " points"],
+    ["Kept per location", cents(st.before_tax_usd), "a month, before tax"],
+    ["Bad debt ceiling", pct(t.bad_debt_ceiling_percent),
+     "the most that can go unpaid and still hit target"],
+  ]);
+
+  linesInto("margin-statement", [
+    ["Invoiced", cents(st.invoiced_usd), ""],
+    ["Bad debt", less(st.bad_debt_usd),
+     rates.measuring_bad_debt
+       ? "measured from " + rates.invoices_old_enough_to_judge + " ripe invoices"
+       : rates.why || ""],
+    ["Card fees", less(st.card_fees_usd), ""],
+    ["Metered usage", less(st.metered_usage_usd),
+     "AI, SMS and voice at cost"],
+    ["Fixed infrastructure", less(st.fixed_costs_usd),
+     b.fixed_costs_are_shared || ""],
+    ["Kept before tax", cents(st.before_tax_usd), pct(st.before_tax_percent)],
+    ["One more location costs", cents(st.marginal_cost_of_one_more_unit_usd),
+     "the only cost that grows with the business"],
+  ]);
+
+  const lever = t.biggest_lever || {};
+  linesInto("margin-lever", [
+    [lever.line || "—", cents(lever.usd), lever.what_to_do || ""],
+  ]);
+
+  const pp = b.annual_prepay || {};
+  const buys = pp.buys || {};
+  linesInto("margin-prepay", [
+    ["Discount offered", pct(pp.current_percent), ""],
+    ["What it is worth", pct(pp.break_even_percent),
+     "bad debt avoided " + pct(buys.bad_debt_avoided_percent)
+     + ", card fees avoided " + pct(buys.card_fees_avoided_percent)
+     + ", financing " + pct(buys.financing_value_percent)],
+    ["Verdict", pp.worth_it ? "worth it" : "overpaying", pp.note || ""],
+  ]);
+
+  $("margin-note").textContent = (t.note || "") + " " + (st.note || "");
+}
+
+/* ---- the books ------------------------------------------------------- */
+
+function booksQuery() {
+  const year = ($("books-year").value || "").trim();
+  return /^\d{4}$/.test(year) ? "?year=" + year : "";
+}
+
+async function loadBooks() {
+  const q = booksQuery();
+  const b = await read("/api/books" + q);
+  const accrual = b.accrual_basis || {};
+  const cash = b.cash_basis || {};
+  const costs = b.known_costs || {};
+
+  tilesInto("books-totals", [
+    ["Revenue, accrual", money(accrual.revenue_usd),
+     accrual.invoices + " invoice(s) issued"],
+    ["Revenue, cash", money(cash.revenue_usd),
+     cash.payments + " payment(s) received"],
+    ["Written off", money(b.written_off_usd), "in the period"],
+    ["Still owed", money(b.outstanding_at_period_end_usd), "at period end"],
+    ["Known costs", money(costs.known_total_usd), "evidenced, not guessed"],
+  ]);
+
+  const charged = costs.infrastructure_charged_from
+    ? "charged from " + when(costs.infrastructure_charged_from)
+      + " to " + when(costs.infrastructure_charged_to)
+    : "nothing charged: the business was not running in this period";
+  const byCategory = Object.entries(costs.by_category || {}).map(
+    ([name, amount]) => [name.replace(/_/g, " "), money(amount), ""]
+  );
+
+  linesInto("books-costs", [
+    ["Metered usage", money(costs.metered_usage_usd), "AI, SMS and voice"],
+    ["Fixed infrastructure", money(costs.fixed_infrastructure_usd),
+     costs.months_covered + " month(s); " + charged],
+    ["Recorded by hand", money(costs.recorded_expenses_usd),
+     costs.recorded_expense_count + " entry(s), "
+     + costs.without_a_receipt + " without a receipt"],
+  ].concat(byCategory).concat([
+    ["Known total", money(costs.known_total_usd), costs.warning || ""],
+  ]));
+
+  $("books-note").textContent = (b.period || "") + " — " + (b.note || "");
+  await loadExpenses(q);
+}
+
+async function loadExpenses(q) {
+  const b = await read("/api/books/expenses" + (q || booksQuery()));
+  itemsInto("expense-list", (b.expenses || []).map((e) => ({
+    tone: e.receipt ? "" : "warn",
+    title: e.description,
+    detail: (e.category || "").replace(/_/g, " ")
+      + (e.supplier ? " · " + e.supplier : "")
+      + (e.receipt ? " · " + e.receipt
+                   : " · no receipt, so it may not be claimable"),
+    meta: e.spent_at || "",
+    amount: money(e.amount_usd),
+    act: "drop-expense",
+    id: e.expense_id,
+    label: "Remove",
+  })), "Nothing recorded for this period. Every card payment this "
+     + "application never sees is a deduction nobody will claim.");
+}
+
+async function loadCategories() {
+  const b = await read("/api/books/expense-categories");
+  $("x-category").innerHTML = (b.categories || []).map(
+    (opt) => `<option value="${esc(opt)}">${esc(opt)}</option>`
+  ).join("");
+}
+
+/* A CSV wants the same header as everything else, so it cannot be a
+   plain link. Fetched and handed to the browser as a file instead. */
+async function download(path, filename) {
+  const resp = await api(path);
+  if (!resp.ok) { say("expense-said", "That export failed.", true); return; }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ---- money we took and cannot account for ---------------------------- */
+
+async function loadCash() {
+  const b = await read("/api/payments/unmatched");
+  tilesInto("cash-totals", [
+    ["Unaccounted for", money(b.total_usd), b.count + " payment(s)"],
+  ]);
+  itemsInto("cash-list", (b.payments || []).map((r) => ({
+    tone: "bad",
+    title: money(r.amount_usd) + " " + String(r.currency || "").toUpperCase(),
+    detail: r.why || "",
+    meta: (r.invoice_reference ? "quoted " + r.invoice_reference + " · " : "")
+      + (r.event_id || "") + " · seen " + when(r.seen_at),
+    act: "clear-cash",
+    id: r.event_id,
+    label: "Mark settled",
+  })), "Every payment that has arrived is against an invoice.");
+  $("cash-note").textContent = b.note || "";
+}
+
+/* ---- is the machine running ------------------------------------------ */
+
+async function loadHealth() {
+  /* 503 is this endpoint's answer, not its failure: it means the sweep
+     has stopped, which is exactly what this panel exists to show. */
+  const w = await read("/api/watchdog", [503]);
+  tilesInto("health-totals", [
+    ["Alert sweep", w.healthy ? "running" : "stopped",
+     w.seconds_since_sweep === null ? "has never run"
+       : "last ran " + Math.round(w.seconds_since_sweep) + "s ago"],
+    ["Money pass", w.seconds_since_money_pass === null ? "never"
+       : Math.round(w.seconds_since_money_pass) + "s ago",
+     "invoices, dunning and receipts"],
+    ["Called stale after", Math.round(w.stale_after_seconds) + "s",
+     "sweep interval is " + w.sweep_interval_seconds + "s"],
+    ["Outside heartbeat", yesno(w.heartbeat_url_configured),
+     w.heartbeat_url_configured ? "absence of a ping is the alarm"
+       : "nothing off this machine would notice it stop"],
+  ]);
+  itemsInto("health-list", (w.reasons || []).map((why) => ({
+    tone: "bad", title: why,
+  })), "Nothing is stopped.");
+
+  const [backups, mail, log, sup, due] = await Promise.all([
+    read("/api/admin/backups"),
+    read("/api/mail/status"),
+    read("/api/mail/log?limit=25"),
+    read("/api/mail/suppressions"),
+    read("/api/conversion/due"),
+  ]);
+
+  linesInto("backup-lines", [
+    ["Snapshots kept", backups.count + " of " + backups.keep, backups.directory || ""],
+    ["Most recent", backups.latest || "none yet",
+     backups.latest ? Math.round(backups.latest_bytes / 1024) + " KB" : ""],
+    ["Survives a lost disk",
+     yesno(!backups.on_the_same_disk_as_the_database), backups.note || ""],
+  ]);
+
+  linesInto("mail-lines", [
+    ["Can send at all", yesno(mail.configured),
+     mail.configured ? String(mail.host)
+       : "missing " + (mail.missing || []).join(", ")],
+    ["Can say how to pay", yesno(mail.payment_details_configured),
+     "an invoice that cannot be paid is not an invoice"],
+    ["Queued", String(mail.queued), "written, not yet delivered"],
+    ["Sent", String(mail.sent), ""],
+    ["Failed", String(mail.failed),
+     "given up after " + mail.max_attempts + " attempts or "
+     + mail.max_age_hours + " hours"],
+  ]);
+
+  itemsInto("mail-log", (log.messages || []).map((m) => ({
+    tone: m.status === "failed" ? "bad" : (m.status === "sent" ? "good" : "warn"),
+    title: m.subject,
+    detail: m.detail || "",
+    meta: m.to + " · " + m.klass + " · " + m.status
+      + " · " + when(m.sent_at || m.created_at),
+  })), "Nothing has been sent yet.");
+
+  itemsInto("suppression-list", (sup.suppressions || []).map((b2) => ({
+    tone: b2.reason === "bounced" ? "bad" : "warn",
+    title: b2.address,
+    detail: b2.reason === "bounced"
+      ? "bounced — nothing at all is sent here, invoices included"
+      : "unsubscribed — commercial mail only; invoices still go",
+    meta: (b2.detail ? b2.detail + " · " : "") + when(b2.created_at),
+    act: "unsuppress",
+    id: b2.address,
+    label: "Allow again",
+  })), "No address has been stopped.");
+
+  itemsInto("conversion-list", (due.due || []).map((d) => ({
+    tone: d.already_sent ? "" : "warn",
+    title: d.company_name,
+    detail: "stage: " + d.stage
+      + (d.already_sent ? " (already sent, would be skipped)" : ""),
+    meta: d.tenant_id + " · " + d.units + " unit(s)",
+  })), "No trial is due anything.");
+}
+
+/* ---- tabs ------------------------------------------------------------ */
+
+const PANELS = {
+  work: loadWork, money: loadMoney, books: loadBooks,
+  cash: loadCash, health: loadHealth,
+};
+let current = "work";
+
+async function show(name) {
+  current = name;
+  document.querySelectorAll("#tabs button").forEach((tab) => {
+    tab.setAttribute("aria-selected", String(tab.dataset.panel === name));
+  });
+  document.querySelectorAll(".panel").forEach((panel) => {
+    panel.hidden = panel.id !== "panel-" + name;
+  });
+  await refresh();
+}
+
+async function refresh() {
   $("err").hidden = true;
   try {
-    const resp = await fetch("/api/contracts/attention", {
-      headers: { "X-CyberLogix-Admin": key },
-    });
-    if (resp.status === 401 || resp.status === 503) {
-      forgetKey();
-      $("gate").hidden = false;
-      $("board").hidden = true;
-      $("refresh").hidden = true;
-      $("forget").hidden = true;
-      const body = await resp.json().catch(() => ({}));
-      fail(typeof body.detail === "string" ? body.detail
-           : "That key was not accepted.");
-      return;
-    }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-
-    $("gate").hidden = true;
-    $("board").hidden = false;
-    $("refresh").hidden = false;
-    $("forget").hidden = false;
-    totals(body.book);
-    worklist(body.rows || []);
-    $("note").textContent = body.note || "";
-    // Separately, and allowed to fail: the worklist is the page, and a
-    // health check that 500s must not blank out the reason somebody
-    // opened it.
-    warnings(key);
+    await PANELS[current]();
   } catch (err) {
-    fail(`The book could not be loaded (${err.message}).`);
+    if (err.message !== "locked") {
+      fail("That view could not be loaded (" + err.message + ").");
+    }
   }
 }
+
+/* ---- things that change something ------------------------------------ */
+
+async function act(button) {
+  const what = button.dataset.act;
+  const id = button.dataset.id || "";
+  button.disabled = true;
+  try {
+    if (what === "books-year") { await loadBooks(); return; }
+    if (what === "ledger-csv") {
+      await download("/api/books/ledger.csv" + booksQuery(), "sales-ledger.csv");
+      return;
+    }
+    if (what === "cash-csv") {
+      await download("/api/books/cash.csv" + booksQuery(), "cash-book.csv");
+      return;
+    }
+    if (what === "expenses-csv") {
+      await download("/api/books/expenses.csv" + booksQuery(), "expenses.csv");
+      return;
+    }
+    if (what === "drop-expense") {
+      await api("/api/books/expenses/" + encodeURIComponent(id),
+                { method: "DELETE" });
+      await loadBooks();
+      return;
+    }
+    if (what === "clear-cash") {
+      await api("/api/payments/unmatched/" + encodeURIComponent(id),
+                { method: "DELETE" });
+      await loadCash();
+      return;
+    }
+    if (what === "unsuppress") {
+      await api("/api/mail/suppressions?address=" + encodeURIComponent(id),
+                { method: "DELETE" });
+      await loadHealth();
+      return;
+    }
+    if (what === "backup") {
+      const resp = await api("/api/admin/backups", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      say("health-said", resp.ok ? "Snapshot taken and verified."
+          : ("Could not take one: " + (body.detail || resp.status)), !resp.ok);
+      await loadHealth();
+      return;
+    }
+    if (what === "flush") {
+      const resp = await api("/api/mail/flush", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      // The response reports what it tried and what landed; what is
+      // still queued is read back from the refreshed panel below rather
+      // than invented here from a key this endpoint does not return.
+      say("health-said", resp.ok
+          ? ("Tried " + body.attempted + ", sent " + body.sent + ".")
+          : "The queue could not be flushed.", !resp.ok);
+      await loadHealth();
+      return;
+    }
+    if (what === "money-pass") {
+      const resp = await api("/api/contracts/run", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) { say("work-said", "The pass could not be run.", true); return; }
+      const bill = body.billing, chase = body.collections;
+      const broke = bill.failed_subscriptions.length + chase.failed_invoices.length;
+      say("work-said",
+          "Issued " + bill.invoices_issued + " invoice(s) for "
+          + cents(bill.billed_usd) + ", sent " + chase.notices_count
+          + " collection notice(s), added " + chase.late_fees_issued.length
+          + " late fee(s)."
+          + (broke ? " " + broke + " account(s) failed and are in the log." : ""),
+          broke > 0);
+      await loadWork();
+      return;
+    }
+    if (what === "reports") {
+      const resp = await api("/api/digest/reports", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      // sent_count again: `sent` here is also the list, not the number.
+      say("health-said", resp.ok
+          ? ("Sent " + body.sent_count + " customer report(s).")
+          : "The reports could not be sent.", !resp.ok);
+      await loadHealth();
+      return;
+    }
+    if (what === "convert") {
+      const resp = await api("/api/conversion/run", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      // sent_count, not sent: `sent` is the list of what went out, and
+      // concatenating an array gave "Sent  to trials" with the number
+      // silently missing.
+      const failed = (body.failed_tenants || []).length;
+      say("health-said", resp.ok
+          ? ("Sent " + body.sent_count + " to trials."
+             + (failed ? " " + failed + " account(s) could not be staged." : ""))
+          : "The pass could not be run.", !resp.ok);
+      await loadHealth();
+      return;
+    }
+  } catch (err) {
+    if (err.message !== "locked") fail("That did not work (" + err.message + ").");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ---- wiring ---------------------------------------------------------- */
 
 $("gate").addEventListener("submit", (event) => {
   event.preventDefault();
   rememberKey($("key").value.trim());
   $("key").value = "";
-  load();
+  open_();
 });
-$("refresh").addEventListener("click", load);
+$("refresh").addEventListener("click", refresh);
 $("forget").addEventListener("click", () => {
   forgetKey();
   location.reload();
 });
+$("tabs").addEventListener("click", (event) => {
+  const tab = event.target.closest("button[data-panel]");
+  if (tab) show(tab.dataset.panel);
+});
+$("board").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (button) act(button);
+});
+$("expense-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  say("expense-said", "");
+  const payload = {
+    amount_usd: Number($("x-amount").value),
+    category: $("x-category").value,
+    description: $("x-description").value.trim(),
+    supplier: $("x-supplier").value.trim(),
+    receipt: $("x-receipt").value.trim(),
+  };
+  const date = $("x-date").value;
+  if (date) payload.spent_at = date;
+  const resp = await api("/api/books/expenses", { method: "POST", body: payload });
+  if (resp.status === 201) {
+    $("expense-form").reset();
+    say("expense-said", "Recorded. It comes off the profit the return is based on.");
+    await loadBooks();
+  } else {
+    const body = await resp.json().catch(() => ({}));
+    say("expense-said", typeof body.detail === "string"
+        ? body.detail : "That was not accepted.", true);
+  }
+});
 
-load();
+async function open_() {
+  if (!storedKey()) return;
+  $("err").hidden = true;
+  try {
+    await PANELS[current]();
+  } catch (err) {
+    if (err.message === "locked") return;
+    fail("The book could not be loaded (" + err.message + ").");
+    return;
+  }
+  $("gate").hidden = true;
+  $("board").hidden = false;
+  $("refresh").hidden = false;
+  $("forget").hidden = false;
+  loadCategories().catch(() => { /* the rest of the page still works */ });
+}
+
+open_();
 </script>
 </body>
 </html>

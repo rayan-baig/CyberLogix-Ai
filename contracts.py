@@ -1242,6 +1242,49 @@ def _rows_for(tenant, now) -> List[Dict[str, Any]]:
                 mrr * 12 * sub.rate_multiplier(sub.periods_billed),
                 "Renew before it lapses into a renegotiation.")
 
+    # An account with no contract at all. Not late -- never billed:
+    # run_billing() iterates subscriptions, so a live estate with nothing
+    # to bill against is served free and indefinitely. Every other branch
+    # above would have said this account was fine, and the book counted
+    # its rate card as revenue, so the first sign was a bank balance that
+    # did not match the dashboard.
+    #
+    # Ranked high and above the upsell, because selling an add-on to
+    # somebody who is not paying for the base product is the wrong call
+    # to make first.
+    if (
+        sub is None
+        and mrr > 0
+        and tenant.plan != "trial"
+        and state == "active"
+    ):
+        # Two ways to arrive here, and they are not the same
+        # conversation. An account that has never been invoiced was
+        # never sold to. One whose contract has ended is a customer
+        # still being served after the paperwork ran out -- telling
+        # them "nothing has ever been invoiced" would be false, and
+        # false to the person who signed the original order.
+        billed_before = bool(STORE.invoices_for(tenant.tenant_id))
+        if billed_before:
+            headline = (
+                "Contract ended and monitoring is still running. "
+                "Nothing is being invoiced for it."
+            )
+            action = (
+                "Re-sign it or stop the service. Every day in between "
+                "is a day given away."
+            )
+        else:
+            headline = (
+                "Being served with no contract. Nothing has ever been "
+                "invoiced, and nothing ever will be."
+            )
+            action = (
+                "Put them on a contract today. Until there is one there "
+                "is nothing for the billing run to bill against."
+            )
+        row("unbilled", "high", headline, mrr * 12, action)
+
     # Expansion is for accounts that have already bought something.
     # Offering a trial four add-ons it has no base contract to attach
     # them to was noise on the worklist and, in the digest, a second row
@@ -1288,14 +1331,25 @@ def attention(_: None = Depends(require_platform_admin)):
     expansion = round(
         sum(r["at_stake_usd"] for r in rows if r["kind"] == "expansion"), 2
     )
+    unbilled = [r for r in rows if r["kind"] == "unbilled"]
 
     return {
         "generated_at": iso(now),
         "book": {
             "accounts": len(STORE.list_tenants()),
+            # An account with no contract is not a paying account, however
+            # much its rate card comes to. Counting it said "1 of 1
+            # accounts paying" about a customer who had never been sent
+            # an invoice.
             "paying": sum(
                 1 for t in STORE.list_tenants()
-                if t.plan != "trial" and not t.suspended
+                if t.plan != "trial"
+                and not t.suspended
+                and STORE.active_subscription(t.tenant_id) is not None
+            ),
+            "unbilled_accounts": len(unbilled),
+            "unbilled_annual_usd": round(
+                sum(r["at_stake_usd"] for r in unbilled), 2
             ),
             "mrr_usd": round(mrr, 2),
             "arr_usd": round(mrr * 12, 2),

@@ -176,12 +176,22 @@ def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
     mrr = 0.0
     from pricing import build_subscription
 
+    # Split, because the headline used to read "$151,716 a year booked"
+    # about an estate where nothing had ever been invoiced. An account
+    # with no contract is priced by the rate card and billed by nobody:
+    # run_billing iterates subscriptions, so there is nothing to bill
+    # against. Calling that "booked" in the one email the operator reads
+    # every morning is how it stayed invisible.
     for tenant in STORE.list_tenants():
         try:
             if tenant.plan != "trial" and not tenant.suspended:
-                mrr += build_subscription(tenant)["monthly_total_usd"]
+                if STORE.active_subscription(tenant.tenant_id) is not None:
+                    mrr += build_subscription(tenant)["monthly_total_usd"]
         except Exception:  # noqa: BLE001 - a total must not fail on one estate
             logger.exception("Could not price %s for the digest.", tenant.tenant_id)
+
+    unbilled = [r for r in rows if r["kind"] == "unbilled"]
+    unbilled_annual = round(sum(r["at_stake_usd"] for r in unbilled), 2)
 
     return {
         "date": now.strftime("%Y-%m-%d"),
@@ -201,6 +211,8 @@ def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
             ),
             2,
         ),
+        "unbilled_accounts": len(unbilled),
+        "unbilled_annual_usd": unbilled_annual,
         "warnings": _system_warnings(),
     }
 
@@ -212,6 +224,17 @@ def _render_operator(digest: Dict[str, Any]) -> str:
         f"(${digest['mrr_usd']:,.2f} a month).",
         f"${digest['outstanding_usd']:,.2f} invoiced and unpaid.",
         f"${digest['at_risk_usd']:,.0f} a year at risk if nobody calls.",
+    ]
+
+    if digest["unbilled_accounts"]:
+        count = digest["unbilled_accounts"]
+        out.append(
+            f"${digest['unbilled_annual_usd']:,.0f} a year is being served "
+            f"with no contract, across {count} account"
+            f"{'' if count == 1 else 's'}. None of it is being invoiced."
+        )
+
+    out += [
         "",
         f"Yesterday: {money['issued_count']} invoice(s) issued for "
         f"${money['issued_usd']:,.2f}; "
