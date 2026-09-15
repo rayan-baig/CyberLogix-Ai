@@ -372,6 +372,10 @@ h3.sub {
       <h3 class="sub">Addresses we have stopped writing to</h3>
       <div id="suppression-list"></div>
 
+      <h3 class="sub">Who has agreed to the current terms</h3>
+      <div class="lines" id="terms-lines"></div>
+      <div id="terms-list"></div>
+
       <h3 class="sub">Trials the next pass would write to</h3>
       <div class="bar-actions">
         <button type="button" class="act" data-act="convert">Run the pass</button>
@@ -790,12 +794,13 @@ async function loadHealth() {
     tone: "bad", title: why,
   })), "Nothing is stopped.");
 
-  const [backups, mail, log, sup, due] = await Promise.all([
+  const [backups, mail, log, sup, due, terms] = await Promise.all([
     read("/api/admin/backups"),
     read("/api/mail/status"),
     read("/api/mail/log?limit=25"),
     read("/api/mail/suppressions"),
     read("/api/conversion/due"),
+    read("/api/legal/acceptance/outstanding"),
   ]);
 
   linesInto("backup-lines", [
@@ -838,6 +843,24 @@ async function loadHealth() {
     id: b2.address,
     label: "Allow again",
   })), "No address has been stopped.");
+
+  // An acceptance pins the hash of the exact text. Editing a document
+  // does not void the old agreement -- it means the customer is still
+  // on the old one, which is the thing worth knowing before anybody
+  // relies on a clause added afterwards.
+  linesInto("terms-lines", [
+    ["Live version", String(terms.version), ""],
+    ["Accounts on it", (terms.accounts - terms.count) + " of " + terms.accounts,
+     terms.count ? terms.note : "Every account has accepted the current text."],
+  ]);
+  itemsInto("terms-list", (terms.outstanding || []).map((a) => ({
+    tone: a.never_accepted.length ? "bad" : "warn",
+    title: a.company_name,
+    detail: a.never_accepted.length
+      ? "has never accepted: " + a.never_accepted.join(", ")
+      : "agreed to an earlier version of: " + a.out_of_date.join(", "),
+    meta: a.contact_name + " \u00b7 " + a.contact_email,
+  })), "Every account has accepted the text that is live today.");
 
   itemsInto("conversion-list", (due.due || []).map((d) => ({
     tone: d.already_sent ? "" : "warn",

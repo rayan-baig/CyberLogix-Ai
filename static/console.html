@@ -131,6 +131,15 @@
     <div id="account-banner" class="banner warn" role="status" hidden></div>
     <div id="role-banner" class="banner warn" hidden></div>
     <div id="delivery-banner" class="banner warn" hidden></div>
+    <!-- Sign-up records which exact text was agreed to, pinned by hash.
+         When a document changes, that acceptance is for the old one and
+         nothing asked again: record_acceptance's own comment says "the
+         acceptance can be taken again from the console", and until this
+         banner there was no console that offered it. -->
+    <div id="terms-banner" class="banner warn" hidden>
+      <span id="terms-text"></span>
+      <button type="button" id="terms-accept">Read and accept</button>
+    </div>
 
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
 
@@ -364,6 +373,25 @@
             <span class="card-note" id="team-note"></span>
           </div>
           <div id="team-body"></div>
+          <!-- The endpoint to rotate your own password has always
+               existed and nothing ever called it. Somebody who thinks
+               their password is known had one route: the forgotten-
+               password email, which needs mail configured and does not
+               help at all if the reason they want it changed is that
+               they are already signed in on a shared machine. -->
+          <form id="password-form" style="margin-top:14px">
+            <div class="row">
+              <label class="sr" for="pw-current">Current password</label>
+              <input id="pw-current" type="password" required
+                     autocomplete="current-password"
+                     placeholder="Current password">
+              <label class="sr" for="pw-new">New password</label>
+              <input id="pw-new" type="password" required minlength="12"
+                     autocomplete="new-password"
+                     placeholder="New password (12 or more)">
+              <button type="submit">Change password</button>
+            </div>
+          </form>
         </section>
 
         <section class="card">
@@ -554,6 +582,73 @@ function toast(message, kind = "") {
   $("toasts").appendChild(el);
   setTimeout(() => el.remove(), 5200);
   logToConsole(message, kind === "err" ? "err" : kind === "ok" ? "ok" : "info");
+}
+
+/* --- the terms, and whether this account is still on them ------------
+   An acceptance pins the SHA-256 of each document. Changing a document
+   does not void the old agreement -- it means the customer is still on
+   the old one, which is worth knowing before anybody relies on a clause
+   that was added afterwards. Only an owner can accept, because a record
+   attested by "API key" is not attested by anybody. */
+async function checkTerms() {
+  const banner = $("terms-banner");
+  const status = await api("/api/legal/acceptance/status");
+  if (status.all_current) { banner.hidden = true; return; }
+
+  const never = status.documents.filter((d) => !d.accepted);
+  const stale = status.documents.filter((d) => d.accepted && !d.current);
+  const owner = state.user && state.user.role === "owner";
+
+  $("terms-text").textContent = never.length
+    ? ("This account has not accepted "
+       + never.map((d) => d.title).join(", ") + "."
+       + (owner ? "" : " An owner needs to."))
+    : ("The " + stale.map((d) => d.title).join(", ")
+       + " changed since this account agreed to "
+       + (stale.length === 1 ? "it" : "them")
+       + ". You are still on the version you accepted."
+       + (owner ? "" : " An owner needs to accept the new one."));
+  $("terms-accept").hidden = !owner;
+  banner.hidden = false;
+}
+
+async function acceptTerms() {
+  const button = $("terms-accept");
+  const status = await api("/api/legal/acceptance/status");
+  const outstanding = status.documents
+    .filter((d) => !d.current)
+    .map((d) => d.slug);
+  const titles = status.documents
+    .filter((d) => !d.current)
+    .map((d) => d.title)
+    .join(", ");
+  // Opened, not just agreed to. A one-click accept on text nobody was
+  // shown is the kind of record that is worth less the moment it is
+  // questioned, so the documents are put in front of the person first.
+  window.open("/legal", "_blank", "noopener");
+  if (!window.confirm(
+        "Accept " + titles + " as they read today?\n\n"
+        + "They have opened in a new tab. This records your name and the "
+        + "exact text, by hash, against this account.")) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await api("/api/legal/accept", {
+      method: "POST",
+      body: JSON.stringify({
+        documents: outstanding,
+        accepted_by: state.user.full_name,
+        title: state.user.role,
+      }),
+    });
+    await checkTerms();
+    toast("Acceptance recorded against this account.");
+  } catch (err) {
+    toast(err.message || "That could not be recorded.");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function api(path, options = {}) {
@@ -1001,6 +1096,11 @@ function render(d, health) {
   } else {
     roleBanner.hidden = true;
   }
+  // Whether this account is on the text that is live today. Loaded on
+  // its own and allowed to fail: the console is how somebody watches a
+  // freezer, and a legal check that 500s must not take that away.
+  checkTerms().catch(() => { /* the estate is the page */ });
+
   $("chip-company").textContent = t.company_name;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
@@ -3167,6 +3267,26 @@ $("download-csv").addEventListener("click", async () => {
   }
 });
 
+$("password-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = $("password-form");
+  try {
+    await api("/api/accounts/me/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: $("pw-current").value,
+        new_password: $("pw-new").value,
+      }),
+    });
+    form.reset();
+    toast("Password changed. Other sessions stay signed in.");
+  } catch (err) {
+    toast(err.message || "That password could not be changed.");
+  }
+});
+$("terms-accept").addEventListener("click", () => {
+  acceptTerms().catch((err) => toast(err.message || "That did not work."));
+});
 $("run-sweep").addEventListener("click", () => {
   act(async () => {
     const out = await api("/api/autopilot/sweep", { method: "POST" });

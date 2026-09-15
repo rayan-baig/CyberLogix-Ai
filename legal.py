@@ -40,7 +40,11 @@ from assurance import (
     DISPATCH_SLA_SECONDS,
 )
 from accounts import require_role
-from auth import require_tenant_any_state, write_audit
+from auth import (
+    require_platform_admin,
+    require_tenant_any_state,
+    write_audit,
+)
 from contracts import (
     DELINQUENT_AFTER_DAYS,
     LATE_FEE_MONTHLY_PERCENT,
@@ -588,13 +592,13 @@ def accept(
     }
 
 
-@router.get("/acceptance/status")
-def acceptance_status(tenant: Tenant = Depends(require_tenant_any_state)):
-    """Whether this customer has accepted the text that is live today.
+def acceptance_for(tenant: Tenant) -> Dict[str, Any]:
+    """Which live documents this tenant has accepted, and which are stale.
 
-    A stale acceptance is worth knowing about: if the payout cap moved
-    after they signed, the hash they accepted no longer matches, and the
-    honest thing is to ask them again rather than to assume.
+    Extracted so the operator can ask it about the whole book. A customer
+    who accepted v1.0 and never saw v1.1 is invisible one account at a
+    time -- it is only a problem you can see fleet-wide, and it is the
+    kind of thing a buyer's lawyer asks for in a single question.
     """
     live = current_hashes()
     accepted: Dict[str, Dict[str, Any]] = {}
@@ -630,5 +634,61 @@ def acceptance_status(tenant: Tenant = Depends(require_tenant_any_state)):
         "note": (
             "A document accepted before its text changed shows as not "
             "current. Ask again rather than assuming."
+        ),
+    }
+
+
+@router.get("/acceptance/status")
+def acceptance_status(tenant: Tenant = Depends(require_tenant_any_state)):
+    """Whether this customer has accepted the text that is live today.
+
+    A stale acceptance is worth knowing about: if the payout cap moved
+    after they signed, the hash they accepted no longer matches, and the
+    honest thing is to ask them again rather than to assume.
+    """
+    return acceptance_for(tenant)
+
+
+@router.get("/acceptance/outstanding")
+def acceptance_outstanding(_: None = Depends(require_platform_admin)):
+    """Every account that has not accepted the text that is live today.
+
+    Sign-up records an acceptance, so this is empty on a fresh estate and
+    fills up the moment a document changes -- which is exactly when
+    nobody notices. The staleness was already computable per tenant and
+    nothing ever asked, so a terms change silently left the whole book
+    agreed to something that is no longer the agreement.
+    """
+    rows = []
+    for tenant in STORE.list_tenants():
+        state = acceptance_for(tenant)
+        if state["all_current"]:
+            continue
+        rows.append(
+            {
+                "tenant_id": tenant.tenant_id,
+                "company_name": tenant.company_name,
+                "contact_name": tenant.contact_name,
+                "contact_email": tenant.contact_email,
+                "never_accepted": [
+                    d["slug"] for d in state["documents"] if not d["accepted"]
+                ],
+                "out_of_date": [
+                    d["slug"] for d in state["documents"]
+                    if d["accepted"] and not d["current"]
+                ],
+            }
+        )
+    return {
+        "version": TERMS_VERSION,
+        "count": len(rows),
+        "accounts": len(STORE.list_tenants()),
+        "outstanding": rows,
+        "note": (
+            "An acceptance pins the SHA-256 of the exact text. Changing a "
+            "document does not invalidate the old agreement -- it means "
+            "the customer is still on the old one, which is the thing "
+            "worth knowing before somebody relies on a clause that was "
+            "added afterwards."
         ),
     }

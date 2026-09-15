@@ -93,6 +93,9 @@ CONTRACT = {
     "/api/mail/log": ["messages"],
     "/api/mail/suppressions": ["suppressions"],
     "/api/conversion/due": ["due"],
+    "/api/legal/acceptance/outstanding": [
+        "version", "count", "accounts", "outstanding", "note",
+    ],
 }
 
 
