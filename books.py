@@ -143,6 +143,64 @@ def write_offs(start: datetime, end: datetime) -> List[Dict[str, Any]]:
     return sorted(rows, key=lambda r: r["date"])
 
 
+def operating_window(
+    start: datetime, end: datetime, now: Optional[datetime] = None
+) -> "tuple[datetime, datetime]":
+    """The part of a requested period the business was actually running.
+
+    Infrastructure is billed by the month, so it is tempting to price it
+    as rate x months and be done. That is how this file came to report
+    $9,968 of hosting against an empty database: the default period
+    starts at the Unix epoch, and 680 months of a server nobody rented
+    is a deduction nobody may claim. Asking for a future year was worse
+    — a full year of cost, already "spent", in 2031.
+
+    So the rate is applied only where the requested period overlaps the
+    period the company can evidence: from the first thing it ever
+    recorded, to now. Before the first record there was no company to
+    bill, and after now the money has not left yet. Where there is no
+    history at all the overlap is empty and the cost is zero, which is
+    the honest answer rather than a convenient one.
+    """
+    now = now or utc_now()
+    began = first_activity()
+    if began is None:
+        return end, end  # no history: an empty window, and so no cost
+    lower = max(start, began)
+    upper = min(end, now)
+    if upper <= lower:
+        return upper, upper
+    return lower, upper
+
+
+def first_activity() -> Optional[datetime]:
+    """The earliest moment this deployment has any record of itself.
+
+    Normally the database's install stamp, because that is when the
+    server it lives on started costing money. But a record older than
+    the stamp is proof the stamp is young — a database restored from
+    backup, or migrated onto new hardware, carries customers it cannot
+    have served before it existed. The earlier of the two is the only
+    one that can be true, so that is the one used.
+    """
+    from store import _parse
+
+    stamps: List[datetime] = []
+    stamped = STORE._db.installed_at()
+    if stamped:
+        try:
+            parsed = _parse(stamped)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            stamps.append(parsed)
+    with STORE._lock:
+        stamps.extend(
+            t.activated_at for t in STORE._tenants.values() if t.activated_at
+        )
+    return min(stamps) if stamps else None
+
+
 def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
     """What the business spent: metered, fixed, and recorded by hand.
 
@@ -160,7 +218,15 @@ def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
     from costs import RATE_AI_CALL, RATE_SMS, RATE_VOICE_CALL
     from margin import FIXED_MONTHLY_USD
 
-    months = max(1.0, (end - start).total_seconds() / (30.44 * 86400))
+    # Fixed cost accrues only where the requested period overlaps the
+    # time the business was actually running — see operating_window.
+    ran_from, ran_to = operating_window(start, end)
+    overlap = (ran_to - ran_from).total_seconds() / (30.44 * 86400)
+    # A month that has started is a month that has been billed: the server
+    # is a monthly subscription, not a meter. But a period the business did
+    # not trade in at all overlaps by nothing and costs nothing, which is
+    # what stops a floor of one month from becoming a floor of 680.
+    months = max(1.0, overlap) if overlap > 0 else 0.0
 
     # Counters, priced at the same rates the spend report uses, for the
     # days that fall inside the period. `day` is a plain YYYY-MM-DD, so
@@ -195,6 +261,8 @@ def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
         "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
         "known_total_usd": round(metered + fixed + entered, 2),
         "months_covered": round(months, 2),
+        "infrastructure_charged_from": iso(ran_from) if months else None,
+        "infrastructure_charged_to": iso(ran_to) if months else None,
         "without_a_receipt": len(missing_receipts),
         "warning": (
             "Metered spend and infrastructure are counted automatically; "
@@ -202,6 +270,13 @@ def deductible_costs(start: datetime, end: datetime) -> Dict[str, Any]:
             "POST /api/books/expenses. An expense nobody enters is a "
             "deduction nobody claims, and it is the largest lever on a "
             "tax bill that is actually in your hands."
+            + (
+                " Infrastructure is charged only for the part of this "
+                "period the business was actually running, which is "
+                f"{round(months, 2)} month(s) of it; a server nobody "
+                "rented yet is not a deduction."
+                if (ran_from > start or ran_to < end) else ""
+            )
             + (
                 f" {len(missing_receipts)} recorded expense(s) have no "
                 "receipt reference, and a deduction you cannot evidence "

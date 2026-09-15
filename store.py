@@ -2590,6 +2590,10 @@ class HubStore:
             self._db.clear()
             # clear() drops the meta row along with everything else, so the
             # counter is genuinely back to zero rather than merely in memory.
+            # That also drops the install stamp, and a deployment with no
+            # stamp cannot say which months it paid for hosting — so a
+            # wiped database is stamped again, as the new deployment it is.
+            self._db._note_install()
 
     def _next_id(self, prefix: str) -> str:
         """Allocate the next identifier, and remember that it was taken.

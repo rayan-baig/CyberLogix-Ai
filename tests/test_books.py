@@ -313,3 +313,109 @@ def test_the_categories_are_offered_rather_than_guessed_at(api, admin_headers):
 
     assert "professional_fees" in body["categories"]
     assert "other" in body["categories"]
+
+
+# --- the cost of a server nobody had yet ------------------------------------
+#
+# Fixed infrastructure was priced as rate x months, with months taken
+# straight from the requested period. Nothing in that sentence mentions
+# the business, so the file happily charged for time the business did
+# not exist: $9,968 of hosting against an empty database, because the
+# default period begins at the Unix epoch. Asking for a future year was
+# worse — a full year of cost, already spent, in 2031.
+#
+# These are not cosmetic. This file exists to be handed to whoever signs
+# a tax return, and a deduction for a server nobody rented is the exact
+# thing I declined to write in by hand when asked to cut the bill.
+
+
+def _trading_since(tenant_id, when):
+    """Backdate an account so the business has a real operating history."""
+    from dataclasses import replace
+
+    live = STORE._tenants[tenant_id]
+    STORE._tenants[tenant_id] = replace(live, activated_at=when)
+
+
+def test_a_new_deployment_is_charged_one_month_not_six_hundred(
+    api, admin_headers
+):
+    """The default period starts in 1970. The business did not.
+
+    A server that has been up for an hour has cost one month of a
+    monthly subscription, which is where the floor comes from. It has
+    not cost 680 of them, which is what the epoch-to-now period used to
+    produce against a database with nothing in it.
+    """
+    costs = api.get("/api/books", headers=admin_headers).json()["known_costs"]
+
+    assert costs["months_covered"] == 1.0, costs["months_covered"]
+    assert costs["fixed_infrastructure_usd"] < 100, "a deduction nobody may claim"
+
+
+def test_no_infrastructure_is_charged_for_a_future_year(api, admin_headers,
+                                                        tenant_factory):
+    _, tenant = tenant_factory()
+    _trading_since(tenant["tenant_id"], datetime(2025, 3, 1, tzinfo=timezone.utc))
+
+    costs = api.get("/api/books?year=2031",
+                    headers=admin_headers).json()["known_costs"]
+
+    assert costs["fixed_infrastructure_usd"] == 0, "cost that has not been spent"
+
+
+def test_no_infrastructure_is_charged_before_the_business_existed(
+    api, admin_headers, tenant_factory
+):
+    _, tenant = tenant_factory()
+    _trading_since(tenant["tenant_id"], datetime(2025, 3, 1, tzinfo=timezone.utc))
+
+    costs = api.get("/api/books?year=2024",
+                    headers=admin_headers).json()["known_costs"]
+
+    assert costs["fixed_infrastructure_usd"] == 0
+
+
+def test_a_part_year_is_charged_only_for_the_part_it_traded(
+    api, admin_headers, tenant_factory
+):
+    """Trading from 1 March 2025 is ten months of 2025, not twelve."""
+    _, tenant = tenant_factory()
+    _trading_since(tenant["tenant_id"], datetime(2025, 3, 1, tzinfo=timezone.utc))
+
+    costs = api.get("/api/books?year=2025",
+                    headers=admin_headers).json()["known_costs"]
+
+    assert 9.5 < costs["months_covered"] < 10.5, costs["months_covered"]
+    assert costs["infrastructure_charged_from"].startswith("2025-03-01")
+
+
+def test_the_current_year_stops_at_today_not_at_december(
+    api, admin_headers, tenant_factory
+):
+    """You cannot deduct next month's hosting in September."""
+    _, tenant = tenant_factory()
+    _trading_since(tenant["tenant_id"], datetime(2020, 1, 1, tzinfo=timezone.utc))
+    now = books.utc_now()
+
+    costs = api.get(f"/api/books?year={now.year}",
+                    headers=admin_headers).json()["known_costs"]
+
+    elapsed = (now - datetime(now.year, 1, 1, tzinfo=timezone.utc))
+    elapsed_months = elapsed.total_seconds() / (30.44 * 86400)
+    assert costs["months_covered"] <= elapsed_months + 0.01
+    assert costs["infrastructure_charged_to"].startswith(str(now.year))
+
+
+def test_the_charged_window_is_stated_so_the_number_can_be_checked(
+    api, admin_headers, tenant_factory
+):
+    _, tenant = tenant_factory()
+    _trading_since(tenant["tenant_id"], datetime(2025, 3, 1, tzinfo=timezone.utc))
+
+    costs = api.get("/api/books?year=2025",
+                    headers=admin_headers).json()["known_costs"]
+
+    assert costs["infrastructure_charged_from"] is not None
+    assert costs["infrastructure_charged_to"] is not None
+    assert "actually running" in costs["warning"]

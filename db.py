@@ -69,7 +69,68 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.commit()
+        self._note_install()
         logger.info("SQLite persistence open at %s", path)
+
+    def _note_install(self) -> None:
+        """Record, once, when this deployment started existing.
+
+        Infrastructure is charged by the month, and something has to say
+        which months. Nothing did, so the books priced hosting over the
+        whole requested period — which begins at the Unix epoch by
+        default, and produced a five-figure deduction against an empty
+        database. The database's own birthday is the honest anchor: the
+        server has been running, and costing money, since there was a
+        database on it.
+
+        A database that predates this record is backdated to the oldest
+        thing in it rather than to today, so upgrading does not erase the
+        months a live deployment really did pay for.
+        """
+        from datetime import datetime, timezone
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT data FROM records WHERE kind = ? AND rec_id = ?",
+                ("meta", "install"),
+            ).fetchone()
+            if row is not None:
+                return
+            existing = self._conn.execute(
+                "SELECT COUNT(*) FROM records"
+            ).fetchone()[0]
+            when = datetime.now(timezone.utc)
+            if existing:
+                when = self._oldest_timestamp() or when
+            self._conn.execute(
+                "INSERT INTO records (kind, rec_id, data) VALUES (?, ?, ?)",
+                ("meta", "install", _encode({"at": when.strftime("%Y-%m-%dT%H:%M:%SZ")})),
+            )
+            self._conn.commit()
+
+    def _oldest_timestamp(self):
+        """The earliest ISO instant anywhere in an existing database."""
+        from datetime import datetime, timezone
+        import re
+
+        pattern = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+        oldest = None
+        for (blob,) in self._conn.execute("SELECT data FROM records"):
+            for found in pattern.findall(blob):
+                try:
+                    when = datetime.strptime(
+                        found, "%Y-%m-%dT%H:%M:%S"
+                    ).replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+                if oldest is None or when < oldest:
+                    oldest = when
+        return oldest
+
+    def installed_at(self) -> Optional[str]:
+        """When this deployment first existed, as an ISO instant."""
+        row = self.get("meta", "install")
+        return row.get("at") if row else None
 
     def put(self, kind: str, rec_id: str, data: Dict[str, Any]) -> None:
         with self._lock:
