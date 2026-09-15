@@ -43,6 +43,7 @@ from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
+from readiness import router as readiness_router
 from conversion import router as conversion_router
 from digest import router as digest_router
 from payments import router as payments_router
@@ -143,6 +144,7 @@ app.include_router(mail_router)
 app.include_router(conversion_router)
 app.include_router(digest_router)
 app.include_router(backup_router)
+app.include_router(readiness_router)
 app.include_router(watchdog_router)
 app.include_router(payments_router)
 app.include_router(margin_router)

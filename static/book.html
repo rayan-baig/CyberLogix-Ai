@@ -351,6 +351,9 @@ h3.sub {
 
     <section class="panel" id="panel-health" role="tabpanel" hidden>
       <h2>Is the machine running</h2>
+      <div class="lines" id="launch-lines"></div>
+      <div id="launch-list"></div>
+      <h3 class="sub">Right now</h3>
       <div class="totals" id="health-totals"></div>
       <div id="health-list"></div>
 
@@ -794,13 +797,14 @@ async function loadHealth() {
     tone: "bad", title: why,
   })), "Nothing is stopped.");
 
-  const [backups, mail, log, sup, due, terms] = await Promise.all([
+  const [backups, mail, log, sup, due, terms, fit] = await Promise.all([
     read("/api/admin/backups"),
     read("/api/mail/status"),
     read("/api/mail/log?limit=25"),
     read("/api/mail/suppressions"),
     read("/api/conversion/due"),
     read("/api/legal/acceptance/outstanding"),
+    read("/api/admin/readiness"),
   ]);
 
   linesInto("backup-lines", [
@@ -843,6 +847,30 @@ async function loadHealth() {
     id: b2.address,
     label: "Allow again",
   })), "No address has been stopped.");
+
+  // Two questions, not one. A deployment that can monitor but cannot
+  // invoice is a perfectly good way to launch, and saying so is more
+  // use than a single ready/not-ready light that is always red.
+  linesInto("launch-lines", [
+    ["Launch shape", fit.shape, fit.note],
+    ["Can a freezer depend on it", fit.can_monitor ? "yes" : "no",
+     "alerts reach a person"],
+    ["Runs unattended", fit.runs_unattended ? "yes" : "no",
+     "something outside notices if this dies"],
+    ["Can it ask to be paid", fit.can_take_money ? "yes" : "no",
+     fit.paid_accounts_possible
+       ? "paid accounts can be created"
+       : "provisioning key unset, so trials only \u2014 no paid account "
+         + "can be created at all"],
+  ]);
+  itemsInto("launch-list", fit.checks
+    .filter((c) => c.state !== "ok")
+    .map((c) => ({
+      tone: c.state === "blocks" ? "bad" : "warn",
+      title: c.title,
+      detail: c.detail,
+      meta: c.fix,
+    })), "Nothing outstanding.");
 
   // An acceptance pins the hash of the exact text. Editing a document
   // does not void the old agreement -- it means the customer is still
