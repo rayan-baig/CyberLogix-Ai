@@ -43,6 +43,7 @@ from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
+from faults import router as faults_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
 from digest import router as digest_router
@@ -145,6 +146,7 @@ app.include_router(conversion_router)
 app.include_router(digest_router)
 app.include_router(backup_router)
 app.include_router(readiness_router)
+app.include_router(faults_router)
 app.include_router(watchdog_router)
 app.include_router(payments_router)
 app.include_router(margin_router)
@@ -271,6 +273,37 @@ async def security_headers(request: Request, call_next):
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
     return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    """Write down anything that got all the way out, then answer cleanly.
+
+    Without this the traceback went to stdout, and in a container stdout
+    is gone at the next restart. So the sequence was: something breaks at
+    2am, the process logs, the container restarts, and the only evidence
+    is a customer asking why. Nothing in the product could answer.
+
+    The response says nothing about the internals -- a stack trace handed
+    to whoever triggered it is a gift to somebody probing the API -- but
+    it carries the fault id, so a customer quoting it is quoting
+    something that can be looked up.
+    """
+    import faults
+
+    row = faults.record(
+        f"{request.method} {request.url.path}", exc,
+        context=f"query={dict(request.query_params)}",
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": (
+                "Something went wrong on our side. It has been recorded."
+            ),
+            "fault_id": row.get("fault_id", ""),
+        },
+    )
 
 
 @app.exception_handler(RequestValidationError)

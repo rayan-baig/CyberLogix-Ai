@@ -475,6 +475,11 @@ incident while signed in records *you*, not a generic label; the same action
 performed with a machine key is recorded with `actor_role: "machine"`. A
 compliance report is only as good as its provenance.
 
+> Running it for real rather than trying it out? **[DEPLOY.md](DEPLOY.md)**
+> is the runbook: domain and DNS, the container, the secrets, the dead
+> man's switch, and the end-to-end test with real hardware. `python
+> readiness.py` tells you what is still blocking at any point.
+
 ## Quick start
 
 ```bash

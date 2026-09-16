@@ -357,11 +357,16 @@ h3.sub {
       <div class="totals" id="health-totals"></div>
       <div id="health-list"></div>
 
+      <h3 class="sub">What has broken</h3>
+      <div class="lines" id="fault-lines"></div>
+      <div id="fault-list"></div>
+
       <h3 class="sub">Backups</h3>
       <div class="lines" id="backup-lines"></div>
       <div class="bar-actions">
         <button type="button" class="act" data-act="backup">Take a snapshot now</button>
       </div>
+      <div id="snapshot-list"></div>
 
       <h3 class="sub">Mail</h3>
       <div class="lines" id="mail-lines"></div>
@@ -797,7 +802,8 @@ async function loadHealth() {
     tone: "bad", title: why,
   })), "Nothing is stopped.");
 
-  const [backups, mail, log, sup, due, terms, fit] = await Promise.all([
+  const [backups, mail, log, sup, due, terms, fit, broke] =
+    await Promise.all([
     read("/api/admin/backups"),
     read("/api/mail/status"),
     read("/api/mail/log?limit=25"),
@@ -805,6 +811,7 @@ async function loadHealth() {
     read("/api/conversion/due"),
     read("/api/legal/acceptance/outstanding"),
     read("/api/admin/readiness"),
+    read("/api/admin/faults?limit=25"),
   ]);
 
   linesInto("backup-lines", [
@@ -814,6 +821,35 @@ async function loadHealth() {
     ["Survives a lost disk",
      yesno(!backups.on_the_same_disk_as_the_database), backups.note || ""],
   ]);
+
+  // Deduplicated by where it was raised, so a thousand repeats of one
+  // bug is one row saying a thousand -- which is what stops the noisy
+  // bug burying the rare one.
+  linesInto("fault-lines", [
+    ["Distinct faults", String(broke.distinct),
+     broke.occurrences + " occurrence(s) in total"],
+    ["Most recent", broke.newest ? when(broke.newest) : "none",
+     broke.worst ? "worst offender: " + broke.worst : broke.note],
+  ]);
+  itemsInto("fault-list", (broke.faults || []).map((f) => ({
+    tone: f.seen > 10 ? "bad" : "warn",
+    title: f.exception + " in " + f.source,
+    detail: f.message,
+    meta: f.seen + "x \u00b7 first " + when(f.first_seen)
+      + " \u00b7 last " + when(f.last_seen) + " \u00b7 " + f.fault_id,
+    act: "dismiss-fault",
+    id: f.fault_id,
+    label: "Dismiss",
+  })), "Nothing has thrown an error.");
+
+  itemsInto("snapshot-list", (backups.snapshots || []).map((snap) => ({
+    title: snap.name,
+    detail: Math.round(snap.size_bytes / 1024) + " KB",
+    meta: when(snap.taken_at),
+    act: "restore",
+    id: snap.name,
+    label: "Restore",
+  })), "No snapshot has been taken yet.");
 
   linesInto("mail-lines", [
     ["Can send at all", yesno(mail.configured),
@@ -964,6 +1000,32 @@ async function act(button) {
     if (what === "unsuppress") {
       await api("/api/mail/suppressions?address=" + encodeURIComponent(id),
                 { method: "DELETE" });
+      await loadHealth();
+      return;
+    }
+    if (what === "dismiss-fault") {
+      await api("/api/admin/faults/" + encodeURIComponent(id),
+                { method: "DELETE" });
+      await loadHealth();
+      return;
+    }
+    if (what === "restore") {
+      // Typed out in full, because this discards every write made since
+      // the snapshot and a misclick should not be able to do that.
+      if (!window.confirm(
+            "Restore " + id + " over the live database?\n\n"
+            + "Every change made since it was taken is discarded. The "
+            + "database being replaced is snapshotted first.")) {
+        return;
+      }
+      const resp = await api("/api/admin/backups/restore", {
+        method: "POST", body: { snapshot: id, confirm: true },
+      });
+      const body = await resp.json().catch(() => ({}));
+      say("health-said", resp.ok
+          ? ("Restored " + id + ". " + body.detail)
+          : ("Could not restore it: " + (body.detail || resp.status)),
+          !resp.ok);
       await loadHealth();
       return;
     }

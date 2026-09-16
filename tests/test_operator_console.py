@@ -93,6 +93,7 @@ CONTRACT = {
     "/api/mail/log": ["messages"],
     "/api/mail/suppressions": ["suppressions"],
     "/api/conversion/due": ["due"],
+    "/api/admin/faults": ["distinct", "occurrences", "faults", "note"],
     "/api/admin/readiness": [
         "shape", "can_monitor", "can_take_money", "runs_unattended",
         "paid_accounts_possible", "checks", "note",

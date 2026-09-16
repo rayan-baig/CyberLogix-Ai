@@ -206,6 +206,74 @@ async def _loop(interval: int) -> None:
 
 
 _task: Optional[asyncio.Task] = None
+_restarts = 0
+
+# A supervised loop that dies and comes back every 200ms is worse than one
+# that stays down: it buries the reason. Backing off caps the churn while
+# still recovering from something transient within a minute.
+RESTART_BACKOFF_SECONDS = (1, 5, 15, 60)
+
+
+def restarts() -> int:
+    """How many times the loop has had to be brought back."""
+    return _restarts
+
+
+def _supervise(task: "asyncio.Task") -> None:
+    """Bring the loop back if it ever stops without being told to.
+
+    `_loop` already guards each pass, so one failing sweep cannot end it.
+    What was unguarded was the task itself: a BaseException, a bug in the
+    guard, or anything that escaped `while True` left no loop running and
+    nothing to start another. The watchdog would have reported it -- 503,
+    correctly -- and then waited for a human to read it, on a deployment
+    whose whole point is that nobody has to.
+    """
+    global _restarts
+
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        # A deliberate stop: `.exception()` raises rather than returns for
+        # a cancelled task. Catching it keeps shutdown quiet. It is not
+        # what prevents a restart -- CancelledError is a BaseException, so
+        # letting it escape this callback would also skip the restart, and
+        # a mutation test confirmed the two are behaviourally the same.
+        # What prevents the restart is `_loop` re-raising rather than
+        # swallowing, so a cancelled task ends cancelled.
+        return
+    if exc is None:
+        detail = "the sweep loop returned, which it is not supposed to do"
+    else:
+        detail = f"the sweep loop died: {type(exc).__name__}: {exc}"
+        try:
+            import faults
+
+            faults.record("scheduler._loop", exc, context="supervised restart")
+        except Exception:  # noqa: BLE001 - recovery must not need the recorder
+            logger.exception("Could not record the scheduler fault.")
+
+    delay = RESTART_BACKOFF_SECONDS[
+        min(_restarts, len(RESTART_BACKOFF_SECONDS) - 1)
+    ]
+    _restarts += 1
+    logger.error("%s. Restarting in %ds (restart #%d).",
+                 detail, delay, _restarts)
+
+    async def _revive() -> None:
+        await asyncio.sleep(delay)
+        interval = _interval()
+        if interval <= 0:
+            return
+        global _task
+        _task = asyncio.create_task(_loop(interval))
+        _task.add_done_callback(_supervise)
+
+    try:
+        asyncio.get_running_loop().create_task(_revive())
+    except RuntimeError:
+        # No loop left to schedule on: the process is going down anyway.
+        logger.warning("No event loop to restart the sweep on.")
 
 
 def start() -> Optional[asyncio.Task]:
@@ -223,6 +291,7 @@ def start() -> Optional[asyncio.Task]:
     if _task is not None and not _task.done():
         return _task
     _task = asyncio.create_task(_loop(interval))
+    _task.add_done_callback(_supervise)
     return _task
 
 

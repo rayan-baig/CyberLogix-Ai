@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 from auth import require_platform_admin
 from store import STORE, iso, utc_now
@@ -135,6 +136,146 @@ def take(now: Optional[datetime] = None, label: str = "") -> Dict[str, Any]:
     }
 
 
+def verify(path: str) -> Dict[str, Any]:
+    """Open a snapshot and confirm it is a database with rows in it.
+
+    A backup nobody has opened is a file, not a backup. This is what
+    `restore` runs first, and it is exposed on its own so the check can
+    be made on a schedule rather than on the morning it matters.
+    """
+    import sqlite3
+
+    target = Path(path)
+    if not target.exists():
+        return {"ok": False, "detail": f"No such snapshot: {path}"}
+    try:
+        conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+        try:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                return {"ok": False, "detail": f"integrity_check said {integrity}"}
+            rows = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+            kinds = conn.execute(
+                "SELECT COUNT(DISTINCT kind) FROM records"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is the answer
+        return {"ok": False, "detail": f"Could not read it: {exc}"}
+    return {
+        "ok": True, "records": rows, "kinds": kinds,
+        "size_bytes": target.stat().st_size,
+        "detail": f"{rows} record(s) across {kinds} kind(s)",
+    }
+
+
+def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Put a snapshot back, after taking one of what is being replaced.
+
+    There was no way to do this. Snapshots were written daily, verified,
+    pruned and counted, and nothing could put one back -- so the answer
+    to a corrupted database was a person with a shell, at whatever hour
+    it happened, which on a deployment meant to run itself is the same
+    as no answer.
+
+    Deliberately not automatic. Nothing in this application decides on
+    its own that the live data is wrong and yesterday's is right; that
+    judgement loses every write since the snapshot and belongs to a
+    person. What this removes is the part that needed a shell -- the
+    database is reopened and the working set rebuilt in place, so the
+    service is serving the restored data before the call returns.
+
+    The database being replaced is snapshotted first, labelled
+    `pre-restore`, because the most likely mistake here is restoring the
+    wrong one and the second most likely is being right about the
+    corruption and wrong about which copy was good.
+    """
+    now = now or utc_now()
+    directory = _directory()
+    if directory is None:
+        return {"restored": False, "status": "nowhere_to_read",
+                "detail": "There is no snapshot directory on this deployment."}
+
+    # _directory() already refuses an in-memory database when no backup
+    # directory is configured -- but configure one and it stops refusing,
+    # and there is still nothing on disk to replace. Copying over the
+    # literal path ":memory:" would create a file of that name and leave
+    # the reopened database empty.
+    if STORE._db.path == ":memory:":
+        return {
+            "restored": False, "status": "nothing_to_replace",
+            "detail": (
+                "This deployment's database is in memory, so there is no "
+                "file to restore over. Set CYBERLOGIX_DB_PATH."
+            ),
+        }
+
+    target = directory / Path(name).name  # no traversal out of the directory
+    checked = verify(str(target))
+    if not checked["ok"]:
+        return {"restored": False, "status": "unusable",
+                "detail": checked["detail"]}
+
+    safety = take(now=now, label="pre-restore")
+    if not safety.get("taken"):
+        return {
+            "restored": False, "status": "no_safety_copy",
+            "detail": (
+                "Refusing to overwrite the live database without first "
+                f"snapshotting it: {safety.get('detail')}"
+            ),
+        }
+
+    live = Path(STORE._db.path)
+    try:
+        import shutil
+
+        # Swap the file, then reopen and rebuild the working set from what
+        # is now on disk. Closing and stopping there was the first version,
+        # and it left the process holding a closed database: every request
+        # afterwards answered 500 until somebody restarted the container.
+        # A recovery step that needs a human at the end is not one.
+        STORE._db.close()
+        shutil.copyfile(target, live)
+        STORE._db.reopen()
+        STORE.forget()
+        STORE.load()
+    except Exception as exc:  # noqa: BLE001 - reported, and the copy remains
+        logger.exception("Restore from %s failed (%s).", target, exc)
+        try:
+            STORE._db.reopen()
+            STORE.forget()
+            STORE.load()
+        except Exception:  # noqa: BLE001 - nothing left to try
+            logger.exception("Could not reopen the database after a failed "
+                             "restore. This process needs restarting.")
+        return {
+            "restored": False, "status": "failed",
+            "detail": (
+                f"Could not put {target.name} back: {exc}. The database "
+                f"you had was snapshotted first, to {safety.get('path')}."
+            ),
+        }
+
+    logger.warning(
+        "Restored %s over the live database (%d records). The database it "
+        "replaced is in %s.",
+        target.name, checked["records"], safety.get("path"),
+    )
+    return {
+        "restored": True,
+        "status": "ok",
+        "from": target.name,
+        "records": checked["records"],
+        "previous_database_saved_to": safety.get("path"),
+        "detail": (
+            "Restored and reloaded in place -- no restart needed. The "
+            "database that was replaced was snapshotted first, so "
+            "restoring the wrong one is survivable."
+        ),
+    }
+
+
 def prune() -> List[Path]:
     """Delete the oldest until only BACKUP_KEEP remain."""
     snapshots = existing()
@@ -219,3 +360,43 @@ def make_backup(_: None = Depends(require_platform_admin)):
     if not result["taken"]:
         raise HTTPException(status_code=503, detail=result["detail"])
     return result
+
+
+class RestoreRequest(BaseModel):
+    """Naming the snapshot is the confirmation. There is no "latest"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot: str = Field(..., min_length=1, max_length=255)
+    confirm: bool = Field(
+        ..., description="Must be true. Restoring discards every write "
+                         "made since the snapshot was taken."
+    )
+
+
+@router.post("/backups/restore")
+def do_restore(
+    payload: RestoreRequest, _: None = Depends(require_platform_admin)
+):
+    """Put a named snapshot back over the live database."""
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Restoring discards every write made since that snapshot. "
+                "Send confirm=true once that is what you mean."
+            ),
+        )
+    result = restore(payload.snapshot)
+    if not result["restored"]:
+        raise HTTPException(status_code=400, detail=result["detail"])
+    return result
+
+
+@router.get("/backups/{name}/verify")
+def do_verify(name: str, _: None = Depends(require_platform_admin)):
+    """Open a snapshot and confirm it is a database with rows in it."""
+    directory = _directory()
+    if directory is None:
+        raise HTTPException(status_code=404, detail="No snapshot directory.")
+    return verify(str(directory / Path(name).name))

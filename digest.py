@@ -211,10 +211,28 @@ def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
             ),
             2,
         ),
+        "faults": _fault_summary(),
         "unbilled_accounts": len(unbilled),
         "unbilled_annual_usd": unbilled_annual,
         "warnings": _system_warnings(),
     }
+
+
+def _fault_summary() -> Dict[str, Any]:
+    """What has thrown, for the one email that arrives without being asked.
+
+    An unhandled error is recorded now rather than lost to stdout, but a
+    record nobody reads is the same as no record -- and the operator
+    console is a page somebody has to remember to open. This is the line
+    that arrives anyway.
+    """
+    try:
+        import faults
+
+        return faults.status()
+    except Exception:  # noqa: BLE001 - a summary must not stop the digest
+        logger.exception("Could not summarise faults for the digest.")
+        return {"distinct": 0, "occurrences": 0, "newest": None, "worst": None}
 
 
 def _render_operator(digest: Dict[str, Any]) -> str:
@@ -225,6 +243,14 @@ def _render_operator(digest: Dict[str, Any]) -> str:
         f"${digest['outstanding_usd']:,.2f} invoiced and unpaid.",
         f"${digest['at_risk_usd']:,.0f} a year at risk if nobody calls.",
     ]
+
+    broke = digest["faults"]
+    if broke["distinct"]:
+        out.append(
+            f"{broke['distinct']} distinct fault(s), "
+            f"{broke['occurrences']} occurrence(s). Worst: "
+            f"{broke['worst']}. See /api/admin/faults."
+        )
 
     if digest["unbilled_accounts"]:
         count = digest["unbilled_accounts"]

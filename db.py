@@ -241,3 +241,28 @@ class Database:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def reopen(self) -> None:
+        """Reconnect after the file underneath has been replaced.
+
+        A restore used to close this and stop there, which left the
+        running process holding a closed database: every request after it
+        answered 500 until somebody restarted the container. On a
+        deployment meant to run itself, a recovery step that needs a
+        human at the end is not a recovery step.
+
+        The install stamp is not rewritten -- the restored database
+        carries its own, which is the one that is true.
+        """
+        with self._lock:
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001 - it may already be closed
+                pass
+            self._conn = sqlite3.connect(self.path, check_same_thread=False)
+            self._conn.executescript(SCHEMA)
+            if self.path != ":memory:":
+                self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.commit()
+        logger.info("SQLite persistence reopened at %s", self.path)

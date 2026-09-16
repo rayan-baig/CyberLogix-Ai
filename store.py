@@ -2556,8 +2556,19 @@ class HubStore:
                     len(self._incidents),
                 )
 
-    def reset(self) -> None:
-        """Drop all state, on disk as well as in memory. Used by tests."""
+    def forget(self) -> None:
+        """Drop the in-memory working set, leaving the database alone.
+
+        Split out of reset() for the restore path, which replaces the
+        file underneath and then has to rebuild from what is now there
+        rather than from what this process remembers.
+        """
+        with self._lock:
+            self._forget_locked()
+
+    def _forget_locked(self) -> None:
+        # The lock is an RLock, so taking it again here is free and this
+        # stays correct whichever way it is reached.
         with self._lock:
             self._tenants.clear()
             self._keys.clear()
@@ -2587,6 +2598,11 @@ class HubStore:
             self._mail_keys.clear()
             self._suppressions.clear()
             self._counter = 0
+
+    def reset(self) -> None:
+        """Drop all state, on disk as well as in memory. Used by tests."""
+        with self._lock:
+            self._forget_locked()
             self._db.clear()
             # clear() drops the meta row along with everything else, so the
             # counter is genuinely back to zero rather than merely in memory.
