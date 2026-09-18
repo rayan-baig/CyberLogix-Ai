@@ -976,6 +976,18 @@ class Incident:
     voice_dispatch_source: Optional[str] = None
     resolved_at: Optional[datetime] = None
     ack_token: Optional[str] = None
+    # What was DONE about it, and who says so. An inspector reading a
+    # temperature log is not checking that the fridge got cold again --
+    # they are checking that somebody recorded what they did with the
+    # food and that a manager signed it. HACCP principles 4 and 7 make
+    # the corrective action and its review the record, and an excursion
+    # with neither is the line that gets written up.
+    corrective_action: Optional[str] = None
+    corrective_action_by: Optional[str] = None
+    corrective_action_at: Optional[datetime] = None
+    product_disposition: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     # The readings that prove this event, copied onto the incident when it
     # opens and again when it resolves.
     #
@@ -1066,6 +1078,12 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "ack_token": self.ack_token,
+            "corrective_action": self.corrective_action,
+            "corrective_action_by": self.corrective_action_by,
+            "corrective_action_at": iso(self.corrective_action_at),
+            "product_disposition": self.product_disposition,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": iso(self.reviewed_at),
             "evidence_readings": list(self.evidence_readings),
         }
 
@@ -1093,6 +1111,14 @@ class Incident:
             voice_dispatch_source=row.get("voice_dispatch_source"),
             resolved_at=_parse(row.get("resolved_at")),
             ack_token=row.get("ack_token"),
+            # Defaulted: incidents written before corrective actions
+            # existed simply have none recorded, which is the truth.
+            corrective_action=row.get("corrective_action"),
+            corrective_action_by=row.get("corrective_action_by"),
+            corrective_action_at=_parse(row.get("corrective_action_at")),
+            product_disposition=row.get("product_disposition"),
+            reviewed_by=row.get("reviewed_by"),
+            reviewed_at=_parse(row.get("reviewed_at")),
             # Defaulted, so incidents written before evidence was
             # preserved still load. Theirs is gone; nothing can bring it
             # back, and the packet says so rather than implying otherwise.
@@ -1125,6 +1151,25 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "minutes_open": self.minutes_open(),
+            "corrective_action": self.corrective_action,
+            "corrective_action_by": self.corrective_action_by,
+            "corrective_action_at": iso(self.corrective_action_at),
+            "product_disposition": self.product_disposition,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": iso(self.reviewed_at),
+            # What an inspector is actually checking. A cold fridge with
+            # no record of what happened to the food in it is the line
+            # that gets written up, so the gap is named rather than left
+            # to be noticed.
+            "record_complete": bool(self.corrective_action and self.reviewed_by),
+            "record_missing": [
+                label for label, present in (
+                    ("a corrective action", bool(self.corrective_action)),
+                    ("what happened to the product",
+                     bool(self.product_disposition)),
+                    ("a manager's review", bool(self.reviewed_by)),
+                ) if not present
+            ],
             "state": (
                 "resolved"
                 if self.resolved_at
@@ -3196,6 +3241,45 @@ class HubStore:
             self._save_incident(live)
             incident.evidence_readings = list(live.evidence_readings)
             return live
+
+    def record_corrective_action(
+        self, incident: Incident, actor: str, action: str,
+        disposition: str = "",
+    ) -> Incident:
+        """What was done about the excursion, and by whom.
+
+        HACCP principle 4 makes this the record, not the temperature: an
+        inspector reading a log is checking that somebody wrote down what
+        happened to the food. A cold fridge with no entry is the line
+        that gets written up.
+
+        Kept append-only in spirit -- a second call replaces the text but
+        the audit trail holds both, because a corrective action edited
+        after an inspection is worth nothing.
+        """
+        with self._lock:
+            now = utc_now()
+            incident.corrective_action = action.strip()
+            incident.corrective_action_by = actor
+            incident.corrective_action_at = now
+            if disposition.strip():
+                incident.product_disposition = disposition.strip()
+            self._save_incident(incident)
+        return incident
+
+    def review_incident(self, incident: Incident, actor: str) -> Incident:
+        """A manager's sign-off, which principle 7 asks for separately.
+
+        Separate from the corrective action on purpose: the person who
+        moved the product and the person who signs that it was handled
+        are usually not the same, and a log where they always are is one
+        an inspector reads twice.
+        """
+        with self._lock:
+            incident.reviewed_by = actor
+            incident.reviewed_at = utc_now()
+            self._save_incident(incident)
+        return incident
 
     def resolve_incident(self, incident: Incident, actor: str) -> Incident:
         """Close an incident, acknowledging it first if nobody had."""

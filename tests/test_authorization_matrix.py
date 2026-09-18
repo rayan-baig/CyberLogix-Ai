@@ -49,6 +49,14 @@ UNGATED_BY_DESIGN = {
     ),
     "/api/sensor-pulse": "machine ingest — this is what a sensor does",
     "/api/v1/bridge/sensor-webhook-ingest": "machine ingest from third-party hardware",
+    "/api/v1/bridge/any": (
+        "machine ingest from third-party hardware, in whatever shape the "
+        "vendor sends. Authenticated in the body rather than by a "
+        "dependency for the same reason as its sibling above: the caller "
+        "is a freezer sensor that cannot set a header, and often can be "
+        "given nothing but a URL"
+    ),
+    "/api/v1/bridge/preview": "reads a pasted payload back, changes no state",
     "/api/v1/bridge/summarize-transcript": "produces a document, changes no state",
     "/api/voice/keypress/{incident_id}/{token}": (
         "Twilio's callback, verified by request signature and a per-incident secret"

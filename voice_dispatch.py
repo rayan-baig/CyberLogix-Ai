@@ -15,7 +15,7 @@ from typing import Optional
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from gemini import safe_generate
 from auth import (
@@ -494,4 +494,153 @@ def list_incidents(tenant: Tenant = Depends(require_tenant)):
         "count": len(incidents),
         "open": sum(1 for i in incidents if i.open),
         "incidents": [i.public() for i in incidents],
+    }
+
+
+# ==============================================================================
+#  What was done about it
+#
+#  A temperature log is not what a health inspector is reading. HACCP
+#  principles 4 and 7 make the *corrective action* and its review the
+#  record: what happened to the product, who did it, and which manager
+#  signed. An excursion with a temperature and no entry is the line that
+#  gets written up.
+#
+#  This is also where the two halves of this market do not meet. The
+#  hardware vendors log temperatures and stop. The food-safety workflow
+#  platforms capture corrective actions but cannot see a freezer, so
+#  somebody types the readings in by hand -- which is the step that gets
+#  skipped on a bad night, and the gap the inspector finds.
+# ==============================================================================
+
+
+# Written for the person holding the phone at 6am, not for a form. Free
+# text stays available because the real answer is often none of these.
+CORRECTIVE_ACTIONS = {
+    "restaurant": [
+        "Moved product to another unit",
+        "Discarded affected product",
+        "Door found open and closed",
+        "Called refrigeration engineer",
+        "Unit defrosted and recovered",
+    ],
+    "medical_lab": [
+        "Moved samples to backup storage",
+        "Samples quarantined pending review",
+        "Samples discarded per protocol",
+        "Called service engineer",
+    ],
+    "pharmacy": [
+        "Stock moved to backup fridge",
+        "Stock quarantined pending manufacturer guidance",
+        "Stock destroyed and recorded",
+        "Called service engineer",
+    ],
+}
+DEFAULT_ACTIONS = [
+    "Fault corrected on site",
+    "Called an engineer",
+    "Load moved elsewhere",
+    "No action needed; reading was transient",
+]
+
+DISPOSITIONS = (
+    "unaffected", "moved", "quarantined", "discarded", "sold_or_used",
+    "not_applicable",
+)
+
+
+class CorrectiveAction(BaseModel):
+    """What a person did about an excursion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(..., min_length=3, max_length=500)
+    product_disposition: Optional[str] = Field(
+        None, description=f"One of {DISPOSITIONS}."
+    )
+
+    @field_validator("product_disposition")
+    @classmethod
+    def known_disposition(cls, value):
+        if value and value not in DISPOSITIONS:
+            raise ValueError(f"product_disposition must be one of {DISPOSITIONS}")
+        return value
+
+
+@router.post("/corrective-action/{incident_id}")
+def record_corrective_action(
+    incident_id: str,
+    payload: CorrectiveAction,
+    tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
+    _: object = Depends(require_role_or_machine("operator")),
+):
+    """Write down what was done, against the excursion it answers."""
+    incident = _load_incident(incident_id, tenant)
+    actor = operator.full_name if operator else "API key"
+    STORE.record_corrective_action(
+        incident, actor, payload.action, payload.product_disposition or ""
+    )
+    if operator is not None:
+        write_audit(tenant, operator, "incident.corrective_action",
+                    f"{incident_id}: {payload.action[:200]}")
+    return {
+        "message": "Recorded against the excursion.",
+        "incident": incident.public(),
+    }
+
+
+@router.post("/review/{incident_id}")
+def review_incident(
+    incident_id: str,
+    tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
+    _: object = Depends(require_role_or_machine("owner")),
+):
+    """A manager's sign-off on the record.
+
+    Owner-only, and no machine credential: principle 7 asks for a named
+    person's review, and a signature attributed to "API key" is not one.
+    """
+    if operator is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "A review has to be signed by a named person, so it "
+                "cannot be made with a machine credential."
+            ),
+        )
+    incident = _load_incident(incident_id, tenant)
+    if not incident.corrective_action:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "There is no corrective action to review yet. Record what "
+                "was done first."
+            ),
+        )
+    STORE.review_incident(incident, operator.full_name)
+    write_audit(tenant, operator, "incident.reviewed", incident_id)
+    return {
+        "message": f"Reviewed by {operator.full_name}.",
+        "incident": incident.public(),
+    }
+
+
+@router.get("/corrective-actions")
+def suggested_actions(tenant: Tenant = Depends(require_tenant)):
+    """The handful of answers that cover most nights, by sector."""
+    verticals = {s.industry_vertical for s in STORE.sensors_for(tenant.tenant_id)}
+    offered = []
+    for vertical in sorted(verticals):
+        offered.extend(CORRECTIVE_ACTIONS.get(vertical, []))
+    return {
+        "suggestions": sorted(set(offered)) or DEFAULT_ACTIONS,
+        "dispositions": list(DISPOSITIONS),
+        "note": (
+            "Suggestions, not a fixed list. The real answer is often none "
+            "of these, and a log where every entry is identical is one an "
+            "inspector reads twice."
+        ),
     }

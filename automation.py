@@ -166,10 +166,43 @@ def compliance_report(
         else None
     )
 
+    # What the inspector is actually checking. HACCP principles 4 and 7
+    # ask for a corrective action on every out-of-range reading and a
+    # manager's review of it -- so an excursion with a temperature and
+    # nothing else is the line that gets written up. Naming the gap in
+    # the report is the difference between finding it here and finding
+    # it during an inspection.
+    unanswered = [i for i in incidents if not i.corrective_action]
+    unreviewed = [i for i in incidents
+                  if i.corrective_action and not i.reviewed_by]
+
     report: Dict[str, Any] = {
         "tenant_id": tenant.tenant_id,
         "company_name": tenant.company_name,
         "period_days": days,
+        "corrective_actions": {
+            "excursions": len(incidents),
+            "without_an_action": len(unanswered),
+            "awaiting_review": len(unreviewed),
+            "complete": len(incidents) - len(unanswered) - len(unreviewed),
+            "gaps": [
+                {
+                    "incident_id": i.incident_id,
+                    "sensor_id": i.sensor_id,
+                    "opened_at": iso(i.opened_at),
+                    "missing": i.public()["record_missing"],
+                }
+                for i in incidents if not (i.corrective_action and i.reviewed_by)
+            ][:50],
+            "note": (
+                "An out-of-range reading needs a recorded corrective "
+                "action and a named review. Every row above is one an "
+                "inspector would ask about."
+                if unanswered or unreviewed else
+                "Every excursion in this period has a corrective action "
+                "and a review against it."
+            ),
+        },
         "period_start": iso(since),
         "period_end": iso(utc_now()),
         "sensors_monitored": len(sensors),

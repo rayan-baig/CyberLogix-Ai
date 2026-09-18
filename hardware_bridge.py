@@ -22,13 +22,13 @@ import math
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models import Finite
 
 from gemini import safe_generate
-from auth import optional_operator
+from auth import optional_operator, require_tenant_any_state
 from licenses import require_tenant
 from store import (
     INDUSTRY_PROFILES,
@@ -512,4 +512,166 @@ def list_sector_directives():
             }
             for key, directive in SECTOR_PROMPTS.items()
         ],
+    }
+
+
+# ==============================================================================
+# PART 3: BYOD without a translator in the middle
+#
+# Part 1 accepts third-party hardware, but only in *our* field names. No
+# Monnit, SensorPush, Elitech or Dickson device has ever sent device_sn or
+# reading_value, so "point your existing sensor at this URL" required the
+# customer to build the very translator the claim promised to remove.
+#
+# These three routes are that translator. It matters more than it looks:
+# every hardware vendor in this market sells the software that watches
+# their own sensors, and the switching cost is the hardware already on the
+# wall. An estate that can keep its sensors has nothing to cross.
+# ==============================================================================
+
+
+@router.post("/any", status_code=status.HTTP_200_OK)
+async def ingest_any_payload(
+    request: Request,
+    k: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    x_cyberlogix_key: Optional[str] = Header(None),
+    x_signature: Optional[str] = Header(None),
+):
+    """Take whatever the device sends and work out the reading.
+
+    The key may travel as `?k=` because a great many devices offer one
+    field -- a URL -- and nothing else. That is worse than a header: it
+    lands in proxy logs and in the vendor's own console. Give a device the
+    per-sensor ingest key rather than the tenant key, so a leak is worth
+    one asset instead of the estate.
+    """
+    import byod
+
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - a device sending junk is the case here
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The body was not JSON. Nothing was recorded.",
+        )
+
+    # Three ways in, worst last. A header is the right place for a
+    # credential; the query string is here only because a great many
+    # devices offer one field and it is a URL.
+    token = x_cyberlogix_key or k
+    if token is None and isinstance(payload, dict):
+        token = payload.get("api_key_token") or payload.get("key")
+    tenant, scoped = _authenticate_webhook(token, authorization)
+
+    verdict = byod.detect(payload)
+
+    if not verdict["understood"]:
+        # Kept anyway, and this is the whole point: the answer to "why did
+        # my sensor not show up" is then the payload itself.
+        byod.remember(tenant.tenant_id, payload, verdict, "not_understood")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "This payload was kept but not understood.",
+                "missing": verdict["missing"],
+                "looked_at": sorted(byod.flatten(payload))[:40],
+                "next": (
+                    "Open the console, find this payload under the BYOD "
+                    "card, and point at the right fields."
+                ),
+            },
+        )
+
+    unit = verdict["unit"]
+    if unit is None:
+        byod.remember(tenant.tenant_id, payload, verdict, "unit_unknown")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": (
+                    "The reading was found but the payload does not say "
+                    "whether it is Celsius or Fahrenheit."
+                ),
+                "reading": verdict["value"],
+                "next": (
+                    "Set the unit on the sensor. It is not guessed from the "
+                    "number: 4 degrees is a fridge in Celsius and a "
+                    "disaster in Fahrenheit."
+                ),
+            },
+        )
+
+    translated = GenericWebhookPayload(
+        device_sn=verdict["serial"],
+        api_key_token=token,
+        reading_value=verdict["value"],
+        metric_type=unit,
+    )
+    byod.remember(tenant.tenant_id, payload, verdict, "ingested")
+    result = ingest_third_party_hardware_webhook(
+        translated, x_signature=x_signature, authorization=authorization
+    )
+    result["understood_as"] = {
+        "serial": verdict["serial"],
+        "reading": verdict["value"],
+        "unit": unit,
+        "using": verdict["preset"] or "field detection",
+        "fields_used": verdict["fields_used"],
+    }
+    return result
+
+
+class PayloadSample(BaseModel):
+    """One real payload, pasted out of a vendor's console."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    payload: Any = Field(..., description="Exactly what the device sends.")
+
+
+@router.post("/preview", status_code=status.HTTP_200_OK)
+def preview_payload(
+    sample: PayloadSample, tenant: Tenant = Depends(require_tenant_any_state)
+):
+    """Say what would be read out of a payload, without recording it.
+
+    Wiring up hardware is a loop of send-and-guess, and every vendor makes
+    it worse by showing nothing. This closes the loop before a device is
+    pointed anywhere.
+    """
+    import byod
+
+    verdict = byod.detect(sample.payload)
+    return {
+        **verdict,
+        "every_field_seen": sorted(byod.flatten(sample.payload))[:60],
+        "presets": [
+            {"key": key, "name": preset["name"],
+             "checked_against": preset["checked_against"]}
+            for key, preset in byod.PRESETS.items()
+        ],
+    }
+
+
+@router.get("/samples", status_code=status.HTTP_200_OK)
+def recent_payloads(tenant: Tenant = Depends(require_tenant_any_state)):
+    """What this estate's devices actually sent, verbatim.
+
+    The most useful screen there is when a sensor is not appearing, and
+    the one every vendor dashboard omits.
+    """
+    import byod
+
+    rows = byod.samples_for(tenant.tenant_id)
+    return {
+        "count": len(rows),
+        "kept": byod.MAX_SAMPLES_PER_TENANT,
+        "samples": rows,
+        "note": (
+            "Every payload that reaches the open ingest endpoint is kept "
+            "here, understood or not. A device that appears in this list "
+            "but not on the estate is a mapping problem; a device that "
+            "does not appear at all never reached us."
+        ),
     }
