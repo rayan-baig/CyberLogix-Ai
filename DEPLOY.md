@@ -157,7 +157,39 @@ the product is untested where it counts.
 
 ---
 
-## 6. Restoring, before you need to
+## 6. Putting it on a phone
+
+There is no app store step, and that is deliberate. The App Store and
+Play Store take **15–30% of every subscription** and put a review queue
+between a fix and the customer — for a wrapper around these same pages.
+Being a website is what avoids that cut, and this keeps it a website
+while still giving people an app.
+
+Once the site is live over HTTPS, a customer installs it from the
+browser:
+
+- **iPhone / iPad:** open the console in Safari → Share → *Add to Home
+  Screen*. (Safari only — Chrome on iOS cannot install it.)
+- **Android:** Chrome offers *Install app* in the menu, or prompts.
+- **Desktop:** Chrome and Edge show an install icon in the address bar.
+
+It then opens in its own window with its own icon, no browser chrome.
+
+**It only works over HTTPS.** A service worker is refused on plain HTTP
+everywhere except localhost, so nothing installs until the certificate
+is in place.
+
+One thing this app deliberately does *not* do offline: show you a
+temperature. A cached dashboard answering "everything is fine" to
+somebody with no signal is the exact failure the product is sold to
+prevent. With no connection it says so, in red, and dims every figure on
+the screen. Monitoring and escalation run on the server and are
+unaffected — the text and the call still go out whether or not anybody's
+phone can reach anything.
+
+---
+
+## 7. Restoring, before you need to
 
 A backup nobody has restored is a file, not a backup. Do this once now,
 on purpose, so the first time is not during an incident:
@@ -187,7 +219,7 @@ migration and surviving a lost disk.
 
 ---
 
-## 7. What happens on its own, once it is up
+## 8. What happens on its own, once it is up
 
 - **The sweep** escalates breaches, hourly passes bill and chase.
 - **A dead sweep loop restarts itself**, with backoff, and records why.

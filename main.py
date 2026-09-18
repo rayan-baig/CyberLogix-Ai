@@ -199,6 +199,9 @@ PARTNER_HTML = STATIC_DIR / "partner.html"
 LEGAL_HTML = STATIC_DIR / "legal.html"
 SIGNUP_HTML = STATIC_DIR / "signup.html"
 BOOK_HTML = STATIC_DIR / "book.html"
+SERVICE_WORKER = STATIC_DIR / "sw.js"
+WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
+OFFLINE_HTML = STATIC_DIR / "offline.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 
 # The console and the partner portal render from one stylesheet, so it is
@@ -451,6 +454,48 @@ def landing_page(request: Request):
 def operations_console():
     """Serve the operations console to a browser."""
     return FileResponse(CONSOLE_HTML, media_type="text/html")
+
+
+# --- the installed app ------------------------------------------------------
+#
+# Installable rather than shipped through a store. The product is a web
+# application either way, and going through the App Store or Play Store
+# would add a 15-30% cut on every subscription and a review queue between
+# a fix and the customer -- for a wrapper around the same pages.
+#
+# The worker is served from the root rather than /static because a
+# service worker can only control the scope it is served from, and this
+# one has to cover /console, /book and the shell together.
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        SERVICE_WORKER,
+        media_type="text/javascript",
+        headers={
+            # A stale worker cannot be updated by the page that it is
+            # serving, so this one file is never cached.
+            "Cache-Control": "no-cache, max-age=0",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def web_manifest():
+    return FileResponse(WEB_MANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/offline", include_in_schema=False)
+def offline_page():
+    """What the installed app shows with no network.
+
+    Deliberately not a copy of the dashboard. Showing the last known
+    temperatures to somebody who has no connection is how an app tells
+    a restaurant its freezer is fine while the freezer is failing.
+    """
+    return FileResponse(OFFLINE_HTML, media_type="text/html")
 
 
 @app.get("/partners", include_in_schema=False)
