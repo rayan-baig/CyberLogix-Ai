@@ -183,6 +183,18 @@
           <div id="incidents"></div>
         </section>
 
+        <!-- The summary tile has always said "N projected to breach" and
+             there was nowhere to see which N. On an estate of two hundred
+             sensors that number is unusable: you would open every drawer
+             in turn to find the six that matter. -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">What breaks next</span>
+            <span class="card-note" id="forecast-note"></span>
+          </div>
+          <div id="forecast-body"></div>
+        </section>
+
         <div class="modules">
           <section class="card mod-telemetry">
           <div class="card-head">
@@ -350,6 +362,10 @@
             <span class="card-note" id="roster-note"></span>
           </div>
           <div id="roster-body"></div>
+          <!-- Who a real alert would actually reach, in order. The roster
+               above is what was configured; this is what the dispatcher
+               would do with it, which is not always the same thing. -->
+          <div id="escalation-body" style="margin-top:12px"></div>
           <form id="contact-form" style="margin-top:12px">
             <div class="row" style="gap:8px">
               <input id="ct-name" class="grow" placeholder="Name" required
@@ -461,6 +477,10 @@
             <span class="card-note" id="assurance-note"></span>
           </div>
           <div id="assurance-body"></div>
+          <!-- A packet could always be produced for an incident. Nothing
+               said which incidents one could be produced FOR, so the
+               feature needed you to already know the answer. -->
+          <div id="claims-body" style="margin-top:14px"></div>
         </section>
 
         <section class="card">
@@ -973,19 +993,33 @@ const OPTIONAL_PANELS = {
   costs: "cost-body", roster: "roster-body", team: "team-body",
   hooks: "hook-body", cover: "assurance-body", invoices: "invoice-body",
   audit: "audit-body",
+  forecast: "forecast-body",
+  claims: "claims-body",
+  escalation: "escalation-body",
 };
 
 function panelUnavailable(key, err) {
   const id = OPTIONAL_PANELS[key];
   const el = id && $(id);
   if (!el) return;
-  const lapsed = /402/.test(String(err && err.message));
+  const message = String((err && err.message) || "");
+  const lapsed = /402/.test(message);
+  // A plan that does not include something is not a failure, and saying
+  // "Could not be loaded" about it reads as a bug in the product rather
+  // than a line on the price list. The server already writes the right
+  // sentence; this just stops the wrapper contradicting it.
+  const notIncluded = (err && err.status === 403) || /does not include/.test(message);
+  if (notIncluded) {
+    el.innerHTML = `<div class="empty" style="padding:16px 0">Not on this plan.
+      <span class="sub">${esc(message.slice(0, 160))}</span></div>`;
+    return;
+  }
   el.innerHTML = `<div class="empty" style="padding:16px 0">${
     lapsed ? "Withheld while the licence is unpaid."
            : "Could not be loaded."}
     <span class="sub">${esc(lapsed
       ? "Monitoring and alerting are unaffected."
-      : String((err && err.message) || "").slice(0, 120))}</span></div>`;
+      : message.slice(0, 120))}</span></div>`;
 }
 
 async function refresh() {
@@ -1010,6 +1044,9 @@ async function refresh() {
     invoices: () => api("/api/invoices"),
     contract: () => api("/api/contracts"),
     pipeline: () => api("/api/contracts/pipeline"),
+    forecast: () => api("/api/forecast/fleet"),
+    claims: () => api("/api/claims/eligible"),
+    escalation: () => api("/api/contacts/preview"),
   };
   const keys = Object.keys(wanted);
   const settled = await Promise.allSettled(keys.map((k) => wanted[k]()));
@@ -1043,6 +1080,9 @@ async function refresh() {
   paint("costs", () => renderCosts(got.costs));
   paint("audit", () => renderAudit(got.audit));
   paint("roster", () => renderRoster(got.roster));
+  paint("forecast", () => renderForecast(got.forecast));
+  paint("claims", () => renderClaims(got.claims));
+  paint("escalation", () => renderEscalation(got.escalation));
   paint("team", () => renderTeam(got.team));
 
   // The contract card is where the way back lives, so it renders from
@@ -2144,6 +2184,111 @@ async function openInvoice(invoiceId) {
   $("invoice-print").addEventListener("click", () => window.print());
 }
 
+/* A date a person reads, not an instant a machine wrote. */
+function shortDate(value) {
+  if (!value) return "unknown";
+  const at = new Date(value);
+  return isNaN(at) ? String(value) : at.toLocaleString([], {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/* ---------------- what breaks next ----------------
+   Ranked by how soon, because that is the order somebody would walk to
+   them in. A forecast with no hours attached is not actionable, so the
+   ones the model cannot call are summarised rather than listed. */
+function renderForecast(fleet) {
+  const risky = (fleet.at_risk || []).slice().sort((a, b) => {
+    const ah = a.hours_until_breach, bh = b.hours_until_breach;
+    if (ah === null) return 1;
+    if (bh === null) return -1;
+    return ah - bh;
+  });
+  const tally = fleet.risk_tally || {};
+  const unknown = tally.unknown || 0;
+
+  $("forecast-note").textContent = risky.length
+    ? `${risky.length} in the next ${fleet.window_hours}h`
+    : `${fleet.sensors_analysed} analysed`;
+
+  if (!risky.length) {
+    $("forecast-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         Nothing is trending out of band.
+         <span class="sub">${esc(fleet.sensors_analysed)} sensor(s) modelled
+         over ${esc(fleet.window_hours)} hours${
+           unknown ? `; ${esc(unknown)} without enough history yet` : ""}.</span>
+       </div>`;
+    return;
+  }
+
+  $("forecast-body").innerHTML = risky.map((f) => {
+    const when = f.hours_until_breach === null
+      ? "trend unclear"
+      : f.hours_until_breach < 1
+        ? `in under an hour`
+        : `in about ${Math.round(f.hours_until_breach)}h`;
+    const trend = f.trend_f_per_hour === null ? "" :
+      `${f.trend_f_per_hour > 0 ? "+" : ""}${f.trend_f_per_hour}°/h`;
+    return `<div class="fc-row" data-forecast-sensor="${esc(f.sensor_id)}">
+      <span class="fc-when ${esc(f.risk_level)}">${esc(when)}</span>
+      <span class="grow">
+        <span class="fc-id">${esc(f.sensor_id)}</span>
+        <span class="sub">${esc(f.location_name)} · ${
+          esc(f.likely_catastrophe)}</span>
+      </span>
+      <span class="fc-trend">${esc(trend)}</span>
+    </div>`;
+  }).join("")
+  + (unknown ? `<div class="sub" style="padding-top:8px">${esc(unknown)
+      } sensor(s) have too little history to model yet.</div>` : "");
+}
+
+/* ---------------- what could be claimed ----------------
+   A packet could always be produced for an incident. Nothing said which
+   incidents one could be produced for, so using the feature meant
+   already knowing the answer. */
+function renderClaims(eligible) {
+  if (!eligible.count) {
+    $("claims-body").innerHTML =
+      `<div class="sub">Nothing claimable in the last ${
+        esc(eligible.period_days)} days.</div>`;
+    return;
+  }
+  $("claims-body").innerHTML =
+    `<div class="sub" style="margin-bottom:8px">${esc(eligible.count)
+      } incident(s) a packet can be produced for:</div>`
+    + eligible.incidents.map((i) => `<div class="fc-row">
+        <span class="grow">
+          <span class="fc-id">${esc(i.sensor_id)}</span>
+          <span class="sub">${esc(shortDate(i.opened_at))} · ${
+            esc(i.catastrophe)} · ${esc(i.state)}${
+            i.readings_available ? "" : " · no readings kept"}</span>
+        </span>
+        <button class="btn btn-sm" data-packet="${esc(i.incident_id)}"
+                type="button">Packet</button>
+      </div>`).join("");
+}
+
+/* ---------------- who a real alert reaches ----------------
+   The roster is what was configured. This is what the dispatcher would
+   do with it, which is not always the same thing -- a contact with both
+   channels muted is on the roster and reaches nobody. */
+function renderEscalation(preview) {
+  const texted = preview.sms_recipients || [];
+  const ladder = preview.voice_ladder || [];
+  const names = (rows) => rows.map((r) => esc(r.name)).join(", ");
+
+  $("escalation-body").innerHTML = `
+    <div class="sub" style="border-top:1px solid var(--border);padding-top:10px">
+      <strong>A real alert right now.</strong><br>
+      Text to ${texted.length ? names(texted) : "nobody"}.
+      ${ladder.length
+        ? "Then it calls " + names(ladder) + ", stopping at whoever answers."
+        : "No call ladder, so an unanswered text is the end of it."}
+    </div>`;
+}
+
 /* ---------------- claim packet ---------------- */
 
 /* Rendered in the drawer as the document it is, because the person who
@@ -2898,6 +3043,11 @@ document.addEventListener("click", (event) => {
     act(() => api(`/api/contacts/${encodeURIComponent(btn.dataset.contactToggle)}`, {
       method: "PATCH", body: JSON.stringify({ active }),
     }), active ? "Back on call." : "Muted for now.");
+  }
+
+  if (btn.dataset.packet) {
+    openPacket(btn.dataset.packet);
+    return;
   }
 
   if (btn.dataset.contactRemove) {
