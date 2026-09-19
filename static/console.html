@@ -465,6 +465,7 @@
             <span class="card-title">Licences &amp; people</span>
             <span class="card-note" id="people-note"></span>
           </div>
+          <div id="people-alerts"></div>
           <div id="people-cal"></div>
           <div id="leavers"></div>
         </section>
@@ -1069,6 +1070,7 @@ const OPTIONAL_PANELS = {
   claims: "claims-body",
   escalation: "escalation-body",
   byodSeen: "byod-samples",
+  peopleAlerts: "people-alerts",
   peopleCal: "people-cal",
   leavers: "leavers",
 };
@@ -1133,6 +1135,7 @@ async function refresh() {
     claims: () => api("/api/claims/eligible"),
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
+    peopleAlerts: () => api("/api/people/alerts"),
     peopleCal: () => api("/api/people/calendar?days=180"),
     leavers: () => api("/api/people/departures"),
   };
@@ -1172,6 +1175,7 @@ async function refresh() {
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
+  paint("peopleAlerts", () => renderPeopleAlerts(got.peopleAlerts));
   paint("peopleCal", () => renderPeople(got.peopleCal));
   paint("leavers", () => renderLeavers(got.leavers));
   paint("team", () => renderTeam(got.team));
@@ -2279,6 +2283,45 @@ async function openInvoice(invoiceId) {
    The calendar reads down by month because a rota is planned a month at
    a time, and the thing that matters is not "which of these is expired"
    but "what do I have to deal with before the end of the month". */
+
+/* What will be emailed, shown before the calendar that explains it.
+   The calendar is the reference; this is the part that goes out whether
+   or not anybody opens this page, and an alerter you cannot read back
+   is one you have to take on trust. Same function on both sides, so the
+   page and the inbox cannot disagree. */
+
+function renderPeopleAlerts(due) {
+  const box = $("people-alerts");
+  if (!due || !due.count) {
+    box.innerHTML = "";
+    return;
+  }
+  /* The badge is the real number of days, never the rung that triggered
+     the email: "60d" beside a line reading "expires in 41 days" makes the
+     reader work out which of the two to believe, and they will pick the
+     wrong one. */
+  const badge = (row) =>
+    row.kind === "leaver_on_roster" ? "on roster"
+    : row.kind === "licence_expired" ? "expired"
+    : row.days <= 0 ? "today"
+    : `${row.days}d`;
+
+  const rows = (items, urgent) => items.map((row) => `<div class="fc-row">
+      <span class="fc-when ${urgent ? "high" : "medium"}">${
+        esc(badge(row))}</span>
+      <span class="grow"><span class="sub">${esc(row.line)}</span></span>
+    </div>`).join("");
+
+  box.innerHTML =
+    `<h3 class="sub-head">Being emailed to ${esc(due.sent_to)}</h3>`
+    + (due.urgent.length
+        ? `<div class="read-out no" style="margin:0 0 6px"><strong>${
+            due.urgent.length} need${due.urgent.length === 1 ? "s" : ""
+          } attention today.</strong></div>` + rows(due.urgent, true)
+        : "")
+    + rows(due.advisory, false)
+    + `<div class="sub" style="margin:8px 0 2px">${esc(due.note)}</div>`;
+}
 
 function renderPeople(book) {
   $("people-note").textContent = book.credentials

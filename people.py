@@ -50,6 +50,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from accounts import require_role
 from auth import require_tenant, write_audit
+from mail import send as send_mail
 from store import STORE, Tenant, User, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.people")
@@ -400,6 +401,285 @@ def offboarding_state(tenant_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# --- telling the owner, without being asked --------------------------------
+
+# The horizons above answer "how far ahead is a lapse worth raising". This
+# adds the day itself, which is not a warning about the future but is
+# certainly news.
+ALERT_DAYS = tuple(sorted(set(HORIZONS) | {0}, reverse=True))
+
+
+def _alert_horizon(left: int) -> Optional[int]:
+    """The tightest rung this credential has reached, or None.
+
+    Deliberately not `left in ALERT_DAYS`. An exact match only fires if a
+    pass happens to run on the exact day, so a process that was restarting
+    on the 30th never sends the 30-day notice and nothing ever notices the
+    hole. Taking the tightest rung at or above `left` fires on the first
+    pass after the rung is crossed instead, and the mail layer's dedupe
+    key -- one per credential and rung -- keeps the days in between quiet.
+
+    It also means an outage does not deliver a backlog: a licence that was
+    at 31 days when the process died and 13 when it came back sends the
+    14-day notice and never the stale 30-day one.
+    """
+    return min((day for day in ALERT_DAYS if left <= day), default=None)
+
+
+def _nag_stamp(days_overdue: int, today: date) -> str:
+    """How often a problem that has not been fixed is worth repeating.
+
+    Daily for the first week, weekly after that. Somebody working on an
+    expired licence is worth an email every morning -- but only for so
+    long. After a week the daily email has stopped being an alarm and
+    become the thing you filter, and a filtered alarm is worse than a
+    quieter one, because it takes the next real alert with it.
+    """
+    if days_overdue <= 7:
+        return today.isoformat()
+    return today.strftime("%G-W%V")
+
+
+def alerts_due(today: Optional[date] = None) -> Dict[str, Dict[str, Any]]:
+    """What each owner should be told today, keyed by tenant.
+
+    Fleet-wide in one pass, for the reason written on `fleet_summary`.
+
+    Two lanes, because they are not the same message. **Advisory** is a
+    rung crossed on the way down: sent once, ever, per credential per
+    rung. **Urgent** is a line already crossed -- somebody who may not
+    legally be doing the job they are rostered for today, or an alert
+    routed to a phone whose owner handed their keys back -- and it
+    repeats on the ladder in `_nag_stamp` until it is dealt with.
+
+    Every item carries its own dedupe key, so the caller sends without
+    having to remember what it sent yesterday. That is the only reason
+    this is safe to run hourly.
+    """
+    today = today or _today()
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def lane(tenant_id: str, name: str) -> List[Dict[str, Any]]:
+        return out.setdefault(
+            tenant_id, {"urgent": [], "advisory": []}
+        )[name]
+
+    people_by_tenant: Dict[str, Dict[str, Any]] = {}
+    for row in STORE._db.all(STAFF_KIND):
+        people_by_tenant.setdefault(row["tenant_id"], {})[row["staff_id"]] = row
+
+    for cred in STORE._db.all(CREDENTIAL_KIND):
+        tenant_id = cred["tenant_id"]
+        person = people_by_tenant.get(tenant_id, {}).get(cred["staff_id"])
+        # Somebody who has left does not need their first aid certificate
+        # renewed, and saying so is how an alert list loses its reader.
+        if person is None or not person.get("active", True):
+            continue
+        left = days_left(cred, today)
+        blocking = bool(cred.get("required_to_work"))
+
+        if left < 0 and blocking:
+            lane(tenant_id, "urgent").append({
+                "kind": "licence_expired",
+                "credential_id": cred["credential_id"],
+                "staff_id": cred["staff_id"],
+                "person": person["full_name"],
+                "credential": cred["name"],
+                "days": left,
+                "dedupe": (f"licence-expired:{cred['credential_id']}:"
+                           f"{_nag_stamp(abs(left), today)}"),
+                "line": (
+                    f"{person['full_name']}'s {cred['name']} expired "
+                    f"{abs(left)} day(s) ago. It is required for the job, "
+                    "so they may not be allowed on shift until it is "
+                    "renewed."
+                ),
+            })
+            continue
+
+        # Reached by anything not caught above: a rung on the way down, and
+        # also a credential that has already lapsed but does not stop the
+        # job. `_alert_horizon` answers 0 for both the expiry day and any
+        # day after it, so an expiry the pass slept through still sends
+        # the one notice it owes, under the key the day itself would have
+        # used -- one notice, not two, and not none.
+        horizon = _alert_horizon(left)
+        if horizon is None:
+            continue
+        if left < 0:
+            when = f"expired {abs(left)} day(s) ago"
+        elif left == 0:
+            when = "expires today"
+        else:
+            when = f"expires in {left} day(s)"
+        lane(tenant_id, "advisory").append({
+            "kind": "licence_expiring",
+            "credential_id": cred["credential_id"],
+            "staff_id": cred["staff_id"],
+            "person": person["full_name"],
+            "credential": cred["name"],
+            "days": left,
+            "horizon": horizon,
+            "dedupe": f"licence:{cred['credential_id']}:{horizon}",
+            "line": (
+                f"{person['full_name']}'s {cred['name']} {when}"
+                + (" and is required for the job."
+                   if blocking else ".")
+            ),
+        })
+
+    # The roster is read once per tenant and kept, rather than asking
+    # `still_on_the_roster` per leaver: that helper queries the contacts
+    # table on every call, which is fine for one departure on one screen
+    # and is a full scan per leaver in an hourly fleet-wide pass.
+    rosters: Dict[str, Dict[str, str]] = {}
+    for row in STORE._db.all(OFFBOARD_KIND):
+        tenant_id = row["tenant_id"]
+        if tenant_id not in rosters:
+            roster: Dict[str, str] = {}
+            for contact in STORE.contacts_for(tenant_id):
+                digits = _digits(contact.phone)
+                if contact.active and digits:
+                    roster.setdefault(digits, contact.phone)
+            rosters[tenant_id] = roster
+        phone = _digits(row.get("phone"))
+        # No number on the staff record is not a clean roster, it is an
+        # unanswerable question, and a guess either way is worse than
+        # the offboarding checklist the owner already has.
+        if not phone or phone not in rosters[tenant_id]:
+            continue
+        numbers = [rosters[tenant_id][phone]]
+        try:
+            gone = max(0, (today - _parse_day(row["left_on"])).days)
+        except (KeyError, ValueError):
+            gone = 0
+        lane(tenant_id, "urgent").append({
+            "kind": "leaver_on_roster",
+            "offboarding_id": row["offboarding_id"],
+            "person": row.get("full_name", "Someone"),
+            "days": gone,
+            "dedupe": (f"leaver-roster:{row['offboarding_id']}:"
+                       f"{_nag_stamp(gone, today)}"),
+            "line": (
+                f"{row.get('full_name', 'Someone')} left "
+                f"{gone} day(s) ago and is still on the on-call roster "
+                f"({', '.join(numbers)}). An alert sent there is an alert "
+                "nobody answers."
+            ),
+        })
+
+    return out
+
+
+# A message the mail layer took but has not delivered: the host is not
+# configured yet, or an attempt failed and it will be retried. Neither is
+# a send, and neither is a failure -- it is the state where the alerter
+# looks fine from here and nobody is actually being warned.
+WAITING_ON_THE_MAIL_HOST = ("not_configured", "queued")
+
+
+def _render_alert(tenant: Tenant, items: List[Dict[str, Any]],
+                  urgent: bool) -> str:
+    lead = (
+        "These need attention today:"
+        if urgent else
+        "A heads-up on paperwork with a date on it:"
+    )
+    body = [f"{tenant.contact_name},", "", lead, ""]
+    body += [f"  - {item['line']}" for item in items]
+    body += [
+        "",
+        "Renewals, dates and who is on the roster are all on the "
+        "Licences & people card in your console.",
+    ]
+    if urgent:
+        body += [
+            "",
+            "This is the only email of its kind you will get today. If it "
+            "is still true next week it will arrive weekly rather than "
+            "daily -- not because it stopped mattering, but because a "
+            "daily email nobody can act on is the one that gets filtered.",
+        ]
+    return "\n".join(body)
+
+
+def send_licence_alerts(now: Optional[datetime] = None,
+                        hour_utc: Optional[int] = None) -> Dict[str, Any]:
+    """Email each owner what is lapsing on their account.
+
+    The calendar and the console card both answer this, and both need
+    somebody to open a browser and think to look. A licence nobody
+    renewed is not discovered by looking; it is discovered by an
+    inspector, or by an insurer reading the roster after a claim. So it
+    arrives on its own.
+
+    `hour_utc` is a floor, not an exact time, and is passed in rather than
+    read here so that this and the daily digest cannot drift apart. A
+    notice that somebody cannot legally work, delivered at 3am, reads as
+    an emergency and is not one.
+    """
+    now = now or utc_now()
+    if hour_utc is not None and now.hour < hour_utc:
+        return {"sent": [], "sent_count": 0, "queued": [], "queued_count": 0,
+                "skipped": "before_send_hour", "failed_tenants": []}
+
+    due = alerts_due(now.date())
+    sent: List[str] = []
+    queued: List[str] = []
+    failures: List[str] = []
+
+    for tenant in STORE.list_tenants():
+        # Suspended accounts are not being monitored, and a suspended
+        # account is one we are already in a conversation with.
+        if tenant.suspended:
+            continue
+        lanes = due.get(tenant.tenant_id)
+        if not lanes:
+            continue
+        for name, urgent in (("urgent", True), ("advisory", False)):
+            items = lanes[name]
+            if not items:
+                continue
+            try:
+                # The key is the whole set, so a new problem on the same
+                # day sends a second email rather than being swallowed by
+                # the first one's key.
+                key = "|".join(sorted(item["dedupe"] for item in items))
+                result = send_mail(
+                    to_address=tenant.contact_email,
+                    subject=(
+                        f"{tenant.company_name}: "
+                        + (
+                            f"{len(items)} thing(s) needing attention today"
+                            if urgent else
+                            f"{len(items)} licence(s) coming up for renewal"
+                        )
+                    ),
+                    body=_render_alert(tenant, items, urgent),
+                    dedupe_key=f"licence-alert:{tenant.tenant_id}:{key}",
+                    klass="transactional",
+                    tenant_id=tenant.tenant_id,
+                )
+                if result.get("sent"):
+                    sent.append(f"{tenant.tenant_id}:{name}")
+                elif result.get("status") in WAITING_ON_THE_MAIL_HOST:
+                    # Counted apart from sent, not folded into it. With no
+                    # mail host configured every message queues, and a
+                    # single "sent" figure that includes them reads as a
+                    # working alerter right up to the day somebody asks
+                    # why nobody was warned.
+                    queued.append(f"{tenant.tenant_id}:{name}")
+            except Exception as exc:  # noqa: BLE001 - one account must not stop the rest
+                logger.exception(
+                    "Licence alert failed for %s (%s).", tenant.tenant_id, exc
+                )
+                failures.append(tenant.tenant_id)
+
+    return {"sent": sent, "sent_count": len(sent),
+            "queued": queued, "queued_count": len(queued),
+            "skipped": None, "failed_tenants": failures}
+
+
 # --- routes ----------------------------------------------------------------
 
 
@@ -545,6 +825,29 @@ def expiry_calendar(
 ):
     """Every licence expiry ahead, by month."""
     return calendar(tenant.tenant_id, days=days)
+
+
+@router.get("/alerts")
+def pending_alerts(tenant: Tenant = Depends(require_tenant)):
+    """What would be emailed about this account today, and why.
+
+    An alerter the owner cannot inspect is one they have to trust. This
+    is the same function the sender runs, so the page and the inbox
+    cannot disagree: if a line is not here, no email carries it.
+    """
+    lanes = alerts_due().get(tenant.tenant_id) or {"urgent": [], "advisory": []}
+    return {
+        "urgent": lanes["urgent"],
+        "advisory": lanes["advisory"],
+        "count": len(lanes["urgent"]) + len(lanes["advisory"]),
+        "sent_to": tenant.contact_email,
+        "note": (
+            "Anything urgent is emailed daily for a week, then weekly, "
+            "until it is dealt with. A renewal notice is sent once per "
+            "licence at 60, 30, 14, 7 and 1 days out, and once on the "
+            "day itself."
+        ),
+    }
 
 
 @router.post("/departures", status_code=status.HTTP_201_CREATED)

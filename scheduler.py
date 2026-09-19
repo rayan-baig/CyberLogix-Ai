@@ -27,7 +27,7 @@ from automation import sweep_tenant
 from contracts import run_billing, run_dunning
 from conversion import run_trial_conversion
 from backup import run_daily_backup
-from digest import run_digests
+from digest import DIGEST_HOUR_UTC, run_digests
 from mail import flush_queue
 import watchdog
 from store import STORE
@@ -71,6 +71,7 @@ def run_money_pass() -> dict:
     summarised = {"operator": {"sent": False}, "customer_reports": {"sent_count": 0}}
     backed_up = {"taken": False, "status": "not_run"}
     flushed = {"attempted": 0, "sent": 0}
+    licences = {"sent_count": 0, "skipped": "not_run"}
     try:
         billed = run_billing()
     except Exception as exc:  # noqa: BLE001 - collections must still run
@@ -94,6 +95,13 @@ def run_money_pass() -> dict:
         summarised = run_digests()
     except Exception as exc:  # noqa: BLE001 - a summary must not stop the work
         logger.exception("Digest pass failed (%s).", exc)
+    try:
+        # After the summaries and before the flush: an owner whose cook
+        # cannot legally be on shift tomorrow hears about it today, on
+        # the same schedule as everything else that goes out on its own.
+        licences = run_licence_alerts()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Licence alert pass failed (%s).", exc)
     try:
         # Last, so that anything the passes above queued against a mail
         # host that was briefly down gets one more attempt in the same
@@ -122,6 +130,7 @@ def run_money_pass() -> dict:
         "collections": chased,
         "conversion": asked,
         "digests": summarised,
+        "licence_alerts": licences,
         "backup": backed_up,
         "mail_queue": flushed,
     }
@@ -326,3 +335,19 @@ def status() -> dict:
             "that, or when running more than one replica."
         ),
     }
+
+
+def run_licence_alerts() -> dict:
+    """Email owners about credentials that are lapsing on their account.
+
+    Imported here rather than at the top because `people` reaches the
+    mail layer and the scheduler is imported during application start-up;
+    keeping it local keeps the start-up import graph shallow.
+
+    The send hour is the digest's, passed in rather than read again, so
+    that moving the daily email moves this with it instead of leaving two
+    schedules that drift apart and nobody remembers why.
+    """
+    import people
+
+    return people.send_licence_alerts(hour_utc=DIGEST_HOUR_UTC)
