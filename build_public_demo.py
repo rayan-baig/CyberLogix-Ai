@@ -28,6 +28,7 @@ import base64
 import json
 import os
 import pathlib
+import re
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -51,10 +52,12 @@ PATHS = [
 BANNER = """
 <div class="demo-bar" role="note">
   <strong>Demo.</strong> The real console on a seeded estate of seven
-  sensors. Sign in with any password to look around &mdash; the email is
-  already filled in. Every figure is one the application produced, but it
-  is frozen, so nothing is live and the buttons that would change
-  something are inert.
+  sensors. Both boxes are already filled in &mdash; just press Sign in.
+  <strong>Never type a real password into a link somebody sent you</strong>,
+  here or anywhere. This page has no server behind it and sends nothing
+  anywhere, but that is not something you can tell by looking, which is
+  the whole reason the rule exists. Every figure is one the application
+  produced, frozen, so nothing is live.
 </div>
 """
 
@@ -71,6 +74,15 @@ try {
   localStorage.removeItem("cyberlogix.session");
   localStorage.setItem("cyberlogix.email", "dana@blueharbor.example");
 } catch (e) {}
+
+// Fill the password in too, so that nobody ever types a real one here out
+// of habit. A demo that shows a password box and waits is training people
+// to do the exact thing that gets them phished, and the fact that this
+// particular box is harmless is invisible to the person looking at it.
+document.addEventListener("DOMContentLoaded", () => {
+  const field = document.getElementById("si-password");
+  if (field) field.value = "harbor-demo-2026";
+});
 
 // No service worker here: there is no /sw.js to register, and caching a
 // frozen estate would be doubly wrong.
@@ -174,6 +186,20 @@ def capture() -> dict:
 def build(data: dict) -> str:
     console = (ROOT / "static" / "console.html").read_text()
     theme = (ROOT / "static" / "theme.css").read_text()
+
+    # The shipped stylesheet pulls its webfonts from fonts.googleapis.com.
+    # On a page whose whole job is to be forwarded to strangers, that
+    # means every person who opens it tells Google they opened it, from
+    # their IP address, before a word renders. Swap the import for the
+    # embedded copy so the page reaches nothing at all.
+    fonts = (ROOT / "static" / "fonts-embedded.css").read_text()
+    imports = [line for line in theme.splitlines()
+               if line.startswith("@import url('https://fonts.googleapis.com")]
+    if len(imports) != 1:
+        raise SystemExit(
+            f"expected one Google Fonts import in theme.css, found "
+            f"{len(imports)}. The public page must not fetch anything.")
+    theme = theme.replace(imports[0], fonts)
     circuit = (ROOT / "static" / "circuit.js").read_text()
     # Its own usage comment contains a literal </script>, which closes the
     # tag early when the file is inlined rather than linked. Escaping the
@@ -194,7 +220,7 @@ def build(data: dict) -> str:
     split = body.index('<script>\n"use strict";')
     markup, app_js = body[:split], body[split:]
 
-    return (
+    page = (
         "<title>CyberLogix Console</title>\n"
         f"<style>\n{theme}\n\n"
         "/* --- the one thing this page adds to the product --------- */\n"
@@ -212,6 +238,25 @@ def build(data: dict) -> str:
         + (STUB % json.dumps(data).replace("</", "<\\/"))
         + app_js
     )
+
+    # The guarantee this page makes: open it, and nobody is told you did.
+    #
+    # Checked at the places a browser actually loads from, not at every
+    # http:// in the file. The console prints an example Slack webhook as
+    # grey hint text in an input box; matching on bare text flagged that
+    # and would have taught whoever hit it to loosen the check until it
+    # went quiet, which is how a guard stops guarding.
+    loads_from = re.findall(
+        r"""(?:src|href)\s*=\s*["']\s*(https?://[^"']+)"""
+        r"""|@import\s+url\(\s*['"]?\s*(https?://[^'")]+)"""
+        r"""|url\(\s*['"]?\s*(https?://[^'")]+)""",
+        page)
+    outbound = sorted({hit for group in loads_from for hit in group if hit})
+    if outbound:
+        raise SystemExit(
+            "the public page would fetch from the network, so opening it "
+            f"would be observable: {outbound}")
+    return page
 
 
 def main() -> None:

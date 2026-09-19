@@ -97,3 +97,59 @@ def test_the_database_setting_has_one_name():
     source = (build_public_demo.ROOT / "build_public_demo.py").read_text()
     assert db.ENV_DB_PATH == "CYBERLOGIX_DB_PATH"
     assert f'os.environ["{db.ENV_DB_PATH}"]' in source
+
+
+def test_the_page_fetches_nothing_from_the_network():
+    """Opening it must not tell anybody you opened it.
+
+    The stylesheet pulls Archivo, Inter and JetBrains Mono from
+    fonts.googleapis.com, which hands Google the IP address of every
+    person who is sent this link, before a word renders. The public
+    build swaps that for an embedded copy, and this is the test that
+    it stays swapped.
+    """
+    page = build_public_demo.build(build_public_demo.capture())
+
+    # Checked where a browser loads from, not on the bare hostname: the
+    # embedded stylesheet's own comment names fonts.googleapis.com to
+    # explain what it replaced, and a substring check failed on that.
+    # A guard that fires on an explanation gets edited until it is quiet.
+    loads = re.findall(
+        r"""(?:src|href)\s*=\s*["']\s*(https?://[^"']+)"""
+        r"""|@import\s+url\(\s*['"]?\s*(https?://[^'")]+)"""
+        r"""|url\(\s*['"]?\s*(https?://[^'")]+)""",
+        page)
+    assert [hit for group in loads for hit in group if hit] == []
+    assert "@font-face" in page and "data:font/woff2;base64," in page
+
+
+def test_the_password_box_is_filled_in_for_the_visitor():
+    """So that nobody types a real one into a link a stranger sent them.
+
+    Nothing here is sent anywhere -- there is no server behind the page
+    -- but that is invisible to the person looking at a password box,
+    and a demo that shows one and waits is rehearsing the exact habit
+    that gets people phished.
+    """
+    page = build_public_demo.build(build_public_demo.capture())
+
+    assert 'getElementById("si-password")' in page
+    assert "harbor-demo-2026" in page
+    assert "Never type a real password into a link somebody sent you" in page
+
+
+def test_a_stylesheet_that_starts_phoning_home_again_stops_the_build():
+    """The guard has to fail on the thing it is guarding against."""
+    real = build_public_demo.build
+
+    def with_a_tracker():
+        page = real(build_public_demo.capture())
+        return page.replace("<title>", '<link href="https://evil.example/x.css">'
+                                       "<title>", 1)
+
+    page = with_a_tracker()
+    import re
+    found = re.findall(r'href\s*=\s*["\']\s*(https?://[^"\']+)', page)
+    assert found == ["https://evil.example/x.css"], (
+        "the pattern the build guard uses no longer catches a remote "
+        "stylesheet")
