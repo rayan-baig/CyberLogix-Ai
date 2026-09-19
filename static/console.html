@@ -39,14 +39,22 @@
 
     <form id="signin-form">
       <div class="field">
-        <label for="si-email">Work email</label>
+        <label for="si-email">Email</label>
         <input id="si-email" type="email" autocomplete="username"
                placeholder="dana@blueharbor.example" required>
       </div>
       <div class="field">
         <label for="si-password">Password</label>
-        <input id="si-password" type="password" autocomplete="current-password"
-               placeholder="••••••••••" required>
+        <!-- The reveal sits inside the box rather than under it. Typing a
+             long password blind on a phone, getting it wrong and being
+             told so is the slowest way into any product, and the fix has
+             been standard for years. -->
+        <span class="pw-wrap">
+          <input id="si-password" type="password" autocomplete="current-password"
+                 placeholder="••••••••••" required>
+          <button type="button" class="pw-see" id="si-see"
+                  aria-pressed="false" aria-controls="si-password">Show</button>
+        </span>
       </div>
       <button class="btn btn-primary" type="submit">Sign in</button>
       <!-- The way out of being locked out cannot live behind the thing
@@ -161,9 +169,32 @@
 
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
 
+    <!-- Two ways through twenty-two cards: type what you want, or press
+         the group it lives in. Both narrow the page rather than scrolling
+         it, because scrolling past the thing you wanted is how you end up
+         believing a product does not have it. -->
+    <div class="finder" id="finder" role="search">
+      <span class="finder-search">
+        <label class="sr" for="find-q">Search the console</label>
+        <input id="find-q" type="search" autocomplete="off"
+               placeholder="Search — try fridge, licence, invoice">
+        <button class="finder-clear" id="find-clear" type="button"
+                hidden aria-label="Clear the search">&times;</button>
+      </span>
+      <button class="f-tab" data-tab="all" aria-pressed="true" type="button">Everything</button>
+      <button class="f-tab" data-tab="fridges" aria-pressed="false" type="button">Fridges</button>
+      <button class="f-tab" data-tab="alerts" aria-pressed="false" type="button">Alerts</button>
+      <button class="f-tab" data-tab="licences" aria-pressed="false" type="button">Licences</button>
+      <button class="f-tab" data-tab="people" aria-pressed="false" type="button">People</button>
+      <button class="f-tab" data-tab="money" aria-pressed="false" type="button">Money</button>
+      <button class="f-tab" data-tab="proof" aria-pressed="false" type="button">Proof</button>
+      <button class="f-tab" data-tab="setup" aria-pressed="false" type="button">Setup</button>
+    </div>
+    <p class="finder-none" id="find-none" hidden></p>
+
     <div class="layout">
       <div>
-        <section class="card" id="fleet-card" tabindex="-1">
+        <section class="card" id="fleet-card" tabindex="-1" data-group="fridges" data-find="the fleet sensors temperature freezer fridge units cold" data-label="The fleet">
           <div class="card-head">
             <span class="card-title" id="fleet-title">The fleet</span>
             <span class="card-note" id="fleet-note"></span>
@@ -193,7 +224,7 @@
           <div id="fleet-table" hidden></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-incidents" data-group="alerts" data-find="incidents breach alarm too warm problem open resolved" data-label="Incidents">
           <div class="card-head">
             <span class="card-title">Incidents</span>
             <span class="card-note" id="incident-note"></span>
@@ -205,7 +236,7 @@
              there was nowhere to see which N. On an estate of two hundred
              sensors that number is unusable: you would open every drawer
              in turn to find the six that matter. -->
-        <section class="card">
+        <section class="card" id="find-what-breaks-next" data-group="alerts" data-find="what breaks next forecast prediction risk soon warning" data-label="What breaks next">
           <div class="card-head">
             <span class="card-title">What breaks next</span>
             <span class="card-note" id="forecast-note"></span>
@@ -214,7 +245,7 @@
         </section>
 
         <div class="modules">
-          <section class="card mod-telemetry">
+          <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-group="setup" data-find="byod sensor webhook your own sensors monnit sensorpush connect api" data-label="BYOD sensor webhook">
           <div class="card-head">
             <span class="card-title">BYOD sensor webhook</span>
             <span class="mod-chip c-telemetry">3rd-party gateway</span>
@@ -272,7 +303,7 @@
             <pre class="snippet" id="byod-snippet" style="margin-top:8px"></pre>
           </details>
           </section>
-          <section class="card mod-commerce">
+          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-group="money" data-find="enterprise tier calculator price quote cost estimate large" data-label="Enterprise tier calculator">
           <div class="card-head">
             <span class="card-title">Enterprise tier calculator</span>
             <span class="mod-chip c-commerce">Volume matrix</span>
@@ -297,7 +328,7 @@
           </div>
           <div id="calc-out"></div>
           </section>
-          <section class="card mod-paperwork">
+          <section class="card mod-paperwork" id="find-sector-shortcuts" data-group="setup" data-find="sector shortcuts industry preset defaults restaurant pharmacy" data-label="Sector shortcuts">
             <div class="card-head">
               <span class="card-title">Sector shortcuts</span>
               <span class="mod-chip c-paperwork">Paperwork</span>
@@ -310,7 +341,7 @@
             <div id="shortcut-out"></div>
           </section>
 
-          <section class="card mod-intel">
+          <section class="card mod-intel" id="find-meeting-intelligence" data-group="money" data-find="meeting intelligence sales call prep customer notes" data-label="Meeting intelligence">
           <div class="card-head">
             <span class="card-title">Meeting intelligence</span>
             <span class="mod-chip c-intel">Gemini-powered</span>
@@ -332,7 +363,7 @@
         </div>
 
         <div class="pair">
-          <section class="card">
+          <section class="card" id="find-spend-controls" data-group="money" data-find="spend controls budget cap sms voice ai limit" data-label="Spend controls">
             <div class="card-head">
               <span class="card-title">Spend controls</span>
               <span class="card-note" id="cost-note"></span>
@@ -340,7 +371,7 @@
             <div id="cost-body"></div>
           </section>
 
-          <section class="card">
+          <section class="card" id="find-audit-trail" data-group="setup" data-find="audit trail history who did what log record" data-label="Audit trail">
             <div class="card-head">
               <span class="card-title">Audit trail</span>
               <span class="card-note">Who did what</span>
@@ -351,7 +382,7 @@
       </div>
 
       <aside>
-        <section class="card">
+        <section class="card" id="find-add-to-the-estate" data-group="setup" data-find="add to the estate new sensor register add device" data-label="Add to the estate">
           <div class="card-head"><span class="card-title">Add to the estate</span></div>
           <!-- A key is shown once. A toast that fades after three seconds
                is the wrong container for something you cannot get back. -->
@@ -395,7 +426,7 @@
 
 
 
-        <section class="card">
+        <section class="card" id="find-subscription" data-group="money" data-find="subscription plan billing seats upgrade payment" data-label="Subscription">
           <div class="card-head">
             <span class="card-title">Subscription</span>
             <span class="card-note" id="bill-note"></span>
@@ -403,7 +434,7 @@
           <div id="bill-body"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-on-call-roster" data-group="people" data-find="on-call roster contacts who gets called escalation phone" data-label="On-call roster">
           <div class="card-head">
             <span class="card-title">On-call roster</span>
             <span class="card-note" id="roster-note"></span>
@@ -430,7 +461,7 @@
           </form>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-team" data-group="people" data-find="team users staff logins roles operator owner" data-label="Team">
           <div class="card-head">
             <span class="card-title">Team</span>
             <span class="card-note" id="team-note"></span>
@@ -459,18 +490,36 @@
 
         <!-- A licence to work expires on a date nobody diarised, and the
              first anybody hears is an inspector asking. Same shape as the
-             freezer problem: a thing drifting towards a line. -->
-        <section class="card">
+             freezer problem: a thing drifting towards a line.
+
+             Split from People on purpose. They were one card because they
+             share a table, which is a reason about the database and not a
+             reason about the person reading it. A lapsing certificate is
+             a date to diarise; somebody leaving is a list of things to
+             hand back and switch off. Different jobs, different weeks,
+             usually different people doing them. -->
+        <section class="card" id="find-licences" data-group="licences" data-find="licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Licences">
           <div class="card-head">
-            <span class="card-title">Licences &amp; people</span>
+            <span class="card-title">Licences</span>
+            <span class="card-note" id="licence-note"></span>
+          </div>
+          <div id="licence-alerts"></div>
+          <div id="people-cal"></div>
+        </section>
+
+        <!-- Who works here, and what is still owed to the ones who do
+             not any more. -->
+        <section class="card" id="find-people" data-group="people" data-find="people staff crew employees team members who works here fired dismissed leaver left offboarding departure roster" data-label="People">
+          <div class="card-head">
+            <span class="card-title">People</span>
             <span class="card-note" id="people-note"></span>
           </div>
-          <div id="people-alerts"></div>
-          <div id="people-cal"></div>
+          <div id="leaver-alerts"></div>
+          <div id="staff-list"></div>
           <div id="leavers"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-sites" data-group="setup" data-find="sites locations branches stores buildings" data-label="Sites">
           <div class="card-head">
             <span class="card-title">Sites</span>
             <span class="card-note" id="site-note"></span>
@@ -486,7 +535,7 @@
           </form>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-alert-channels" data-group="alerts" data-find="alert channels sms voice call notification delivery twilio" data-label="Alert channels">
           <div class="card-head">
             <span class="card-title">Alert channels</span>
             <span class="card-note" id="hook-note"></span>
@@ -510,7 +559,7 @@
           </form>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-contract" data-group="money" data-find="contract agreement terms signed pricing commitment" data-label="Contract">
           <div class="card-head">
             <span class="card-title">Contract</span>
             <span class="card-note" id="contract-note"></span>
@@ -518,7 +567,7 @@
           <div id="contract-body"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-invoices" data-group="money" data-find="invoices bills paid unpaid owed receipt" data-label="Invoices">
           <div class="card-head">
             <span class="card-title">Invoices</span>
             <span class="card-note" id="invoice-note"></span>
@@ -531,7 +580,7 @@
           </p>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-loss-assurance" data-group="proof" data-find="loss assurance guarantee payout claim cover insurance" data-label="Loss assurance">
           <div class="card-head">
             <span class="card-title">Loss assurance</span>
             <span class="card-note" id="assurance-note"></span>
@@ -543,7 +592,7 @@
           <div id="claims-body" style="margin-top:14px"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-compliance-vault" data-group="proof" data-find="compliance vault evidence hash tamper audit inspector haccp" data-label="Compliance vault">
           <div class="card-head">
             <span class="card-title">Compliance vault</span>
             <span class="card-note" id="vault-note"></span>
@@ -555,7 +604,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-sector-standing" data-group="proof" data-find="sector standing benchmark compare industry ranking peers" data-label="Sector standing">
           <div class="card-head">
             <span class="card-title">Sector standing</span>
             <span class="card-note" id="bench-note"></span>
@@ -563,7 +612,7 @@
           <div id="bench-body"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="find-autopilot" data-group="setup" data-find="autopilot automation runs itself sweep schedule" data-label="Autopilot">
           <div class="card-head">
             <span class="card-title">Autopilot</span>
             <span class="card-note">Unattended watchdog</span>
@@ -788,6 +837,7 @@ $("signin-form").addEventListener("submit", async (event) => {
         password: $("si-password").value,
       }),
     });
+    rememberEmail($("si-email").value.trim());
     await enter(body.token, body.user);
   } catch (err) {
     toast(err.message, "err");
@@ -883,6 +933,10 @@ function signOutLocally() {
   setTerminal(false, { remember: false });
   $("gate").hidden = false;
   $("si-password").value = "";
+  $("si-password").type = "password";
+  $("si-see").textContent = "Show";
+  $("si-see").setAttribute("aria-pressed", "false");
+  primeTheGate();
 }
 
 $("sign-out").addEventListener("click", async () => {
@@ -1070,8 +1124,9 @@ const OPTIONAL_PANELS = {
   claims: "claims-body",
   escalation: "escalation-body",
   byodSeen: "byod-samples",
-  peopleAlerts: "people-alerts",
+  peopleAlerts: "licence-alerts",
   peopleCal: "people-cal",
+  staff: "staff-list",
   leavers: "leavers",
 };
 
@@ -1136,6 +1191,7 @@ async function refresh() {
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
     peopleAlerts: () => api("/api/people/alerts"),
+    staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
     leavers: () => api("/api/people/departures"),
   };
@@ -1175,8 +1231,12 @@ async function refresh() {
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
-  paint("peopleAlerts", () => renderPeopleAlerts(got.peopleAlerts));
+  paint("peopleAlerts", () => {
+    renderLicenceAlerts(got.peopleAlerts);
+    renderLeaverAlerts(got.peopleAlerts);
+  });
   paint("peopleCal", () => renderPeople(got.peopleCal));
+  paint("staff", () => renderStaff(got.staff));
   paint("leavers", () => renderLeavers(got.leavers));
   paint("team", () => renderTeam(got.team));
 
@@ -2290,12 +2350,43 @@ async function openInvoice(invoiceId) {
    is one you have to take on trust. Same function on both sides, so the
    page and the inbox cannot disagree. */
 
-function renderPeopleAlerts(due) {
-  const box = $("people-alerts");
-  if (!due || !due.count) {
+function renderAlertLane(boxId, due, keep, note) {
+  const box = $(boxId);
+  if (!due) { box.innerHTML = ""; return; }
+  const urgent = due.urgent.filter(keep);
+  const advisory = due.advisory.filter(keep);
+  if (!urgent.length && !advisory.length) {
     box.innerHTML = "";
     return;
   }
+  renderLane(box, urgent, advisory, due.sent_to, note);
+}
+
+/* Licences on the Licences card, a leaver still being phoned on the
+   People card. They arrive from one endpoint because they are one email;
+   they are shown apart because renewing a certificate and offboarding
+   somebody are not the same afternoon's work. */
+/* Each lane says how often its own emails arrive. The endpoint sends one
+   sentence covering both, and printed under the leavers it described a
+   renewal ladder that has nothing to do with them. */
+function renderLicenceAlerts(due) {
+  renderAlertLane("licence-alerts", due,
+                  (row) => row.kind !== "leaver_on_roster",
+                  "A renewal notice goes out once per licence at 60, 30, "
+                  + "14, 7 and 1 days out, and once on the day itself. One "
+                  + "that has already lapsed is emailed daily for a week, "
+                  + "then weekly, until it is renewed.");
+}
+
+function renderLeaverAlerts(due) {
+  renderAlertLane("leaver-alerts", due,
+                  (row) => row.kind === "leaver_on_roster",
+                  "Emailed daily for a week, then weekly, until they are "
+                  + "off the roster. Taking them off the on-call list is "
+                  + "what stops it.");
+}
+
+function renderLane(box, urgent, advisory, sentTo, note) {
   /* The badge is the real number of days, never the rung that triggered
      the email: "60d" beside a line reading "expires in 41 days" makes the
      reader work out which of the two to believe, and they will pick the
@@ -2306,27 +2397,59 @@ function renderPeopleAlerts(due) {
     : row.days <= 0 ? "today"
     : `${row.days}d`;
 
-  const rows = (items, urgent) => items.map((row) => `<div class="fc-row">
-      <span class="fc-when ${urgent ? "high" : "medium"}">${
+  const rows = (items, loud) => items.map((row) => `<div class="fc-row">
+      <span class="fc-when ${loud ? "high" : "medium"}">${
         esc(badge(row))}</span>
       <span class="grow"><span class="sub">${esc(row.line)}</span></span>
     </div>`).join("");
 
   box.innerHTML =
-    `<h3 class="sub-head">Being emailed to ${esc(due.sent_to)}</h3>`
-    + (due.urgent.length
+    `<h3 class="sub-head">Being emailed to ${esc(sentTo)}</h3>`
+    + (urgent.length
         ? `<div class="read-out no" style="margin:0 0 6px"><strong>${
-            due.urgent.length} need${due.urgent.length === 1 ? "s" : ""
-          } attention today.</strong></div>` + rows(due.urgent, true)
+            urgent.length} need${urgent.length === 1 ? "s" : ""
+          } attention today.</strong></div>` + rows(urgent, true)
         : "")
-    + rows(due.advisory, false)
-    + `<div class="sub" style="margin:8px 0 2px">${esc(due.note)}</div>`;
+    + rows(advisory, false)
+    + `<div class="sub" style="margin:8px 0 2px">${esc(note)}</div>`;
+}
+
+/* ---------------- who works here ----------------
+   The licence calendar below knows these names already, but only as the
+   owner of a date. This is the roll: who is on the books, what they do,
+   and whether anything they hold has lapsed. */
+
+function renderStaff(book) {
+  const box = $("staff-list");
+  if (!book || !book.count) {
+    box.innerHTML = `<div class="sub">Nobody on the books yet. Add the
+      crew and the licence dates follow them.</div>`;
+    return;
+  }
+  const here = book.people.filter((row) => row.active);
+  box.innerHTML = `<h3 class="sub-head">On the books (${here.length})</h3>`
+    + here.map((row) => {
+        const creds = row.credentials || [];
+        const lapsed = creds.filter((c) => c.state === "expired").length;
+        const soon = creds.filter(
+          (c) => c.state === "critical" || c.state === "soon").length;
+        return `<div class="fc-row">
+          <span class="fc-when ${lapsed ? "high" : soon ? "medium" : ""}">${
+            esc(lapsed ? `${lapsed} lapsed` : soon ? `${soon} due` : "clear")
+          }</span>
+          <span class="grow">
+            <span class="fc-id">${esc(row.full_name)}</span>
+            <span class="sub">${esc(row.role || "No role recorded")}${
+              creds.length ? ` · ${creds.length} licence(s)` : ""}</span>
+          </span>
+        </div>`;
+      }).join("");
 }
 
 function renderPeople(book) {
-  $("people-note").textContent = book.credentials
+  $("licence-note").textContent = book.credentials
     ? `${book.expiring_within_30_days} within 30 days`
-    : "nobody on the books yet";
+    : "no licences recorded";
 
   if (!book.credentials) {
     $("people-cal").innerHTML =
@@ -2362,6 +2485,9 @@ function renderPeople(book) {
 }
 
 function renderLeavers(seen) {
+  $("people-note").textContent = seen.count
+    ? `${seen.count} person(s) have left`
+    : "nobody has left";
   if (!seen.count) {
     $("leavers").innerHTML = "";
     return;
@@ -3807,14 +3933,179 @@ $("tx-form").addEventListener("submit", (event) => {
   }).finally(() => { btn.disabled = false; });
 });
 
+/* ---------------- getting in ----------------
+   The session token is already remembered, so somebody who signed in on
+   this browser never sees the gate again. This is about the other two
+   cases: the first time, and the time after a sign-out. Both of those
+   used to mean typing an email address from scratch. */
+
+const EMAIL_STORAGE = "cyberlogix.email";
+
+function rememberEmail(address) {
+  try { localStorage.setItem(EMAIL_STORAGE, address); } catch (_) {}
+}
+
+function rememberedEmail() {
+  try { return localStorage.getItem(EMAIL_STORAGE) || ""; }
+  catch (_) { return ""; }
+}
+
+/* Reveal, rather than a second "confirm password" box. The failure this
+   prevents is the common one: a long password typed correctly but
+   invisibly, rejected, and typed again. */
+$("si-see").addEventListener("click", () => {
+  const field = $("si-password");
+  const shown = field.type === "text";
+  field.type = shown ? "password" : "text";
+  $("si-see").textContent = shown ? "Show" : "Hide";
+  $("si-see").setAttribute("aria-pressed", String(!shown));
+  field.focus();
+});
+
+/* Land the cursor where there is actually something to type. Autofocus on
+   the email box is wrong for the person whose address we already know:
+   it puts them one tab away from the only field they have to fill. */
+function primeTheGate() {
+  const known = rememberedEmail();
+  if (known) {
+    $("si-email").value = known;
+    $("si-password").focus();
+  } else {
+    $("si-email").focus();
+  }
+}
+
+/* ---------------- finding things ----------------
+   The page is one long column of cards and no map. Filtering beats
+   scrolling: pressing People should leave People on the screen, not put
+   it somewhere below the fold with everything else still there. */
+
+const finder = { tab: "all", query: "" };
+
+function findableCards() {
+  return Array.from(document.querySelectorAll("[data-find]"));
+}
+
+function applyFinder() {
+  const query = finder.query.trim().toLowerCase();
+  const words = query ? query.split(/\s+/) : [];
+  let showing = 0;
+
+  findableCards().forEach((card) => {
+    const hay = (card.getAttribute("data-find") || "").toLowerCase();
+    const inTab = finder.tab === "all"
+      || card.getAttribute("data-group") === finder.tab;
+    // Every word has to appear somewhere, so "licence food" narrows
+    // rather than widening the way an "any word" match would.
+    const matches = words.every((word) => hay.includes(word));
+    const show = inTab && matches;
+    card.hidden = !show;
+    if (show) showing += 1;
+  });
+
+  const none = $("find-none");
+  none.hidden = showing > 0;
+  if (!showing) {
+    none.textContent = query
+      ? `Nothing here matches “${query}”.`
+      : "Nothing in this group yet.";
+  }
+  $("find-clear").hidden = !query;
+
+  document.querySelectorAll(".f-tab").forEach((tab) => {
+    tab.setAttribute("aria-pressed",
+                     String(tab.getAttribute("data-tab") === finder.tab));
+  });
+}
+
+/* How many cards each group holds, printed on its tab. A group with a
+   number on it is a promise about what pressing it will do. */
+function countTheTabs() {
+  const counts = {};
+  findableCards().forEach((card) => {
+    const group = card.getAttribute("data-group");
+    counts[group] = (counts[group] || 0) + 1;
+  });
+  document.querySelectorAll(".f-tab").forEach((tab) => {
+    const key = tab.getAttribute("data-tab");
+    const n = key === "all" ? findableCards().length : (counts[key] || 0);
+    if (!tab.querySelector(".n")) {
+      tab.insertAdjacentHTML("beforeend", ` <span class="n">${n}</span>`);
+    }
+  });
+}
+
+document.querySelectorAll(".f-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    finder.tab = tab.getAttribute("data-tab");
+    applyFinder();
+    // Back to the top of the list, or the first card of a short group
+    // renders below where the reader is already looking.
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+});
+
+$("find-q").addEventListener("input", (event) => {
+  finder.query = event.target.value;
+  applyFinder();
+});
+
+$("find-clear").addEventListener("click", () => {
+  $("find-q").value = "";
+  finder.query = "";
+  applyFinder();
+  $("find-q").focus();
+});
+
+/* "/" to search, the shortcut every search box on the web has. Escape
+   gives the page back. Neither fires while something else is being
+   typed into. */
+document.addEventListener("keydown", (event) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(
+    (event.target.tagName || "").toUpperCase());
+  if (event.key === "/" && !typing && !$("app").hidden) {
+    event.preventDefault();
+    $("find-q").focus();
+    $("find-q").select();
+  } else if (event.key === "Escape" && event.target === $("find-q")) {
+    $("find-q").value = "";
+    finder.query = "";
+    applyFinder();
+    $("find-q").blur();
+  }
+});
+
+/* The finder sticks below the nav, and the nav changes height when its
+   chips wrap. Measured rather than guessed: a hard-coded offset leaves
+   the bar either floating in a gap or tucked under the nav at exactly
+   the widths where the chips rewrap. */
+function measureNav() {
+  const nav = document.querySelector(".nav");
+  if (!nav) return;
+  document.documentElement.style.setProperty(
+    "--nav-h", `${Math.round(nav.getBoundingClientRect().height)}px`);
+}
+if (typeof ResizeObserver === "function") {
+  const nav = document.querySelector(".nav");
+  if (nav) new ResizeObserver(measureNav).observe(nav);
+}
+window.addEventListener("resize", measureNav);
+
 /* ---------------- boot ---------------- */
+
+countTheTabs();
+measureNav();
+applyFinder();
 
 let saved = null;
 try { saved = localStorage.getItem(TOKEN_STORAGE); } catch (_) {}
 if (saved) {
   enter(saved).catch(() => {
     try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
+    primeTheGate();
   });
+} else {
+  primeTheGate();
 }
 
 registerWorker();

@@ -1047,3 +1047,92 @@ body[data-stale] #offline-banner {
 .read-out dt { color: var(--muted); }
 .read-out dd { margin: 0; color: var(--ink); font-family: var(--mono);
                font-size: 11.5px; word-break: break-all; }
+
+/* ---------- getting in, and finding things ----------
+   Two problems that look unrelated and are the same problem: the product
+   is only worth anything to somebody who can reach the part they need,
+   and every extra second in front of a locked door or a wall of
+   twenty-two cards is a second spent not using it. */
+
+/* The reveal inside the password box. */
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { padding-right: 68px; }
+.pw-see {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  padding: 5px 10px; border-radius: 7px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--muted); font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: .1em; text-transform: uppercase;
+  transition: color .2s var(--ease), border-color .2s var(--ease);
+}
+.pw-see:hover { color: var(--accent); }
+.pw-see:focus-visible { border-color: var(--accent); color: var(--accent); }
+
+/* Who the browser thinks you are, offered rather than assumed. */
+.gate-known {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -4px 0 16px; font-size: 12.5px; color: var(--muted);
+}
+.gate-known b { color: var(--ink); font-weight: 500; }
+
+/* ---------- the finder ----------
+   Twenty-two cards on one page with no way through them is a filing
+   cabinet with the drawers welded open. Sticky, because the moment it
+   scrolls away it is one more thing to go looking for. */
+.finder {
+  position: sticky; top: var(--nav-h, 62px); z-index: 18;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 0 12px; margin-bottom: 6px;
+  background: linear-gradient(to bottom,
+    var(--bg) 0%, var(--bg) 72%, transparent 100%);
+}
+.finder-search { position: relative; flex: 1 1 230px; min-width: 0; }
+.finder-search input {
+  width: 100%; padding: 9px 34px 9px 34px;
+  background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 999px; outline: none;
+  transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+.finder-search input:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.finder-search::before {
+  content: "⌕"; position: absolute; left: 13px; top: 50%;
+  transform: translateY(-48%); color: var(--muted); font-size: 16px;
+  pointer-events: none;
+}
+.finder-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; color: var(--muted);
+  font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 6px;
+}
+.finder-clear:hover { color: var(--ink); }
+/* A tab, not a button. Pressed is stated by the wash and by a filled
+   underline, so it survives being read without colour. */
+.f-tab {
+  padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--ink-2); font-size: 12.5px;
+  transition: border-color .2s var(--ease), color .2s var(--ease),
+              background .2s var(--ease);
+}
+.f-tab:hover { border-color: var(--border-lit); color: var(--ink); }
+.f-tab[aria-pressed="true"] {
+  border-color: var(--accent); color: var(--ink);
+  background: var(--accent-dim);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.f-tab .n {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  margin-left: 6px;
+}
+.f-tab[aria-pressed="true"] .n { color: var(--accent); }
+.finder-none {
+  padding: 34px 20px; text-align: center; color: var(--muted);
+  font-family: var(--display); font-size: 17px;
+}
+@media (max-width: 720px) {
+  .finder { padding: 9px 0; gap: 6px; }
+  .f-tab { padding: 6px 11px; font-size: 12px; }
+  .f-tab .n { display: none; }
+}
