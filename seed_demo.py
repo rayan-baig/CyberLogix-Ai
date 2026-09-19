@@ -15,7 +15,7 @@ import os
 from datetime import timedelta
 from typing import Dict
 
-from store import STORE, evaluate_breach, utc_now
+from store import STORE, evaluate_breach, iso, utc_now
 
 # Sites the demo estate is spread across, and which sensors sit at each.
 # A flat list of seven thermometers is not what a chain actually looks at.
@@ -230,6 +230,67 @@ def seed() -> Dict[str, str]:
         ("sms_suppressed", 1),
     ):
         STORE.bump_usage(tenant.tenant_id, field, amount)
+
+    # A crew, with the licence dates a real kitchen has. The estate is
+    # not only equipment: the same shift that a freezer sits in has
+    # people in it who need a card to be standing there legally, and the
+    # console is the only place that holds both halves.
+    today = utc_now().date()
+
+    def on(offset: int) -> str:
+        return (today + timedelta(days=offset)).strftime("%Y-%m-%d")
+
+    crew = (
+        ("Dana Reyes", "Head chef", "+15550100", (
+            ("Food protection manager certification", -4, True),
+            ("Allergen awareness", 115, False))),
+        ("Marco Diaz", "Sous chef", "+15550111", (
+            ("Food handler card", 7, True),)),
+        ("Priya Nair", "Line cook", "+15550122", (
+            ("Food handler card", 30, True), ("First aid", 70, False))),
+        ("Tom Ellis", "Driver", "+15550133", (
+            ("Commercial driving licence", 41, True),
+            ("DOT medical examiner certificate", 14, True))),
+        ("Sara Quinn", "Porter", "+15550144", (
+            ("Food handler card", 150, True),)),
+    )
+    staff_ids: Dict[str, str] = {}
+    for full_name, role, phone, credentials in crew:
+        staff_id = STORE._next_id("STF")
+        staff_ids[full_name] = staff_id
+        STORE._db.put("staff", staff_id, {
+            "staff_id": staff_id, "tenant_id": tenant.tenant_id,
+            "full_name": full_name, "role": role, "phone": phone,
+            "email": full_name.split()[0].lower() + "@blueharbor.example",
+            "active": full_name != "Sara Quinn",
+            "added_at": iso(utc_now()),
+        })
+        for name, offset, required in credentials:
+            credential_id = STORE._next_id("CRD")
+            STORE._db.put("credential", credential_id, {
+                "credential_id": credential_id,
+                "tenant_id": tenant.tenant_id, "staff_id": staff_id,
+                "name": name, "expires_on": on(offset), "reference": "",
+                "required_to_work": required, "added_at": iso(utc_now()),
+            })
+
+    # Sara was dismissed three weeks ago. Payroll removed her; the
+    # escalation ladder did not, so a 3am call about a failing walk-in
+    # still goes to somebody who handed her keys back. That is the thing
+    # no HR system can see and no monitoring product thinks to look for,
+    # and the demo estate should show it rather than describe it.
+    STORE.add_contact(
+        tenant.tenant_id, "Sara Quinn", "+1 555-0144", escalation_order=3,
+    )
+    offboarding_id = STORE._next_id("OFF")
+    STORE._db.put("offboarding", offboarding_id, {
+        "offboarding_id": offboarding_id, "tenant_id": tenant.tenant_id,
+        "staff_id": staff_ids["Sara Quinn"], "full_name": "Sara Quinn",
+        "email": "sara@blueharbor.example", "phone": "+15550144",
+        "left_on": on(-21), "reason": "Dismissed",
+        "opened_at": iso(utc_now()),
+        "completed": {"final_pay": iso(utc_now()), "equipment": iso(utc_now())},
+    })
 
     # A reseller with this estate on their book, so the partner portal has
     # something to render rather than an empty table.
