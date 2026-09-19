@@ -45,6 +45,7 @@ from invoicing import router as invoicing_router
 from backup import router as backup_router
 from certificates import router as certificates_router
 from people import router as people_router
+from tasks import router as tasks_router
 from faults import router as faults_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
@@ -151,6 +152,7 @@ app.include_router(readiness_router)
 app.include_router(faults_router)
 app.include_router(certificates_router)
 app.include_router(people_router)
+app.include_router(tasks_router)
 app.include_router(watchdog_router)
 app.include_router(payments_router)
 app.include_router(margin_router)

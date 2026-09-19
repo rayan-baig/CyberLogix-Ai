@@ -515,6 +515,27 @@
              a date to diarise; somebody leaving is a list of things to
              hand back and switch off. Different jobs, different weeks,
              usually different people doing them. -->
+        <!-- The summariser already turned a transcript into action items
+             and then threw them away. This is where they land. -->
+        <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
+          <div class="card-head">
+            <span class="card-title">Things to do</span>
+            <span class="card-note" id="task-note"></span>
+          </div>
+          <p class="card-plain">What people agreed to do, and whether they
+             did it. Saved from a meeting, or typed in here.</p>
+          <form id="task-form" class="row" style="margin-bottom:10px">
+            <input id="task-title" class="grow" required maxlength="300"
+                   placeholder="Get the walk-in serviced"
+                   aria-label="What needs doing">
+            <input id="task-owner" maxlength="120" placeholder="Who"
+                   style="max-width:120px" aria-label="Who agreed to do it">
+            <input id="task-due" type="date" aria-label="Due date">
+            <button class="btn btn-sm" type="submit">Add</button>
+          </form>
+          <div id="task-body"></div>
+        </section>
+
         <section class="card" id="find-licences" data-group="licences" data-find="staff licences licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Staff licences">
           <div class="card-head">
             <span class="card-title">Staff licences</span>
@@ -1151,6 +1172,7 @@ const OPTIONAL_PANELS = {
   claims: "claims-body",
   escalation: "escalation-body",
   byodSeen: "byod-samples",
+  tasks: "task-body",
   peopleAlerts: "licence-alerts",
   peopleCal: "people-cal",
   staff: "staff-list",
@@ -1218,6 +1240,7 @@ async function refresh() {
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
     peopleAlerts: () => api("/api/people/alerts"),
+    tasks: () => api("/api/tasks"),
     staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
     leavers: () => api("/api/people/departures"),
@@ -1258,6 +1281,7 @@ async function refresh() {
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
+  paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
     renderLicenceAlerts(got.peopleAlerts);
     renderLeaverAlerts(got.peopleAlerts);
@@ -2451,6 +2475,86 @@ function renderLane(box, urgent, advisory, sentTo, note) {
     + rows(advisory, false)
     + `<div class="sub" style="margin:8px 0 2px">${esc(note)}</div>`;
 }
+
+/* ---------------- things somebody agreed to do ----------------
+   Late first, because a list that needs scrolling to find the fire is
+   not a list. Finished work sinks rather than vanishing: ticking
+   something off and watching it disappear entirely makes people
+   reluctant to tick. */
+
+function renderTasks(seen) {
+  $("task-note").textContent = seen.open
+    ? (seen.late ? `${seen.late} late` : `${seen.open} to do`)
+    : "nothing outstanding";
+
+  if (!seen.count) {
+    $("task-body").innerHTML =
+      `<div class="sub">Nothing written down yet. Anything somebody
+       agreed to do goes here &mdash; it is the difference between a
+       meeting and a plan.</div>`;
+    return;
+  }
+
+  const band = seen.late
+    ? `<div class="read-out no" style="margin:0 0 8px">${esc(seen.note)}</div>`
+    : "";
+
+  $("task-body").innerHTML = band + seen.tasks.map((row) => `
+    <div class="fc-row"${row.state === "done"
+        ? ' style="opacity:.55"' : ""}>
+      <span class="fc-when ${esc(row.state === "late" ? "high"
+          : row.state === "today" ? "medium" : "")}">${esc(row.when)}</span>
+      <span class="grow">
+        <span class="fc-id">${esc(row.title)}</span>
+        <span class="sub">${esc(row.owner || "nobody named")}${
+          row.source ? ` \u00B7 from ${esc(row.source)}` : ""}${
+          row.priority === "High" ? " \u00B7 high" : ""}</span>
+      </span>
+      <button class="btn btn-sm" data-task="${esc(row.task_id)}"
+              data-doing="${row.state === "done" ? "reopen" : "done"}">${
+        row.state === "done" ? "Undo" : "Done"}</button>
+    </div>`).join("");
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-task]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const out = await api(
+      `/api/tasks/${encodeURIComponent(button.dataset.task)}/`
+      + button.dataset.doing, { method: "POST" });
+    renderTasks(out.outstanding);
+  } catch (err) {
+    toast(err.message, "err");
+    button.disabled = false;
+  }
+});
+
+$("task-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const title = $("task-title").value.trim();
+  if (!title) return;
+  try {
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        owner: $("task-owner").value.trim(),
+        // An empty date input reads as "", which is not a date and not
+        // null; sent as-is it fails validation on an otherwise fine form.
+        due_on: $("task-due").value || null,
+      }),
+    });
+    $("task-title").value = "";
+    $("task-owner").value = "";
+    $("task-due").value = "";
+    renderTasks(await api("/api/tasks"));
+    toast("Written down.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
 
 /* ---------------- who works here ----------------
    The licence calendar below knows these names already, but only as the
@@ -4003,14 +4107,48 @@ $("tx-form").addEventListener("submit", (event) => {
     }
 
     const r = out.intelligence_report;
-    const items = (r.action_items_assigned || []).map((a) =>
+    const actions = r.action_items_assigned || [];
+    const items = actions.map((a) =>
       `<li><strong>${esc(a.task)}</strong> — ${esc(a.owner)} (${esc(a.priority)})</li>`).join("");
     $("tx-out").innerHTML =
       `<div class="quote"><div class="quote-label">Summary</div>${esc(r.executive_summary)}</div>`
       + (items ? `<div class="quote"><div class="quote-label">Action items</div>
            <ul style="margin:0;padding-left:18px">${items}</ul></div>` : "")
       + `<div class="quote"><div class="quote-label">Compliance impact</div>
-           ${esc(r.industry_compliance_impact)}</div>`;
+           ${esc(r.industry_compliance_impact)}</div>`
+      // Without this the whole feature ends here: a list of what people
+      // agreed to, printed once, gone when the tab closes.
+      + (actions.length
+          ? `<button class="btn btn-sm" id="tx-keep" style="margin-top:10px">
+               Keep these ${actions.length} job(s)</button>`
+          : "");
+
+    const keep = $("tx-keep");
+    if (keep) {
+      keep.addEventListener("click", () => {
+        keep.disabled = true;
+        act(async () => {
+          const saved = await api("/api/tasks/from-meeting", {
+            method: "POST",
+            body: JSON.stringify({
+              source: "Meeting notes",
+              action_items: actions.map((a) => ({
+                title: a.task,
+                owner: a.owner || "",
+                // The model is asked for High/Med and mostly obliges.
+                // Anything else would fail validation and lose the lot,
+                // so an unfamiliar word becomes the middle one.
+                priority: ["High", "Med", "Low"].includes(a.priority)
+                  ? a.priority : "Med",
+              })),
+            }),
+          });
+          renderTasks(saved.outstanding);
+          toast(`${saved.saved} job(s) kept.`, "ok");
+          keep.textContent = "Kept";
+        }).catch(() => { keep.disabled = false; });
+      });
+    }
   }).finally(() => { btn.disabled = false; });
 });
 
