@@ -22,7 +22,12 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger("cyberlogix.db")
 
-DEFAULT_DB_PATH = os.environ.get("CYBERLOGIX_DB_PATH", "cyberlogix.db")
+# Named, because it is read in one place and set in others, and a
+# mistyped setter is silent: the process simply keeps the default and
+# writes its database into whatever directory it happened to start in.
+ENV_DB_PATH = "CYBERLOGIX_DB_PATH"
+
+DEFAULT_DB_PATH = os.environ.get(ENV_DB_PATH, "cyberlogix.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (

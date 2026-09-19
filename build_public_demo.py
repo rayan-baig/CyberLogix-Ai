@@ -1,0 +1,245 @@
+"""Package the console as one HTML file anybody can open.
+
+Not a mockup and not a screenshot: this is `static/console.html`,
+`static/theme.css` and `static/circuit.js` exactly as the product ships
+them, with `fetch` answering out of responses captured from a real
+seeded run instead of going to a server. Every figure on the page is one
+the application actually produced.
+
+It exists because the product needs somewhere to be *seen*. A private
+link that asks people to sign in first is not a demo, it is a meeting
+request, and the whole point is to be forwardable to somebody who has
+never heard of any of this.
+
+    python build_public_demo.py
+
+writes `docs/index.html`, which GitHub Pages serves at
+https://<user>.github.io/<repo>/ once Pages is switched on for the repo.
+
+Self-contained on purpose. It seeds a throwaway database in a temporary
+directory, drives the real application through Starlette's test client,
+and throws the database away again, so the page can be rebuilt from a
+clean checkout with no server running and nothing left behind.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import pathlib
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent
+DOCS = ROOT / "docs"
+
+# What the console asks for on load. Anything missing here renders as
+# "Not captured in this demo" on the card that wanted it, which is honest
+# but looks broken, so the list is checked against the page below.
+PATHS = [
+    "/api/console/overview", "/api/health", "/api/costs?days=30",
+    "/api/accounts/audit?limit=8", "/api/accounts/me", "/api/contacts",
+    "/api/accounts/users", "/api/shortcuts", "/api/webhooks",
+    "/api/assurance/cover", "/api/invoices", "/api/contracts",
+    "/api/contracts/pipeline", "/api/forecast/fleet", "/api/claims/eligible",
+    "/api/contacts/preview", "/api/legal/acceptance/status",
+    "/api/benchmarks", "/api/vault/attestation",
+    "/api/people/alerts", "/api/people/calendar?days=180",
+    "/api/people/departures", "/api/people", "/api/v1/bridge/samples",
+]
+
+BANNER = """
+<div class="demo-bar" role="note">
+  <strong>Demo.</strong> The real console on a seeded estate of seven
+  sensors. Sign in with any password to look around &mdash; the email is
+  already filled in. Every figure is one the application produced, but it
+  is frozen, so nothing is live and the buttons that would change
+  something are inert.
+</div>
+"""
+
+STUB = """<script>
+"use strict";
+/* The demo harness. Nothing below is part of the product: it stands in
+   for the server so the real page can run with no backend. */
+const DEMO = %s;
+
+// Start signed out, at the gate, with the email already filled in. The
+// way into a product is part of the product, and a demo that skips it is
+// showing you the half that was never the hard part.
+try {
+  localStorage.removeItem("cyberlogix.session");
+  localStorage.setItem("cyberlogix.email", "dana@blueharbor.example");
+} catch (e) {}
+
+// No service worker here: there is no /sw.js to register, and caching a
+// frozen estate would be doubly wrong.
+try {
+  // `"serviceWorker" in navigator` stays true even when a getter returns
+  // undefined, so the page walked straight into `.register`. Give it a
+  // real object that does nothing instead.
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    get: () => ({
+      register: () => Promise.resolve(null),
+      getRegistration: () => Promise.resolve(null),
+      ready: new Promise(() => {}),
+      addEventListener: () => {},
+    }),
+  });
+} catch (e) {}
+
+function reply(body, status) {
+  return Promise.resolve(new Response(JSON.stringify(body), {
+    status: status || 200,
+    headers: { "Content-Type": "application/json" },
+  }));
+}
+
+window.fetch = function (input, init) {
+  const url = new URL(typeof input === "string" ? input : input.url,
+                      location.href);
+  const path = url.pathname + (url.search || "");
+  const method = ((init && init.method) || "GET").toUpperCase();
+
+  // Signing in and out are the two writes the demo allows, because the
+  // way in is part of what there is to look at. Any password works:
+  // there is no account here to get wrong.
+  if (method === "POST" && url.pathname === "/api/accounts/login") {
+    const me = DEMO["/api/accounts/me"];
+    return reply({ token: "demo-session", user: me && me.body.user });
+  }
+  if (method === "POST" && url.pathname === "/api/accounts/logout") {
+    return reply({ ok: true });
+  }
+
+  if (method !== "GET") {
+    // Read-only on purpose. A demo that looked like it saved something
+    // and did not would be worse than one that says so.
+    return reply({ detail: "This is a frozen demo, so nothing can be "
+                           + "changed here." }, 403);
+  }
+
+  const hit = DEMO[path] || DEMO[url.pathname];
+  if (hit) return reply(hit.body, hit.status);
+  return reply({ detail: "Not captured in this demo." }, 404);
+};
+</script>
+"""
+
+
+def capture() -> dict:
+    """Seed a throwaway estate and record what the application answers."""
+    from fastapi.testclient import TestClient
+
+    import seed_demo
+    from main import app
+
+    credentials = seed_demo.seed()
+    out: dict = {}
+    with TestClient(app) as client:
+        signed_in = client.post("/api/accounts/login", json={
+            "email": credentials["email"],
+            "password": credentials["password"],
+        })
+        signed_in.raise_for_status()
+        head = {"Authorization": f"Bearer {signed_in.json()['token']}"}
+
+        for path in PATHS:
+            got = client.get(path, headers=head)
+            out[path] = {"status": got.status_code, "body": got.json()}
+
+        overview = out["/api/console/overview"]["body"]
+        # The drawer for each sensor, and the peer comparison for every
+        # vertical in the estate -- whichever one dominates is the one the
+        # standing card will ask for, and it is cheaper to capture all of
+        # them than to reimplement the page's choice here.
+        for sensor in overview.get("sensors", []):
+            path = f"/api/console/sensor/{sensor['sensor_id']}"
+            got = client.get(path, headers=head)
+            out[path] = {"status": got.status_code, "body": got.json()}
+        for vertical in sorted({s.get("industry_vertical")
+                                for s in overview.get("sensors", [])
+                                if s.get("industry_vertical")}):
+            path = f"/api/benchmarks/{vertical}"
+            got = client.get(path, headers=head)
+            out[path] = {"status": got.status_code, "body": got.json()}
+
+    bad = {p: r["status"] for p, r in out.items() if r["status"] != 200}
+    if bad:
+        raise SystemExit(f"Refusing to build a demo with broken panels: {bad}")
+    return out
+
+
+def build(data: dict) -> str:
+    console = (ROOT / "static" / "console.html").read_text()
+    theme = (ROOT / "static" / "theme.css").read_text()
+    circuit = (ROOT / "static" / "circuit.js").read_text()
+    # Its own usage comment contains a literal </script>, which closes the
+    # tag early when the file is inlined rather than linked. Escaping the
+    # slash is inert in a comment and in a string alike.
+    circuit = circuit.replace("</script", "<\\/script")
+
+    # The mark is an <img src="/static/logo.svg">, and there is no /static
+    # in a single file. A demo of the product with a broken image where
+    # the logo should be is the first thing anybody looks at.
+    logo = (ROOT / "static" / "logo.svg").read_text()
+    console = console.replace("/static/logo.svg",
+                              "data:image/svg+xml;base64,"
+                              + base64.b64encode(logo.encode()).decode())
+
+    body = console[console.index("<body>") + len("<body>"):
+                   console.rindex("</body>")]
+    # The page's own script has to run after the stub is installed.
+    split = body.index('<script>\n"use strict";')
+    markup, app_js = body[:split], body[split:]
+
+    return (
+        "<title>CyberLogix Console</title>\n"
+        f"<style>\n{theme}\n\n"
+        "/* --- the one thing this page adds to the product --------- */\n"
+        ".demo-bar {\n"
+        "  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 90;\n"
+        "  padding: 10px 16px; font-size: 13px; line-height: 1.55;\n"
+        "  color: var(--ink); text-align: center;\n"
+        "  background: color-mix(in srgb, var(--accent) 14%, var(--surface));\n"
+        "  border-bottom: 1px solid var(--border-lit);\n"
+        "}\n"
+        ".demo-bar strong { color: var(--accent); }\n"
+        "</style>\n"
+        f"{BANNER}\n{markup}\n"
+        f"<script>\n{circuit}\n</script>\n"
+        + (STUB % json.dumps(data).replace("</", "<\\/"))
+        + app_js
+    )
+
+
+def main() -> None:
+    # A throwaway database, so building the page never touches a real one
+    # and leaves nothing behind to be served by accident.
+    #
+    # The name matters and is easy to get wrong: db.py reads
+    # CYBERLOGIX_DB_PATH, and setting anything else silently does nothing
+    # at all -- the seed then lands in ./cyberlogix.db in the working
+    # directory, which is how the first version of this wrote a four
+    # megabyte database into the repository. It has to be set before the
+    # import below, because db.py freezes the path at import time.
+    with tempfile.TemporaryDirectory() as tmp:
+        # Spelled out rather than taken from `db.ENV_DB_PATH`, because
+        # importing db to read that name is already too late: db.py
+        # resolves the path at import time, and an import here would
+        # freeze the default before this line could change it. A test
+        # ties this literal to the constant so the two cannot drift.
+        os.environ["CYBERLOGIX_DB_PATH"] = str(pathlib.Path(tmp) / "demo.db")
+        page = build(capture())
+
+    DOCS.mkdir(exist_ok=True)
+    # Without this GitHub Pages runs the output through Jekyll, which
+    # silently drops anything it decides is a draft.
+    (DOCS / ".nojekyll").write_text("")
+    (DOCS / "index.html").write_text(page)
+    print(f"wrote {DOCS / 'index.html'} — {len(page) // 1024} KB")
+
+
+if __name__ == "__main__":
+    main()
