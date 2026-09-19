@@ -43,6 +43,8 @@ from gemini import GEMINI_MODEL, dispatch_ready
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
+from certificates import router as certificates_router
+from people import router as people_router
 from faults import router as faults_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
@@ -147,6 +149,8 @@ app.include_router(digest_router)
 app.include_router(backup_router)
 app.include_router(readiness_router)
 app.include_router(faults_router)
+app.include_router(certificates_router)
+app.include_router(people_router)
 app.include_router(watchdog_router)
 app.include_router(payments_router)
 app.include_router(margin_router)
@@ -202,6 +206,7 @@ BOOK_HTML = STATIC_DIR / "book.html"
 SERVICE_WORKER = STATIC_DIR / "sw.js"
 WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
 OFFLINE_HTML = STATIC_DIR / "offline.html"
+PROOF_HTML = STATIC_DIR / "proof.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 
 # The console and the partner portal render from one stylesheet, so it is
@@ -485,6 +490,18 @@ def service_worker():
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def web_manifest():
     return FileResponse(WEB_MANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/proof/{token}", include_in_schema=False)
+def public_proof(token: str):
+    """A customer's cold-chain record, for anyone they hand the link to.
+
+    No credential: the whole point is that a health inspector, an
+    adjuster or a diner can check it without an account and without
+    taking either party's word for it. The token is the only secret, and
+    the owner can revoke it.
+    """
+    return FileResponse(PROOF_HTML, media_type="text/html")
 
 
 @app.get("/offline", include_in_schema=False)

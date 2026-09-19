@@ -237,6 +237,35 @@
             <button class="btn btn-primary" type="submit">Simulate hardware pulse</button>
           </form>
           <div id="byod-out"></div>
+
+          <!-- The form above sends OUR field names, which is what the
+               endpoint used to require and why "point your existing
+               sensor at this URL" was not true. This is the real thing:
+               paste what the device sends and the mapping is worked out
+               from it, because a preset for a vendor is a guess about
+               firmware nobody here has run. -->
+          <h3 class="sub-head">Paste what your sensor sends</h3>
+          <p class="card-note" style="margin:0 0 10px">
+            One real payload, copied out of your vendor's console. Nothing
+            is recorded &mdash; this only says what would be read out of it.
+          </p>
+          <form id="shape-form">
+            <div class="field">
+              <label for="shape-json">Payload</label>
+              <textarea id="shape-json" rows="4" required
+                        style="width:100%;font-family:var(--mono);font-size:12px;
+                               background:var(--sunken);color:var(--ink);
+                               border:1px solid var(--border);border-radius:8px;
+                               padding:9px"
+                        placeholder='{"SensorID":"556677","DataValues":"-2.5","DataTypes":"TemperatureC"}'></textarea>
+            </div>
+            <button class="btn" type="submit">Read it</button>
+          </form>
+          <div id="shape-out"></div>
+
+          <h3 class="sub-head">What your devices actually sent</h3>
+          <div id="byod-samples"></div>
+
           <details style="margin-top:12px">
             <summary style="cursor:pointer;font-size:12px;color:var(--muted)">
               Wire real hardware to this endpoint</summary>
@@ -426,6 +455,18 @@
               <button type="submit">Change password</button>
             </div>
           </form>
+        </section>
+
+        <!-- A licence to work expires on a date nobody diarised, and the
+             first anybody hears is an inspector asking. Same shape as the
+             freezer problem: a thing drifting towards a line. -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Licences &amp; people</span>
+            <span class="card-note" id="people-note"></span>
+          </div>
+          <div id="people-cal"></div>
+          <div id="leavers"></div>
         </section>
 
         <section class="card">
@@ -1027,6 +1068,9 @@ const OPTIONAL_PANELS = {
   forecast: "forecast-body",
   claims: "claims-body",
   escalation: "escalation-body",
+  byodSeen: "byod-samples",
+  peopleCal: "people-cal",
+  leavers: "leavers",
 };
 
 function panelUnavailable(key, err) {
@@ -1088,6 +1132,9 @@ async function refresh() {
     forecast: () => api("/api/forecast/fleet"),
     claims: () => api("/api/claims/eligible"),
     escalation: () => api("/api/contacts/preview"),
+    byodSeen: () => api("/api/v1/bridge/samples"),
+    peopleCal: () => api("/api/people/calendar?days=180"),
+    leavers: () => api("/api/people/departures"),
   };
   const keys = Object.keys(wanted);
   const settled = await Promise.allSettled(keys.map((k) => wanted[k]()));
@@ -1124,6 +1171,9 @@ async function refresh() {
   paint("forecast", () => renderForecast(got.forecast));
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
+  paint("byodSeen", () => renderByodSamples(got.byodSeen));
+  paint("peopleCal", () => renderPeople(got.peopleCal));
+  paint("leavers", () => renderLeavers(got.leavers));
   paint("team", () => renderTeam(got.team));
 
   // The contract card is where the way back lives, so it renders from
@@ -2223,6 +2273,123 @@ async function openInvoice(invoiceId) {
   showDrawer();
   $("drawer-close").addEventListener("click", closeDrawer);
   $("invoice-print").addEventListener("click", () => window.print());
+}
+
+/* ---------------- licences, and who has left ----------------
+   The calendar reads down by month because a rota is planned a month at
+   a time, and the thing that matters is not "which of these is expired"
+   but "what do I have to deal with before the end of the month". */
+
+function renderPeople(book) {
+  $("people-note").textContent = book.credentials
+    ? `${book.expiring_within_30_days} within 30 days`
+    : "nobody on the books yet";
+
+  if (!book.credentials) {
+    $("people-cal").innerHTML =
+      `<div class="sub">No staff licences recorded. A food handler card,
+       a CDL, a pharmacy registration &mdash; anything somebody legally
+       needs to do the job.</div>`;
+    return;
+  }
+
+  const band = book.expired_and_blocking
+    ? `<div class="read-out no" style="margin:0 0 10px">${esc(book.note)}</div>`
+    : "";
+
+  $("people-cal").innerHTML = band + book.by_month.map((month) => {
+    const when = new Date(month.month + "-01");
+    const label = isNaN(when) ? month.month
+      : when.toLocaleDateString([], { month: "long", year: "numeric" });
+    return `<div class="sub" style="margin:12px 0 4px">${esc(label)}</div>`
+      + month.entries.map((row) => `<div class="fc-row">
+          <span class="fc-when ${esc(row.state === "expired" ? "high"
+              : row.state === "critical" ? "high"
+              : row.state === "soon" ? "medium" : "")}">${
+            esc(row.days_left < 0 ? `${Math.abs(row.days_left)}d ago`
+                                  : `${row.days_left}d`)}</span>
+          <span class="grow">
+            <span class="fc-id">${esc(row.full_name)}</span>
+            <span class="sub">${esc(row.name)}${
+              row.stops_them_working ? " · required for the job" : ""}</span>
+          </span>
+          <span class="fc-trend">${esc(row.expires_on)}</span>
+        </div>`).join("");
+  }).join("");
+}
+
+function renderLeavers(seen) {
+  if (!seen.count) {
+    $("leavers").innerHTML = "";
+    return;
+  }
+  const urgent = seen.still_reachable_by_alerts;
+  $("leavers").innerHTML =
+    `<h3 class="sub-head">People who have left</h3>`
+    + (urgent ? `<div class="read-out no">${esc(seen.note)}</div>` : "")
+    + seen.departures.map((row) => `<div class="fc-row">
+        <span class="fc-when ${esc(row.still_on_the_roster ? "high" : "")}">${
+          esc(row.still_on_the_roster ? "on roster" : "clear")}</span>
+        <span class="grow">
+          <span class="fc-id">${esc(row.full_name)}</span>
+          <span class="sub">left ${esc(row.left_on)} · ${
+            esc(row.outstanding)} item(s) outstanding</span>
+        </span>
+      </div>`).join("");
+}
+
+/* ---------------- sensors you already own ----------------
+   The simulator above sends our field names, which is what the endpoint
+   used to require and why "point your existing sensor at this URL" was
+   not true. This reads the vendor's own shape instead. */
+
+function renderReading(read) {
+  const box = $("shape-out");
+  if (!read.understood) {
+    box.className = "read-out no";
+    box.innerHTML = `<strong>Not enough to go on.</strong>
+      <div class="sub">Missing ${esc(read.missing.join("; "))}.</div>
+      <div class="sub">Fields seen: ${esc(
+        (read.every_field_seen || []).slice(0, 12).join(", "))}</div>`;
+    return;
+  }
+  const used = read.fields_used || {};
+  box.className = "read-out ok";
+  box.innerHTML = `<strong>Understood${
+      read.preset ? " as " + esc(read.preset) : " by looking at the fields"
+    }.</strong>
+    <dl>
+      <dt>Serial</dt><dd>${esc(read.serial)} &nbsp;<span class="sub">${
+        esc(used.serial || "")}</span></dd>
+      <dt>Reading</dt><dd>${esc(read.value)} &nbsp;<span class="sub">${
+        esc(used.value || "")}</span></dd>
+      <dt>Unit</dt><dd>${esc(read.unit || "not stated")}</dd>
+    </dl>
+    ${read.note ? `<div class="sub" style="margin-top:6px">${
+      esc(read.note)}</div>` : ""}
+    ${read.checked_against ? `<div class="sub" style="margin-top:6px">
+      This preset was checked against ${esc(read.checked_against)}.</div>` : ""}`;
+}
+
+function renderByodSamples(seen) {
+  if (!seen.count) {
+    $("byod-samples").innerHTML =
+      `<div class="sub">Nothing has reached the open endpoint yet. A device
+       that never appears here never reached us at all, which is a
+       different problem from one that arrives and is not understood.</div>`;
+    return;
+  }
+  $("byod-samples").innerHTML = seen.samples.map((row) => `
+    <div class="fc-row">
+      <span class="fc-when ${row.understood ? "" : "medium"}">${
+        esc(row.understood ? "read" : "not read")}</span>
+      <span class="grow">
+        <span class="fc-id">${esc(row.serial || "no serial found")}</span>
+        <span class="sub">${esc(shortDate(row.at))}${
+          row.value === null || row.value === undefined
+            ? "" : " · " + esc(row.value)}</span>
+      </span>
+    </div>`).join("");
 }
 
 /* ---------------- the installed app ----------------
@@ -3521,6 +3688,25 @@ $("password-form").addEventListener("submit", async (event) => {
     toast("Password changed. Other sessions stay signed in.");
   } catch (err) {
     toast(err.message || "That password could not be changed.");
+  }
+});
+$("shape-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  let parsed;
+  try {
+    parsed = JSON.parse($("shape-json").value);
+  } catch (err) {
+    $("shape-out").className = "read-out no";
+    $("shape-out").textContent =
+      "That is not valid JSON. Paste it exactly as the vendor shows it.";
+    return;
+  }
+  try {
+    renderReading(await api("/api/v1/bridge/preview", {
+      method: "POST", body: JSON.stringify({ payload: parsed }),
+    }));
+  } catch (err) {
+    toast(err.message || "That could not be read.");
   }
 });
 $("terms-accept").addEventListener("click", () => {

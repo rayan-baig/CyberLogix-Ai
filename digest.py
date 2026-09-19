@@ -212,6 +212,7 @@ def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
             2,
         ),
         "faults": _fault_summary(),
+        "people": _people_summary(),
         "unbilled_accounts": len(unbilled),
         "unbilled_annual_usd": unbilled_annual,
         "warnings": _system_warnings(),
@@ -235,6 +236,23 @@ def _fault_summary() -> Dict[str, Any]:
         return {"distinct": 0, "occurrences": 0, "newest": None, "worst": None}
 
 
+def _people_summary() -> Dict[str, Any]:
+    """Licences about to lapse, and leavers still reachable by an alert.
+
+    Fleet-wide, because the operator's digest spans every account and a
+    lapsed food handler card is the same class of problem as a freezer
+    drifting: a line being crossed with nobody watching the date.
+    """
+    try:
+        import people
+
+        return people.fleet_summary()
+    except Exception:  # noqa: BLE001 - a summary must not stop the digest
+        logger.exception("Could not summarise people for the digest.")
+        return {"expired_and_blocking": 0, "expiring_soon": 0,
+                "leavers_still_on_the_roster": 0}
+
+
 def _render_operator(digest: Dict[str, Any]) -> str:
     money = digest["money"]
     out = [
@@ -243,6 +261,25 @@ def _render_operator(digest: Dict[str, Any]) -> str:
         f"${digest['outstanding_usd']:,.2f} invoiced and unpaid.",
         f"${digest['at_risk_usd']:,.0f} a year at risk if nobody calls.",
     ]
+
+    people = digest["people"]
+    if people["expired_and_blocking"]:
+        out.append(
+            f"{people['expired_and_blocking']} staff licence(s) required "
+            "for the job have expired. Somebody on shift may not be "
+            "allowed to be."
+        )
+    elif people["expiring_soon"]:
+        out.append(
+            f"{people['expiring_soon']} staff licence(s) expire within 30 "
+            "days."
+        )
+    if people["leavers_still_on_the_roster"]:
+        out.append(
+            f"{people['leavers_still_on_the_roster']} person(s) who have "
+            "left are still on the on-call roster. An alert routed to them "
+            "is one nobody answers."
+        )
 
     broke = digest["faults"]
     if broke["distinct"]:

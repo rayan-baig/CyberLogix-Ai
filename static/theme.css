@@ -1025,3 +1025,25 @@ body[data-stale] #offline-banner {
   border-color: color-mix(in srgb, var(--critical) 55%, transparent);
   background: color-mix(in srgb, var(--critical) 12%, transparent);
 }
+
+/* A heading inside a card, for the sections that grew within one. */
+.sub-head {
+  font-family: var(--display); font-weight: 400; font-size: 14px;
+  color: var(--ink); margin: 20px 0 6px;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.card > .sub-head:first-of-type { margin-top: 16px; }
+
+/* What a pasted payload was understood as. */
+.read-out {
+  margin-top: 10px; padding: 11px 13px; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.6;
+  border: 1px solid var(--border); background: var(--sunken);
+}
+.read-out.ok { border-color: color-mix(in srgb, var(--accent-cyan, #3FD8C8) 45%, transparent); }
+.read-out.no { border-color: color-mix(in srgb, var(--warning) 50%, transparent); }
+.read-out dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px;
+               margin: 6px 0 0; }
+.read-out dt { color: var(--muted); }
+.read-out dd { margin: 0; color: var(--ink); font-family: var(--mono);
+               font-size: 11.5px; word-break: break-all; }
