@@ -289,8 +289,26 @@ def seed() -> Dict[str, str]:
         "email": "sara@blueharbor.example", "phone": "+15550144",
         "left_on": on(-21), "reason": "Dismissed",
         "opened_at": iso(utc_now()),
-        "completed": {"final_pay": iso(utc_now()), "equipment": iso(utc_now())},
     })
+
+    # What the club carried on paying for her. This is the feature: not
+    # what is owed to somebody who left -- payroll does that, because the
+    # person chases it -- but what keeps being paid for them, which
+    # nobody chases. Three weeks in, it is already real money.
+    for label, kind, monthly, stopped, refunded in (
+        ("Mobile phone plan", "phone", 55.0, None, 0.0),
+        ("Health cover", "benefits", 320.0, None, 0.0),
+        ("Scheduling software seat", "software", 25.0, on(-7), 18.0),
+        ("Parking permit", "parking", 90.0, None, 0.0),
+    ):
+        cost_id = STORE._next_id("LEK")
+        STORE._db.put("leaver_cost", cost_id, {
+            "cost_id": cost_id, "tenant_id": tenant.tenant_id,
+            "offboarding_id": offboarding_id, "label": label, "kind": kind,
+            "monthly_usd": monthly, "billed_by": "", "reference": "",
+            "stopped_on": stopped, "refunded_usd": refunded,
+            "added_at": iso(utc_now()),
+        })
 
     # A reseller with this estate on their book, so the partner portal has
     # something to render rather than an empty table.

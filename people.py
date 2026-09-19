@@ -49,6 +49,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from accounts import require_role
+from models import Finite
 from auth import require_tenant, write_audit
 from mail import send as send_mail
 from store import STORE, Tenant, User, iso, utc_now
@@ -99,23 +100,35 @@ GENERIC_CREDENTIALS = [
     "Health and safety induction",
 ]
 
-# What tends to be owed when somebody leaves. Every one of these is a
-# reminder the employer configures, not a deadline this file asserts.
-OFFBOARDING_STEPS = (
-    ("final_pay", "Final pay issued",
-     "Deadlines differ by jurisdiction and by what was signed."),
-    ("accrued_time", "Accrued leave paid out",
-     "Where it is owed. Some places require it, some do not."),
-    ("benefits_notice", "Benefits continuation notice sent",
-     "If the employer offers cover, there is usually a window to write."),
-    ("equipment", "Equipment and keys returned",
-     "Phones, badges, vehicle, uniform."),
-    ("access_revoked", "System access revoked",
-     "Their console account here, and anything else they could sign into."),
-    ("roster_removed", "Removed from the on-call roster",
-     "The one this application can check for itself: an alert routed to "
-     "somebody who has left is an alert nobody answers."),
-)
+COST_KIND = "leaver_cost"
+
+# What a company carries on paying for somebody who does not work there
+# any more. Not what it owes them -- that is payroll's job and it gets
+# done, because the person chases it. This is the other direction, and
+# nobody chases it: the phone plan, the software seat, the insurance,
+# the fuel card. Each one is small, each one renews quietly, and the
+# invoice it sits on has forty other lines.
+#
+# Offered as a starting list, because an owner staring at an empty box
+# will not remember the parking permit. They add their own.
+COMMON_LEAKS = {
+    "phone": ("Mobile phone plan", 55.0),
+    "software": ("Software seat or licence", 25.0),
+    "benefits": ("Health or dental cover", 320.0),
+    "vehicle": ("Vehicle lease or insurance", 410.0),
+    "fuel": ("Fuel or fleet card", 180.0),
+    "parking": ("Parking space or permit", 90.0),
+    "uniform": ("Uniform or laundry service", 30.0),
+    "gym": ("Gym or wellbeing benefit", 40.0),
+    "union": ("Union or professional dues", 35.0),
+    "other": ("Something else", 0.0),
+}
+
+# What this company takes of what it actually claws back for a customer.
+# A share of recovery rather than a fee, because on this one the customer
+# has no way to value the work in advance: they do not know the money is
+# leaking until it is found.
+RECOVERY_SHARE = 0.15
 
 
 def _today() -> date:
@@ -361,33 +374,125 @@ def _digits(value: Optional[str]) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
+def costs_for(tenant_id: str, offboarding_id: Optional[str] = None):
+    rows = [r for r in STORE._db.all(COST_KIND)
+            if r.get("tenant_id") == tenant_id
+            and (offboarding_id is None
+                 or r.get("offboarding_id") == offboarding_id)]
+    return sorted(rows, key=lambda r: -float(r.get("monthly_usd") or 0.0))
+
+
+def _months_between(start: str, end: Optional[date] = None) -> float:
+    """Whole days, expressed in months, never negative.
+
+    Days rather than calendar months because the bill does not care which
+    month it is, and never negative because a leaving date typed as next
+    year must not produce a credit.
+    """
+    try:
+        began = _parse_day(start)
+    except (ValueError, TypeError):
+        return 0.0
+    days = ((end or _today()) - began).days
+    return max(0.0, days / 30.4375)
+
+
+def cost_state(row: Dict[str, Any], left_on: str) -> Dict[str, Any]:
+    """One line item: what it costs, how long it ran, what it is worth.
+
+    "Wasted" is money already spent and usually gone. "Saving" is the
+    monthly bleeding that stops the day it is cancelled. They are kept
+    apart on purpose: adding a year of future saving to a recovery
+    figure is how a number stops being true.
+    """
+    monthly = float(row.get("monthly_usd") or 0.0)
+    stopped_on = row.get("stopped_on")
+    running_months = _months_between(
+        left_on, _parse_day(stopped_on) if stopped_on else None)
+    return {
+        **row,
+        "still_running": not stopped_on,
+        "months_running": round(running_months, 1),
+        # Paid out since they left, for somebody who was not there.
+        "wasted_usd": round(monthly * running_months, 2),
+        # What stops, per month, once it is cancelled.
+        "monthly_saving_usd": monthly if not stopped_on else 0.0,
+        # Money actually returned. Only the employer can know this, so it
+        # is entered rather than calculated, and it is the only figure
+        # the share below is taken from.
+        "refunded_usd": round(float(row.get("refunded_usd") or 0.0), 2),
+    }
+
+
+def recovery_for(tenant_id: str) -> Dict[str, Any]:
+    """The whole picture for one account, and what this company earns.
+
+    Three numbers that people conflate and must not be:
+
+      still_bleeding_monthly -- going out every month, right now
+      wasted_to_date         -- already spent since they left, mostly gone
+      refunded               -- actually clawed back into the account
+
+    The share is taken from `refunded` alone. Billing 15% of a projected
+    annual saving would invoice a customer for money they have not seen,
+    on a cancellation they could reverse next week.
+    """
+    leavers = offboarding_for(tenant_id)
+    by_person = {row["offboarding_id"]: row for row in leavers}
+
+    bleeding = wasted = refunded = 0.0
+    stopped_monthly = 0.0
+    lines: List[Dict[str, Any]] = []
+    for raw in costs_for(tenant_id):
+        person = by_person.get(raw.get("offboarding_id"))
+        if person is None:
+            continue
+        line = cost_state(raw, person.get("left_on", ""))
+        line["full_name"] = person.get("full_name", "")
+        lines.append(line)
+        wasted += line["wasted_usd"]
+        refunded += line["refunded_usd"]
+        if line["still_running"]:
+            bleeding += float(raw.get("monthly_usd") or 0.0)
+        else:
+            stopped_monthly += float(raw.get("monthly_usd") or 0.0)
+
+    return {
+        "lines": sorted(lines, key=lambda r: -r["wasted_usd"]),
+        "still_bleeding_monthly_usd": round(bleeding, 2),
+        "still_bleeding_yearly_usd": round(bleeding * 12, 2),
+        "wasted_to_date_usd": round(wasted, 2),
+        "stopped_monthly_usd": round(stopped_monthly, 2),
+        "refunded_usd": round(refunded, 2),
+        "our_share_percent": RECOVERY_SHARE * 100,
+        "our_share_usd": round(refunded * RECOVERY_SHARE, 2),
+        "note": (
+            "Our share is taken from money actually refunded into the "
+            "account, never from a projected saving. A cancellation can "
+            "be reversed next week; a refund cannot."
+        ),
+    }
+
+
 def offboarding_state(tenant_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
-    """One leaver, what is done and what is not."""
-    done = row.get("completed") or {}
-    person = {"phone": row.get("phone"), "email": row.get("email")}
-    person = {**person, "full_name": row.get("full_name")}
+    """One leaver, and what they are still costing."""
+    person = {"phone": row.get("phone"), "email": row.get("email"),
+              "full_name": row.get("full_name")}
     on_roster = still_on_the_roster(tenant_id, person)
     maybe = possibly_on_the_roster(tenant_id, person)
 
-    steps = []
-    for key, label, caveat in OFFBOARDING_STEPS:
-        complete = bool(done.get(key))
-        # The roster step is the one this application can check rather
-        # than take somebody's word for, so it does.
-        if key == "roster_removed":
-            complete = not on_roster
-        steps.append({
-            "key": key, "label": label, "note": caveat,
-            "done": complete,
-            "done_at": done.get(key) if isinstance(done.get(key), str) else None,
-            "verified_by_the_system": key == "roster_removed",
-        })
+    lines = [cost_state(raw, row.get("left_on", ""))
+             for raw in costs_for(tenant_id, row["offboarding_id"])]
+    running = [line for line in lines if line["still_running"]]
 
-    outstanding = [s for s in steps if not s["done"]]
     return {
         **row,
-        "steps": steps,
-        "outstanding": len(outstanding),
+        "costs": lines,
+        "still_running_count": len(running),
+        "monthly_usd": round(sum(line["monthly_saving_usd"]
+                                 for line in running), 2),
+        "wasted_usd": round(sum(line["wasted_usd"] for line in lines), 2),
+        "refunded_usd": round(sum(line["refunded_usd"] for line in lines), 2),
         "still_on_the_roster": on_roster,
         "possibly_on_the_roster": maybe,
         "urgent": (
@@ -732,19 +837,39 @@ class Departure(BaseModel):
         return value
 
 
-class StepDone(BaseModel):
+class LeakingCost(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    step: str
-    done: bool = True
+    offboarding_id: str
+    label: str = Field(..., min_length=2, max_length=160,
+                       description="What is still being paid for.")
+    monthly_usd: Finite = Field(..., ge=0, le=1_000_000,
+                                description="What it costs a month.")
+    kind: str = Field("other", max_length=40)
+    billed_by: str = Field("", max_length=160,
+                           description="Who sends the invoice.")
+    reference: str = Field("", max_length=160,
+                           description="Account or contract number.")
 
-    @field_validator("step")
+
+class StopCost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stopped_on: Optional[str] = Field(
+        None, description="YYYY-MM-DD. Leave out to mark it running again.")
+    refunded_usd: Finite = Field(
+        0.0, ge=0, le=10_000_000,
+        description="Money actually returned, not the saving going forward.")
+
+    @field_validator("stopped_on")
     @classmethod
-    def known_step(cls, value: str) -> str:
-        if value not in {k for k, _, _ in OFFBOARDING_STEPS}:
-            raise ValueError(
-                f"step must be one of {[k for k, _, _ in OFFBOARDING_STEPS]}"
-            )
+    def a_real_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        try:
+            _parse_day(value)
+        except ValueError:
+            raise ValueError("stopped_on must look like 2026-03-14")
         return value
 
 
@@ -886,13 +1011,14 @@ def record_departure(
 
 @router.get("/departures")
 def list_departures(tenant: Tenant = Depends(require_tenant)):
-    """Everyone who has left, and what is still owed to or from them."""
+    """Everyone who has left, and what they are still costing."""
     rows = [offboarding_state(tenant.tenant_id, r)
             for r in offboarding_for(tenant.tenant_id)]
     reachable = [r for r in rows if r["still_on_the_roster"]]
     return {
         "count": len(rows),
         "departures": rows,
+        "recovery": recovery_for(tenant.tenant_id),
         "still_reachable_by_alerts": len(reachable),
         "note": (
             f"{len(reachable)} person(s) who have left are still on the "
@@ -904,35 +1030,93 @@ def list_departures(tenant: Tenant = Depends(require_tenant)):
     }
 
 
-@router.post("/departures/{offboarding_id}/step")
-def mark_step(
-    offboarding_id: str,
-    payload: StepDone,
-    tenant: Tenant = Depends(require_tenant),
-    operator: User = Depends(require_role("owner")),
-):
-    """Tick one obligation off, or put it back."""
+def _leaver_or_404(offboarding_id: str, tenant: Tenant) -> Dict[str, Any]:
     row = STORE._db.get(OFFBOARD_KIND, offboarding_id)
     if row is None or row.get("tenant_id") != tenant.tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No such departure on this account.")
-    if payload.step == "roster_removed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "This one is not ticked by hand -- it is read from the "
-                "on-call roster. Remove them from the roster and it "
-                "clears itself."
-            ),
-        )
-    done = dict(row.get("completed") or {})
-    if payload.done:
-        done[payload.step] = iso(utc_now())
-    else:
-        done.pop(payload.step, None)
-    row = {**row, "completed": done}
-    STORE._db.put(OFFBOARD_KIND, offboarding_id, row)
-    write_audit(tenant, operator, "offboarding.step",
-                f"{row['full_name']}: {payload.step}="
-                f"{'done' if payload.done else 'not done'}")
-    return {"offboarding": offboarding_state(tenant.tenant_id, row)}
+    return row
+
+
+@router.get("/recovery")
+def money_going_out(tenant: Tenant = Depends(require_tenant)):
+    """What people who left are still costing, and what has been clawed back."""
+    return recovery_for(tenant.tenant_id)
+
+
+@router.get("/recovery/common")
+def things_to_check(tenant: Tenant = Depends(require_tenant)):
+    """A starting list, because nobody remembers the parking permit.
+
+    Typical monthly figures, offered so a blank form has something in it.
+    Every one is overwritten by what the customer actually pays.
+    """
+    return {
+        "common": [
+            {"kind": key, "label": label, "typical_monthly_usd": amount}
+            for key, (label, amount) in COMMON_LEAKS.items()
+        ],
+        "note": (
+            "Typical amounts, not yours. Put in the real figure from the "
+            "invoice -- the whole number this produces is only as good as "
+            "what goes in."
+        ),
+    }
+
+
+@router.post("/recovery", status_code=status.HTTP_201_CREATED)
+def record_cost(
+    payload: LeakingCost,
+    tenant: Tenant = Depends(require_tenant),
+    operator: User = Depends(require_role("owner")),
+):
+    """Record something still being paid for somebody who has left."""
+    leaver = _leaver_or_404(payload.offboarding_id, tenant)
+    cost_id = STORE._next_id("LEK")
+    row = {
+        "cost_id": cost_id,
+        "tenant_id": tenant.tenant_id,
+        "offboarding_id": payload.offboarding_id,
+        "label": payload.label.strip(),
+        "kind": payload.kind,
+        "monthly_usd": float(payload.monthly_usd),
+        "billed_by": payload.billed_by.strip(),
+        "reference": payload.reference.strip(),
+        "stopped_on": None,
+        "refunded_usd": 0.0,
+        "added_at": iso(utc_now()),
+    }
+    STORE._db.put(COST_KIND, cost_id, row)
+    write_audit(tenant, operator, "recovery.found",
+                f"{leaver['full_name']}: {row['label']} at "
+                f"${row['monthly_usd']:.2f}/month")
+    return {"cost": cost_state(row, leaver.get("left_on", ""))}
+
+
+@router.post("/recovery/{cost_id}/stop")
+def stop_cost(
+    cost_id: str,
+    payload: StopCost,
+    tenant: Tenant = Depends(require_tenant),
+    operator: User = Depends(require_role("owner")),
+):
+    """Mark it cancelled, and record anything actually refunded.
+
+    The refund is typed in rather than worked out, because only the
+    person reading the credit note knows what came back. Our share is
+    taken from this figure and from nothing else.
+    """
+    row = STORE._db.get(COST_KIND, cost_id)
+    if row is None or row.get("tenant_id") != tenant.tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No such cost on this account.")
+    leaver = _leaver_or_404(row["offboarding_id"], tenant)
+    row = {**row, "stopped_on": payload.stopped_on,
+           "refunded_usd": float(payload.refunded_usd)}
+    STORE._db.put(COST_KIND, cost_id, row)
+    write_audit(tenant, operator, "recovery.stopped",
+                f"{leaver['full_name']}: {row['label']}"
+                + (f", ${row['refunded_usd']:.2f} refunded"
+                   if row["refunded_usd"] else ""))
+    return {"cost": cost_state(row, leaver.get("left_on", "")),
+            "account": recovery_for(tenant.tenant_id)}

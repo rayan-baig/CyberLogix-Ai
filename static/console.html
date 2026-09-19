@@ -532,7 +532,7 @@
             <span class="card-title">Your crew</span>
             <span class="card-note" id="people-note"></span>
           </div>
-          <p class="card-plain">Who works here, and what is still owed to anybody who has left.</p>
+          <p class="card-plain">Who works here, and what people who have left are still costing you.</p>
           <div id="leaver-alerts"></div>
           <div id="staff-list"></div>
           <div id="leavers"></div>
@@ -2523,26 +2523,68 @@ function renderPeople(book) {
 }
 
 function renderLeavers(seen) {
+  const money = seen.recovery || {};
+  const bleeding = money.still_bleeding_monthly_usd || 0;
   $("people-note").textContent = seen.count
-    ? `${seen.count} person(s) have left`
+    ? (bleeding
+        ? `$${bleeding.toLocaleString()} a month still going out`
+        : `${seen.count} person(s) have left`)
     : "nobody has left";
   if (!seen.count) {
     $("leavers").innerHTML = "";
     return;
   }
+  const cash = (n) => "$" + Number(n || 0).toLocaleString(undefined,
+    { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  /* Three figures that people run together and must not. Money still
+     going out is happening now. Money already spent is mostly gone.
+     Money clawed back is the only one anybody gets to celebrate, and
+     the only one our share is taken from. */
+  const headline = bleeding
+    ? `<div class="read-out no" style="margin:0 0 10px">
+         <strong>${cash(bleeding)} a month</strong> is still being paid for
+         people who no longer work here &mdash; ${cash(
+           money.still_bleeding_yearly_usd)} a year if nobody stops it.
+       </div>`
+    : `<div class="sub" style="margin:0 0 10px">Nothing is still being paid
+         for anybody who has left.</div>`;
+
+  const ledger = `<div class="readout">
+      <div><span class="k">Still going out, monthly</span>
+           <span class="v">${cash(bleeding)}</span></div>
+      <div><span class="k">Paid out since they left</span>
+           <span class="v">${cash(money.wasted_to_date_usd)}</span></div>
+      <div><span class="k">Already stopped, monthly</span>
+           <span class="v">${cash(money.stopped_monthly_usd)}</span></div>
+      <div><span class="k">Actually refunded</span>
+           <span class="v">${cash(money.refunded_usd)}</span></div>
+      <div><span class="k">Our share (${money.our_share_percent || 15}% of
+           refunds only)</span>
+           <span class="v">${cash(money.our_share_usd)}</span></div>
+    </div>`;
+
   const urgent = seen.still_reachable_by_alerts;
   $("leavers").innerHTML =
     `<h3 class="sub-head">People who have left</h3>`
+    + headline
     + (urgent ? `<div class="read-out no">${esc(seen.note)}</div>` : "")
     + seen.departures.map((row) => `<div class="fc-row">
-        <span class="fc-when ${esc(row.still_on_the_roster ? "high" : "")}">${
-          esc(row.still_on_the_roster ? "on roster" : "clear")}</span>
+        <span class="fc-when ${esc(row.monthly_usd ? "high"
+            : row.still_on_the_roster ? "high" : "")}">${
+          esc(row.monthly_usd ? cash(row.monthly_usd) + "/mo"
+              : row.still_on_the_roster ? "on roster" : "clear")}</span>
         <span class="grow">
           <span class="fc-id">${esc(row.full_name)}</span>
-          <span class="sub">left ${esc(row.left_on)} · ${
-            esc(row.outstanding)} item(s) outstanding</span>
+          <span class="sub">left ${esc(row.left_on)}${
+            row.still_running_count
+              ? ` · ${row.still_running_count} thing(s) still being paid for`
+              : " · nothing still being paid for"}${
+            row.wasted_usd ? ` · ${cash(row.wasted_usd)} gone` : ""}</span>
         </span>
-      </div>`).join("");
+      </div>`).join("")
+    + ledger
+    + `<div class="sub" style="margin:8px 0 2px">${esc(money.note || "")}</div>`;
 }
 
 /* ---------------- sensors you already own ----------------

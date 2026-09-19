@@ -207,55 +207,7 @@ def test_removing_them_from_the_roster_clears_it(api, kitchen, dana):
 
     leavers = api.get("/api/people/departures", headers=headers).json()
     assert leavers["still_reachable_by_alerts"] == 0
-    steps = {s["key"]: s for s in leavers["departures"][0]["steps"]}
-    assert steps["roster_removed"]["done"] is True
-    assert steps["roster_removed"]["verified_by_the_system"] is True
-
-
-def test_the_roster_step_cannot_be_ticked_by_hand(api, kitchen, dana):
-    headers, _ = kitchen
-    api.post("/api/contacts", headers=headers,
-             json={"full_name": "Dana Reyes", "phone": "+15550100"})
-    opened = api.post("/api/people/departures", headers=headers, json={
-        "staff_id": dana["staff_id"], "left_on": day(0)}).json()
-    off_id = opened["offboarding"]["offboarding_id"]
-
-    refused = api.post(f"/api/people/departures/{off_id}/step",
-                       headers=headers,
-                       json={"step": "roster_removed", "done": True})
-
-    assert refused.status_code == 400
-    assert "read from the on-call roster" in refused.json()["detail"]
-
-
-def test_the_other_obligations_are_tracked(api, kitchen, dana):
-    """Final pay, accrued time, benefits notice, equipment, access."""
-    headers, _ = kitchen
-    opened = api.post("/api/people/departures", headers=headers, json={
-        "staff_id": dana["staff_id"], "left_on": day(0)}).json()
-    off_id = opened["offboarding"]["offboarding_id"]
-    assert opened["offboarding"]["outstanding"] >= 5
-
-    ticked = api.post(f"/api/people/departures/{off_id}/step",
-                      headers=headers, json={"step": "final_pay"})
-
-    assert ticked.status_code == 200
-    steps = {s["key"]: s for s in ticked.json()["offboarding"]["steps"]}
-    assert steps["final_pay"]["done"] is True
-    assert steps["final_pay"]["done_at"]
-
-
-def test_no_deadline_is_asserted_as_law(api, kitchen, dana):
-    """Final-pay and benefits windows differ by jurisdiction and by what
-    was signed. An application that hardcoded one would be wrong
-    somewhere, and confidently wrong is worse than silent."""
-    headers, _ = kitchen
-    opened = api.post("/api/people/departures", headers=headers, json={
-        "staff_id": dana["staff_id"], "left_on": day(0)}).json()
-
-    steps = {s["key"]: s for s in opened["offboarding"]["steps"]}
-    assert "differ by jurisdiction" in steps["final_pay"]["note"]
-    assert "window" in steps["benefits_notice"]["note"]
+    assert leavers["departures"][0]["still_on_the_roster"] == []
 
 
 def test_a_departure_needs_an_owner(api, kitchen, dana, tenant_factory):
@@ -705,3 +657,137 @@ def test_taking_the_leaver_off_the_roster_stops_the_alert(api, kitchen, dana):
     people.send_licence_alerts(now=utc_now() + timedelta(days=1))
 
     assert len(licence_mail(tenant["contact_email"])) == raised
+
+
+# --- what a leaver carries on costing -------------------------------------
+#
+# The other direction from payroll. What the company owes somebody who
+# left gets paid, because that person chases it. What the company carries
+# on paying *for* them does not, because nobody is chasing: the phone
+# plan, the software seat, the insurance, the fuel card. Each is small,
+# each renews quietly, and the invoice it sits on has forty other lines.
+
+
+@pytest.fixture()
+def departed(api, kitchen, dana):
+    headers, tenant = kitchen
+    opened = api.post("/api/people/departures", headers=headers, json={
+        "staff_id": dana["staff_id"], "left_on": day(-90),
+        "reason": "Dismissed"})
+    assert opened.status_code == 201, opened.text
+    return headers, tenant, opened.json()["offboarding"]["offboarding_id"]
+
+
+def test_something_still_being_paid_for_shows_what_it_has_cost(
+        api, departed):
+    """Ninety days of a phone plan nobody has used."""
+    headers, _, off_id = departed
+    api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": "Mobile phone plan",
+        "kind": "phone", "monthly_usd": 55.0, "billed_by": "Verizon"})
+
+    seen = api.get("/api/people/recovery", headers=headers).json()
+
+    assert seen["still_bleeding_monthly_usd"] == 55.0
+    assert seen["still_bleeding_yearly_usd"] == 660.0
+    # Three months at $55, give or take the length of a month.
+    assert 160 < seen["wasted_to_date_usd"] < 170
+
+
+def test_our_share_is_taken_from_refunds_and_nothing_else(api, departed):
+    """The whole integrity of the 15% sits here.
+
+    Billing a share of a projected annual saving invoices a customer for
+    money they have not seen, on a cancellation they could reverse next
+    week. Only a refund is real.
+    """
+    headers, _, off_id = departed
+    made = api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": "Health cover",
+        "kind": "benefits", "monthly_usd": 320.0})
+    cost_id = made.json()["cost"]["cost_id"]
+
+    before = api.get("/api/people/recovery", headers=headers).json()
+    assert before["wasted_to_date_usd"] > 900       # real money, already gone
+    assert before["our_share_usd"] == 0             # but nothing recovered
+
+    stopped = api.post(f"/api/people/recovery/{cost_id}/stop",
+                       headers=headers,
+                       json={"stopped_on": day(0), "refunded_usd": 640.0})
+
+    account = stopped.json()["account"]
+    assert account["refunded_usd"] == 640.0
+    assert account["our_share_percent"] == 15.0
+    assert account["our_share_usd"] == 96.0         # 15% of 640, not of 960
+
+
+def test_cancelling_stops_the_bleeding_without_inventing_a_recovery(
+        api, departed):
+    headers, _, off_id = departed
+    made = api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": "Parking permit",
+        "kind": "parking", "monthly_usd": 90.0})
+    cost_id = made.json()["cost"]["cost_id"]
+
+    api.post(f"/api/people/recovery/{cost_id}/stop", headers=headers,
+             json={"stopped_on": day(0)})
+    seen = api.get("/api/people/recovery", headers=headers).json()
+
+    assert seen["still_bleeding_monthly_usd"] == 0.0
+    assert seen["stopped_monthly_usd"] == 90.0
+    assert seen["refunded_usd"] == 0.0
+    assert seen["our_share_usd"] == 0.0
+
+
+def test_the_wasted_figure_stops_growing_once_it_is_cancelled(api, departed):
+    """Cancelled sixty days ago, so thirty days of waste, not ninety."""
+    headers, _, off_id = departed
+    made = api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": "Fuel card",
+        "kind": "fuel", "monthly_usd": 180.0})
+    cost_id = made.json()["cost"]["cost_id"]
+
+    api.post(f"/api/people/recovery/{cost_id}/stop", headers=headers,
+             json={"stopped_on": day(-60)})
+    seen = api.get("/api/people/recovery", headers=headers).json()
+
+    assert 170 < seen["wasted_to_date_usd"] < 190
+
+
+def test_a_date_after_today_never_produces_a_credit(api, departed):
+    """A leaving date typed as next year must not pay the customer."""
+    headers = departed[0]
+    made = api.post("/api/people", headers=headers, json={
+        "full_name": "Future Person", "role": "Cook", "phone": "+15550777"})
+    later = api.post("/api/people/departures", headers=headers, json={
+        "staff_id": made.json()["person"]["staff_id"], "left_on": day(400),
+        "reason": "Leaving"}).json()["offboarding"]["offboarding_id"]
+    api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": later, "label": "Software seat",
+        "kind": "software", "monthly_usd": 25.0})
+
+    seen = api.get("/api/people/recovery", headers=headers).json()
+
+    assert seen["wasted_to_date_usd"] >= 0
+
+
+def test_a_cost_cannot_be_hung_on_another_account(api, departed,
+                                                  tenant_factory,
+                                                  owner_headers):
+    headers, _, off_id = departed
+    other, _ = tenant_factory(plan="enterprise", company_name="Other St")
+    other = {**other, **owner_headers(other, email="other@ex.com")}
+
+    refused = api.post("/api/people/recovery", headers=other, json={
+        "offboarding_id": off_id, "label": "Phone", "monthly_usd": 55.0})
+
+    assert refused.status_code == 404
+
+
+def test_the_starting_list_says_the_figures_are_not_yours(api, kitchen):
+    headers, _ = kitchen
+    common = api.get("/api/people/recovery/common", headers=headers).json()
+
+    kinds = {row["kind"] for row in common["common"]}
+    assert {"phone", "software", "benefits", "vehicle"} <= kinds
+    assert "not yours" in common["note"]
