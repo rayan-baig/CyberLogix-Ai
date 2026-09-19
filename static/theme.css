@@ -1136,3 +1136,15 @@ body[data-stale] #offline-banner {
   .f-tab { padding: 6px 11px; font-size: 12px; }
   .f-tab .n { display: none; }
 }
+
+/* One sentence under each card title, saying what the card is for.
+   The titles name each thing correctly and told a first-time reader
+   nothing: "Loss assurance", "Sector standing", "BYOD sensor webhook".
+   Quiet enough to skip once you know, present for everybody who does
+   not — which on a product sold to restaurants is most people, most
+   of the time. */
+.card-plain {
+  margin: -12px 0 18px;
+  font-size: 13.5px; line-height: 1.6;
+  color: var(--muted); max-width: 62ch;
+}

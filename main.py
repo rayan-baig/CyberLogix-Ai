@@ -207,6 +207,7 @@ SERVICE_WORKER = STATIC_DIR / "sw.js"
 WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
 OFFLINE_HTML = STATIC_DIR / "offline.html"
 PROOF_HTML = STATIC_DIR / "proof.html"
+SIMPLE_HTML = STATIC_DIR / "simple.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 
 # The console and the partner portal render from one stylesheet, so it is
@@ -459,6 +460,22 @@ def landing_page(request: Request):
 def operations_console():
     """Serve the operations console to a browser."""
     return FileResponse(CONSOLE_HTML, media_type="text/html")
+
+
+@app.get("/today", include_in_schema=False)
+def plain_view():
+    """The console, asked one question: is there anything I have to do.
+
+    The operations console answers everything, and is written for
+    somebody who already knows what "breaching", "escalation" and
+    "estate" mean. The person who owns the restaurant does not. They
+    have about four seconds and they are holding a phone in a kitchen.
+
+    Same data, same session, same design -- fewer words, and none of
+    them jargon. Not a cut-down edition to be upsold out of: a different
+    question, asked by a different person on a different day.
+    """
+    return FileResponse(SIMPLE_HTML, media_type="text/html")
 
 
 # --- the installed app ------------------------------------------------------

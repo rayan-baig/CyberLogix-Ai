@@ -183,8 +183,10 @@ def capture() -> dict:
     return out
 
 
-def build(data: dict) -> str:
-    console = (ROOT / "static" / "console.html").read_text()
+def build(data: dict, page_name: str = "console.html",
+          extra_stub: str = "", banner: str = "") -> str:
+    console = (ROOT / page_name).read_text() if "/" in page_name else (
+        ROOT / "static" / page_name).read_text()
     theme = (ROOT / "static" / "theme.css").read_text()
 
     # The shipped stylesheet pulls its webfonts from fonts.googleapis.com.
@@ -214,11 +216,31 @@ def build(data: dict) -> str:
                               "data:image/svg+xml;base64,"
                               + base64.b64encode(logo.encode()).decode())
 
+    # Both pages link to the other by its real route; inside a folder of
+    # flat files those have to become filenames.
+    console = (console.replace('href="/console"', 'href="console.html"')
+                      .replace('href="/today"', 'href="index.html"'))
+
+    # A page's own <style> lives in its <head>, and only the <body> is
+    # carried over. The console keeps everything in theme.css so nothing
+    # was lost and nobody noticed; the plain view keeps its own block,
+    # and the first build of it silently shipped an unstyled page that
+    # still looked plausible -- default list numbering, no card, and no
+    # sign anything was missing.
+    head = console[:console.index("<body>")]
+    own_styles = "\n".join(
+        re.findall(r"<style>(.*?)</style>", head, re.S))
+
     body = console[console.index("<body>") + len("<body>"):
                    console.rindex("</body>")]
     # The page's own script has to run after the stub is installed.
     split = body.index('<script>\n"use strict";')
     markup, app_js = body[:split], body[split:]
+
+    # The plain view pulls circuit.js with a <script src>, which is one
+    # more file that does not exist beside a single inlined page.
+    markup = markup.replace(
+        '<script src="/static/circuit.js"></script>', "")
 
     page = (
         "<title>CyberLogix Console</title>\n"
@@ -232,10 +254,12 @@ def build(data: dict) -> str:
         "  border-bottom: 1px solid var(--border-lit);\n"
         "}\n"
         ".demo-bar strong { color: var(--accent); }\n"
+        f"{own_styles}\n"
         "</style>\n"
-        f"{BANNER}\n{markup}\n"
+        f"{banner or BANNER}\n{markup}\n"
         f"<script>\n{circuit}\n</script>\n"
-        + (STUB % json.dumps(data).replace("</", "<\\/"))
+        + (STUB % json.dumps(data).replace("</", "<\\/")).replace(
+            "</script>", extra_stub + "</script>", 1)
         + app_js
     )
 
@@ -259,6 +283,23 @@ def build(data: dict) -> str:
     return page
 
 
+SIMPLE_BANNER = """
+<div class="demo-bar" role="note">
+  <strong>Demo.</strong> A real estate of seven fridges and freezers, frozen
+  in time so you can look around. Nothing here is live, and nothing you
+  press changes anything.
+</div>
+"""
+
+SIMPLE_STUB_EXTRA = """
+// The plain view checks for a session before it will render, and sends
+// you to the console if there is none. Give it one: the demo's front
+// door is this page, and bouncing a visitor to a sign-in form they have
+// already been told they can skip is the opposite of the point.
+try { localStorage.setItem("cyberlogix.session", "demo-session"); } catch (e) {}
+"""
+
+
 def main() -> None:
     # A throwaway database, so building the page never touches a real one
     # and leaves nothing behind to be served by accident.
@@ -276,14 +317,24 @@ def main() -> None:
         # freeze the default before this line could change it. A test
         # ties this literal to the constant so the two cannot drift.
         os.environ["CYBERLOGIX_DB_PATH"] = str(pathlib.Path(tmp) / "demo.db")
-        page = build(capture())
+        data = capture()
+        # index.html is the plain view, because the front door belongs to
+        # whoever was handed the link and has never seen the product. The
+        # console is one click away for anyone who wants the instruments.
+        pages = {
+            "index.html": build(data, "simple.html",
+                                extra_stub=SIMPLE_STUB_EXTRA,
+                                banner=SIMPLE_BANNER),
+            "console.html": build(data, "console.html"),
+        }
 
     DOCS.mkdir(exist_ok=True)
     # Without this GitHub Pages runs the output through Jekyll, which
     # silently drops anything it decides is a draft.
     (DOCS / ".nojekyll").write_text("")
-    (DOCS / "index.html").write_text(page)
-    print(f"wrote {DOCS / 'index.html'} — {len(page) // 1024} KB")
+    for name, page in pages.items():
+        (DOCS / name).write_text(page)
+        print(f"wrote {DOCS / name} — {len(page) // 1024} KB")
 
 
 if __name__ == "__main__":

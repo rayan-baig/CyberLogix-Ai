@@ -142,6 +142,10 @@
             title="Show the running activity log">Activity log</button>
     <button class="btn btn-sm" id="wall-mode"
             title="Full-screen board for a wall display">Wall</button>
+    <!-- For the owner who wants the answer rather than the instrument
+         panel. Same data, same session, plain words. -->
+    <a class="btn btn-sm" href="/today"
+       title="A plain-English summary: is there anything I have to do">Simple view</a>
     <button class="btn btn-sm" id="sign-out">Sign out</button>
   </nav>
 
@@ -194,13 +198,14 @@
 
     <div class="layout">
       <div>
-        <section class="card" id="fleet-card" tabindex="-1" data-group="fridges" data-find="the fleet sensors temperature freezer fridge units cold" data-label="The fleet">
+        <section class="card" id="fleet-card" tabindex="-1" data-group="fridges" data-find="your fridges and freezers the fleet sensors temperature freezer fridge units cold" data-label="Your fridges and freezers">
           <div class="card-head">
-            <span class="card-title" id="fleet-title">The fleet</span>
+            <span class="card-title" id="fleet-title">Your fridges and freezers</span>
             <span class="card-note" id="fleet-note"></span>
             <span class="nav-spacer"></span>
             <button class="btn btn-sm" id="toggle-table" aria-pressed="false">Table view</button>
           </div>
+          <p class="card-plain">Every unit we are watching, and how cold it is right now.</p>
           <div class="toolbar">
             <label class="sr" for="fleet-search">Search the fleet</label>
             <input id="fleet-search" type="search" autocomplete="off"
@@ -224,11 +229,12 @@
           <div id="fleet-table" hidden></div>
         </section>
 
-        <section class="card" id="find-incidents" data-group="alerts" data-find="incidents breach alarm too warm problem open resolved" data-label="Incidents">
+        <section class="card" id="find-incidents" data-group="alerts" data-find="problems incidents breach alarm too warm problem open resolved" data-label="Problems">
           <div class="card-head">
-            <span class="card-title">Incidents</span>
+            <span class="card-title">Problems</span>
             <span class="card-note" id="incident-note"></span>
           </div>
+          <p class="card-plain">Something went out of its safe range. These are the ones that still need dealing with.</p>
           <div id="incidents"></div>
         </section>
 
@@ -236,20 +242,22 @@
              there was nowhere to see which N. On an estate of two hundred
              sensors that number is unusable: you would open every drawer
              in turn to find the six that matter. -->
-        <section class="card" id="find-what-breaks-next" data-group="alerts" data-find="what breaks next forecast prediction risk soon warning" data-label="What breaks next">
+        <section class="card" id="find-what-breaks-next" data-group="alerts" data-find="heading for trouble what breaks next forecast prediction risk soon warning" data-label="Heading for trouble">
           <div class="card-head">
-            <span class="card-title">What breaks next</span>
+            <span class="card-title">Heading for trouble</span>
             <span class="card-note" id="forecast-note"></span>
           </div>
+          <p class="card-plain">Still fine, but drifting the wrong way. A chance to fix it before it is a problem.</p>
           <div id="forecast-body"></div>
         </section>
 
         <div class="modules">
-          <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-group="setup" data-find="byod sensor webhook your own sensors monnit sensorpush connect api" data-label="BYOD sensor webhook">
+          <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-group="setup" data-find="use a sensor you already own byod sensor webhook your own sensors monnit sensorpush connect api" data-label="Use a sensor you already own">
           <div class="card-head">
-            <span class="card-title">BYOD sensor webhook</span>
+            <span class="card-title">Use a sensor you already own</span>
             <span class="mod-chip c-telemetry">3rd-party gateway</span>
           </div>
+          <p class="card-plain">Paste one message from any brand of sensor and we will read it. You do not have to buy ours.</p>
           <p class="card-note" style="margin:0 0 12px">
             Push a payload as an off-the-shelf Elitech, Dickson or Monnit unit
             would, through the real ingest endpoint.
@@ -303,11 +311,12 @@
             <pre class="snippet" id="byod-snippet" style="margin-top:8px"></pre>
           </details>
           </section>
-          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-group="money" data-find="enterprise tier calculator price quote cost estimate large" data-label="Enterprise tier calculator">
+          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-group="money" data-find="work out a price for a big customer enterprise tier calculator price quote cost estimate large" data-label="Work out a price for a big customer">
           <div class="card-head">
-            <span class="card-title">Enterprise tier calculator</span>
+            <span class="card-title">Work out a price for a big customer</span>
             <span class="mod-chip c-commerce">Volume matrix</span>
           </div>
+          <p class="card-plain">For estates too large for the standard plans.</p>
           <p class="card-note" style="margin:0 0 12px">
             Contract value by enrolled branch count. Brackets step, so the next
             boundary is shown alongside.
@@ -328,11 +337,12 @@
           </div>
           <div id="calc-out"></div>
           </section>
-          <section class="card mod-paperwork" id="find-sector-shortcuts" data-group="setup" data-find="sector shortcuts industry preset defaults restaurant pharmacy" data-label="Sector shortcuts">
+          <section class="card mod-paperwork" id="find-sector-shortcuts" data-group="setup" data-find="set up for your industry sector shortcuts industry preset defaults restaurant pharmacy" data-label="Set up for your industry">
             <div class="card-head">
-              <span class="card-title">Sector shortcuts</span>
+              <span class="card-title">Set up for your industry</span>
               <span class="mod-chip c-paperwork">Paperwork</span>
             </div>
+            <p class="card-plain">Safe temperature ranges that already match how your industry is inspected.</p>
             <p class="card-note" style="margin:0 0 12px">
               The one document your sector has to produce, written from the
               readings already on file.
@@ -341,11 +351,12 @@
             <div id="shortcut-out"></div>
           </section>
 
-          <section class="card mod-intel" id="find-meeting-intelligence" data-group="money" data-find="meeting intelligence sales call prep customer notes" data-label="Meeting intelligence">
+          <section class="card mod-intel" id="find-meeting-intelligence" data-group="money" data-find="turn meeting notes into jobs meeting intelligence sales call prep customer notes" data-label="Turn meeting notes into jobs">
           <div class="card-head">
-            <span class="card-title">Meeting intelligence</span>
+            <span class="card-title">Turn meeting notes into jobs</span>
             <span class="mod-chip c-intel">Gemini-powered</span>
           </div>
+          <p class="card-plain">Paste what was said and get back the things somebody agreed to do.</p>
           <form id="tx-form">
             <div class="field">
               <label for="tx-vertical">Sector</label>
@@ -363,27 +374,30 @@
         </div>
 
         <div class="pair">
-          <section class="card" id="find-spend-controls" data-group="money" data-find="spend controls budget cap sms voice ai limit" data-label="Spend controls">
+          <section class="card" id="find-spend-controls" data-group="money" data-find="spending limits spend controls budget cap sms voice ai limit" data-label="Spending limits">
             <div class="card-head">
-              <span class="card-title">Spend controls</span>
+              <span class="card-title">Spending limits</span>
               <span class="card-note" id="cost-note"></span>
             </div>
+            <p class="card-plain">Caps on texts, phone calls and AI, so a bad week cannot run up a bill.</p>
             <div id="cost-body"></div>
           </section>
 
-          <section class="card" id="find-audit-trail" data-group="setup" data-find="audit trail history who did what log record" data-label="Audit trail">
+          <section class="card" id="find-audit-trail" data-group="setup" data-find="who did what audit trail history who did what log record" data-label="Who did what">
             <div class="card-head">
-              <span class="card-title">Audit trail</span>
+              <span class="card-title">Who did what</span>
               <span class="card-note">Who did what</span>
             </div>
+            <p class="card-plain">Every change anybody made to this account, and when.</p>
             <div id="audit-body"></div>
           </section>
         </div>
       </div>
 
       <aside>
-        <section class="card" id="find-add-to-the-estate" data-group="setup" data-find="add to the estate new sensor register add device" data-label="Add to the estate">
-          <div class="card-head"><span class="card-title">Add to the estate</span></div>
+        <section class="card" id="find-add-to-the-estate" data-group="setup" data-find="add a fridge or freezer add to the estate new sensor register add device" data-label="Add a fridge or freezer">
+          <div class="card-head"><span class="card-title">Add a fridge or freezer</span></div>
+          <p class="card-plain">Register a new unit so it starts being watched.</p>
           <!-- A key is shown once. A toast that fades after three seconds
                is the wrong container for something you cannot get back. -->
           <div id="issued-key" class="banner warn" hidden
@@ -426,19 +440,21 @@
 
 
 
-        <section class="card" id="find-subscription" data-group="money" data-find="subscription plan billing seats upgrade payment" data-label="Subscription">
+        <section class="card" id="find-subscription" data-group="money" data-find="what you pay subscription plan billing seats upgrade payment" data-label="What you pay">
           <div class="card-head">
-            <span class="card-title">Subscription</span>
+            <span class="card-title">What you pay</span>
             <span class="card-note" id="bill-note"></span>
           </div>
+          <p class="card-plain">Your plan, how many units it covers, and what is due.</p>
           <div id="bill-body"></div>
         </section>
 
-        <section class="card" id="find-on-call-roster" data-group="people" data-find="on-call roster contacts who gets called escalation phone" data-label="On-call roster">
+        <section class="card" id="find-on-call-roster" data-group="people" data-find="who gets called on-call roster contacts who gets called escalation phone" data-label="Who gets called">
           <div class="card-head">
-            <span class="card-title">On-call roster</span>
+            <span class="card-title">Who gets called</span>
             <span class="card-note" id="roster-note"></span>
           </div>
+          <p class="card-plain">The order we phone people in when something goes wrong at 3am.</p>
           <div id="roster-body"></div>
           <!-- Who a real alert would actually reach, in order. The roster
                above is what was configured; this is what the dispatcher
@@ -461,11 +477,12 @@
           </form>
         </section>
 
-        <section class="card" id="find-team" data-group="people" data-find="team users staff logins roles operator owner" data-label="Team">
+        <section class="card" id="find-team" data-group="people" data-find="your crew people who can sign in team users staff logins roles operator owner" data-label="People who can sign in">
           <div class="card-head">
-            <span class="card-title">Team</span>
+            <span class="card-title">People who can sign in</span>
             <span class="card-note" id="team-note"></span>
           </div>
+          <p class="card-plain">Who has an account here, and what they are allowed to do.</p>
           <div id="team-body"></div>
           <!-- The endpoint to rotate your own password has always
                existed and nothing ever called it. Somebody who thinks
@@ -498,32 +515,35 @@
              a date to diarise; somebody leaving is a list of things to
              hand back and switch off. Different jobs, different weeks,
              usually different people doing them. -->
-        <section class="card" id="find-licences" data-group="licences" data-find="licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Licences">
+        <section class="card" id="find-licences" data-group="licences" data-find="staff licences licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Staff licences">
           <div class="card-head">
-            <span class="card-title">Licences</span>
+            <span class="card-title">Staff licences</span>
             <span class="card-note" id="licence-note"></span>
           </div>
+          <p class="card-plain">Cards and certificates your crew need to work legally, and when each runs out.</p>
           <div id="licence-alerts"></div>
           <div id="people-cal"></div>
         </section>
 
         <!-- Who works here, and what is still owed to the ones who do
              not any more. -->
-        <section class="card" id="find-people" data-group="people" data-find="people staff crew employees team members who works here fired dismissed leaver left offboarding departure roster" data-label="People">
+        <section class="card" id="find-people" data-group="people" data-find="your crew people staff crew employees team members who works here fired dismissed leaver left offboarding departure roster" data-label="Your crew">
           <div class="card-head">
-            <span class="card-title">People</span>
+            <span class="card-title">Your crew</span>
             <span class="card-note" id="people-note"></span>
           </div>
+          <p class="card-plain">Who works here, and what is still owed to anybody who has left.</p>
           <div id="leaver-alerts"></div>
           <div id="staff-list"></div>
           <div id="leavers"></div>
         </section>
 
-        <section class="card" id="find-sites" data-group="setup" data-find="sites locations branches stores buildings" data-label="Sites">
+        <section class="card" id="find-sites" data-group="setup" data-find="your locations sites locations branches stores buildings" data-label="Your locations">
           <div class="card-head">
-            <span class="card-title">Sites</span>
+            <span class="card-title">Your locations</span>
             <span class="card-note" id="site-note"></span>
           </div>
+          <p class="card-plain">The buildings your units are spread across.</p>
           <div id="site-body"></div>
           <form id="site-form" style="margin-top:12px">
             <div class="row">
@@ -535,11 +555,12 @@
           </form>
         </section>
 
-        <section class="card" id="find-alert-channels" data-group="alerts" data-find="alert channels sms voice call notification delivery twilio" data-label="Alert channels">
+        <section class="card" id="find-alert-channels" data-group="alerts" data-find="how we reach you alert channels sms voice call notification delivery twilio" data-label="How we reach you">
           <div class="card-head">
-            <span class="card-title">Alert channels</span>
+            <span class="card-title">How we reach you</span>
             <span class="card-note" id="hook-note"></span>
           </div>
+          <p class="card-plain">Text and phone call. Whether they are working, and what they cost.</p>
           <div id="hook-body"></div>
           <form id="hook-form" style="margin-top:12px">
             <div class="row">
@@ -559,19 +580,21 @@
           </form>
         </section>
 
-        <section class="card" id="find-contract" data-group="money" data-find="contract agreement terms signed pricing commitment" data-label="Contract">
+        <section class="card" id="find-contract" data-group="money" data-find="your agreement contract agreement terms signed pricing commitment" data-label="Your agreement">
           <div class="card-head">
-            <span class="card-title">Contract</span>
+            <span class="card-title">Your agreement</span>
             <span class="card-note" id="contract-note"></span>
           </div>
+          <p class="card-plain">What was signed, what it costs, and when it renews.</p>
           <div id="contract-body"></div>
         </section>
 
-        <section class="card" id="find-invoices" data-group="money" data-find="invoices bills paid unpaid owed receipt" data-label="Invoices">
+        <section class="card" id="find-invoices" data-group="money" data-find="bills invoices bills paid unpaid owed receipt" data-label="Bills">
           <div class="card-head">
-            <span class="card-title">Invoices</span>
+            <span class="card-title">Bills</span>
             <span class="card-note" id="invoice-note"></span>
           </div>
+          <p class="card-plain">What has been charged, what is paid, and what is late.</p>
           <div id="invoice-body"></div>
           <p class="card-note" style="margin-top:10px">
             Invoices are raised by the contract, not from here. A customer
@@ -580,11 +603,12 @@
           </p>
         </section>
 
-        <section class="card" id="find-loss-assurance" data-group="proof" data-find="loss assurance guarantee payout claim cover insurance" data-label="Loss assurance">
+        <section class="card" id="find-loss-assurance" data-group="proof" data-find="payout cover loss assurance guarantee payout claim cover insurance" data-label="Payout cover">
           <div class="card-head">
-            <span class="card-title">Loss assurance</span>
+            <span class="card-title">Payout cover</span>
             <span class="card-note" id="assurance-note"></span>
           </div>
+          <p class="card-plain">If food spoils while we were watching and we got it wrong, this is what we pay.</p>
           <div id="assurance-body"></div>
           <!-- A packet could always be produced for an incident. Nothing
                said which incidents one could be produced FOR, so the
@@ -592,11 +616,12 @@
           <div id="claims-body" style="margin-top:14px"></div>
         </section>
 
-        <section class="card" id="find-compliance-vault" data-group="proof" data-find="compliance vault evidence hash tamper audit inspector haccp" data-label="Compliance vault">
+        <section class="card" id="find-compliance-vault" data-group="proof" data-find="your safety records compliance vault evidence hash tamper audit inspector haccp" data-label="Your safety records">
           <div class="card-head">
-            <span class="card-title">Compliance vault</span>
+            <span class="card-title">Your safety records</span>
             <span class="card-note" id="vault-note"></span>
           </div>
+          <p class="card-plain">Every reading, saved and sealed, so an inspector or an insurer gets a fact instead of a promise.</p>
           <div id="vault-body"></div>
           <div class="row" style="margin-top:12px">
             <button class="btn btn-sm" id="vault-attest">Issue attestation</button>
@@ -604,19 +629,21 @@
           </div>
         </section>
 
-        <section class="card" id="find-sector-standing" data-group="proof" data-find="sector standing benchmark compare industry ranking peers" data-label="Sector standing">
+        <section class="card" id="find-sector-standing" data-group="proof" data-find="how you compare sector standing benchmark compare industry ranking peers" data-label="How you compare">
           <div class="card-head">
-            <span class="card-title">Sector standing</span>
+            <span class="card-title">How you compare</span>
             <span class="card-note" id="bench-note"></span>
           </div>
+          <p class="card-plain">Your record against other places in the same industry.</p>
           <div id="bench-body"></div>
         </section>
 
-        <section class="card" id="find-autopilot" data-group="setup" data-find="autopilot automation runs itself sweep schedule" data-label="Autopilot">
+        <section class="card" id="find-autopilot" data-group="setup" data-find="what runs by itself autopilot automation runs itself sweep schedule" data-label="What runs by itself">
           <div class="card-head">
-            <span class="card-title">Autopilot</span>
+            <span class="card-title">What runs by itself</span>
             <span class="card-note">Unattended watchdog</span>
           </div>
+          <p class="card-plain">The jobs this app does without anybody asking, and when each last ran.</p>
           <div class="row">
             <button class="btn btn-sm" id="run-sweep">Run sweep now</button>
             <button class="btn btn-sm" id="run-compliance">Compliance report</button>
@@ -1373,7 +1400,8 @@ function render(d, health) {
   state.site = siteSelect.value;
 
   $("fleet-title").textContent = d.sensors.length
-    ? `${Noun(d.sensors.length)} under watch` : "The fleet";
+    ? `${d.sensors.length} ${noun(d.sensors.length)} being watched`
+    : "Your fridges and freezers";
   $("fleet-search").placeholder = `Search ${noun(2)}, location or site`;
   $("fleet-filter").options[0].textContent = `All ${noun(2)}`;
   const shown = visibleSensors(d.sensors);
@@ -1393,11 +1421,21 @@ function render(d, health) {
 /* The estate's own words. Every string that would otherwise say "sensor"
    goes through here, so a yacht owner reads "engine bays" and a data
    centre reads "racks" — from the same code, off the same data. */
+/* An estate of one industry gets that industry's own word -- coolers,
+   walk-ins, hangars -- which is what the people who work there say. An
+   estate spanning several falls back to "asset", which is what nobody
+   says. "Assets under watch" is a phrase from a spreadsheet, not from a
+   kitchen, so the generic case says the plain thing instead. */
+const GENERIC_NOUNS = new Set(["asset", "assets", "unit", "units"]);
+
 function noun(count) {
   const d = state.data || {};
   const one = d.fleet_noun || "sensor";
   const many = d.fleet_plural || "sensors";
-  return count === 1 ? one : many;
+  const word = count === 1 ? one : many;
+  return GENERIC_NOUNS.has(word.toLowerCase())
+    ? (count === 1 ? "fridge or freezer" : "fridges and freezers")
+    : word;
 }
 function Noun(count) {
   const word = noun(count);
@@ -3202,10 +3240,11 @@ async function openDrawer(sensorId, options = {}) {
     </table></div>
 
     <div class="card-head" style="margin-top:18px">
-      <span class="card-title">Incidents</span>
+      <span class="card-title">Problems</span>
       <span class="card-note">${esc(detail.incidents.length)} total ·
         ${esc(detail.open_incidents)} open</span>
     </div>
+    <p class="card-plain">Something went out of its safe range. These are the ones that still need dealing with.</p>
     ${detail.incidents.length
       ? detail.incidents.map((i) => `<article class="incident st-${esc(i.state)}">
           <div class="incident-top">

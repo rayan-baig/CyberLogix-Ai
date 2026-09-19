@@ -26,8 +26,8 @@ def test_the_page_is_the_real_console():
     assert 'id="signin-form"' in page
     assert "--accent-cyan" in page          # the real theme
     assert 'id="find-q"' in page            # the real finder
-    assert 'data-label="Licences"' in page  # the real cards
-    assert 'data-label="People"' in page
+    assert 'data-label="Staff licences"' in page  # the real cards
+    assert 'data-label="Your crew"' in page
 
 
 def test_the_page_carries_no_credentials():
@@ -153,3 +153,58 @@ def test_a_stylesheet_that_starts_phoning_home_again_stops_the_build():
     assert found == ["https://evil.example/x.css"], (
         "the pattern the build guard uses no longer catches a remote "
         "stylesheet")
+
+
+def test_no_card_is_titled_in_jargon():
+    """The titles have to mean something to somebody who has never seen
+    this before, because on a product sold to restaurants that is most
+    people, most of the time.
+
+    "Loss assurance", "Sector standing", "The fleet" and "BYOD sensor
+    webhook" each name a real thing correctly and tell a first-time
+    reader nothing at all.
+    """
+    page = build_public_demo.build(build_public_demo.capture(), "console.html")
+
+    titles = re.findall(r'<span class="card-title"[^>]*>(.*?)</span>', page)
+    assert titles, "no card titles found -- the pattern has drifted"
+
+    jargon = ("fleet", "estate", "breach", "incident", "escalation", "byod",
+              "assurance", "vault", "roster", "tier", "sector", "autopilot",
+              "subscription", "compliance", "asset")
+    guilty = [t for t in titles
+              if any(word in t.lower() for word in jargon)]
+    assert guilty == [], f"card titles a stranger would not understand: {guilty}"
+
+
+def test_every_card_says_what_it_is_for():
+    """A plain title is half of it. The sentence under it is the rest."""
+    page = build_public_demo.build(build_public_demo.capture(), "console.html")
+
+    assert page.count('class="card-plain"') >= 20
+
+
+def test_the_plain_view_keeps_its_own_stylesheet():
+    """Only the <body> is carried over, and a page's own <style> is in
+    its <head>.
+
+    The console keeps everything in theme.css, so nothing was lost and
+    nobody noticed. The plain view keeps its own block, and the first
+    build of it shipped unstyled -- default list numbering, no card,
+    nothing broken enough to look broken.
+    """
+    page = build_public_demo.build(build_public_demo.capture(), "simple.html")
+
+    assert ".how li::before" in page, "the numbered steps lost their styling"
+    assert ".intro-lede" in page
+    assert ".verdict.ok" in page
+
+
+def test_the_plain_view_explains_the_product_to_a_stranger():
+    """Somebody is handed this link with no explanation attached."""
+    page = build_public_demo.build(build_public_demo.capture(), "simple.html")
+
+    assert "What this is" in page
+    assert "A thermometer sits in the freezer" in page
+    assert "We phone a human until one answers" in page
+    assert "We keep the receipts" in page
