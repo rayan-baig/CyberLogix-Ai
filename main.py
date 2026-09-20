@@ -44,6 +44,7 @@ from invoicing import router as invoicing_router
 from backup import router as backup_router
 from certificates import router as certificates_router
 from disposition import router as disposition_router
+from industries import router as industries_router
 from people import router as people_router
 from tasks import router as tasks_router
 from faults import router as faults_router
@@ -151,6 +152,7 @@ app.include_router(readiness_router)
 app.include_router(faults_router)
 app.include_router(certificates_router)
 app.include_router(disposition_router)
+app.include_router(industries_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)
@@ -209,6 +211,7 @@ WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
 OFFLINE_HTML = STATIC_DIR / "offline.html"
 PROOF_HTML = STATIC_DIR / "proof.html"
 SIMPLE_HTML = STATIC_DIR / "simple.html"
+INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 
 # The console and the partner portal render from one stylesheet, so it is
@@ -461,6 +464,23 @@ def landing_page(request: Request):
 def operations_console():
     """Serve the operations console to a browser."""
     return FileResponse(CONSOLE_HTML, media_type="text/html")
+
+
+@app.get("/for", include_in_schema=False)
+@app.get("/for/{vertical}", include_in_schema=False)
+def industry_page(vertical: str = ""):
+    """What the product does, in one industry's own words.
+
+    One template and twelve sets of words. A restaurant owner and an IVF
+    clinic director both need exactly this product and neither will read
+    the other's page: "walk-in" means nothing in a hangar, and "straw"
+    means nothing in a kitchen.
+
+    Public and unauthenticated on purpose. This is the front of the
+    product, and a page that asks a stranger to sign in before it will
+    say what the thing does is a page nobody reads.
+    """
+    return FileResponse(INDUSTRY_HTML, media_type="text/html")
 
 
 @app.get("/today", include_in_schema=False)

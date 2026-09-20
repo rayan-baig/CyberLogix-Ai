@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070D">
+<title>CyberLogix — for your industry</title>
+<link rel="icon" href="/static/logo-mark.svg">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+/* One page per industry, in that industry's own words.
+ *
+ * A restaurant owner and an IVF clinic director both need this product
+ * and neither will read the other's page. "Walk-in" means nothing in a
+ * hangar. So the page is one template and twelve sets of words, and the
+ * words come from the server rather than being written into the markup.
+ *
+ * Same palette and the same type as everything else: this is the first
+ * thing a stranger sees, and it has to look like the console they will
+ * be shown next.
+ */
+.wrap { max-width: 760px; margin: 0 auto; padding: 22px 16px 70px; }
+.top { display: flex; align-items: center; gap: 12px; padding: 16px 0 30px; }
+
+.eyebrow {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+}
+h1.lede {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(28px, 6.5vw, 42px); line-height: 1.12;
+  letter-spacing: -0.015em; margin: 0 0 16px;
+}
+.standfirst {
+  font-size: clamp(16px, 2.6vw, 18px); line-height: 1.6;
+  color: var(--ink-2); margin: 0 0 30px; max-width: 58ch;
+}
+
+.slab {
+  border-radius: 16px; padding: 24px 26px; margin-bottom: 18px;
+  border: 1px solid var(--border); background: var(--surface);
+  box-shadow: var(--lift-1);
+}
+.slab h2 {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 0 0 14px; font-weight: 400;
+}
+.slab p { margin: 0 0 12px; font-size: 15.5px; line-height: 1.68; color: var(--ink-2); }
+.slab p:last-child { margin-bottom: 0; }
+.slab.bad { border-color: color-mix(in srgb, var(--critical) 38%, transparent); }
+.slab.bad h2 { color: var(--critical); }
+
+/* The four things, numbered, because it is a sequence. */
+.does { list-style: none; counter-reset: n; margin: 0; padding: 0; }
+.does li {
+  counter-increment: n; position: relative;
+  padding: 0 0 18px 46px; font-size: 15px; line-height: 1.62;
+  color: var(--ink-2);
+}
+.does li:last-child { padding-bottom: 0; }
+.does li::before {
+  content: counter(n); position: absolute; left: 0; top: -2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  background: var(--accent-dim);
+}
+.does b { display: block; color: var(--ink); font-weight: 500;
+          font-size: 16px; margin-bottom: 3px; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+.tag-pill {
+  font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid var(--border-lit); color: var(--ink-2);
+}
+
+.foot { margin-top: 34px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* The index of all twelve. */
+.grid { display: grid; gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.ind {
+  display: block; text-decoration: none; padding: 20px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--surface-2); transition: border-color .2s var(--ease),
+              transform .2s var(--ease);
+}
+.ind:hover { border-color: var(--accent); transform: translateY(-1px); }
+.ind b { display: block; font-family: var(--display); font-size: 18px;
+         font-weight: 400; color: var(--ink); margin-bottom: 6px; }
+.ind span { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
+
+<div class="wrap">
+  <div class="top">
+    <span class="brand-mark" aria-hidden="true">
+      <img src="/static/logo.svg" alt="" width="30" height="30">
+    </span>
+    <span class="brand-name">CyberLogix <em>AI</em></span>
+    <span class="grow"></span>
+    <a class="btn btn-sm" href="/for">All industries</a>
+  </div>
+  <main id="page"><p class="sub">Loading&hellip;</p></main>
+</div>
+
+<script src="/static/circuit.js"></script>
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;",
+            '"': "&quot;", "'": "&#39;" }[c]));
+
+/* The vertical is the last path segment. /for on its own is the index. */
+const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
+
+function renderIndex(rows) {
+  document.title = "CyberLogix — who this is for";
+  $("page").innerHTML =
+    `<div class="eyebrow">Who this is for</div>
+     <h1 class="lede">Twelve industries with the same problem.</h1>
+     <p class="standfirst">Something you own has to stay at a temperature,
+        it fails quietly and usually overnight, and afterwards somebody
+        asks you to prove what happened. Pick yours.</p>
+     <div class="grid">${rows.map((row) => `
+       <a class="ind" href="/for/${esc(row.vertical)}">
+         <b>${esc(row.name)}</b>
+         <span>${esc(row.slogan)}</span>
+       </a>`).join("")}</div>`;
+}
+
+function renderIndustry(d) {
+  document.title = `CyberLogix — for ${d.name}`;
+  $("page").innerHTML = `
+    <div class="eyebrow">${esc(d.name)}</div>
+    <h1 class="lede">We watch ${esc(d.protects)}, and wake somebody up
+      when it goes wrong.</h1>
+    <p class="standfirst">${esc(d.slogan)}</p>
+
+    <section class="slab bad">
+      <h2>What goes wrong</h2>
+      <p>${esc(d.loses)}</p>
+      <p>The one we see most: <strong>${esc(d.catastrophe)}</strong>.</p>
+    </section>
+
+    <section class="slab">
+      <h2>What we do about it</h2>
+      <ol class="does">
+        <li><b>We watch every ${esc(d.asset_noun)}, all night.</b>
+          A small sensor reads the temperature every few minutes and sends
+          it to us. Your ${esc(d.asset_plural)} should stay
+          ${esc(d.band)}, and we know the moment one does not.</li>
+        <li><b>We phone a person until one answers.</b>
+          Text first, then a real phone call, then the next name on the
+          list. An alert nobody picks up is the same as no alert.</li>
+        <li><b>We tell a real fault from a normal one.</b>
+          Equipment warms up on purpose sometimes, and a door gets left
+          open. We learn what normal looks like for each
+          ${esc(d.asset_noun)} so you are not woken for it &mdash; and so
+          the call you do get means something.</li>
+        <li><b>We keep the proof.</b>
+          Every reading is saved and sealed. When ${esc(d.asks_after)}
+          asks what happened, the answer is a record you can print rather
+          than a promise.${d.paperwork ? ` We format it as
+          <strong>${esc(d.paperwork)}</strong>.` : ""}</li>
+      </ol>
+    </section>
+
+    <section class="slab">
+      <h2>And the people, not just the equipment</h2>
+      <p>The same shift has people in it who need a valid card to be
+         standing there. We track when each one runs out and tell you
+         before it does, not after an inspector does.</p>
+      <div class="tags">${(d.licences || []).map((l) =>
+         `<span class="tag-pill">${esc(l)}</span>`).join("")}</div>
+      <p style="margin-top:14px">When somebody leaves, we find what you
+         are still paying for them &mdash; the phone, the software seat,
+         the insurance &mdash; and how much of it is still going out.</p>
+    </section>
+
+    <div class="foot">
+      <a class="btn btn-sm btn-primary" href="/signup" style="width:auto">
+        Start watching</a>
+      <a class="btn btn-sm" href="/for">Another industry</a>
+    </div>`;
+}
+
+(async () => {
+  try {
+    if (!slug || slug === "for") {
+      const rows = await (await fetch("/api/for")).json();
+      renderIndex(rows.industries);
+      return;
+    }
+    const got = await fetch(`/api/for/${encodeURIComponent(slug)}`);
+    if (!got.ok) { location.href = "/for"; return; }
+    renderIndustry(await got.json());
+  } catch (err) {
+    $("page").innerHTML =
+      `<h1 class="lede">Could not load this page.</h1>
+       <p class="standfirst">Try again in a moment.</p>`;
+  }
+})();
+</script>
+</body>
+</html>
