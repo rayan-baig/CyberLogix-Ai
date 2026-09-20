@@ -16,7 +16,8 @@ import os
 import math
 import secrets
 import threading
-from collections import deque
+from collections import OrderedDict, deque
+from itertools import islice
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Deque, Dict, List, Optional
@@ -46,6 +47,13 @@ try:
     )
 except ValueError:
     MAX_READINGS_PER_SENSOR = 500
+
+# How many generated answers are kept. Every distinct prompt is a new
+# key, so this is the fastest-growing table in the product, and a cache
+# is a saving rather than a record: losing the least recently wanted
+# entry costs one model call, and keeping every entry ever costs a
+# database that never stops growing.
+MAX_CACHE_ENTRIES = 5000
 
 # How quickly a breach must turn into a dispatched alert. This is the
 # service commitment the agreement states, and it lives here with the
@@ -2425,7 +2433,7 @@ class HubStore:
         self._partners: Dict[str, Partner] = {}
         self._partner_keys: Dict[str, str] = {}
         self._usage: Dict[str, UsageDay] = {}
-        self._ai_cache: Dict[str, str] = {}
+        self._ai_cache: "OrderedDict[str, str]" = OrderedDict()
         self._expenses: Dict[str, Expense] = {}
         self._mail: Dict[str, MailMessage] = {}
         # dedupe key -> message id. The index that makes a send idempotent.
@@ -2538,6 +2546,10 @@ class HubStore:
 
             for row in self._db.all("aicache"):
                 self._ai_cache[row["key"]] = row["text"]
+            # A database written before the cap existed can hold more
+            # than the cap allows, so trim on the way in rather than
+            # waiting for the next write to notice.
+            self._evict_cache_locked()
 
             for row in self._db.all("expense"):
                 expense = Expense.from_row(row)
@@ -3500,12 +3512,48 @@ class HubStore:
 
     def cache_get(self, key: str) -> Optional[str]:
         with self._lock:
-            return self._ai_cache.get(key)
+            text = self._ai_cache.get(key)
+            if text is not None:
+                # Touch it, so eviction drops what nobody asks for rather
+                # than whatever happened to be written first. Dicts keep
+                # insertion order, so moving to the end is the whole of
+                # the LRU.
+                self._ai_cache.move_to_end(key)
+            return text
 
     def cache_put(self, key: str, text: str) -> None:
         with self._lock:
             self._ai_cache[key] = text
+            self._ai_cache.move_to_end(key)
             self._db.put("aicache", key, {"key": key, "text": text})
+            self._evict_cache_locked()
+
+    def _evict_cache_locked(self) -> None:
+        """Keep the cache to a size, in memory and on disk.
+
+        This was the only collection in the codebase without a bound --
+        readings cap at 500, BYOD samples at 25, faults at 200 -- and it
+        is the one that grows fastest, because every distinct prompt is
+        a new key. Unbounded it fills memory and the database with the
+        answers to questions nobody will ask again.
+
+        Evicted from both at once. Dropping it from memory alone leaves
+        the row on disk to be loaded back at the next restart, which is
+        not eviction, it is a leak with extra steps.
+        """
+        overflow = len(self._ai_cache) - MAX_CACHE_ENTRIES
+        if overflow <= 0:
+            return
+        # islice, not `next(iter(...))` in a loop: iter() restarts every
+        # time, so that took the same first key `overflow` times and
+        # removed exactly one entry. It passed every test that wrote one
+        # at a time -- overflow is 1 there, and one key is the right
+        # answer -- and failed only on the bulk path, which is a restart
+        # loading a database bigger than the cap.
+        stale = list(islice(self._ai_cache, overflow))
+        for key in stale:
+            self._ai_cache.pop(key, None)
+        self._db.delete_many("aicache", stale)
 
     def cache_size(self) -> int:
         with self._lock:
