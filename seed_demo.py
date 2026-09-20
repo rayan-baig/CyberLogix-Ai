@@ -96,6 +96,44 @@ def seed() -> Dict[str, str]:
 
     now = utc_now()
 
+    # A walk-in that defrosts on a timer, with two days of history so the
+    # rhythm is learnable. Everything else in FLEET carries two hours,
+    # which is enough for a slope and nowhere near enough for a schedule
+    # -- so without this the classifier has nothing to classify and the
+    # feature is invisible in the demo.
+    #
+    # Deliberately a real nuisance: it crosses the line four times, which
+    # is what a real freezer does and what the product has to stop
+    # phoning somebody about.
+    defroster = STORE.register_sensor(
+        sensor_id="BACKBAR-1", tenant_id=tenant.tenant_id,
+        industry_vertical="restaurant",
+        location_name="Harbour Street / Back Bar Freezer",
+        external_device_sn=None,
+    )
+    series = []
+    for cycle_start in range(0, 2400, 480):        # every 8 hours
+        for minute in range(0, 480, 10):
+            # Twenty minutes over the line, then back down to -2.
+            series.append((cycle_start + minute,
+                           38.0 if minute < 20 else -2.0))
+    # ...and it is mid-cycle right now. That is the case worth showing:
+    # a unit genuinely above its limit this minute, climbing at a rate
+    # the slope reads as a breach within the hour, which the classifier
+    # recognises as the same thing this freezer has done every eight
+    # hours for two days. Without it the split never appears, because a
+    # unit that is currently cold is not at risk and never reaches the
+    # card.
+    series += [(2400, 20.0), (2410, 31.0), (2420, 38.0)]
+    newest = max(m for m, _ in series)
+    for minute, temp in series:
+        STORE.record_reading(
+            sensor=defroster, temperature_fahrenheit=temp,
+            humidity_percent=48.0,
+            breached=evaluate_breach("restaurant", temp) is not None,
+            at=now - timedelta(minutes=(newest - minute)),
+        )
+
     for sensor_id, vertical, location, serial, temps in FLEET:
         sensor = STORE.register_sensor(
             sensor_id=sensor_id,

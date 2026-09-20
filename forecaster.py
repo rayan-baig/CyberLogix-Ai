@@ -30,6 +30,11 @@ MIN_TREND_SPAN_MINUTES = 5.0
 # Drift slower than this is treated as flat rather than a trend.
 NEGLIGIBLE_SLOPE_F_PER_HOUR = 0.05
 
+# How far back the pattern classifier looks, regardless of the forecast
+# window. Three defrost cycles twelve hours apart span a day and a half,
+# and a rhythm is not visible in less than three of them.
+PATTERN_WINDOW_HOURS = 72.0
+
 
 def _risk_band(hours: Optional[float]) -> str:
     if hours is None:
@@ -109,8 +114,21 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
     # it crosses a line. A defrost crosses the line on purpose, twice a
     # day, and a straight-line fit is confidently wrong about it every
     # time. The classifier annotates; the routing still decides.
+    #
+    # Its own window, and a much longer one. The slope wants recent data
+    # -- twelve hours of it, by default -- and a rhythm cannot be seen in
+    # twelve hours at all: three cycles eight hours apart need at least a
+    # day. Handing the classifier the forecast's window meant it could
+    # never learn a defrost at the default setting, and every cycle came
+    # back "door", which is the one answer that is confidently wrong and
+    # sounds reassuring.
     if danger_above is not None:
-        base["pattern"] = patterns.classify(readings, danger_above)
+        history = STORE.readings_for(
+            sensor_id,
+            since=utc_now() - timedelta(
+                hours=max(window_hours, PATTERN_WINDOW_HOURS)),
+        )
+        base["pattern"] = patterns.classify(history, danger_above)
     else:
         base["pattern"] = {
             "pattern": "unknown", "confident": False, "rhythm": None,

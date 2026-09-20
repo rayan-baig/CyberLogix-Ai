@@ -305,3 +305,41 @@ def test_the_forecast_carries_the_shape_alongside_the_slope(
     assert body["pattern"]["pattern"] in {
         "defrost", "door", "failure", "none", "unknown"}
     assert body["pattern"]["because"]
+
+
+def test_the_classifier_gets_a_longer_window_than_the_slope(
+        api, tenant_factory, sensor_factory):
+    """The bug this pins shipped, and was reassuring rather than loud.
+
+    The slope wants recent data and defaults to twelve hours. A rhythm
+    cannot be seen in twelve hours at all: three cycles eight hours
+    apart span more than a day. Handing the classifier the forecast's
+    window meant a defrosting unit came back "door" every single cycle
+    -- an answer that is confidently wrong and sounds like good news.
+    """
+    from datetime import timedelta
+
+    from store import STORE, utc_now
+
+    headers, _ = tenant_factory(plan="enterprise")
+    sensor_factory(headers, "BACKBAR-1", "restaurant")
+    sensor = STORE.get_sensor("BACKBAR-1")
+    now = utc_now()
+    # Four cycles, eight hours apart: thirty-two hours of history, all of
+    # it outside a twelve-hour window except the last.
+    newest = 2400
+    for cycle_start in range(0, 2400, 480):
+        for minute in range(0, 480, 10):
+            STORE.record_reading(
+                sensor=sensor,
+                temperature_fahrenheit=38.0 if minute < 20 else -2.0,
+                humidity_percent=48.0, breached=minute < 20,
+                at=now - timedelta(minutes=newest - (cycle_start + minute)))
+
+    body = api.get("/api/forecast/sensor/BACKBAR-1?window_hours=12",
+                   headers=headers).json()
+
+    assert body["window_hours"] == 12, "the slope still uses its own window"
+    assert body["pattern"]["pattern"] == "defrost"
+    assert body["pattern"]["rhythm"]["interval_hours"] == 8.0
+    assert body["pattern"]["rhythm"]["observed"] == 4

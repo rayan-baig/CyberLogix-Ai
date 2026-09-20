@@ -1920,7 +1920,13 @@ function renderIncidents(incidents, entitlements) {
         ${canEscalate
           ? `<button class="btn btn-sm" data-escalate="${esc(i.incident_id)}">Escalate to call</button>` : ""}
         <button class="btn btn-sm" data-packet="${esc(i.incident_id)}">Claim packet</button>
+        <!-- The question actually being asked in the kitchen. Everything
+             else on this row is about the incident; this one is about
+             the food. -->
+        <button class="btn btn-sm" data-food="${esc(i.sensor_id)}">Is the
+          food still good?</button>
       </div>
+      <div class="food-out" data-food-for="${esc(i.sensor_id)}"></div>
     </article>`;
   }).join("");
 }
@@ -2819,7 +2825,9 @@ function renderForecast(fleet) {
   const unknown = tally.unknown || 0;
 
   $("forecast-note").textContent = risky.length
-    ? `${risky.length} in the next ${fleet.window_hours}h`
+    ? `${risky.filter((f) => !(f.pattern
+        && ["defrost", "door"].includes(f.pattern.pattern))).length
+       } in the next ${fleet.window_hours}h`
     : `${fleet.sensors_analysed} analysed`;
 
   if (!risky.length) {
@@ -2833,7 +2841,16 @@ function renderForecast(fleet) {
     return;
   }
 
-  $("forecast-body").innerHTML = risky.map((f) => {
+  /* A defrost crosses the line on purpose, twice a day, and the slope
+     is confidently wrong about it every time. Split rather than hidden:
+     the reading is real and somebody may want to see it, but it must
+     not sit in a list headed "heading for trouble" looking like a unit
+     about to fail. Three of those and nobody reads the fourth. */
+  const routine = risky.filter((f) => f.pattern
+      && (f.pattern.pattern === "defrost" || f.pattern.pattern === "door"));
+  const faults = risky.filter((f) => !routine.includes(f));
+
+  const row = (f, muted) => {
     const when = f.hours_until_breach === null
       ? "trend unclear"
       : f.hours_until_breach < 1
@@ -2841,19 +2858,74 @@ function renderForecast(fleet) {
         : `in about ${Math.round(f.hours_until_breach)}h`;
     const trend = f.trend_f_per_hour === null ? "" :
       `${f.trend_f_per_hour > 0 ? "+" : ""}${f.trend_f_per_hour}°/h`;
-    return `<div class="fc-row" data-forecast-sensor="${esc(f.sensor_id)}">
-      <span class="fc-when ${esc(f.risk_level)}">${esc(when)}</span>
+    const shape = f.pattern || {};
+    return `<div class="fc-row" data-forecast-sensor="${esc(f.sensor_id)}"${
+        muted ? ' style="opacity:.62"' : ""}>
+      <span class="fc-when ${esc(muted ? "" : f.risk_level)}">${
+        esc(muted ? shape.pattern : when)}</span>
       <span class="grow">
         <span class="fc-id">${esc(f.sensor_id)}</span>
         <span class="sub">${esc(f.location_name)} · ${
-          esc(f.likely_catastrophe)}</span>
+          esc(muted ? shape.because : f.likely_catastrophe)}</span>
       </span>
       <span class="fc-trend">${esc(trend)}</span>
     </div>`;
-  }).join("")
-  + (unknown ? `<div class="sub" style="padding-top:8px">${esc(unknown)
-      } sensor(s) have too little history to model yet.</div>` : "");
+  };
+
+  $("forecast-body").innerHTML =
+    (faults.length
+      ? faults.map((f) => row(f, false)).join("")
+      : `<div class="sub" style="padding-bottom:6px">Nothing is drifting
+           in a way that looks like a fault.</div>`)
+    + (routine.length
+      ? `<h3 class="sub-head">Warm, but this is what it always does</h3>`
+        + routine.map((f) => row(f, true)).join("")
+        + `<div class="sub" style="margin-top:6px">Equipment defrosts on a
+             timer and doors get opened. These are above the line and we
+             are not calling anybody about them.</div>`
+      : "")
+    + (unknown ? `<div class="sub" style="padding-top:8px">${esc(unknown)
+        } sensor(s) have too little history to model yet.</div>` : "");
 }
+
+/* ---------------- do I throw this away? ----------------
+   The number on the screen is not the question a manager is asking at
+   7am with service starting. This is.
+
+   It never says food is safe, and the caveat is rendered with the
+   answer rather than under it: this is a screen read at speed, and a
+   disclaimer somebody has to scroll to is one that does not exist. */
+
+const FOOD_BAND = {
+  in_range: "", cool_it_down: "medium", use_now: "medium",
+  discard: "high", still_warm: "high",
+};
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-food]");
+  if (!button) return;
+  const sensorId = button.dataset.food;
+  const box = document.querySelector(`[data-food-for="${CSS.escape(sensorId)}"]`);
+  if (!box) return;
+  button.disabled = true;
+  try {
+    const out = await api(
+      `/api/disposition/${encodeURIComponent(sensorId)}?hours=24`);
+    box.innerHTML = `
+      <div class="read-out ${esc(FOOD_BAND[out.band] === "high" ? "no" : "")}"
+           style="margin-top:10px">
+        <strong>${esc(out.headline)}</strong>
+        <div class="sub" style="margin-top:6px">${esc(out.detail)}</div>
+        <div class="sub" style="margin-top:8px;opacity:.85">${
+          esc(out.not_a_ruling)}</div>
+      </div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="sub" style="margin-top:8px">${
+      esc(err.message)}</div>`;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 /* ---------------- what could be claimed ----------------
    A packet could always be produced for an incident. Nothing said which
