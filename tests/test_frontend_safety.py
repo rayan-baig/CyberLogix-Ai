@@ -443,3 +443,21 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
     assert "errorEl.textContent = message" in js or (
         '$("err").textContent = message' in js
     )
+
+
+def test_a_rejected_form_shows_a_sentence_not_a_json_blob():
+    """FastAPI rejects a bad field with a list of {loc, msg} objects.
+
+    Stringified, that reaches the operator as
+    `[{"type":"value_error","loc":["body","url"],"msg":"Value error, ...`
+    -- which contains the real reason and buries it. Every form in the
+    console shares one error path, so this is checked once, here.
+    """
+    source = (ROOT / "static/console.html").read_text()
+
+    assert "function readableError(" in source
+    assert "row.msg" in source, "the useful part of a validation error"
+    assert '/^Value error, /' in source, (
+        "the framework's own prefix is noise in front of the reason")
+    # And the old behaviour is gone rather than merely bypassed.
+    assert "JSON.stringify(body.detail)" not in source

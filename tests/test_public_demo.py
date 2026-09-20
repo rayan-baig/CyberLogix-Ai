@@ -7,6 +7,7 @@ carries no credential out of the estate it was built from, and that it
 is the real console rather than a drawing of one.
 """
 
+import os
 import pathlib
 import re
 
@@ -80,12 +81,18 @@ def test_the_builder_leaves_no_database_behind():
     import tempfile
 
     with tempfile.TemporaryDirectory() as run_in:
+        # DEMO_OUT_DIR keeps the build off the tracked docs/ folder.
+        # Without it this test rewrote two committed files every time
+        # the suite ran, which is how a diff nobody made turns up in
+        # somebody's working tree and gets blamed on their own change.
         done = subprocess.run(
             [sys.executable, str(build_public_demo.ROOT / "build_public_demo.py")],
             cwd=run_in, capture_output=True, text=True, timeout=300,
+            env={**os.environ, "DEMO_OUT_DIR": str(pathlib.Path(run_in) / "out")},
         )
         assert done.returncode == 0, done.stderr[-2000:]
-        left = sorted(p.name for p in pathlib.Path(run_in).iterdir())
+        left = sorted(p.name for p in pathlib.Path(run_in).iterdir()
+                      if p.name != "out")
 
     assert left == [], f"the build left files in the working directory: {left}"
 

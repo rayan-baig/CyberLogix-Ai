@@ -45,6 +45,7 @@ from backup import router as backup_router
 from certificates import router as certificates_router
 from disposition import router as disposition_router
 from industries import router as industries_router
+from pollers import router as pollers_router
 from people import router as people_router
 from tasks import router as tasks_router
 from faults import router as faults_router
@@ -153,6 +154,7 @@ app.include_router(faults_router)
 app.include_router(certificates_router)
 app.include_router(disposition_router)
 app.include_router(industries_router)
+app.include_router(pollers_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)

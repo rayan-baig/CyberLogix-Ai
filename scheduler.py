@@ -144,6 +144,17 @@ def run_money_pass() -> dict:
     }
 
 
+def run_vendor_polls() -> dict:
+    """Fetch from the sensor clouds that will not push to us.
+
+    Imported inside, like the licence alerts, so the start-up import
+    graph stays shallow.
+    """
+    import pollers
+
+    return pollers.run_poll_pass()
+
+
 def run_one_pass() -> dict:
     """Sweep every tenant once, returning a summary of what was done.
 
@@ -151,6 +162,17 @@ def run_one_pass() -> dict:
     that nobody is watching, so a single bad estate cannot be allowed to
     silence the rest of the fleet.
     """
+    # Before the sweep, deliberately. A reading fetched from a vendor
+    # cloud has to be scored in the same pass it arrives in, or a
+    # freezer that went out of range is noticed a minute late for no
+    # reason. Guarded separately: a vendor being down is a Tuesday, and
+    # it must not stop anybody's estate being swept.
+    fetched = {"polled": 0, "readings": 0, "failed": 0}
+    try:
+        fetched = run_vendor_polls()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Vendor poll pass failed (%s).", exc)
+
     swept = 0
     calls = 0
     failures = []
@@ -187,6 +209,7 @@ def run_one_pass() -> dict:
         "tenants_swept": swept,
         "voice_calls_placed": calls,
         "failed_tenants": failures,
+        "vendor_polls": fetched,
     }
     # Written by the sweep, never by a request handler. A process that
     # answers HTTP while this task is dead has to look dead to the

@@ -517,6 +517,42 @@
              usually different people doing them. -->
         <!-- The summariser already turned a transcript into action items
              and then threw them away. This is where they land. -->
+        <!-- The bridge assumes a sensor can be told where to send its
+             readings. A SensorPush gateway cannot: it posts to
+             SensorPush, and the way to get the data is to ask. -->
+        <section class="card" id="find-vendor-clouds" data-group="setup" data-find="fetch from a sensor cloud vendor api poll sensorpush monnit gateway pull integration credentials" data-label="Fetch from a sensor cloud">
+          <div class="card-head">
+            <span class="card-title">Fetch from a sensor cloud</span>
+            <span class="card-note" id="poller-note"></span>
+          </div>
+          <p class="card-plain">Some sensors only talk to their own
+             vendor&rsquo;s cloud and never to us. Point us at that
+             cloud&rsquo;s address and we fetch from it on a timer.</p>
+          <form id="poller-form">
+            <div class="row" style="margin-bottom:8px">
+              <input id="poller-name" class="grow" required maxlength="120"
+                     placeholder="SensorPush" aria-label="What to call it">
+              <input id="poller-mins" type="number" min="5" max="120"
+                     value="10" style="max-width:96px"
+                     aria-label="Minutes between fetches">
+            </div>
+            <div class="row" style="margin-bottom:8px">
+              <input id="poller-url" class="grow" required maxlength="2000"
+                     placeholder="https://api.example.com/samples"
+                     aria-label="The address to fetch">
+            </div>
+            <div class="row" style="margin-bottom:8px">
+              <input id="poller-hname" maxlength="120" placeholder="Authorization"
+                     style="max-width:170px" aria-label="Header name">
+              <input id="poller-hval" class="grow" type="password"
+                     maxlength="4000" placeholder="your key from the vendor"
+                     aria-label="Header value">
+              <button class="btn btn-sm" type="submit">Add</button>
+            </div>
+          </form>
+          <div id="poller-body"></div>
+        </section>
+
         <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
           <div class="card-head">
             <span class="card-title">Things to do</span>
@@ -832,6 +868,41 @@ async function acceptTerms() {
   }
 }
 
+/* What went wrong, in a sentence.
+ *
+ * A rejected form used to surface as the raw validation payload:
+ *   [{"type":"value_error","loc":["body","url"],"msg":"Value error, ...
+ * which contains the real reason and buries it. Every form in this
+ * console shared that, so this is fixed here rather than in each one.
+ */
+function readableError(body, status) {
+  const detail = body && body.detail;
+  if (typeof detail === "string" && detail) return detail;
+
+  // FastAPI's validation shape: a list of {loc, msg}. The message is
+  // the useful part, and "Value error, " in front of it is noise from
+  // the framework rather than anything a reader needs.
+  if (Array.isArray(detail) && detail.length) {
+    const lines = detail
+      .map((row) => {
+        const where = Array.isArray(row.loc)
+          ? row.loc.filter((p) => p !== "body").join(" ") : "";
+        const why = String(row.msg || "").replace(/^Value error, /, "");
+        return where && !why.toLowerCase().includes(where.toLowerCase())
+          ? `${where}: ${why}` : why;
+      })
+      .filter(Boolean);
+    if (lines.length) return lines.join(" ");
+  }
+
+  // Some endpoints answer with an object carrying its own explanation.
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string") return detail.message;
+    return JSON.stringify(detail);
+  }
+  return `Request failed (${status})`;
+}
+
 async function api(path, options = {}) {
   const headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
   if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
@@ -855,10 +926,7 @@ async function api(path, options = {}) {
   try { body = text ? JSON.parse(text) : null; } catch (_) { body = { detail: text }; }
 
   if (!res.ok) {
-    const detail = body && body.detail
-      ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail))
-      : `Request failed (${res.status})`;
-    const err = new Error(detail);
+    const err = new Error(readableError(body, res.status));
     err.status = res.status;
     throw err;
   }
@@ -1176,6 +1244,7 @@ const OPTIONAL_PANELS = {
   claims: "claims-body",
   escalation: "escalation-body",
   byodSeen: "byod-samples",
+  pollers: "poller-body",
   tasks: "task-body",
   peopleAlerts: "licence-alerts",
   peopleCal: "people-cal",
@@ -1243,6 +1312,7 @@ async function refresh() {
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
     peopleAlerts: () => api("/api/people/alerts"),
+    pollers: () => api("/api/pollers"),
     tasks: () => api("/api/tasks"),
     staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
@@ -1283,6 +1353,7 @@ async function refresh() {
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
+  paint("pollers", () => renderPollers(got.pollers));
   paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
     renderLicenceAlerts(got.peopleAlerts);
@@ -2483,6 +2554,82 @@ function renderLane(box, urgent, advisory, sentTo, note) {
     + rows(advisory, false)
     + `<div class="sub" style="margin:8px 0 2px">${esc(note)}</div>`;
 }
+
+/* ---------------- sensor clouds we fetch from ----------------
+   The credential is never rendered. Only the header names come back
+   from the server, because a console is logged into by an operator who
+   should not be able to read the owner's vendor password off it. */
+
+function renderPollers(seen) {
+  $("poller-note").textContent = seen.count
+    ? (seen.broken ? `${seen.broken} broken` : `${seen.count} connected`)
+    : "none yet";
+
+  if (!seen.count) {
+    $("poller-body").innerHTML = `<div class="sub">${esc(seen.note)}</div>`;
+    return;
+  }
+
+  $("poller-body").innerHTML = seen.sources.map((row) => `
+    <div class="fc-row">
+      <span class="fc-when ${esc(row.broken ? "high"
+          : row.last_status === "ok" ? "" : "medium")}">${
+        esc(row.broken ? "broken"
+            : row.last_status === "ok" ? "ok"
+            : row.last_status || "never asked")}</span>
+      <span class="grow">
+        <span class="fc-id">${esc(row.name)}</span>
+        <span class="sub">${esc(row.readings_ingested)} reading(s) fetched${
+          row.last_detail ? ` \u00B7 ${esc(row.last_detail)}` : ""}</span>
+      </span>
+      <button class="btn btn-sm" data-poll-test="${esc(row.source_id)}">Try
+        now</button>
+    </div>`).join("")
+    + `<div class="sub" style="margin-top:8px">${esc(seen.note)}</div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-poll-test]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const out = await api(
+      `/api/pollers/${encodeURIComponent(button.dataset.pollTest)}/test`,
+      { method: "POST" });
+    renderPollers(await api("/api/pollers"));
+    toast(out.result.detail || out.result.status,
+          out.result.status === "ok" ? "ok" : "err");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("poller-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = $("poller-hname").value.trim();
+  try {
+    await api("/api/pollers", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("poller-name").value.trim(),
+        url: $("poller-url").value.trim(),
+        interval_minutes: Number($("poller-mins").value) || 10,
+        // An empty name with a value, or the reverse, is a header the
+        // vendor will reject in a way nobody can read. Send neither.
+        headers: name && $("poller-hval").value
+          ? { [name]: $("poller-hval").value } : {},
+      }),
+    });
+    ["poller-name", "poller-url", "poller-hname", "poller-hval"]
+      .forEach((id) => { $(id).value = ""; });
+    renderPollers(await api("/api/pollers"));
+    toast("Added. Press Try now to see what comes back.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
 
 /* ---------------- things somebody agreed to do ----------------
    Late first, because a list that needs scrolling to find the fire is

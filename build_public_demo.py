@@ -32,7 +32,10 @@ import re
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
-DOCS = ROOT / "docs"
+# Overridable, so a test can build for real without rewriting the two
+# tracked files in docs/. A test that dirties the working tree is one
+# that eventually gets blamed for a change nobody made.
+DOCS = pathlib.Path(os.environ.get("DEMO_OUT_DIR") or (ROOT / "docs"))
 
 # What the console asks for on load. Anything missing here renders as
 # "Not captured in this demo" on the card that wanted it, which is honest
