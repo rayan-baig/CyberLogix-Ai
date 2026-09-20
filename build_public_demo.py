@@ -50,8 +50,10 @@ PATHS = [
 
 BANNER = """
 <div class="demo-bar" role="note">
-  <strong>Demo.</strong> The real console on a seeded estate of seven
-  sensors. Both boxes are already filled in &mdash; just press Sign in.
+  <strong>Live demo.</strong> The real console on a simulated estate.
+  The temperatures move, the back-bar freezer runs its defrost and comes
+  back, and the clubhouse walk-in keeps climbing because it is broken.
+  Both sign-in boxes are already filled in &mdash; just press Sign in.
   <strong>Never type a real password into a link somebody sent you</strong>,
   here or anywhere. This page has no server behind it and sends nothing
   anywhere, but that is not something you can tell by looking, which is
@@ -60,7 +62,12 @@ BANNER = """
 </div>
 """
 
-STUB = """<script>
+# Raw, because every backslash in here belongs to JavaScript rather than
+# to Python: `\.` and `\d` in a regex, `\/` in a path pattern. Python
+# deprecates those as escape sequences and will make them an error, and
+# the failure is silent until it is not -- the string still built, the
+# demo still worked, and a warning appeared in the test run.
+STUB = r"""<script>
 "use strict";
 /* The demo harness. Nothing below is part of the product: it stands in
    for the server so the real page can run with no backend. */
@@ -124,17 +131,46 @@ window.fetch = function (input, init) {
     return reply({ ok: true });
   }
 
+  // The writes somebody will actually press, answered from the running
+  // simulation rather than refused. A console where every button says
+  // 403 teaches the visitor that nothing works.
+  // The real paths, taken from the console rather than guessed: it
+  // calls /api/voice/acknowledge/<id>, not /api/incidents/<id>/...
+  // The first version of this guessed, matched nothing, and every click
+  // fell through to the 403 while looking like it had been handled.
+  if (method === "POST"
+      && /^[/]api[/]voice[/](acknowledge|resolve)[/][^/]+$/
+           .test(url.pathname)) {
+    const [, , , what, id] = url.pathname.split("/");
+    const found = (SIM.incidents || []).find((i) => i.incident_id === id);
+    if (found) {
+      const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+      if (what === "acknowledge") {
+        found.state = "acknowledged";
+        found.acknowledged_at = stamp;
+        found.acknowledged_by = "Dana Reyes";
+      } else {
+        found.state = "resolved";
+        found.resolved_at = stamp;
+      }
+      DEMO["/api/console/overview"] = { status: 200, body: SIM };
+      return reply({ incident: found });
+    }
+  }
+
   if (method !== "GET") {
-    // Read-only on purpose. A demo that looked like it saved something
-    // and did not would be worse than one that says so.
-    return reply({ detail: "This is a frozen demo, so nothing can be "
-                           + "changed here." }, 403);
+    // Everything else is read-only on purpose. A demo that looked like
+    // it saved something and did not would be worse than one that says
+    // so.
+    return reply({ detail: "This part of the demo is read-only, so this "
+                           + "one does not save." }, 403);
   }
 
   const hit = DEMO[path] || DEMO[url.pathname];
   if (hit) return reply(hit.body, hit.status);
   return reply({ detail: "Not captured in this demo." }, 404);
 };
+%s
 </script>
 """
 
@@ -257,7 +293,8 @@ def build(data: dict, page_name: str = "console.html",
         "</style>\n"
         f"{banner or BANNER}\n{markup}\n"
         f"<script>\n{circuit}\n</script>\n"
-        + (STUB % json.dumps(data).replace("</", "<\\/")).replace(
+        + (STUB % (json.dumps(data).replace("</", "<\\/"),
+                   (ROOT / "tools" / "demo_sim.js").read_text())).replace(
             "</script>", extra_stub + "</script>", 1)
         + app_js
     )
@@ -284,9 +321,9 @@ def build(data: dict, page_name: str = "console.html",
 
 SIMPLE_BANNER = """
 <div class="demo-bar" role="note">
-  <strong>Demo.</strong> A real estate of seven fridges and freezers, frozen
-  in time so you can look around. Nothing here is live, and nothing you
-  press changes anything.
+  <strong>Live demo.</strong> A simulated estate: the temperatures move
+  while you watch, and a unit that crosses its limit opens a problem in
+  front of you. Nothing here is a real fridge.
 </div>
 """
 

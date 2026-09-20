@@ -208,3 +208,57 @@ def test_the_plain_view_explains_the_product_to_a_stranger():
     assert "A thermometer sits in the freezer" in page
     assert "We phone a human until one answers" in page
     assert "We keep the receipts" in page
+
+
+def test_the_demo_moves_rather_than_sitting_still():
+    """A frozen page is a screenshot with a cursor.
+
+    The estate walks forward while somebody watches: temperatures drift,
+    the back-bar freezer runs its defrost and comes back, and a unit
+    that crosses its limit opens a problem in front of the viewer.
+    """
+    page = build_public_demo.build(build_public_demo.capture(), "console.html")
+
+    assert "setInterval(tick," in page
+    assert 'BEHAVIOUR' in page and '"BACKBAR-1"' in page
+    assert "Live demo." in page
+
+
+def test_the_demo_redraws_whichever_page_is_open():
+    """Two pages share the harness and redraw by different names: the
+    console has refresh(), the plain view has load(). Driving only one
+    leaves the other frozen while its data moves underneath it, which
+    looks exactly like a page that has crashed."""
+    page = build_public_demo.build(build_public_demo.capture(), "simple.html")
+
+    assert "window.refresh" in page
+    assert "window.load" in page
+
+
+def test_the_buttons_somebody_will_press_actually_respond():
+    """A console where every button answers 403 teaches the visitor
+    that nothing works. The paths are the console's real ones --
+    /api/voice/acknowledge/<id> -- because the first version guessed
+    /api/incidents/<id>/acknowledge, matched nothing, and every click
+    fell through to the refusal while looking handled."""
+    page = build_public_demo.build(build_public_demo.capture(), "console.html")
+
+    assert "/api/voice/" in page
+    assert "acknowledge|resolve" in page
+    assert '"acknowledged"' in page
+
+
+def test_the_builder_has_no_deprecated_escape_sequences():
+    """Every backslash in the stub belongs to JavaScript, not Python.
+
+    Python deprecates `\\.` and `\\/` in a non-raw string and will make
+    them an error. The failure is silent until it is not: the string
+    still builds, the demo still works, and a warning appears in a test
+    run somebody skims past.
+    """
+    import warnings
+
+    source = (build_public_demo.ROOT / "build_public_demo.py").read_text()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compile(source, "build_public_demo.py", "exec")
