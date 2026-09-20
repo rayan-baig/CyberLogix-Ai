@@ -657,10 +657,13 @@ def test_pipeline_prices_the_add_ons_not_yet_sold(
     body = api.get("/api/contracts/pipeline", headers=headers).json()
     keys = {o["key"] for o in body["opportunities"]}
     assert "vault" not in keys, "An add-on already sold is not an opportunity."
-    assert {"assurance", "benchmarks", "equipment_intelligence"} <= keys
+    assert {"benchmarks", "equipment_intelligence"} <= keys
 
-    assurance = next(o for o in body["opportunities"] if o["key"] == "assurance")
-    assert assurance["monthly_usd"] == pytest.approx(149.0 * 3)
+    from pricing import ADD_ONS
+
+    offered = next(o for o in body["opportunities"] if o["key"] == "benchmarks")
+    assert offered["monthly_usd"] == pytest.approx(
+        ADD_ONS["benchmarks"]["monthly_usd"])
     assert body["identified_annual_usd"] > 0
     assert body["current_arr_usd"] == pytest.approx(899.0 * 3 * 12)
 

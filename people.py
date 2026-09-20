@@ -534,15 +534,22 @@ def _alert_horizon(left: int) -> Optional[int]:
 def _nag_stamp(days_overdue: int, today: date) -> str:
     """How often a problem that has not been fixed is worth repeating.
 
-    Daily for the first week, weekly after that. Somebody working on an
-    expired licence is worth an email every morning -- but only for so
+    Daily for the first week, then every seven days. Somebody working on
+    an expired licence is worth an email every morning -- but only for so
     long. After a week the daily email has stopped being an alarm and
     become the thing you filter, and a filtered alarm is worse than a
     quieter one, because it takes the next real alert with it.
+
+    Counted in seven-day blocks from the day the problem started, not by
+    the calendar week. The calendar version shipped and was wrong: on a
+    Sunday and the Monday after it, two "weekly" emails went out one day
+    apart, because the week rolled over between them. Where the boundary
+    falls in the month has nothing to do with how long somebody has been
+    working without a licence.
     """
     if days_overdue <= 7:
         return today.isoformat()
-    return today.strftime("%G-W%V")
+    return f"week-{days_overdue // 7}"
 
 
 def alerts_due(today: Optional[date] = None) -> Dict[str, Dict[str, Any]]:

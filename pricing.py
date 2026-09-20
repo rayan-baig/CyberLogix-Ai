@@ -197,16 +197,6 @@ MAX_CONTRACT_YEARS = 5
 # of what a customer saved, because a quiet year would then pay nothing
 # for the same standing obligation.
 ADD_ONS: Dict[str, Dict[str, Any]] = {
-    "assurance": {
-        "name": "Loss Assurance",
-        "basis": "per covered unit",
-        "monthly_usd": 149.0,
-        "description": (
-            "If a breach is recorded and no alert reaches anybody, we "
-            "reimburse the deductible for that event up to $25,000. "
-            "Exclusions are computed continuously and shown in advance."
-        ),
-    },
     "vault": {
         "name": "Certified Compliance Vault",
         "basis": "per estate",
@@ -507,7 +497,7 @@ def full_deal(
         False, description="Pay year one up front for a discount."
     ),
     include_add_ons: str = Query(
-        "", description="Comma-separated add-on keys, e.g. assurance,vault"
+        "", description="Comma-separated add-on keys, e.g. vault"
     ),
     tenant: Tenant = Depends(require_tenant),
 ):

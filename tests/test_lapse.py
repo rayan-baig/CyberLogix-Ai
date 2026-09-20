@@ -291,7 +291,6 @@ def test_only_two_calls_are_essential_to_the_console(api, trial):
     refused = [
         path for path in (
             "/api/costs?days=30", "/api/contacts", "/api/webhooks",
-            "/api/assurance/cover",
         )
         if api.get(path, headers=headers).status_code == 402
     ]

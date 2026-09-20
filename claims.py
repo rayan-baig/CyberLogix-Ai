@@ -12,10 +12,15 @@ event, the alert timeline with delivery receipts, who acknowledged and
 how long it took, the safe band that was breached, and a vault attestation
 so the adjuster can verify none of it was written after the fact.
 
-Deliberately not priced per recovery. A percentage of the settlement means
-a quiet year pays us nothing, and it puts us on the wrong side of the
-customer's interests the moment a claim is marginal. It is part of the
-flat-rate assurance add-on instead.
+This helps the customer claim on their own insurer. It is not us paying
+out: there is no guarantee here and we are not an insurer. We hold the
+evidence, so we are the cheapest place for it to be assembled, and that
+is the whole of the offer.
+
+Deliberately not priced per settlement. A percentage puts us on the wrong
+side of the customer the moment a claim is marginal -- we would be
+arguing for the bigger number rather than the true one, on a document an
+adjuster is reading precisely to find out which it is.
 """
 
 from __future__ import annotations

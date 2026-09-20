@@ -68,7 +68,7 @@ def test_a_healthy_account_needs_nobody(
                           "Steady Eddie")
     api.post("/api/contracts", headers=headers, json={
         "term_years": 3,
-        "add_ons": ["assurance", "vault", "benchmarks",
+        "add_ons": ["vault", "benchmarks",
                     "equipment_intelligence"]})
     assert _kinds_for(api, "Steady Eddie") == set()
 

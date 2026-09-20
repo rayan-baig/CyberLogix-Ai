@@ -60,7 +60,7 @@ def test_add_ons_and_setup_appear_as_their_own_lines(
     api, operator_factory, sensor_factory
 ):
     headers = estate(api, operator_factory, sensor_factory, units=2, sites=2)
-    invoice = issue(api, headers, include_add_ons="assurance,vault",
+    invoice = issue(api, headers, include_add_ons="vault,benchmarks",
                     include_setup=True)
 
     kinds = [line["kind"] for line in invoice["lines"]]
@@ -71,8 +71,17 @@ def test_add_ons_and_setup_appear_as_their_own_lines(
     setup = next(l for l in invoice["lines"] if l["kind"] == "setup")
     assert setup["quantity"] == 2
     assert setup["amount_usd"] == 3000.0
-    assert invoice["total_usd"] == round(
-        2 * 999.0 + 2 * 149.0 + 499.0 + 3000.0, 2)
+    # Read from the rate card rather than typed in. The figures used to
+    # be literals, and when an add-on was withdrawn the test failed on
+    # arithmetic rather than on the thing it is about, which is that each
+    # charge gets its own line and they add up.
+    from pricing import ADD_ONS
+
+    add_ons = sum(ADD_ONS[key]["monthly_usd"] for key in ("vault", "benchmarks"))
+    assert all(ADD_ONS[key]["basis"] == "per estate"
+               for key in ("vault", "benchmarks")), (
+        "a per-unit add-on would need multiplying by the unit count here")
+    assert invoice["total_usd"] == round(2 * 999.0 + add_ons + 3000.0, 2)
 
 
 def test_the_figures_never_move_after_issue(

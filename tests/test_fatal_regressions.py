@@ -224,11 +224,11 @@ def test_the_public_verifier_never_returns_a_stack_trace(api):
 
 
 # ---------------------------------------------------------------------------
-#  A guarantee that contradicted the dispatch path
+#  A rota reader that contradicted the dispatch path
 # ---------------------------------------------------------------------------
 
 
-def test_a_site_scoped_rota_keeps_cover_in_force(
+def test_a_site_scoped_rota_is_read_the_same_way_dispatch_reads_it(
     api, operator_factory, sensor_factory
 ):
     """The recommended configuration reported itself as uncovered.
@@ -253,11 +253,10 @@ def test_a_site_scoped_rota_keeps_cover_in_force(
              json={"full_name": "Night Manager", "phone": "+15550111",
                    "site_id": site["site_id"]})
 
-    cover = api.get("/api/assurance/cover", headers=headers).json()
-    assert cover["in_force"] is True
-    assert cover["covered_units"] == 1
-
-    # And it agrees with who would actually be texted.
+    # A contact attached to a site is on that site's rota. The original
+    # bug was a second reader that did not know that, and so disagreed
+    # with the code that actually sends the message. The reader is gone;
+    # the property it got wrong is worth keeping pinned.
     reached = STORE.sms_recipients(
         STORE.get_tenant(tenant["tenant_id"]), site["site_id"])
     assert [c.full_name for c in reached] == ["Night Manager"]

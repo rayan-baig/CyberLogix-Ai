@@ -10,7 +10,6 @@ These tests move the constants and check the prose moves with them.
 
 import pytest
 
-import assurance
 import invoicing
 import legal
 
@@ -45,20 +44,6 @@ def test_unknown_document_is_a_404_that_lists_the_real_ones(api):
 # ---- the documents cannot drift from the code --------------------------
 
 
-def test_the_payout_cap_in_the_terms_is_the_one_the_code_pays(monkeypatch):
-    monkeypatch.setattr(assurance, "ASSURANCE_PAYOUT_CAP_USD", 25000.0)
-    monkeypatch.setattr(legal, "ASSURANCE_PAYOUT_CAP_USD", 25000.0)
-    assert "$25,000" in legal.assurance_terms()
-
-    monkeypatch.setattr(legal, "ASSURANCE_PAYOUT_CAP_USD", 60000.0)
-    text = legal.assurance_terms()
-    assert "$60,000" in text
-    assert "$25,000" not in text, (
-        "The cap moved in the code and the agreement still quotes the old "
-        "figure — which is the number a customer would hold us to."
-    )
-
-
 def test_the_dispatch_commitment_matches_the_sla_constant(monkeypatch):
     monkeypatch.setattr(legal, "DISPATCH_SLA_SECONDS", 90)
     assert "within 90 seconds" in _flat(legal.terms_of_service())
@@ -73,22 +58,6 @@ def test_payment_terms_and_late_charge_come_from_the_billing_code(monkeypatch):
     assert "2% per month" in text
 
 
-def test_the_exclusions_listed_are_the_ones_the_code_applies(monkeypatch):
-    """Every voiding condition in `evaluate_cover` appears in the terms."""
-    text = _flat(legal.assurance_terms()).lower()
-    for phrase in (
-        "has not reported",
-        "battery is below",
-        "never reported a reading",
-        "nobody is on the on-call roster",
-        "trial rather than a paid plan",
-    ):
-        assert phrase in text, f"'{phrase}' is enforced in code but not disclosed."
-
-    monkeypatch.setattr(legal, "COVER_LAPSES_AFTER_MINUTES", 120)
-    assert "120 minutes" in legal.assurance_terms()
-
-
 def test_the_delinquency_threshold_is_disclosed(monkeypatch):
     monkeypatch.setattr(legal, "DELINQUENT_AFTER_DAYS", 90)
     for text in (legal.terms_of_service(), legal.acceptable_use()):
@@ -96,9 +65,9 @@ def test_the_delinquency_threshold_is_disclosed(monkeypatch):
 
 
 def test_the_hash_moves_when_the_product_does(monkeypatch):
-    before = legal.document("assurance")["sha256"]
-    monkeypatch.setattr(legal, "ASSURANCE_PAYOUT_CAP_USD", 99000.0)
-    after = legal.document("assurance")["sha256"]
+    before = legal.document("sla")["sha256"]
+    monkeypatch.setattr(legal, "DISPATCH_SLA_SECONDS", 900)
+    after = legal.document("sla")["sha256"]
     assert before != after, (
         "The terms changed and the hash did not, so a customer could not "
         "tell they had been re-priced."
@@ -119,14 +88,6 @@ def test_the_liability_cap_is_actually_in_the_agreement():
     assert f"{legal.LIABILITY_CAP_MONTHS} months" in text
     assert "lost profits" in text
     assert "consequential" in text
-
-
-def test_loss_assurance_sits_outside_the_general_cap():
-    """Burying the guarantee under the cap would make it worthless."""
-    terms = _flat(legal.terms_of_service())
-    assurance_text = _flat(legal.assurance_terms())
-    assert "Except for the Loss Assurance add-on" in terms
-    assert "outside the general limitation of liability" in assurance_text
 
 
 def test_the_terms_say_it_is_not_a_safety_system():
@@ -256,7 +217,10 @@ def test_acceptance_records_the_exact_text(api, tenant_factory, owner_headers):
 def test_a_stale_acceptance_stops_being_current(
     api, tenant_factory, owner_headers, monkeypatch
 ):
-    """If the cap moved after they signed, ask again rather than assume."""
+    """If a commitment moved after they signed, ask again rather than
+    assume. Here it is the dispatch window, which is the number in the
+    agreement most likely to be tuned by somebody who has forgotten it
+    is also a promise."""
     headers, _ = tenant_factory(plan="enterprise")
     owner = owner_headers(headers)
     api.post(
@@ -268,11 +232,11 @@ def test_a_stale_acceptance_stops_being_current(
         "/api/legal/acceptance/status", headers=headers
     ).json()["all_current"] is True
 
-    monkeypatch.setattr(legal, "ASSURANCE_PAYOUT_CAP_USD", 5000.0)
+    monkeypatch.setattr(legal, "DISPATCH_SLA_SECONDS", 900)
     body = api.get("/api/legal/acceptance/status", headers=headers).json()
     assert body["all_current"] is False
     stale = [r for r in body["documents"] if not r["current"]]
-    assert [r["slug"] for r in stale] == ["assurance"]
+    assert "sla" in [r["slug"] for r in stale]
 
 
 def test_acceptance_needs_a_credential(api):

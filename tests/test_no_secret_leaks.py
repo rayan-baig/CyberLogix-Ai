@@ -57,7 +57,7 @@ def test_no_endpoint_echoes_a_credential(api, operator_factory):
         "/api/billing", "/api/billing/add-ons", "/api/billing/deal",
         "/api/voice/incidents", "/api/vault/attestation",
         "/api/vault/attestation/FRZ-1", "/api/invoices",
-        "/api/assurance/cover", "/api/claims/eligible",
+        "/api/claims/eligible",
         "/api/autopilot/compliance?days=7",
     ]
 

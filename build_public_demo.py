@@ -41,7 +41,6 @@ PATHS = [
     "/api/console/overview", "/api/health", "/api/costs?days=30",
     "/api/accounts/audit?limit=8", "/api/accounts/me", "/api/contacts",
     "/api/accounts/users", "/api/shortcuts", "/api/webhooks",
-    "/api/assurance/cover", "/api/invoices", "/api/contracts",
     "/api/contracts/pipeline", "/api/forecast/fleet", "/api/claims/eligible",
     "/api/contacts/preview", "/api/legal/acceptance/status",
     "/api/benchmarks", "/api/vault/attestation",

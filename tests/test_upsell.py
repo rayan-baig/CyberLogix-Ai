@@ -90,22 +90,22 @@ def test_an_add_on_can_be_bought_without_a_conversation(api, contracted):
     headers, tenant = contracted
     before = api.get("/api/contracts/pipeline", headers=headers).json()
     assert before["identified_annual_usd"] > 0
-    assert "assurance" in {o["key"] for o in before["opportunities"]}
+    assert "benchmarks" in {o["key"] for o in before["opportunities"]}
 
     bought = api.post("/api/contracts/add-ons", headers=headers,
-                      json={"add_ons": ["assurance", "vault"]})
+                      json={"add_ons": ["benchmarks", "vault"]})
     assert bought.status_code == 200, bought.text
-    assert bought.json()["added"] == ["assurance", "vault"]
+    assert bought.json()["added"] == ["benchmarks", "vault"]
 
     after = api.get("/api/contracts/pipeline", headers=headers).json()
-    assert "assurance" not in {o["key"] for o in after["opportunities"]}
+    assert "benchmarks" not in {o["key"] for o in after["opportunities"]}
     assert after["identified_annual_usd"] < before["identified_annual_usd"]
 
 
 def test_what_was_bought_reaches_the_next_invoice(api, contracted):
     headers, tenant = contracted
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance", "vault"]})
+             json={"add_ons": ["benchmarks", "vault"]})
 
     sub = STORE.active_subscription(tenant["tenant_id"])
     sub.started_at = add_months(utc_now(), -1)
@@ -116,8 +116,13 @@ def test_what_was_bought_reaches_the_next_invoice(api, contracted):
     add_ons = [l for l in invoice.lines if l["kind"] == "add_on"]
     assert len(add_ons) == 2
     # Per covered unit for one, per estate for the other.
+    # From the rate card, not typed in: literals here failed on
+    # arithmetic when an add-on was withdrawn, rather than on the thing
+    # the test is about.
+    from pricing import ADD_ONS
+
     assert sum(l["amount_usd"] for l in add_ons) == pytest.approx(
-        149.0 * 4 + 499.0
+        ADD_ONS["benchmarks"]["monthly_usd"] + ADD_ONS["vault"]["monthly_usd"]
     )
 
 
@@ -127,7 +132,7 @@ def test_buying_is_never_backdated(api, contracted):
     headers, tenant = contracted
     already = STORE.invoices_for(tenant["tenant_id"])[0]
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance"]})
+             json={"add_ons": ["benchmarks"]})
 
     unchanged = STORE.get_invoice(already.invoice_id)
     assert unchanged.total_usd == already.total_usd
@@ -137,10 +142,10 @@ def test_buying_is_never_backdated(api, contracted):
 def test_an_add_on_can_be_dropped_again(api, contracted):
     headers, _ = contracted
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance", "vault"]})
+             json={"add_ons": ["benchmarks", "vault"]})
     out = api.post("/api/contracts/add-ons", headers=headers,
                    json={"add_ons": ["vault"]}).json()
-    assert out["dropped"] == ["assurance"]
+    assert out["dropped"] == ["benchmarks"]
     assert out["contract"]["add_ons"] == ["vault"]
 
 
@@ -148,7 +153,7 @@ def test_the_set_is_replaced_not_merged(api, contracted):
     """Two people clicking at once must not build a contract neither chose."""
     headers, _ = contracted
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance"]})
+             json={"add_ons": ["benchmarks"]})
     out = api.post("/api/contracts/add-ons", headers=headers,
                    json={"add_ons": ["benchmarks"]}).json()
     assert out["contract"]["add_ons"] == ["benchmarks"]
@@ -169,7 +174,7 @@ def test_buying_needs_a_contract_to_attach_to(
     owner = owner_headers(headers)
     sensor_factory(headers, "FRZ-1", "restaurant")
     resp = api.post("/api/contracts/add-ons", headers={**headers, **owner},
-                    json={"add_ons": ["assurance"]})
+                    json={"add_ons": ["benchmarks"]})
     assert resp.status_code == 404
     assert "POST /api/contracts" in resp.json()["detail"]
 
@@ -185,18 +190,18 @@ def test_buying_is_an_owners_decision(api, tenant_factory, sensor_factory,
     }).json()["token"]
     resp = api.post("/api/contracts/add-ons",
                     headers={"Authorization": f"Bearer {token}"},
-                    json={"add_ons": ["assurance"]})
+                    json={"add_ons": ["benchmarks"]})
     assert resp.status_code == 403
 
 
 def test_the_purchase_is_in_the_audit_trail(api, contracted):
     headers, _ = contracted
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance"]})
+             json={"add_ons": ["benchmarks"]})
     audit = api.get("/api/accounts/audit", headers=headers).json()["entries"]
     bought = [e for e in audit if e["action"] == "contract.add_ons"]
     assert len(bought) == 1
-    assert "+Loss Assurance" in bought[0]["detail"]
+    assert "+Sector Benchmarks" in bought[0]["detail"]
 
 
 def test_the_console_offers_a_button_for_every_priced_add_on():
@@ -211,19 +216,30 @@ def test_the_console_offers_a_button_for_every_priced_add_on():
 
 
 def test_a_per_unit_add_on_owes_arrears_on_units_added_mid_period(
-    api, contracted
+    api, contracted, monkeypatch
 ):
-    """The cover ran on those units. Something has to charge for it.
+    """The add-on ran on those units. Something has to charge for it.
 
-    Measured before the fix: six units added halfway through a month on an
-    estate carrying Loss Assurance produced $2,997 of arrears where $3,444
-    was owed. The subscription was caught up and the per-unit add-on was
-    not, so the guarantee was in force for half a month on six units for
+    Measured before the fix: six units added halfway through a month on
+    an estate carrying a per-unit add-on produced $2,997 of arrears where
+    $3,444 was owed. The subscription was caught up and the per-unit
+    add-on was not, so it was in force for half a month on six units for
     nothing.
+
+    Nothing is priced per unit on the rate card today -- the one that was
+    has been withdrawn -- so the add-on is invented here. The branch it
+    exercises is still live, and an untested branch in the code that
+    decides what to charge is how somebody gets billed wrongly at scale.
     """
+    import pricing
+
+    monkeypatch.setitem(pricing.ADD_ONS, "per_unit_example", {
+        "name": "Per Unit Example", "basis": "per covered unit",
+        "monthly_usd": 149.0, "description": "",
+    })
     headers, tenant = contracted
     api.post("/api/contracts/add-ons", headers=headers,
-             json={"add_ons": ["assurance"]})
+             json={"add_ons": ["per_unit_example"]})
     run_billing()
 
     for i in range(6):

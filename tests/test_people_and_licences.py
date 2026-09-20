@@ -342,15 +342,31 @@ class TestTheNagLadder:
         assert people._nag_stamp(1, today) == today.isoformat()
         assert people._nag_stamp(7, today) == today.isoformat()
 
-    def test_and_weekly_after_that(self):
+    def test_and_every_seven_days_after_that(self):
         """Not because it stopped mattering.
 
         A daily email nobody acts on is the one that gets filtered, and
         it takes the next real alert with it.
+
+        Blocks counted from the day the licence lapsed, never the
+        calendar week. The calendar version shipped and was wrong: a
+        Sunday and the Monday after it are different ISO weeks, so two
+        "weekly" reminders went out one day apart.
         """
         today = utc_now().date()
-        assert people._nag_stamp(8, today) == today.strftime("%G-W%V")
-        assert people._nag_stamp(90, today) == today.strftime("%G-W%V")
+        assert people._nag_stamp(8, today) == "week-1"
+        assert people._nag_stamp(13, today) == "week-1"
+        assert people._nag_stamp(14, today) == "week-2"
+        assert people._nag_stamp(90, today) == "week-12"
+
+    def test_the_calendar_no_longer_decides_anything(self):
+        """The same lapse gives the same stamp whatever day it is read
+        on, which is the whole point of counting from the lapse."""
+        from datetime import date
+
+        sunday, monday = date(2026, 9, 20), date(2026, 9, 21)
+        assert sunday.strftime("%G-W%V") != monday.strftime("%G-W%V")
+        assert people._nag_stamp(30, sunday) == people._nag_stamp(30, monday)
 
 
 def test_a_renewal_notice_reaches_the_owner_without_being_asked(
@@ -430,10 +446,12 @@ def test_an_expired_licence_that_stops_the_job_is_urgent_and_repeats(
 
 
 def test_after_a_week_the_urgent_notice_drops_to_weekly(api, kitchen, dana):
+    """Ten days overdue, then eleven: the same seven-day block, so the
+    second morning is quiet."""
     headers, tenant = kitchen
     api.post("/api/people/credentials", headers=headers, json={
         "staff_id": dana["staff_id"], "name": "Food protection manager",
-        "expires_on": day(-20), "required_to_work": True})
+        "expires_on": day(-10), "required_to_work": True})
 
     people.send_licence_alerts()
     before = len(licence_mail(tenant["contact_email"]))
@@ -791,3 +809,27 @@ def test_the_starting_list_says_the_figures_are_not_yours(api, kitchen):
     kinds = {row["kind"] for row in common["common"]}
     assert {"phone", "software", "benefits", "vehicle"} <= kinds
     assert "not yours" in common["note"]
+
+
+def test_the_nag_settles_to_one_email_per_seven_days(api, kitchen, dana):
+    """Walked a day at a time across two calendar-week boundaries.
+
+    The calendar-week version sent an extra email every time a Sunday
+    turned into a Monday. Counting blocks from the lapse means the only
+    thing that produces an email is seven more days of nobody renewing
+    the licence.
+    """
+    headers, tenant = kitchen
+    api.post("/api/people/credentials", headers=headers, json={
+        "staff_id": dana["staff_id"], "name": "Food protection manager",
+        "expires_on": day(-8), "required_to_work": True})
+
+    for offset in range(21):
+        people.send_licence_alerts(now=utc_now() + timedelta(days=offset))
+
+    stamps = [m.dedupe_key.rsplit(":", 1)[-1]
+              for m in licence_mail(tenant["contact_email"])]
+
+    # Days 8 through 28 spans blocks 1, 2, 3 and 4. Three weeks, four
+    # emails, and no two of them a day apart.
+    assert stamps == ["week-1", "week-2", "week-3", "week-4"]

@@ -91,7 +91,7 @@ def test_a_plausible_quantity_field_cannot_be_ignored_into_an_overcharge(
     ("/api/contracts", {"term_years": 1, "escalator": 5.0}),
     ("/api/contracts", {"term_years": 1, "prepay": True}),
     ("/api/contracts/renew", {"term_years": 1, "years": 3}),
-    ("/api/contracts/add-ons", {"add_ons": ["vault"], "addons": ["assurance"]}),
+    ("/api/contracts/add-ons", {"add_ons": ["vault"], "addons": ["benchmarks"]}),
     ("/api/licenses/me/plan", {"plan": "enterprise", "tier": "growth"}),
 ])
 def test_every_money_model_refuses_a_field_it_does_not_know(

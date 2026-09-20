@@ -236,11 +236,38 @@ def test_every_add_on_is_a_fixed_fee():
         assert add_on_price(key, 0) >= 0
 
 
-def test_a_per_unit_add_on_scales_with_the_estate():
+def test_a_per_unit_add_on_scales_with_the_estate(monkeypatch):
+    """Nothing on the rate card is priced per unit today.
+
+    The one that was -- Loss Assurance -- was withdrawn, and the
+    multiplying branch it exercised is still in add_on_price waiting for
+    the next one. An untested branch in the code that decides what to
+    charge is how a customer gets billed ten times over, so the add-on
+    is invented here rather than the test being deleted with the
+    product.
+    """
+    import pricing
     from pricing import add_on_price
 
-    assert add_on_price("assurance", 10) == 1490.0
+    monkeypatch.setitem(pricing.ADD_ONS, "per_unit_example", {
+        "name": "Example", "basis": "per covered unit",
+        "monthly_usd": 149.0, "description": "",
+    })
+
+    assert add_on_price("per_unit_example", 10) == 1490.0
     assert add_on_price("vault", 10) == 499.0  # per estate, flat
+
+
+def test_nothing_on_the_rate_card_is_priced_per_unit_by_accident():
+    """A per-unit add-on multiplies by the size of the estate, so one
+    added with the wrong basis quietly bills a 200-sensor chain 200
+    times. If a per-unit add-on is ever meant to exist, this is the
+    test that should have to be changed on purpose."""
+    from pricing import ADD_ONS
+
+    per_unit = [k for k, v in ADD_ONS.items()
+                if v["basis"] == "per covered unit"]
+    assert per_unit == []
 
 
 def test_the_deal_ties_setup_term_and_add_ons_together(
@@ -253,10 +280,10 @@ def test_the_deal_ties_setup_term_and_add_ons_together(
         sensor_factory(headers, sensor_id=f"FRZ-{n}", vertical="restaurant")
 
     deal = api.get("/api/billing/deal?years=3&annual_prepay=true"
-                   "&include_add_ons=assurance,vault", headers=headers).json()
+                   "&include_add_ons=vault,benchmarks", headers=headers).json()
 
     assert deal["subscription_monthly_usd"] == 2 * 999.0
-    assert deal["add_ons_monthly_usd"] == 2 * 149.0 + 499.0
+    assert deal["add_ons_monthly_usd"] == 499.0 + 299.0
     assert deal["setup"]["sites_billed"] == 2
     assert deal["setup"]["one_time_usd"] == 3000.0
     assert deal["term"]["years"] == 3

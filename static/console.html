@@ -624,17 +624,21 @@
           </p>
         </section>
 
-        <section class="card" id="find-loss-assurance" data-group="proof" data-find="payout cover loss assurance guarantee payout claim cover insurance" data-label="Payout cover">
+
+        <!-- Claim packets used to live inside the payout-cover card, and
+             went out with it. They are a different thing entirely: this
+             is evidence for the customer's own insurer, not us paying
+             out. It should always have had its own card. -->
+        <section class="card" id="find-claim-packets" data-group="proof" data-find="claim packets insurance adjuster evidence spoiled food loss paperwork insurer" data-label="Claim packets">
           <div class="card-head">
-            <span class="card-title">Payout cover</span>
-            <span class="card-note" id="assurance-note"></span>
+            <span class="card-title">Claim packets</span>
+            <span class="card-note" id="claims-note"></span>
           </div>
-          <p class="card-plain">If food spoils while we were watching and we got it wrong, this is what we pay.</p>
-          <div id="assurance-body"></div>
-          <!-- A packet could always be produced for an incident. Nothing
-               said which incidents one could be produced FOR, so the
-               feature needed you to already know the answer. -->
-          <div id="claims-body" style="margin-top:14px"></div>
+          <p class="card-plain">If food spoils, your insurer wants proof of
+             what happened and when. We hold the readings, so we can
+             assemble it in one click. This is your insurer paying out,
+             not us.</p>
+          <div id="claims-body"></div>
         </section>
 
         <section class="card" id="find-compliance-vault" data-group="proof" data-find="your safety records compliance vault evidence hash tamper audit inspector haccp" data-label="Your safety records">
@@ -1155,7 +1159,7 @@ function preferSector(overview) {
 /* Panels that are allowed to be missing, and what to say in their place.
  *
  * An account whose licence has lapsed gets a 402 from five of the calls
- * this page makes — costs, roster, webhooks, assurance, pipeline — and
+ * this page makes — costs, roster, webhooks, pipeline — and
  * with a single Promise.all one 402 threw away the other eight. The
  * console rendered nothing at all for the one customer who most needed to
  * read it, because the thing it would have told them is how to fix
@@ -1166,7 +1170,7 @@ function preferSector(overview) {
  * been rather than taking the page down with it. */
 const OPTIONAL_PANELS = {
   costs: "cost-body", roster: "roster-body", team: "team-body",
-  hooks: "hook-body", cover: "assurance-body", invoices: "invoice-body",
+  hooks: "hook-body", invoices: "invoice-body",
   audit: "audit-body",
   forecast: "forecast-body",
   claims: "claims-body",
@@ -1231,7 +1235,6 @@ async function refresh() {
     catalogue: () => (state.shortcutCatalogue
       ? Promise.resolve(state.shortcutCatalogue) : api("/api/shortcuts")),
     hooks: () => api("/api/webhooks"),
-    cover: () => api("/api/assurance/cover"),
     invoices: () => api("/api/invoices"),
     contract: () => api("/api/contracts"),
     pipeline: () => api("/api/contracts/pipeline"),
@@ -1272,7 +1275,6 @@ async function refresh() {
     try { fn(); } catch (err) { panelUnavailable(key, err); }
   };
   paint("hooks", () => renderHooks(got.hooks));
-  paint("cover", () => renderAssurance(got.cover));
   paint("invoices", () => renderInvoices(got.invoices));
   paint("costs", () => renderCosts(got.costs));
   paint("audit", () => renderAudit(got.audit));
@@ -3053,57 +3055,6 @@ function stamp(iso) {
     year: "numeric", month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-}
-
-/* ---------------- loss assurance ---------------- */
-
-/* The point of showing this at all: an operator finds out their cover has
-   a hole this morning, not at claim time. Exclusions are the content. */
-function renderAssurance(cover) {
-  state.cover = cover;
-  const blockers = cover.estate_checks.filter((c) => !c.passed);
-
-  $("assurance-note").textContent = cover.in_force
-    ? `${cover.covered_units} covered · $${cover.monthly_cost_usd.toLocaleString()}/mo`
-    : "not in force";
-
-  const head = cover.in_force
-    ? `<div class="assure ok">
-         <span class="assure-figure">${esc(cover.covered_units)}</span>
-         <span class="assure-label">
-           ${esc(noun(cover.covered_units))} covered to
-           $${cover.payout_cap_usd.toLocaleString()} per event
-         </span>
-       </div>`
-    : `<div class="assure off">
-         <span class="assure-figure">—</span>
-         <span class="assure-label">Cover is not in force.</span>
-       </div>`;
-
-  const blockerRows = blockers.map((c) =>
-    `<div class="gap"><span class="gap-mark">!</span>
-       <span>${esc(c.detail)}</span></div>`).join("");
-
-  const excludedRows = cover.excluded.map((row) =>
-    `<div class="gap">
-       <span class="gap-mark">!</span>
-       <span><b>${esc(row.sensor_id)}</b> ${esc(row.reasons[0])}${
-         row.reasons.length > 1 ? ` (+${row.reasons.length - 1} more)` : ""
-       }</span>
-     </div>`).join("");
-
-  const clean = !blockers.length && !cover.excluded.length;
-  $("assurance-body").innerHTML = head + blockerRows + excludedRows + (
-    clean
-      ? `<div class="card-note" style="margin-top:12px">
-           Nothing is excluded. Every unit would be covered for an event
-           right now.
-         </div>`
-      : `<div class="card-note" style="margin-top:12px">
-           Each of these would void a claim on that unit. They are shown
-           now rather than after an event.
-         </div>`
-  );
 }
 
 /* ---------------- compliance vault ---------------- */

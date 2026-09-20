@@ -29,7 +29,6 @@ from fastapi.staticfiles import StaticFiles
 
 # Import all modular system routers
 from accounts import router as accounts_router
-from assurance import router as assurance_router
 from automation import router as autopilot_router
 from benchmarks import router as benchmarks_router
 from claims import router as claims_router
@@ -136,7 +135,6 @@ app.include_router(sites_router)
 app.include_router(webhooks_router)
 app.include_router(vault_router)
 app.include_router(claims_router)
-app.include_router(assurance_router)
 app.include_router(benchmarks_router)
 app.include_router(partners_router)
 app.include_router(invoicing_router)
@@ -177,7 +175,6 @@ MODULES_ACTIVE = [
     "outbound_alert_webhooks",
     "tamper_evident_compliance_vault",
     "insurance_claim_packets",
-    "loss_assurance",
     "anonymised_sector_benchmarks",
     "reseller_channel",
     "invoicing",

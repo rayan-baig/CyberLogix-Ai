@@ -11,7 +11,7 @@ given away for free.
 So these documents are not a text file. The numbers in them — the payout
 cap, the dispatch window, the payment terms, the late charge, the point at
 which reporting is withheld, what voids cover — are read from the modules
-that implement them. If the cap changes in `assurance.py`, the agreement
+that implement them. If a limit changes in the code, the agreement
 says the new figure the same day, and the version hash changes so it is
 visible that it did.
 
@@ -33,12 +33,6 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from assurance import (
-    ASSURANCE_MONTHLY_PER_UNIT_USD,
-    ASSURANCE_PAYOUT_CAP_USD,
-    COVER_LAPSES_AFTER_MINUTES,
-    DISPATCH_SLA_SECONDS,
-)
 from accounts import require_role
 from auth import (
     require_platform_admin,
@@ -53,6 +47,7 @@ from contracts import (
 from backup import BACKUP_KEEP
 from invoicing import PAYMENT_TERMS_DAYS, issuer_block
 from store import (
+    DISPATCH_SLA_SECONDS,
     MAX_READINGS_PER_SENSOR,
     SENSOR_OFFLINE_AFTER_MINUTES,
     STORE,
@@ -245,60 +240,6 @@ be in writing.
 """
 
 
-def assurance_terms() -> str:
-    return f"""# Loss Assurance Terms
-
-**Version {TERMS_VERSION} · Effective {EFFECTIVE_DATE}**
-
-> {DISCLAIMER}
-
-Loss Assurance is an optional add-on at
-{_fmt_money(ASSURANCE_MONTHLY_PER_UNIT_USD)} per covered unit per month.
-
-## What it commits us to
-
-If a covered unit records a breach and **no alert is dispatched to
-anybody**, we reimburse your insurance deductible for that event, up to
-{_fmt_money(ASSURANCE_PAYOUT_CAP_USD)}.
-
-This sits outside the general limitation of liability in the Master
-Subscription Agreement. It is a real commitment, funded by the fee, and
-capping it under the general limit would make it worthless.
-
-## What it does not commit us to
-
-It pays a deductible. It is not insurance, we are not an insurer, and it
-does not make you whole for the loss itself. Keep your own cover.
-
-It pays when **we** failed to raise the alarm. It does not pay when the
-alarm was raised and nobody acted on it.
-
-## What voids cover, and when you find out
-
-Cover on a unit lapses while any of the following is true:
-
-* the sensor has not reported for {COVER_LAPSES_AFTER_MINUTES} minutes —
-  a silent sensor cannot warn anyone;
-* its battery is below the warning level;
-* it has never reported a reading;
-* nobody is on the on-call roster for its site;
-* the account is on a trial rather than a paid plan.
-
-**Every one of these is computed continuously and shown to you before an
-event, not produced as an excuse after one.** `GET /api/assurance/cover`
-returns the live list, naming the specific unit and the specific reason.
-A guarantee whose exclusions only surface at claim time is a trick. This
-one tells you what to fix this morning.
-
-## Making a claim
-
-Tell us within thirty days of the event. We produce the evidence packet
-from the tamper-evident record — the readings, the hash chain, and what
-was or was not dispatched — and it is the same record either way, whether
-it helps our case or yours.
-"""
-
-
 def service_level() -> str:
     rows = "\n".join(
         f"| below {high:g}% down to {low:g}% | {credit}% |"
@@ -474,7 +415,6 @@ goods at risk to collect an invoice.
 
 DOCUMENTS = {
     "terms": ("Master Subscription Agreement", terms_of_service),
-    "assurance": ("Loss Assurance Terms", assurance_terms),
     "sla": ("Service Level Commitment", service_level),
     "privacy": ("Privacy and Data Processing", privacy_statement),
     "acceptable-use": ("Acceptable Use and Operating Requirements", acceptable_use),

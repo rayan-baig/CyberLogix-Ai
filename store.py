@@ -47,6 +47,11 @@ try:
 except ValueError:
     MAX_READINGS_PER_SENSOR = 500
 
+# How quickly a breach must turn into a dispatched alert. This is the
+# service commitment the agreement states, and it lives here with the
+# other two rather than in the add-on that used to quote it.
+DISPATCH_SLA_SECONDS = 60
+
 # A sensor silent for longer than this is treated as offline by the
 # autonomous compliance clerk.
 SENSOR_OFFLINE_AFTER_MINUTES = 30
