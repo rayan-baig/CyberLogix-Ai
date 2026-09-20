@@ -27,7 +27,7 @@ from automation import sweep_tenant
 from contracts import run_billing, run_dunning
 from conversion import run_trial_conversion
 from backup import run_daily_backup
-from digest import DIGEST_HOUR_UTC, run_digests
+from digest import DIGEST_HOUR_UTC, run_digests, send_weekly_texts
 from mail import flush_queue
 import watchdog
 from store import STORE
@@ -72,6 +72,7 @@ def run_money_pass() -> dict:
     backed_up = {"taken": False, "status": "not_run"}
     flushed = {"attempted": 0, "sent": 0}
     licences = {"sent_count": 0, "skipped": "not_run"}
+    texted = {"sent_count": 0}
     try:
         billed = run_billing()
     except Exception as exc:  # noqa: BLE001 - collections must still run
@@ -95,6 +96,12 @@ def run_money_pass() -> dict:
         summarised = run_digests()
     except Exception as exc:  # noqa: BLE001 - a summary must not stop the work
         logger.exception("Digest pass failed (%s).", exc)
+    try:
+        # Rides the same weekly cadence as the emailed report, and is
+        # opted into separately because it costs money per message.
+        texted = send_weekly_texts()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Weekly reassurance text pass failed (%s).", exc)
     try:
         # After the summaries and before the flush: an owner whose cook
         # cannot legally be on shift tomorrow hears about it today, on
@@ -131,6 +138,7 @@ def run_money_pass() -> dict:
         "conversion": asked,
         "digests": summarised,
         "licence_alerts": licences,
+        "weekly_texts": texted,
         "backup": backed_up,
         "mail_queue": flushed,
     }

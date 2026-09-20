@@ -27,11 +27,13 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
 
-from auth import require_platform_admin
+from accounts import require_role
+from auth import require_platform_admin, require_tenant, write_audit
 from mail import send as send_mail
-from store import STORE, Tenant, iso, utc_now
+from store import STORE, Tenant, User, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.digest")
 
@@ -600,3 +602,149 @@ def push_operator_digest(_: None = Depends(require_platform_admin)):
 def push_customer_reports(_: None = Depends(require_platform_admin)):
     """Send this week's customer reports now, to whoever has not had one."""
     return send_customer_reports()
+
+
+# ---- the week in one text ------------------------------------------------
+#
+# The weekly report above is an email with numbers in it, and it is read
+# by whoever reads email. The person who owns the restaurant reads texts.
+#
+# A monitoring product that works is invisible by construction: nothing
+# breaks, nobody is called, and at renewal the owner cannot remember what
+# they are paying for. One text a week is the cheapest defence against
+# that, and it is the same reason the weekly email exists -- except this
+# one gets read.
+#
+# Opt-in, because an unasked-for text is worse than no text, and because
+# each one costs money on a wire. Off unless somebody turned it on.
+
+REASSURANCE_KIND = "weekly_text"
+
+
+def wants_weekly_text(tenant_id: str) -> Optional[str]:
+    """The number to text, or None. Absent means off."""
+    row = STORE._db.get(REASSURANCE_KIND, tenant_id)
+    if not row or not row.get("enabled"):
+        return None
+    return (row.get("phone") or "").strip() or None
+
+
+def set_weekly_text(tenant_id: str, phone: str, enabled: bool) -> Dict[str, Any]:
+    row = {"tenant_id": tenant_id, "phone": phone.strip(),
+           "enabled": bool(enabled), "changed_at": iso(utc_now())}
+    STORE._db.put(REASSURANCE_KIND, tenant_id, row)
+    return row
+
+
+def weekly_text_body(tenant: Tenant, now: Optional[datetime] = None) -> str:
+    """Short, plain, and specific enough to be worth the interruption.
+
+    Deliberately not "everything is fine": a text that says the same six
+    words every week is one nobody reads by the third month. It carries
+    the counts, so a quiet week still shows the product doing something,
+    and a licence about to lapse rides along where it will actually be
+    seen.
+    """
+    now = now or utc_now()
+    report = customer_report(tenant, now)
+    bits = [f"{tenant.company_name}: {report['readings']:,} checks this week"]
+
+    if report["incidents"]:
+        bits.append(f"{report['incidents']} caught and dealt with")
+    else:
+        bits.append("nothing went out of range")
+
+    if report["offline"]:
+        bits.append(f"{len(report['offline'])} unit(s) not reporting - "
+                    "worth a look")
+
+    try:
+        import people
+
+        lapsing = people.fleet_summary()
+        if lapsing["expired_and_blocking"]:
+            bits.append(f"{lapsing['expired_and_blocking']} staff licence(s) "
+                        "expired")
+        elif lapsing["expiring_soon"]:
+            bits.append(f"{lapsing['expiring_soon']} licence(s) due soon")
+    except Exception:  # noqa: BLE001 - a summary must not stop the text
+        logger.exception("Could not read licences for the weekly text.")
+
+    return ". ".join(bits) + "."
+
+
+def send_weekly_texts(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """One text per opted-in estate per week."""
+    from notifications import send_sms
+
+    now = now or utc_now()
+    week = now.strftime("%G-W%V")
+    sent: List[str] = []
+    failures: List[str] = []
+
+    for tenant in STORE.list_tenants():
+        if tenant.plan == "trial" or tenant.suspended:
+            continue
+        phone = wants_weekly_text(tenant.tenant_id)
+        if not phone:
+            continue
+        # One per estate per week, enforced here rather than trusted to
+        # the hourly pass not running twice.
+        stamp = STORE._db.get(REASSURANCE_KIND, tenant.tenant_id) or {}
+        if stamp.get("last_week") == week:
+            continue
+        try:
+            result = send_sms(phone, weekly_text_body(tenant, now),
+                              tenant_id=tenant.tenant_id)
+            STORE._db.put(REASSURANCE_KIND, tenant.tenant_id,
+                          {**stamp, "last_week": week})
+            if result.get("status") == "sent":
+                sent.append(tenant.tenant_id)
+        except Exception as exc:  # noqa: BLE001 - one estate must not stop the rest
+            logger.exception("Weekly text failed for %s (%s).",
+                             tenant.tenant_id, exc)
+            failures.append(tenant.tenant_id)
+
+    return {"sent": sent, "sent_count": len(sent), "failed_tenants": failures}
+
+
+class WeeklyText(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    phone: str = Field("", max_length=40)
+    enabled: bool = True
+
+
+@router.get("/weekly-text", tags=["Digest"])
+def weekly_text_status(tenant: Tenant = Depends(require_tenant)):
+    """Whether the weekly text is on, and what it would say today."""
+    row = STORE._db.get(REASSURANCE_KIND, tenant.tenant_id) or {}
+    return {
+        "enabled": bool(row.get("enabled")),
+        "phone": row.get("phone", ""),
+        "preview": weekly_text_body(tenant),
+        "note": (
+            "One text a week, on the same day as the emailed report. Off "
+            "unless you turn it on, because an unasked-for text is worse "
+            "than none."
+        ),
+    }
+
+
+@router.post("/weekly-text", tags=["Digest"])
+def set_weekly_text_route(
+    payload: WeeklyText,
+    tenant: Tenant = Depends(require_tenant),
+    operator: User = Depends(require_role("owner")),
+):
+    """Turn the weekly text on or off, and say where it goes."""
+    if payload.enabled and not payload.phone.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A number is needed to send a text to.",
+        )
+    row = set_weekly_text(tenant.tenant_id, payload.phone, payload.enabled)
+    write_audit(tenant, operator, "digest.weekly_text",
+                "on" if payload.enabled else "off")
+    return {"enabled": row["enabled"], "phone": row["phone"],
+            "preview": weekly_text_body(tenant)}

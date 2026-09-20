@@ -43,6 +43,7 @@ from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
 from certificates import router as certificates_router
+from disposition import router as disposition_router
 from people import router as people_router
 from tasks import router as tasks_router
 from faults import router as faults_router
@@ -149,6 +150,7 @@ app.include_router(backup_router)
 app.include_router(readiness_router)
 app.include_router(faults_router)
 app.include_router(certificates_router)
+app.include_router(disposition_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)

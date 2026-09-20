@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+import patterns
 from gemini import safe_generate
 from licenses import require_entitlement
 from store import INDUSTRY_PROFILES, STORE, Reading, Tenant, utc_now
@@ -103,6 +104,20 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
         "window_hours": window_hours,
         "readings_analysed": len(readings),
     }
+
+    # What shape this warm spell is, before anything is said about when
+    # it crosses a line. A defrost crosses the line on purpose, twice a
+    # day, and a straight-line fit is confidently wrong about it every
+    # time. The classifier annotates; the routing still decides.
+    if danger_above is not None:
+        base["pattern"] = patterns.classify(readings, danger_above)
+    else:
+        base["pattern"] = {
+            "pattern": "unknown", "confident": False, "rhythm": None,
+            "event": None,
+            "because": "This unit has no upper limit, so there is no warm "
+                       "spell to classify.",
+        }
 
     trend = _linear_trend(readings)
     if trend is None:
