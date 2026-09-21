@@ -9,6 +9,25 @@ The same thing is at `/book → Health` and `GET /api/admin/readiness`.
 
 ---
 
+## The short way up
+
+`render.yaml` is this document's sections 2 and 3 as a file: the
+container, the disk, the generated secrets. Render reads it and hands
+back an `https://` address, which is all a sensor needs to report to.
+
+    render.com -> New -> Blueprint -> pick this repository
+
+It declines the free instance type on purpose, and the file says why:
+free has no disk and sleeps after fifteen idle minutes, so the database
+dies on each deploy and no sweep runs overnight. Roughly $7 a month.
+
+That gets a *monitoring* launch up with no domain and no Twilio — enough
+to point real hardware at and watch a reading arrive. Everything below
+still applies before a customer depends on it, and sections 1, 4 and 5
+are the ones that turn it from reachable into trustworthy.
+
+---
+
 ## Decide what you are launching
 
 The readiness check answers two questions, not one, because they have
