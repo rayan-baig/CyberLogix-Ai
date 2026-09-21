@@ -38,7 +38,7 @@ from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
 from costs import router as costs_router
 from forecaster import router as forecaster_router
-from gemini import GEMINI_MODEL, dispatch_ready
+from gemini import GEMINI_MODEL, dispatch_ready, dispatch_status
 from hardware_bridge import router as bridge_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
@@ -631,6 +631,10 @@ def health_check():
         "plan_tiers": list(PLAN_TIERS),
         "gemini_model": GEMINI_MODEL,
         "gemini_dispatch": "ready" if dispatch_ready() else "fallback_template",
+        # The line above says a client was constructed. This one says
+        # whether calls through it are working, which is a different
+        # question once a named model is retired.
+        "ai": dispatch_status(),
         "message_delivery": "twilio" if delivery_ready() else "dry_run",
         "email_delivery": "smtp" if mail_status()["configured"] else "queued",
         "autopilot_scheduler": scheduler.status(),

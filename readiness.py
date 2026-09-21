@@ -52,6 +52,7 @@ def checks() -> List[Dict[str, Any]]:
     """Every precondition, with the reason it matters stated once."""
     import auth
     import backup
+    import gemini
     import invoicing
     import legal
     import mail
@@ -64,6 +65,23 @@ def checks() -> List[Dict[str, Any]]:
     # --- can a customer's freezer depend on this ------------------------
     live = watchdog.state()
     sweep = live["sweep_interval_seconds"]
+    ai = gemini.dispatch_status()
+    found.append(_check(
+        "ai_model", "The model behind the writing still answers", UNATTENDED,
+        WARNS if (ai["degraded"] or not ai["configured"]) else OK,
+        (f"{ai['consecutive_failures']} call(s) in a row have failed against "
+         f"{ai['model']}: {ai['last_error']}") if ai["degraded"]
+        else ("no key, so every generated line is a template"
+              if not ai["configured"] else f"answering, on {ai['model']}"),
+        ("Named models get retired. Nothing breaks loudly when this one is "
+         "-- every message quietly becomes its deterministic template and "
+         "the service keeps answering 200. Point CYBERLOGIX_GEMINI_MODEL at "
+         "a current model.") if ai["degraded"] else
+        ("Not a blocker: alerts still go out, worded from templates rather "
+         "than written. Set GEMINI_API_KEY to turn the writing on."
+         if not ai["configured"] else ""),
+    ))
+
     found.append(_check(
         "sweep", "The alert sweep runs", MONITOR,
         OK if live["sweep_enabled"] else WARNS,

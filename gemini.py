@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Tuple
+import threading
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 
 from google import genai
 
@@ -20,6 +22,66 @@ from store import STORE
 logger = logging.getLogger("cyberlogix.gemini")
 
 GEMINI_MODEL = os.environ.get("CYBERLOGIX_GEMINI_MODEL", "gemini-2.5-flash")
+
+# Falling back is normal once. Falling back every time is a different
+# thing wearing the same clothes, and the difference is only visible in
+# a count.
+#
+# Named models are retired on a schedule. When this one is, every call
+# below raises, every caller gets its deterministic template, and the
+# product keeps answering 200 while quietly getting worse at its job --
+# a summariser that stopped summarising and a console that still said
+# "ready", because readiness meant "the client object was constructed",
+# which stays true forever after the model behind it is gone.
+FAILURES_BEFORE_DEGRADED = 3
+
+_health_lock = threading.Lock()
+_consecutive_failures = 0
+_last_error: Optional[str] = None
+_last_success_at: Optional[datetime] = None
+
+
+def _note_success() -> None:
+    global _consecutive_failures, _last_error, _last_success_at
+    with _health_lock:
+        _consecutive_failures = 0
+        _last_error = None
+        _last_success_at = datetime.now(timezone.utc)
+
+
+def _note_failure(exc: BaseException) -> None:
+    global _consecutive_failures, _last_error
+    with _health_lock:
+        _consecutive_failures += 1
+        _last_error = f"{type(exc).__name__}: {exc}"[:300]
+        count = _consecutive_failures
+    if count == FAILURES_BEFORE_DEGRADED:
+        logger.error(
+            "Generation has failed %d times in a row against model %r. "
+            "Every AI-authored message is now a deterministic template. "
+            "If the model has been retired, set CYBERLOGIX_GEMINI_MODEL "
+            "to a current one.",
+            count, GEMINI_MODEL,
+        )
+
+
+def dispatch_status() -> Dict[str, Any]:
+    """What the model layer is actually doing, not merely configured to do.
+
+    `degraded` is the field worth alarming on: it means calls are being
+    made and failing, which no amount of "configured: true" reveals.
+    """
+    with _health_lock:
+        failures, error = _consecutive_failures, _last_error
+        since = _last_success_at
+    return {
+        "configured": client is not None,
+        "model": GEMINI_MODEL,
+        "consecutive_failures": failures,
+        "degraded": failures >= FAILURES_BEFORE_DEGRADED,
+        "last_error": error,
+        "last_success_at": since.isoformat() if since else None,
+    }
 
 try:
     client = genai.Client()
@@ -85,7 +147,9 @@ def safe_generate(
             raise ValueError("Gemini returned an empty body.")
         record(tenant_id, "ai_calls")
         STORE.cache_put(key, text)
+        _note_success()
         return text, "gemini"
     except Exception as exc:  # noqa: BLE001 - an alert must always go out
         logger.exception("Gemini %s failed (%s); falling back.", purpose, exc)
+        _note_failure(exc)
         return fallback, "fallback_template"

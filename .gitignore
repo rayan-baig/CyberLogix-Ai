@@ -8,3 +8,4 @@ cyberlogix.db
 cyberlogix.db-wal
 cyberlogix.db-shm
 backups/
+.claude/settings.local.json
