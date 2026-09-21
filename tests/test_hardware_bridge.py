@@ -133,20 +133,62 @@ def test_webhook_rejects_a_suspended_license(api, tenant_factory, owner_headers)
     assert resp.status_code == 402
 
 
-def test_unbound_device_is_rejected(api, tenant_factory):
+def test_unbound_device_is_held_not_thrown_away(api, tenant_factory):
+    """An unknown serial is a device to adopt, not a reading to bin."""
     headers, _ = tenant_factory()
     resp = webhook(api, headers["X-CyberLogix-Key"], serial="GHOST-SN")
-    assert resp.status_code == 404
-    assert "not bound to a licensed sensor" in resp.json()["detail"]
+    assert resp.status_code == 202
+    assert "not set up yet" in resp.json()["detail"]
+
+    # It is not being watched -- no sensor was created on its behalf.
+    assert STORE.sensor_by_device("GHOST-SN") is None
+
+    waiting = api.get("/api/doorstep", headers=headers).json()
+    assert [d["serial"] for d in waiting["devices"]] == ["GHOST-SN"]
 
 
-def test_device_cannot_report_into_another_tenant(api, tenant_factory):
+def test_device_cannot_report_into_another_tenant(api, tenant_factory, owner_headers):
+    """Holding a stranger's reading must not become a way in.
+
+    Bob quotes a serial that belongs to Alice. The reading is held the
+    same way any unknown serial is -- but on Bob's doorstep, using only
+    the number Bob himself sent. It must not reach Alice's sensor, must
+    not appear in Alice's console, and adopting it must not take her
+    serial away from her.
+    """
     alice, _ = tenant_factory(company_name="Alice Foods")
     bob, _ = tenant_factory(company_name="Bob Labs")
     bind_device(api, alice, sensor_id="ALICE-1", serial="ALICE-SN")
+    assert STORE.get_sensor("ALICE-1").last_seen is None
 
-    resp = webhook(api, bob["X-CyberLogix-Key"], serial="ALICE-SN")
-    assert resp.status_code == 404
+    resp = webhook(api, bob["X-CyberLogix-Key"], serial="ALICE-SN", value=45.0)
+    assert resp.status_code == 202
+
+    # Alice's freezer did not record a reading it never took, and a
+    # 45F value did not open an incident in her account.
+    assert STORE.get_sensor("ALICE-1").last_seen is None
+    assert STORE.get_sensor("ALICE-1").last_temperature is None
+    assert api.get("/api/voice/incidents", headers=alice).json()["count"] == 0
+
+    # The serial still resolves to Alice, and nothing is knocking at her door.
+    assert STORE.sensor_by_device("ALICE-SN").sensor_id == "ALICE-1"
+    assert api.get("/api/doorstep", headers=alice).json()["count"] == 0
+
+    # Bob sees it waiting -- it is his own reading -- but adopting it
+    # cannot take a serial that is already bound to somebody else.
+    assert api.get("/api/doorstep", headers=bob).json()["count"] == 1
+    stolen = api.post(
+        "/api/doorstep/adopt",
+        headers=owner_headers(bob, email="bob@example.com"),
+        json={
+            "serial": "ALICE-SN",
+            "industry_vertical": "restaurant",
+            "location_name": "Bob's Bench",
+        },
+    )
+    assert stolen.status_code == 409
+    assert "already bound" in stolen.json()["detail"]
+    assert STORE.sensor_by_device("ALICE-SN").sensor_id == "ALICE-1"
 
 
 def test_duplicate_device_serial_rejected(api, tenant_factory):

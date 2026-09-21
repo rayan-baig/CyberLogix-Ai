@@ -198,6 +198,20 @@
 
     <div class="layout">
       <div>
+        <!-- A device that is sending readings has already done the hard
+             part. Requiring its serial up front was the whole difficulty
+             of setting this product up. -->
+        <section class="card" id="find-knocking" data-group="fridges" data-find="devices knocking new sensor connect setup adopt pair discover unrecognised serial" data-label="Devices knocking" hidden>
+          <div class="card-head">
+            <span class="card-title">Devices knocking</span>
+            <span class="card-note" id="knock-note"></span>
+          </div>
+          <p class="card-plain">Sensors that are sending us readings and
+             are not set up yet. Nothing from them is being watched until
+             you add them &mdash; which takes one tap.</p>
+          <div id="knock-body"></div>
+        </section>
+
         <section class="card" id="fleet-card" tabindex="-1" data-group="fridges" data-find="your fridges and freezers the fleet sensors temperature freezer fridge units cold" data-label="Your fridges and freezers">
           <div class="card-head">
             <span class="card-title" id="fleet-title">Your fridges and freezers</span>
@@ -1132,6 +1146,8 @@ $("pricing-btn").addEventListener("click", async () => {
 async function loadIndustries() {
   const body = await api("/api/industries");
   state.industries = body.industries;
+  // The knocking card may already be on screen with an empty dropdown.
+  fillKnockIndustries();
   $("add-vertical").innerHTML = body.industries
     .map((i) => `<option value="${esc(i.vertical)}">`
       + `${esc(i.name)} — $${i.monthly_usd} / ${esc(i.billing_unit)}</option>`)
@@ -1244,6 +1260,7 @@ const OPTIONAL_PANELS = {
   claims: "claims-body",
   escalation: "escalation-body",
   byodSeen: "byod-samples",
+  knocking: "knock-body",
   pollers: "poller-body",
   tasks: "task-body",
   peopleAlerts: "licence-alerts",
@@ -1311,6 +1328,7 @@ async function refresh() {
     claims: () => api("/api/claims/eligible"),
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
+    knocking: () => api("/api/doorstep"),
     peopleAlerts: () => api("/api/people/alerts"),
     pollers: () => api("/api/pollers"),
     tasks: () => api("/api/tasks"),
@@ -1353,6 +1371,7 @@ async function refresh() {
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
+  paint("knocking", () => renderKnocking(got.knocking));
   paint("pollers", () => renderPollers(got.pollers));
   paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
@@ -2554,6 +2573,125 @@ function renderLane(box, urgent, advisory, sentTo, note) {
     + rows(advisory, false)
     + `<div class="sub" style="margin:8px 0 2px">${esc(note)}</div>`;
 }
+
+/* ---------------- devices knocking ----------------
+   The card hides itself when nothing is waiting. A permanent empty box
+   headed "Devices knocking" is one more thing to scroll past; a box
+   that only appears when something is actually there is a message. */
+
+/* What the card was last drawn for, so a poll that changes nothing
+   redraws nothing. Without this the twenty-second refresh rebuilt the
+   card under whoever was typing a location into it and threw the words
+   away -- the one form on the page somebody types a sentence into. */
+let knockSignature = null;
+
+function renderKnocking(seen) {
+  const card = $("find-knocking");
+  card.hidden = !seen.count;
+  if (!seen.count) {
+    $("knock-body").innerHTML = "";
+    knockSignature = null;
+    return;
+  }
+
+  $("knock-note").textContent = `${seen.count} waiting`;
+
+  // The serials and whether each still needs a unit. Counts and
+  // timestamps are deliberately left out: a device sending another
+  // reading is not a reason to wipe the box somebody is typing in.
+  const signature = seen.devices
+    .map((d) => `${d.serial}:${d.needs_unit ? "u" : ""}`).sort().join("|");
+  if (signature === knockSignature) {
+    fillKnockIndustries();
+    return;
+  }
+  knockSignature = signature;
+  $("knock-body").innerHTML = seen.devices.map((d) => `
+    <div class="fc-row" style="flex-wrap:wrap;gap:8px 10px">
+      <span class="fc-when medium">${esc(d.times_seen)} sent</span>
+      <span class="grow" style="min-width:170px">
+        <span class="fc-id">${esc(d.serial)}</span>
+        <span class="sub">${esc(d.why)}</span>
+      </span>
+      <span class="row" style="gap:6px;flex:1 1 100%">
+        <input class="grow" data-knock-where="${esc(d.serial)}"
+               placeholder="Where is it? e.g. Back kitchen" maxlength="160"
+               aria-label="Where this device is">
+        <select data-knock-kind="${esc(d.serial)}"
+                aria-label="What it is watching"></select>
+        ${d.needs_unit ? `<select data-knock-unit="${esc(d.serial)}"
+             aria-label="Which unit">
+             <option value="temperature_f">\u00B0F</option>
+             <option value="temperature_c">\u00B0C</option>
+           </select>` : ""}
+        <button class="btn btn-sm btn-primary" style="width:auto"
+                data-knock-add="${esc(d.serial)}">Add it</button>
+        <button class="btn btn-sm" data-knock-drop="${esc(d.serial)}">Not
+          mine</button>
+      </span>
+    </div>`).join("");
+
+  fillKnockIndustries();
+}
+
+/* The industry list arrives from its own call, which finishes after the
+   first paint. Filling the dropdown separately means the card can be
+   drawn before the list exists and corrected the moment it does, rather
+   than rendering a select with nothing in it and never coming back. */
+function fillKnockIndustries() {
+  const options = (state.industries || []).map((row) =>
+    `<option value="${esc(row.vertical)}">${esc(row.name)}</option>`).join("");
+  if (!options) return;
+  document.querySelectorAll("[data-knock-kind]").forEach((select) => {
+    if (select.options.length) return;   // never reset a chosen answer
+    select.innerHTML = options;
+  });
+}
+
+document.addEventListener("click", async (event) => {
+  const add = event.target.closest("[data-knock-add]");
+  const drop = event.target.closest("[data-knock-drop]");
+  if (!add && !drop) return;
+  const serial = (add || drop).dataset.knockAdd
+    || (add || drop).dataset.knockDrop;
+  const button = add || drop;
+  button.disabled = true;
+  try {
+    if (drop) {
+      await api(`/api/doorstep/${encodeURIComponent(serial)}`,
+                { method: "DELETE" });
+      toast("Stopped holding it.", "ok");
+    } else {
+      const where = document.querySelector(
+        `[data-knock-where="${CSS.escape(serial)}"]`);
+      const kind = document.querySelector(
+        `[data-knock-kind="${CSS.escape(serial)}"]`);
+      const unit = document.querySelector(
+        `[data-knock-unit="${CSS.escape(serial)}"]`);
+      if (!where.value.trim()) {
+        toast("Say where it is, so an alert can name the place.", "err");
+        button.disabled = false;
+        return;
+      }
+      const out = await api("/api/doorstep/adopt", {
+        method: "POST",
+        body: JSON.stringify({
+          serial,
+          industry_vertical: kind.value,
+          location_name: where.value.trim(),
+          ...(unit ? { unit: unit.value } : {}),
+        }),
+      });
+      toast(`Added. ${out.replayed_readings} reading(s) it already sent `
+            + "were kept.", "ok");
+    }
+    renderKnocking(await api("/api/doorstep"));
+    refresh().catch(() => {});
+  } catch (err) {
+    toast(err.message, "err");
+    button.disabled = false;
+  }
+});
 
 /* ---------------- sensor clouds we fetch from ----------------
    The credential is never rendered. Only the header names come back

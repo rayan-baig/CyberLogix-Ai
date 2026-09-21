@@ -194,12 +194,24 @@ def ingest_third_party_hardware_webhook(
 
     sensor = STORE.sensor_by_device(payload.device_sn)
     if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        # Not an error worth throwing the reading away over. A device
+        # that is sending us readings has already done the hard part;
+        # the serial is printed inside a battery compartment bolted
+        # inside a freezer, and requiring it up front was the whole
+        # difficulty of setting this up. Hold it, show it in the
+        # console, and let one tap adopt it -- with the readings it sent
+        # while it waited.
+        import doorstep
+
+        doorstep.knock(tenant.tenant_id, payload.device_sn,
+                       payload.reading_value, metric)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_202_ACCEPTED,
             detail=(
-                f"Device '{payload.device_sn}' is not bound to a licensed "
-                "sensor. Register it via POST /api/licenses/me/sensors with "
-                "external_device_sn set to this serial."
+                f"'{payload.device_sn}' is not set up yet, so this reading "
+                "is being held rather than watched. It is now waiting in "
+                "the console under Devices knocking; adding it there takes "
+                "one tap and keeps what it has already sent."
             ),
         )
 
@@ -586,18 +598,29 @@ async def ingest_any_payload(
     unit = verdict["unit"]
     if unit is None:
         byod.remember(tenant.tenant_id, payload, verdict, "unit_unknown")
+        # Onto the doorstep, not into the bin. The unit is still not
+        # guessed -- four degrees is a fridge in Celsius and a disaster
+        # in Fahrenheit -- but the device is real and is asking to be
+        # set up, and "say which unit" is a question with a one-tap
+        # answer rather than a reason to lose the reading.
+        import doorstep
+
+        doorstep.knock(tenant.tenant_id, verdict["serial"],
+                       verdict["value"], None)
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_202_ACCEPTED,
             detail={
                 "message": (
                     "The reading was found but the payload does not say "
-                    "whether it is Celsius or Fahrenheit."
+                    "whether it is Celsius or Fahrenheit, so it is being "
+                    "held rather than watched."
                 ),
                 "reading": verdict["value"],
                 "next": (
-                    "Set the unit on the sensor. It is not guessed from the "
-                    "number: 4 degrees is a fridge in Celsius and a "
-                    "disaster in Fahrenheit."
+                    "This device is now waiting in the console under "
+                    "Devices knocking. Say which unit when you add it: it "
+                    "is not guessed from the number, because 4 degrees is "
+                    "a fridge in Celsius and a disaster in Fahrenheit."
                 ),
             },
         )

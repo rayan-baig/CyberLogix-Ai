@@ -461,3 +461,33 @@ def test_a_rejected_form_shows_a_sentence_not_a_json_blob():
         "the framework's own prefix is noise in front of the reason")
     # And the old behaviour is gone rather than merely bypassed.
     assert "JSON.stringify(body.detail)" not in source
+
+
+def test_the_poll_does_not_rebuild_a_card_somebody_is_typing_into():
+    """The knocking card holds the one form on the page that takes a
+    sentence -- where a sensor is.
+
+    The twenty-second refresh rebuilt it from scratch every time, which
+    threw away whatever had been typed. A device sending another reading
+    is not a reason to wipe the box somebody is mid-word in, so the card
+    redraws only when the set of devices actually changes.
+    """
+    source = (ROOT / "static/console.html").read_text()
+
+    assert "knockSignature" in source
+    assert "if (signature === knockSignature)" in source
+    # The signature must not include anything that ticks on its own, or
+    # it changes every poll and the guard does nothing.
+    signature_line = next(
+        line for line in source.splitlines()
+        if "d.needs_unit ?" in line and "serial" in line)
+    for ticking in ("times_seen", "last_seen", "last_value", "held_readings"):
+        assert ticking not in signature_line, (
+            f"{ticking} changes on its own, so the card would still "
+            "rebuild under the typist")
+
+
+def test_a_chosen_industry_is_never_reset_underneath_the_operator():
+    source = (ROOT / "static/console.html").read_text()
+
+    assert "if (select.options.length) return;" in source
