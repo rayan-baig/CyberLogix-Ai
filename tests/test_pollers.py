@@ -64,6 +64,105 @@ def test_it_refuses_to_fetch_inside_our_own_network(api, estate, url):
     assert refused.status_code == 422, f"{url} was accepted"
 
 
+@pytest.mark.parametrize("url", [
+    # Every one of these reached the same private addresses as the list
+    # above, and every one was accepted, because the check compared the
+    # front of a string instead of reading an address.
+    "https://[::1]:8080/admin",              # brackets: split(':')[0] is '['
+    "https://[fd00::1]/internal",            # IPv6 unique-local
+    "https://[fe80::1]/link-local",
+    "https://[::ffff:127.0.0.1]/admin",      # IPv4 wearing an IPv6 coat
+    "https://0.0.0.0/admin",
+    "https://2130706433/admin",              # 127.0.0.1, in decimal
+    "https://0x7f000001/admin",              # 127.0.0.1, in hex
+    "https://user@127.0.0.1/admin",          # hidden behind userinfo
+    "https://LOCALHOST/admin",               # the check was case-sensitive
+    "https://localhost./admin",              # and stopped at a trailing dot
+    # Six ways exist to write an IPv4 address as an IPv6 one, and
+    # ipaddress only knows the first is private. These two it calls
+    # global, and both still arrive at 127.0.0.1.
+    "https://[::127.0.0.1]/admin",           # IPv4-compatible, deprecated
+    "https://[64:ff9b::7f00:1]/admin",       # NAT64 well-known prefix
+])
+def test_the_ways_round_that_check(api, estate, url):
+    """A prefix match on a string is not an address check.
+
+    Each of these is a real bypass of the original: a private address
+    spelled so that no listed prefix matches it.
+    """
+    headers, _ = estate
+
+    refused = source(api, headers, url=url)
+
+    assert refused.status_code == 422, f"{url} was accepted"
+
+
+def test_a_public_name_that_points_somewhere_private_is_refused(estate,
+                                                                monkeypatch):
+    """The check that reads the URL cannot see where a name goes.
+
+    Nothing about 'sensors.example' looks private. The customer owns the
+    name and points it at the cloud metadata service, and every check
+    that reads spelling passes it.
+    """
+    import socket
+
+    real = socket.getaddrinfo
+
+    def pointing_inward(host, *a, **k):
+        if host == "sensors.example":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                     ("169.254.169.254", 0))]
+        return real(host, *a, **k)
+
+    monkeypatch.setattr(socket, "getaddrinfo", pointing_inward)
+
+    with pytest.raises(ValueError, match="169.254.169.254"):
+        pollers._fetch("https://sensors.example/samples", {})
+
+
+def test_a_redirect_is_not_followed(estate, monkeypatch):
+    """A redirect is a second URL, picked after every check has run.
+
+    urllib follows one by default and carries the customer's vendor
+    credential to wherever it lands, so one 302 undoes all of the above.
+    """
+    import http.server
+    import threading
+
+    class Redirector(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header(
+                "Location", "http://169.254.169.254/latest/meta-data/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Redirector)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # Isolate the redirect: the address checks would refuse 127.0.0.1
+    # long before the request, and they are not what is under test here.
+    monkeypatch.setattr(pollers, "_resolve_to_public", lambda host: None)
+    try:
+        with pytest.raises(ValueError, match="[Rr]edirect"):
+            pollers._fetch(
+                f"http://127.0.0.1:{server.server_address[1]}/samples",
+                {"Authorization": "secret-token"})
+    finally:
+        server.shutdown()
+
+
+def test_a_real_vendor_url_still_works(api, estate):
+    """The point is to fetch from vendors, so this must not over-refuse."""
+    headers, _ = estate
+
+    for url in ("https://api.sensorpush.com/api/v1/samples",
+                "https://example.com/readings?since=1"):
+        assert source(api, headers, url=url, name=url).status_code == 201, url
+
+
 def test_plain_http_is_refused(api, estate):
     """The headers are a credential, and http sends them in the clear."""
     headers, _ = estate

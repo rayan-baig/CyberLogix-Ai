@@ -29,12 +29,15 @@ and the next pass tries again.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import socket
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -126,13 +129,178 @@ def due(row: Dict[str, Any], now: Optional[datetime] = None) -> bool:
     return (now or utc_now()) - when >= gap
 
 
+# Hostnames that are a way back inside whatever this is running on, and
+# are names rather than addresses, so no amount of address arithmetic
+# catches them.
+BLOCKED_NAMES = frozenset({
+    "localhost", "metadata", "metadata.google.internal",
+    "instance-data", "metadata.goog",
+})
+
+
+# IPv6 ranges that carry an IPv4 address in their low 32 bits and that
+# `ipaddress` still calls global, so the embedded address is never
+# looked at unless something goes looking. ::127.0.0.1 is the plain case.
+CARRIES_AN_IPV4 = (
+    ipaddress.ip_network("::/96"),        # IPv4-compatible, deprecated
+    ipaddress.ip_network("64:ff9b::/96"), # NAT64 well-known prefix
+)
+
+
+def _embedded_ipv4(ip: ipaddress._BaseAddress):
+    """The IPv4 address riding inside an IPv6 one, if there is one.
+
+    Six ways exist to write an IPv4 address as an IPv6 address, and
+    `is_private` only knows about one of them. `::127.0.0.1` and
+    `64:ff9b::7f00:1` both reach 127.0.0.1 on a stack that routes them,
+    and both are is_global=True.
+    """
+    if not isinstance(ip, ipaddress.IPv6Address):
+        return None
+    for attr in ("ipv4_mapped", "sixtofour"):
+        found = getattr(ip, attr, None)
+        if found is not None:
+            return found
+    teredo = getattr(ip, "teredo", None)
+    if teredo:
+        return teredo[1]
+    if any(ip in net for net in CARRIES_AN_IPV4):
+        return ipaddress.ip_address(int(ip) & 0xFFFFFFFF)
+    return None
+
+
+def _reaches_the_public_internet(ip: ipaddress._BaseAddress) -> bool:
+    """Is this an address out on the internet, rather than a way back in?
+
+    `is_global` is very nearly the whole answer; the rest is spelled out
+    because a future Python widening any one of them should not quietly
+    widen this.
+    """
+
+    def plainly_public(addr) -> bool:
+        return addr.is_global and not (
+            addr.is_private or addr.is_loopback or addr.is_link_local
+            or addr.is_multicast or addr.is_reserved or addr.is_unspecified
+        )
+
+    inner = _embedded_ipv4(ip)
+    if inner is not None and not plainly_public(inner):
+        return False
+    return plainly_public(ip)
+
+
+def _as_address(host: str) -> Optional[ipaddress._BaseAddress]:
+    """The address this host already IS, or None if it is a name.
+
+    Handles the encodings that are an address to every resolver and not
+    an address to a string comparison: 2130706433 and 0x7f000001 both
+    reach 127.0.0.1.
+    """
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    try:
+        packed = int(host, 0)
+    except ValueError:
+        return None
+    if 0 <= packed <= 0xFFFFFFFF:
+        return ipaddress.ip_address(packed)
+    return None
+
+
+def host_of(url: str) -> str:
+    """The hostname, brackets stripped and lowercased.
+
+    Through urlsplit rather than by hand. Splitting on ':' is what let
+    `https://[::1]:8080/` past: it yields '[', which matches none of the
+    blocked prefixes and is not an address anybody checked.
+    """
+    host = (urlsplit(url).hostname or "").strip().rstrip(".")
+    if not host:
+        raise ValueError("That URL has no host in it.")
+    return host
+
+
+def refuse_a_host_pointing_inward(host: str) -> None:
+    """Refuse a host that is plainly local, without asking a resolver.
+
+    Save-time half: instant, offline, and wrong about a public NAME that
+    resolves somewhere private -- which is why `_resolve_to_public` runs
+    again at fetch time and is the half that actually enforces this.
+    """
+    if host in BLOCKED_NAMES or host.endswith(".localhost"):
+        raise ValueError(
+            f"'{host}' is this machine. This fetches from the public "
+            "internet only.")
+    literal = _as_address(host)
+    if literal is not None and not _reaches_the_public_internet(literal):
+        raise ValueError(
+            f"'{host}' is {literal}, a private, loopback or link-local "
+            "address. This fetches from the public internet only.")
+
+
+def _resolve_to_public(host: str) -> None:
+    """Refuse unless every address this name resolves to is public.
+
+    The save-time check reads the URL; this one asks a resolver, and it
+    is the one that matters. A name the customer controls can be public
+    in spelling and point at 169.254.169.254 -- which on a cloud host is
+    the credentials of the machine this runs on.
+
+    A name that changes answer between this call and the connect is not
+    closed by this. Closing that means connecting to the address checked
+    rather than the name, which costs the certificate check; refusing
+    redirects and re-checking every fetch is where that trade is drawn.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"'{host}' does not resolve to anything.") from exc
+    if not infos:
+        raise ValueError(f"'{host}' does not resolve to anything.")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not _reaches_the_public_internet(ip):
+            raise ValueError(
+                f"'{host}' resolves to {ip}, which is inside a private "
+                "network. This fetches from the public internet only.")
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow nothing.
+
+    Every address check above reads the URL that was saved. A redirect
+    is a second URL, chosen by the vendor after all of them have run,
+    and urllib follows it by default -- carrying the customer's vendor
+    credential to wherever it points. One 302 to 169.254.169.254 turns
+    all of this back into the hole it was.
+
+    Refusing outright rather than re-checking the new URL: a data API
+    that redirects a GET is rare, and 'we did not follow that' is a
+    better answer to debug than a redirect chain that was silently
+    walked.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError(
+            f"The vendor answered {code} and redirected to '{newurl}'. "
+            "Redirects are not followed, because the address checks ran "
+            "against the URL you saved and cannot run against one the "
+            "vendor picks afterwards. Save the final URL instead.")
+
+
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 def _fetch(url: str, headers: Dict[str, str]) -> Any:
     """One GET, decoded as JSON. Raises; the caller is what must not."""
+    _resolve_to_public(host_of(url))
     request = urllib.request.Request(url, method="GET")
     request.add_header("Accept", "application/json")
     for name, value in headers.items():
         request.add_header(name, value)
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+    with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
         raw = response.read(MAX_RESPONSE_BYTES + 1)
     if len(raw) > MAX_RESPONSE_BYTES:
         raise ValueError(
@@ -306,15 +474,11 @@ class NewSource(BaseModel):
             raise ValueError(
                 "The URL must be https. A credential sent over plain http "
                 "is readable by anything between us and the vendor.")
-        host = url.split("/", 3)[2].split("@")[-1].split(":")[0].lower()
-        blocked = ("localhost", "metadata.google.internal")
-        if (host in blocked or host.startswith("127.") or host == "::1"
-                or host.startswith("10.") or host.startswith("192.168.")
-                or host.startswith("169.254.")
-                or any(host.startswith(f"172.{n}.") for n in range(16, 32))):
-            raise ValueError(
-                f"'{host}' is a private or link-local address. This fetches "
-                "from the public internet only.")
+        # Both halves deliberately. This one is instant and offline and
+        # gives the person typing it an immediate answer; the one inside
+        # _fetch asks a resolver and is what actually holds, because a
+        # perfectly public-looking name can point anywhere.
+        refuse_a_host_pointing_inward(host_of(url))
         return url
 
     @field_validator("headers")
