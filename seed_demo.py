@@ -358,6 +358,19 @@ def seed() -> Dict[str, str]:
     )
     STORE.assign_partner(tenant, partner.partner_id)
 
+    # Two devices that turned up on their own, because that is what the
+    # setup actually looks like: you plug a sensor in and it appears.
+    # One says it reports in Fahrenheit; the other never says, so it has
+    # to be asked before it can be added.
+    import doorstep
+
+    for serial, value, unit, sends in (
+        ("ELITECH-9F2C41", 31.4, "temperature_f", 4),
+        ("TEMPSTICK-77B0", 5.1, None, 2),
+    ):
+        for _ in range(sends):
+            doorstep.knock(tenant.tenant_id, serial, value, unit)
+
     return {
         "api_key": tenant.api_key,
         "email": DEMO_EMAIL,

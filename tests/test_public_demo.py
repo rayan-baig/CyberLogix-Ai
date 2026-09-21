@@ -11,6 +11,8 @@ import os
 import pathlib
 import re
 
+import pytest
+
 import build_public_demo
 
 
@@ -269,3 +271,61 @@ def test_the_builder_has_no_deprecated_escape_sequences():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         compile(source, "build_public_demo.py", "exec")
+
+
+def test_the_calculator_default_is_named_once_and_used_once():
+    """The stub's sentence and the captured grid cannot drift apart.
+
+    The message shown for an uncaptured price combination names the two
+    numbers in prose, and the stub is %-formatted, so those numbers
+    cannot be interpolated into it. This is the thing that keeps the
+    sentence honest when somebody changes the constants.
+    """
+    import build_public_demo as b
+
+    assert f"at {b.CALC_DEFAULT_BRANCHES} branches" in b.STUB
+    assert f"{b.CALC_DEFAULT_UNITS} units each" in b.STUB
+
+
+def test_a_new_card_cannot_ship_pointing_at_nothing():
+    """The check that would have caught the Devices-knocking gap.
+
+    A card added with a GET the builder never captures renders as "Not
+    captured in this demo", which does not read as a missing snapshot to
+    anybody looking at it -- it reads as a broken feature. So the build
+    refuses instead.
+    """
+    import build_public_demo as b
+
+    real = b.PATHS
+    try:
+        b.PATHS = [p for p in real if not p.startswith("/api/doorstep")]
+        with pytest.raises(SystemExit) as refused:
+            b.check_every_panel_has_data("console.html")
+        assert "/api/doorstep" in str(refused.value)
+    finally:
+        b.PATHS = real
+
+    # And it passes as shipped, for both pages.
+    b.check_every_panel_has_data("console.html")
+    b.check_every_panel_has_data("simple.html")
+
+
+def test_the_panel_check_reads_urls_built_with_backticks():
+    """The miss that got past the first version of the check.
+
+    `/api/v1/enterprise-billing/quote` is assembled in a template
+    literal, so a reader that only saw quoted strings did not see it,
+    and the price card shipped in a demo with nothing behind it.
+    """
+    import build_public_demo as b
+
+    found = b.paths_the_page_asks_for(
+        "const a = api('/api/quoted');\n"
+        "const c = api(`/api/backticked?days=${n}`);\n"
+        "const d = api(`/api/split/${id}/packet`);\n")
+    assert found == {"/api/quoted", "/api/backticked", "/api/split"}
+
+    # And on the real page, the URL that got away the first time.
+    page = (b.ROOT / "static" / "console.html").read_text()
+    assert "/api/v1/enterprise-billing/quote" in b.paths_the_page_asks_for(page)

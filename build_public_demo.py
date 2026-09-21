@@ -49,7 +49,76 @@ PATHS = [
     "/api/benchmarks", "/api/vault/attestation",
     "/api/people/alerts", "/api/people/calendar?days=180",
     "/api/people/departures", "/api/people", "/api/v1/bridge/samples",
+    "/api/doorstep", "/api/tasks", "/api/pollers", "/api/industries",
+    "/api/sites", "/api/invoices", "/api/contracts",
+    "/api/billing/pricing",
+    "/api/autopilot/compliance?days=7",
 ]
+
+# Paths the console names but never GETs: things it posts, deletes, or
+# builds a link to. They are listed rather than guessed at, so that a
+# card added tomorrow with a new GET is a build failure instead of a
+# panel reading "Not captured in this demo".
+# The numbers the calculator card loads with. The demo stub names
+# them in a sentence it cannot interpolate into, so a test ties the
+# two together rather than trusting them to stay in step.
+CALC_DEFAULT_BRANCHES = 10
+CALC_DEFAULT_UNITS = 3
+
+NOT_FETCHED = {
+    "/api/accounts/bootstrap", "/api/accounts/login", "/api/accounts/logout",
+    "/api/accounts/me/password", "/api/autopilot/sweep",
+    "/api/autopilot/compliance.csv", "/api/claims", "/api/contracts/billing-run",
+    "/api/contracts/renew", "/api/contracts/add-ons",
+    "/api/doorstep/adopt", "/api/legal/accept",
+    "/api/licenses/me/sensors", "/api/licenses/me/temperature-unit",
+    "/api/licenses/tenants", "/api/sensor-pulse", "/api/tasks/from-meeting",
+    "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
+    "/api/v1/bridge/summarize-transcript",
+}
+
+
+def paths_the_page_asks_for(page: str) -> set:
+    """Every /api/... the page names, cut back to its fixed prefix.
+
+    Backticks included. The first version of this read only quoted
+    strings, so it did not see `/api/v1/enterprise-billing/quote?...`,
+    which is built with a template literal -- and the price card shipped
+    in a demo reading "Not captured in this demo", which is exactly the
+    failure the caller exists to prevent.
+    """
+    return {url.split("?")[0].split("${")[0].rstrip("/")
+            for url in re.findall(r"""["'`](/api/[A-Za-z0-9_./-]+[^"'`]*)["'`?]""",
+                                  page)}
+
+
+def check_every_panel_has_data(page_name: str = "console.html") -> None:
+    """Fail the build for a card whose endpoint nobody captured.
+
+    The comment above PATHS claimed this happened for a long time before
+    it did, and the cost of the gap was exactly what it predicted: a
+    Devices-knocking card shipped in a demo reading "Not captured in
+    this demo", which does not look like an uncaptured panel to anybody
+    looking at it. It looks like the feature is broken.
+    """
+    page = (ROOT / "static" / page_name).read_text()
+    asked = paths_the_page_asks_for(page)
+    captured = {p.split("?")[0] for p in PATHS}
+    # Paths with a value substituted into them are captured per-item by
+    # the loops in capture(), not by name.
+    dynamic = ("/api/console/sensor", "/api/benchmarks", "/api/voice/",
+               "/api/disposition", "/api/vault/verify",
+               "/api/v1/enterprise-billing/quote")
+    missing = sorted(
+        path for path in asked
+        if path not in captured and path not in NOT_FETCHED
+        and not path.startswith(dynamic))
+    if missing:
+        raise SystemExit(
+            f"{page_name} asks for {missing} and the demo captures no "
+            "answer, so those cards would render as 'Not captured in "
+            "this demo'. Add them to PATHS, or to NOT_FETCHED if the "
+            "page only writes to them.")
 
 BANNER = """
 <div class="demo-bar" role="note">
@@ -171,6 +240,17 @@ window.fetch = function (input, init) {
 
   const hit = DEMO[path] || DEMO[url.pathname];
   if (hit) return reply(hit.body, hit.status);
+
+  // The price calculator works out a number from whatever is typed, and
+  // a frozen page cannot. It holds one worked example per industry; any
+  // other combination says so instead of showing a price that belongs to
+  // a different estate.
+  if (url.pathname === "/api/v1/enterprise-billing/quote") {
+    return reply({ detail: "This demo holds one worked price per "
+                           + "industry, at 10 branches and 3 units each. "
+                           + "Change the industry to see others; other "
+                           + "numbers need the live app." }, 404);
+  }
   return reply({ detail: "Not captured in this demo." }, 404);
 };
 %s
@@ -205,13 +285,34 @@ def capture() -> dict:
         # standing card will ask for, and it is cheaper to capture all of
         # them than to reimplement the page's choice here.
         for sensor in overview.get("sensors", []):
-            path = f"/api/console/sensor/{sensor['sensor_id']}"
-            got = client.get(path, headers=head)
-            out[path] = {"status": got.status_code, "body": got.json()}
+            # The drawer, the food-discard guidance and the tamper-proof
+            # record: three cards that are asked for one sensor at a
+            # time, with the query the page itself sends.
+            for path in (
+                f"/api/console/sensor/{sensor['sensor_id']}",
+                f"/api/disposition/{sensor['sensor_id']}?hours=24",
+                f"/api/vault/verify/{sensor['sensor_id']}?days=30",
+            ):
+                got = client.get(path, headers=head)
+                out[path] = {"status": got.status_code, "body": got.json()}
         for vertical in sorted({s.get("industry_vertical")
                                 for s in overview.get("sensors", [])
                                 if s.get("industry_vertical")}):
             path = f"/api/benchmarks/{vertical}"
+            got = client.get(path, headers=head)
+            out[path] = {"status": got.status_code, "body": got.json()}
+
+        # The volume calculator, at the numbers the card itself loads
+        # with, for every industry in its dropdown -- so it shows a real
+        # price on open and when the industry is changed. Typing a
+        # different branch count needs the live server, and the stub
+        # below says so in words rather than answering with a price it
+        # worked out for some other estate.
+        for row in client.get("/api/industries", headers=head).json()["industries"]:
+            key = row["vertical"]
+            path = (f"/api/v1/enterprise-billing/quote?industry_vertical={key}"
+                    f"&total_branch_locations={CALC_DEFAULT_BRANCHES}"
+                    f"&units_per_branch={CALC_DEFAULT_UNITS}")
             got = client.get(path, headers=head)
             out[path] = {"status": got.status_code, "body": got.json()}
 
@@ -356,6 +457,8 @@ def main() -> None:
         # freeze the default before this line could change it. A test
         # ties this literal to the constant so the two cannot drift.
         os.environ["CYBERLOGIX_DB_PATH"] = str(pathlib.Path(tmp) / "demo.db")
+        check_every_panel_has_data("console.html")
+        check_every_panel_has_data("simple.html")
         data = capture()
         # index.html is the plain view, because the front door belongs to
         # whoever was handed the link and has never seen the product. The
