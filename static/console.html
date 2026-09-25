@@ -1386,7 +1386,8 @@ async function refresh() {
   // The contract card is where the way back lives, so it renders from
   // whatever arrived rather than needing both halves.
   if (got.contract) {
-    renderContract(got.contract, got.pipeline || { opportunities: [] });
+    renderContract(got.contract, got.pipeline || { opportunities: [] },
+                   overview && overview.tenant);
   }
   if (state.shortcutCatalogue) {
     renderShortcuts(overview.sensors, state.shortcutCatalogue);
@@ -2275,7 +2276,7 @@ const INVOICE_STATE_CLASS = { issued: "", paid: "good", void: "" };
  * end of a term, with an overdue invoice and four add-ons nobody had
  * offered them, and the console would show none of it.
  */
-function renderContract(contract, pipeline) {
+function renderContract(contract, pipeline, tenant) {
   const body = $("contract-body");
   const note = $("contract-note");
   const c = contract.contract;
@@ -2291,6 +2292,22 @@ function renderContract(contract, pipeline) {
             : ""}
        </div>`
     : "";
+
+  // A trial cannot sign: POST /api/contracts refuses one with a 409 until
+  // the licence is on a paid plan. The form used to be drawn for trials
+  // anyway -- the one money control a trial could see was one that
+  // refused trials -- so it pointed at a wall. Point at the door instead.
+  if (!c && tenant && tenant.plan === "trial") {
+    note.textContent = "after the trial";
+    body.innerHTML =
+      `<div class="empty" style="padding:18px 0">
+         Contracts start once the account is off the trial.
+         <span class="sub">Move onto a paid plan under "What you pay" first
+         — then a term can be signed here and invoices issue on their
+         own.</span>
+       </div>` + behind + opportunities(pipeline, null);
+    return;
+  }
 
   if (!c) {
     note.textContent = "not signed";

@@ -67,3 +67,56 @@ def test_the_confirmation_survives_the_refresh_it_triggers():
 
     assert "state.justUpgradedTo" in block
     assert "state.justUpgradedTo = plan" in CONSOLE
+
+
+# --- 1b: the contract form, shown only to those it accepts -----------------
+
+
+def _render_contract():
+    body = CONSOLE[CONSOLE.index("function renderContract"):]
+    return body[:body.index("\nfunction ")]
+
+
+def test_a_trial_really_cannot_sign(api, tenant_factory, owner_headers):
+    """The premise the UI branch rests on, checked against the server.
+
+    If contracts ever start accepting trials, the branch below is hiding a
+    form that would work, and should go.
+    """
+    headers, _ = tenant_factory(plan="trial")
+    owner = owner_headers(headers)
+
+    refused = api.post("/api/contracts", headers=owner,
+                       json={"term_years": 1, "annual_prepay": False})
+
+    assert refused.status_code == 409
+
+
+def test_a_trial_is_shown_the_way_forward_not_the_form_that_refuses_it():
+    """The one money control a trial could see was one that refused trials.
+
+    Verified in Chromium: a trial now sees where to go instead of a form,
+    and after upgrading the form appears and signing through it produces a
+    contract the server reports back.
+    """
+    fn = _render_contract()
+    # The guard itself, exactly, and before the branch that draws the form.
+    # Checking only what the branch says passed with the branch switched off:
+    # `if (false && ...)` keeps every word of it and runs none.
+    guard = 'if (!c && tenant && tenant.plan === "trial") {'
+    assert guard in fn, "the trial branch is missing or cannot run"
+    assert fn.index(guard) < fn.index('id="contract-form"'), (
+        "the form is drawn before the trial branch gets a chance to refuse it")
+
+    trial = fn[fn.index(guard):]
+    trial = trial[:trial.index("return;")]
+    assert "contract-form" not in trial, "the trial branch still draws the form"
+    assert "What you pay" in trial, "the trial is not told where to go instead"
+
+
+def test_the_contract_card_is_told_what_plan_the_account_is_on():
+    """Without the tenant it cannot tell a trial from anyone else, and the
+    trial branch above never runs."""
+    assert "function renderContract(contract, pipeline, tenant)" in CONSOLE
+    assert re.search(r"renderContract\([^;]*overview && overview\.tenant\)",
+                     CONSOLE, re.S)
