@@ -1356,7 +1356,7 @@ async function refresh() {
   renderVault();
   loadBenchmarks(overview);
   if (state.drawerSensor) openDrawer(state.drawerSensor, { quiet: true });
-  renderBilling(overview.subscription, overview.roi);
+  renderBilling(overview.subscription, overview.roi, overview.tenant);
 
   const paint = (key, fn) => {
     if (got[key] === undefined) { panelUnavailable(key, failed[key]); return; }
@@ -2090,7 +2090,88 @@ function renderAudit(trail) {
 
 /* Who gets woken, in the order the ladder tries them. */
 /* What the estate costs, and what answering alerts has been worth. */
-function renderBilling(subscription, roi) {
+/* The trial's way out.
+ *
+ * The conversion emails have always said "move the account onto Growth —
+ * it takes one click", and until now there was no click: no page in this
+ * console called /api/licenses/me/plan, so the only route from a finished
+ * trial to a paying customer ran through somebody answering an email. The
+ * endpoint existed the whole time.
+ *
+ * Owners only, because that is what the endpoint requires; anyone else is
+ * told who can do it rather than shown a button that 403s. */
+function upgradeBlock(tenant) {
+  // The confirmation has to be drawn here, not written into the button's
+  // result line: a successful upgrade refreshes the whole console, the card
+  // is rebuilt, and the trial block -- line included -- is no longer drawn
+  // because the account is no longer a trial. Measured in a browser: the
+  // plan changed on the server and the owner saw the section simply vanish.
+  if (tenant && state.justUpgradedTo && tenant.plan === state.justUpgradedTo) {
+    return `<div style="border-top:1px solid var(--border);margin-top:9px;
+                        padding-top:9px;font-size:12.5px">
+         <span class="s-good">You are on ${esc(tenant.plan_name || tenant.plan)}
+           now.</span>
+         <span style="color:var(--muted)">Phone-call escalation and the
+           forecast are on. Your first invoice follows by email.</span>
+       </div>`;
+  }
+  if (!tenant || tenant.plan !== "trial") return "";
+
+  if (!(state.user && state.user.role === "owner")) {
+    return `<div style="border-top:1px solid var(--border);margin-top:9px;
+                        padding-top:9px;font-size:12px;color:var(--muted)">
+         This is a trial. An owner on the account can move it onto a paid
+         plan from here.
+       </div>`;
+  }
+
+  return `<div style="border-top:1px solid var(--border);margin-top:9px;
+                      padding-top:10px">
+      <div style="font-size:12.5px;color:var(--ink-2);margin-bottom:3px">
+        Move off the trial</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">
+        Unlocks phone-call escalation and the 12-hour forecast. You are
+        invoiced afterwards — nothing is charged here and no card is asked
+        for.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" data-upgrade="growth">
+          Growth · 50 units</button>
+        <button class="btn btn-sm" data-upgrade="enterprise">
+          Enterprise · 1000 units</button>
+      </div>
+      <div id="upgrade-out" style="font-size:11.5px;margin-top:7px"></div>
+    </div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-upgrade]");
+  if (!button) return;
+  const plan = button.getAttribute("data-upgrade");
+  const out = $("upgrade-out");
+  const buttons = [...document.querySelectorAll("[data-upgrade]")];
+  buttons.forEach((b) => { b.disabled = true; });
+  if (out) out.innerHTML = `<span style="color:var(--muted)">Moving…</span>`;
+  try {
+    await api("/api/licenses/me/plan", {
+      method: "POST",
+      body: JSON.stringify({ plan }),
+    });
+    // Long enough to be read, short enough not to become a permanent banner.
+    state.justUpgradedTo = plan;
+    setTimeout(() => { state.justUpgradedTo = null; }, 30000);
+    logToConsole(`Plan changed to ${plan}.`, "ok");
+    await refresh();
+  } catch (err) {
+    // Left enabled: a seat-count refusal is something they can act on and
+    // try again, and a disabled button gives them nothing to try again with.
+    buttons.forEach((b) => { b.disabled = false; });
+    if (out) {
+      out.innerHTML = `<span class="s-warning">${esc(readableError(err))}</span>`;
+    }
+  }
+});
+
+function renderBilling(subscription, roi, tenant) {
   $("bill-note").textContent = subscription.billable
     ? `${subscription.units_total} billable units`
     : "trial — not charged";
@@ -2099,7 +2180,7 @@ function renderBilling(subscription, roi) {
     $("bill-body").innerHTML =
       `<div class="empty" style="padding:14px">
          No units registered, so nothing to bill.
-       </div>`;
+       </div>` + upgradeBlock(tenant);
     return;
   }
 
@@ -2141,7 +2222,8 @@ function renderBilling(subscription, roi) {
        </div>`
     + `<div style="text-align:right;font-size:11.5px;color:var(--muted)">
          $${subscription.annual_total_usd.toLocaleString()} a year</div>`
-    + saved;
+    + saved
+    + upgradeBlock(tenant);
 }
 
 function renderRoster(roster) {
