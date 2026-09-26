@@ -85,15 +85,13 @@
         <input id="ob-password" type="password" autocomplete="new-password"
                minlength="10" required>
       </div>
-      <div class="field">
-        <label for="ob-plan">Plan</label>
-        <select id="ob-plan">
-          <option value="trial">Trial — 5 sensors</option>
-          <option value="growth" selected>Growth — 50 sensors, voice + forecasting</option>
-          <option value="enterprise">Enterprise — 1000 sensors</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" type="submit">Create account</button>
+      <button class="btn btn-primary" type="submit">Start the trial</button>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0">
+        A 14-day trial on 5 sensors. Move onto a paid plan from inside the
+        console whenever you are ready. By starting a trial you accept the
+        <a href="/legal">Master Subscription Agreement</a> and the
+        <a href="/legal#privacy">privacy statement</a>.
+      </p>
     </form>
 
     <div class="gate-switch">
@@ -988,38 +986,29 @@ $("onboard-form").addEventListener("submit", async (event) => {
     const email = $("ob-email").value.trim();
     const password = $("ob-password").value;
 
-    // Three steps: create the tenant, promote its first owner with the
-    // machine key, then sign that owner in.
-    const created = await api("/api/licenses/tenants", {
+    // Through the same front door as /signup, not around it.
+    //
+    // This used to be three calls -- create a tenant at
+    // /api/licenses/tenants, bootstrap its owner, sign in -- with a plan
+    // picker defaulting to Growth. Creating anything but a trial there
+    // needs the operator's provisioning key, which a browser never has, so
+    // the default choice was a guaranteed 403 and only "Trial" ever
+    // worked. Even that went round signup: no rate limit, no welcome, no
+    // nurture ladder, and no record that the terms were accepted.
+    const made = await api("/api/signup", {
       method: "POST",
       body: JSON.stringify({
         company_name: $("ob-company").value.trim(),
-        contact_name: $("ob-name").value.trim(),
-        contact_phone: $("ob-phone").value.trim(),
-        contact_email: email,
-        plan: $("ob-plan").value,
-      }),
-    });
-
-    await api("/api/accounts/bootstrap", {
-      method: "POST",
-      headers: { "X-CyberLogix-Key": created.api_key },
-      body: JSON.stringify({
-        email,
         full_name: $("ob-name").value.trim(),
+        contact_phone: $("ob-phone").value.trim(),
+        email,
         password,
-        role: "owner",
       }),
     });
 
-    const signedIn = await api("/api/accounts/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-
-    toast("Account created. Keep your API key for sensors and webhooks.", "ok");
-    console.info("Tenant API key (for hardware and webhooks):", created.api_key);
-    await enter(signedIn.token, signedIn.user);
+    toast("Trial started. Keep your API key for sensors and webhooks.", "ok");
+    console.info("Tenant API key (for hardware and webhooks):", made.api_key);
+    await enter(made.token, made.user);
   } catch (err) {
     toast(err.message, "err");
   } finally {

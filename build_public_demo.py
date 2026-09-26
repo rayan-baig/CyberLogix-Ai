@@ -73,7 +73,8 @@ NOT_FETCHED = {
     "/api/doorstep/adopt", "/api/legal/accept",
     "/api/licenses/me/plan", "/api/licenses/me/sensors",
     "/api/licenses/me/temperature-unit",
-    "/api/licenses/tenants", "/api/sensor-pulse", "/api/tasks/from-meeting",
+    "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
+    "/api/tasks/from-meeting",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
 }

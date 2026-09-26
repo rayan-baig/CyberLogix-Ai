@@ -120,3 +120,61 @@ def test_the_contract_card_is_told_what_plan_the_account_is_on():
     assert "function renderContract(contract, pipeline, tenant)" in CONSOLE
     assert re.search(r"renderContract\([^;]*overview && overview\.tenant\)",
                      CONSOLE, re.S)
+
+
+# --- 1c: the console's own sign-up form -----------------------------------
+
+
+def _onboard_handler():
+    body = CONSOLE[CONSOLE.index('$("onboard-form").addEventListener'):]
+    return body[:body.index("\n});\n")]
+
+
+def _onboard_form():
+    body = CONSOLE[CONSOLE.index('<form id="onboard-form"'):]
+    return body[:body.index("</form>")]
+
+
+def test_a_browser_cannot_create_a_paid_tenant(api):
+    """The premise. Anything but a trial needs the operator's provisioning
+    key, which a browser never holds -- so a form defaulting to Growth was a
+    guaranteed 403, and only its third option ever worked."""
+    refused = api.post("/api/licenses/tenants", json={
+        "company_name": "Gate Co", "contact_name": "Gate Owner",
+        "contact_phone": "+15550111", "contact_email": "gate@example.com",
+        "plan": "growth"})
+
+    assert refused.status_code == 403
+
+
+def test_the_form_offers_no_plan_it_cannot_create():
+    assert 'id="ob-plan"' not in CONSOLE
+    assert "ob-plan" not in _onboard_handler()
+
+
+def test_the_form_goes_through_the_front_door():
+    """Signup, not round it.
+
+    The old path created the tenant directly and so skipped everything
+    signup does besides: the rate limit, the welcome, the nurture ladder,
+    and the record that the terms were accepted. Verified: the server now
+    sees one POST to /api/signup and the account's four agreements read
+    back as accepted.
+    """
+    handler = _onboard_handler()
+
+    # Calls, not mentions: the comment beside the fix names the old
+    # endpoints on purpose, to say why they are gone.
+    assert re.search(r'api\(\s*"/api/signup"', handler)
+    assert not re.search(r'api\(\s*"/api/licenses/tenants"', handler)
+    assert not re.search(r'api\(\s*"/api/accounts/bootstrap"', handler)
+
+
+def test_the_form_says_what_is_being_accepted():
+    """Signup records acceptance of the agreements. A form that submits to
+    it without saying so would be recording acceptance of terms nobody
+    was shown."""
+    form = _onboard_form()
+
+    assert 'href="/legal"' in form
+    assert "accept" in form.lower()
