@@ -143,7 +143,13 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "restaurant": {
         "unit": "location",
-        "monthly_usd": 999.0,
+        # Per shop, however many thermometers are inside it. This was $999
+        # and counted sensors while calling each one a "location", so one
+        # sandwich shop with a freezer, a cooler and a reach-in was invoiced
+        # "3 locations" at $2,997 a month. $249 per location is the price
+        # set for a single site; `per_site` is what makes it per location.
+        "monthly_usd": 249.0,
+        "per_site": True,
         "pitch": (
             "Prevents $15,000 walk-in freezer meat/seafood spoilage and "
             "automates health department logs."
@@ -258,6 +264,57 @@ def unit_price(vertical: str) -> float:
     return PRICE_BOOK[vertical]["monthly_usd"]
 
 
+def per_site(vertical: str) -> bool:
+    """Billed per location rather than per sensor.
+
+    Every other sector is priced by the asset -- a rack, a vessel, a tank --
+    and each of those carries one sensor. A restaurant is priced by the
+    shop, and a shop has several.
+    """
+    return bool(PRICE_BOOK.get(vertical, {}).get("per_site"))
+
+
+def branches(sensors) -> Dict[str, Any]:
+    """The locations one sector's sensors cover, and when each first appeared.
+
+    A location is a site. Sensors not assigned to one are counted as a
+    single location between them -- which is what a one-shop customer who
+    never set up sites is -- but only when none of the sector's sensors has
+    a site. Once any do, an unassigned sensor is taken to belong to a shop
+    already counted and is not billed as a new one: charging a customer
+    for a location because a thermometer was not filed under it is the
+    wrong way round to be mistaken.
+
+    Returned as {location key: earliest registration}, so the part-period
+    billing can tell a new shop from a new thermometer in an old one.
+    """
+    sited: Dict[str, List[Any]] = {}
+    unsited: List[Any] = []
+    for sensor in sensors:
+        if sensor.site_id:
+            sited.setdefault(sensor.site_id, []).append(sensor.registered_at)
+        else:
+            unsited.append(sensor.registered_at)
+    groups = sited or ({"": unsited} if unsited else {})
+    return {
+        key: min((t for t in times if t is not None), default=None)
+        for key, times in groups.items()
+    }
+
+
+def unassigned_alongside_sites(sensors, tenant_has_sites: bool = False) -> int:
+    """Sensors not filed under a location, where locations exist to file them.
+
+    Named on the invoice when the account has sites set up -- whether or
+    not any of this sector's sensors are in one -- because that is the
+    case where the location count can be lower than the shops the
+    customer actually has, and they should be able to see why.
+    """
+    if not (tenant_has_sites or any(s.site_id for s in sensors)):
+        return 0
+    return sum(1 for s in sensors if not s.site_id)
+
+
 def plural(vertical: str, count: int) -> str:
     unit = PRICE_BOOK[vertical]["unit"]
     if count == 1:
@@ -269,15 +326,34 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
     """Price a tenant's estate from the sensors actually registered."""
     sensors = STORE.sensors_for(tenant.tenant_id)
 
-    counts: Dict[str, int] = {}
+    by_vertical: Dict[str, List[Any]] = {}
     for sensor in sensors:
-        counts[sensor.industry_vertical] = counts.get(sensor.industry_vertical, 0) + 1
+        by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
+
+    # What each sector is billed on: its locations, or its sensors.
+    counts: Dict[str, int] = {
+        vertical: len(branches(group)) if per_site(vertical) else len(group)
+        for vertical, group in by_vertical.items()
+    }
 
     lines: List[Dict[str, Any]] = []
     for vertical, count in sorted(
         counts.items(), key=lambda kv: -unit_price(kv[0]) * kv[1]
     ):
         entry = PRICE_BOOK[vertical]
+        description = f"{count} {plural(vertical, count)}"
+        if per_site(vertical):
+            group = by_vertical[vertical]
+            description += (
+                f" ({len(group)} sensor{'' if len(group) == 1 else 's'})")
+            loose = unassigned_alongside_sites(
+                group, tenant_has_sites=bool(STORE.sites_for(tenant.tenant_id)))
+            if loose:
+                # Said on the invoice rather than billed or silently
+                # dropped, so the customer can see why the count is what
+                # it is and file the sensor under its shop.
+                description += (
+                    f", {loose} not assigned to a {entry['unit']}")
         lines.append(
             {
                 "vertical": vertical,
@@ -286,7 +362,7 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
                 "units": count,
                 "unit_price_usd": entry["monthly_usd"],
                 "line_total_usd": round(entry["monthly_usd"] * count, 2),
-                "description": f"{count} {plural(vertical, count)}",
+                "description": description,
             }
         )
 

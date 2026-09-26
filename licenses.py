@@ -391,6 +391,14 @@ def register_sensor(
     serial = (payload.external_device_sn or "").strip() or None
     cap = tenant.entitlements()["max_sensors"]
 
+    from pricing import build_subscription as _priced
+
+    # Measured, not assumed. What one more sensor costs used to be read off
+    # the rate card, which is right for a rack and wrong for a restaurant:
+    # a thermometer added to a shop already billed costs nothing, and was
+    # announced as a whole location's price.
+    monthly_before = _priced(tenant)["monthly_total_usd"]
+
     # One call, one lock. Asking "is there a seat?" and then taking it as
     # two separate store calls let twenty concurrent registrations be
     # granted nine seats on a five-seat licence.
@@ -414,6 +422,7 @@ def register_sensor(
     from pricing import PRICE_BOOK, build_subscription
 
     entry = PRICE_BOOK[vertical]
+    monthly_after = build_subscription(tenant)["monthly_total_usd"]
     return {
         "sensor": sensor.public(),
         # Shown exactly once, like the tenant key. This is what belongs on
@@ -431,8 +440,8 @@ def register_sensor(
         "seats_total": cap,
         "billing": {
             "unit": entry["unit"],
-            "adds_monthly_usd": entry["monthly_usd"],
-            "new_monthly_total_usd": build_subscription(tenant)["monthly_total_usd"],
+            "adds_monthly_usd": round(monthly_after - monthly_before, 2),
+            "new_monthly_total_usd": monthly_after,
         },
     }
 
@@ -538,17 +547,21 @@ def decommission_sensor(
             detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
         )
 
-    STORE.remove_sensor(sensor_id)
-    from pricing import PRICE_BOOK, build_subscription
+    from pricing import build_subscription
 
-    entry = PRICE_BOOK[sensor.industry_vertical]
+    # Measured either side of the removal, for the reason given on
+    # registration: taking one thermometer out of a shop that keeps others
+    # does not take the shop's price off the bill.
+    monthly_before = build_subscription(tenant)["monthly_total_usd"]
+    STORE.remove_sensor(sensor_id)
+    monthly_after = build_subscription(tenant)["monthly_total_usd"]
     return {
         "message": f"Sensor '{sensor_id}' decommissioned.",
         "seats_used": STORE.seat_count(tenant.tenant_id),
         "seats_total": tenant.entitlements()["max_sensors"],
         "billing": {
-            "removes_monthly_usd": entry["monthly_usd"],
-            "new_monthly_total_usd": build_subscription(tenant)["monthly_total_usd"],
+            "removes_monthly_usd": round(monthly_before - monthly_after, 2),
+            "new_monthly_total_usd": monthly_after,
         },
     }
 

@@ -22,7 +22,8 @@ def test_price_book_matches_the_agreed_rate_card(api):
         "private_aviation": (1999.0, "bay"),
         "medical_lab": (1499.0, "vault"),
         "country_club": (1499.0, "kitchen"),
-        "restaurant": (999.0, "location"),
+        # Per shop, whatever is inside it -- the price set for a single site.
+        "restaurant": (249.0, "location"),
         "cybersecurity": (899.0, "rack"),
         "solar_infrastructure": (899.0, "enclosure"),
         "logistics": (749.0, "reefer truck"),
@@ -88,7 +89,7 @@ def test_trial_is_priced_but_not_charged(api, tenant_factory, sensor_factory):
 
     invoice = api.get("/api/billing", headers=headers).json()
     assert invoice["billable"] is False
-    assert invoice["monthly_total_usd"] == 999.0
+    assert invoice["monthly_total_usd"] == 249.0
     assert invoice["effective_monthly_usd"] == 0.0
     assert "not charged" in invoice["note"]
 
@@ -117,7 +118,7 @@ def test_decommissioning_reports_what_it_removes(
 
     resp = api.delete("/api/licenses/me/sensors/RACK-01", headers=headers).json()
     assert resp["billing"]["removes_monthly_usd"] == 899.0
-    assert resp["billing"]["new_monthly_total_usd"] == 999.0
+    assert resp["billing"]["new_monthly_total_usd"] == 249.0
 
 
 def test_industry_picker_carries_the_price(api):
@@ -146,8 +147,9 @@ def test_roi_counts_only_answered_incidents(
     answered = api.get("/api/billing/roi", headers=headers).json()
     assert answered["quantified_saves"] == 1
     assert answered["loss_avoided_usd"] == 15000.0
-    assert answered["subscription_cost_usd"] == 999.0
-    assert answered["return_multiple"] == pytest.approx(15.0, abs=0.1)
+    assert answered["subscription_cost_usd"] == 249.0
+    # One saved walk-in against one month: $15,000 / $249.
+    assert answered["return_multiple"] == pytest.approx(15000.0 / 249.0, abs=0.1)
 
 
 def test_roi_never_invents_a_figure(api, tenant_factory, sensor_factory):
@@ -274,15 +276,20 @@ def test_the_deal_ties_setup_term_and_add_ons_together(
     api, operator_factory, sensor_factory
 ):
     headers, _, _ = operator_factory(plan="enterprise")
-    api.post("/api/sites", headers=headers, json={"name": "Boca"})
-    api.post("/api/sites", headers=headers, json={"name": "Boynton"})
-    for n in range(2):
+    shops = [api.post("/api/sites", headers=headers, json={"name": name}).json()
+             for name in ("Boca", "Boynton")]
+    for n, shop in enumerate(shops):
         sensor_factory(headers, sensor_id=f"FRZ-{n}", vertical="restaurant")
+        # Filed under its shop. Restaurants bill per location, and an
+        # unfiled freezer is not counted as a location of its own.
+        site_id = (shop.get("site") or shop)["site_id"]
+        api.post(f"/api/sites/{site_id}/sensors", headers=headers,
+                 json={"sensor_id": f"FRZ-{n}"})
 
     deal = api.get("/api/billing/deal?years=3&annual_prepay=true"
                    "&include_add_ons=vault,benchmarks", headers=headers).json()
 
-    assert deal["subscription_monthly_usd"] == 2 * 999.0
+    assert deal["subscription_monthly_usd"] == 2 * 249.0
     assert deal["add_ons_monthly_usd"] == 499.0 + 299.0
     assert deal["setup"]["sites_billed"] == 2
     assert deal["setup"]["one_time_usd"] == 3000.0

@@ -221,22 +221,51 @@ def arrears_lines(
     if span <= 0:
         return []
 
-    # A sensor registered before the window opened was on the invoice that
-    # opened it; one registered after it closed belongs to this period,
-    # which this invoice already charges in full.
-    late: Dict[str, List[float]] = {}
-    for sensor in STORE.sensors_for(tenant.tenant_id):
-        joined = sensor.registered_at
+    from pricing import branches, per_site
+
+    def owed(joined) -> float:
+        # A thing registered before the window opened was on the invoice
+        # that opened it; one registered after it closed belongs to this
+        # period, which this invoice already charges in full.
         if joined is None or joined <= window_open or joined >= window_close:
-            continue
-        unbilled = (window_close - joined).total_seconds() / span
-        # A sensor registered in the last moments of the period owes a
-        # fraction of a cent. Counting it inflates the line's unit count
-        # against an amount it did not contribute to, which reads on the
-        # invoice as an overcharge and invites the dispute.
-        if unbilled <= 0:
-            continue
-        late.setdefault(sensor.industry_vertical, []).append(unbilled)
+            return 0.0
+        # Registered in the last moments of the period, it owes a fraction
+        # of a cent. Counting it inflates the line's unit count against an
+        # amount it did not contribute to, which reads on the invoice as an
+        # overcharge and invites the dispute.
+        return max((window_close - joined).total_seconds() / span, 0.0)
+
+    by_vertical: Dict[str, List[Any]] = {}
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
+
+    late: Dict[str, List[float]] = {}
+    # Per-location sectors, sensor by sensor: what a per-unit add-on is owed
+    # on. The subscription is caught up per late shop, but an add-on priced
+    # "per covered unit" is charged per sensor on the main invoice, so its
+    # part period has to be too -- or a thermometer added to an existing
+    # shop runs the add-on for half a month and nothing charges for it.
+    late_sensors: Dict[str, List[float]] = {}
+    for vertical, group in by_vertical.items():
+        if per_site(vertical):
+            for sensor in group:
+                unbilled = owed(sensor.registered_at)
+                if unbilled > 0:
+                    late_sensors.setdefault(vertical, []).append(unbilled)
+            # A location is late when its first sensor is. Another sensor in
+            # a shop that was already billed is not a new shop, and charging
+            # it as one is the per-sensor bug this pricing exists to end.
+            # Only sensors that existed by the close of the window decide
+            # what the locations were in it.
+            present = [s for s in group
+                       if s.registered_at is None or s.registered_at < window_close]
+            joins = branches(present).values()
+        else:
+            joins = [s.registered_at for s in group]
+        for joined in joins:
+            unbilled = owed(joined)
+            if unbilled > 0:
+                late.setdefault(vertical, []).append(unbilled)
 
     from pricing import ADD_ONS
 
@@ -260,7 +289,9 @@ def arrears_lines(
     for vertical, fractions in sorted(late.items()):
         if vertical not in PRICE_BOOK:
             continue
-        rate = (PRICE_BOOK[vertical]["monthly_usd"] + per_unit_rate) * multiplier
+        # Per-location sectors carry the add-on on their own line, below.
+        folded = 0.0 if per_site(vertical) else per_unit_rate
+        rate = (PRICE_BOOK[vertical]["monthly_usd"] + folded) * multiplier
         # Priced at the *previous* period's rate, because that is the
         # period being caught up on. Using this period's rate would apply
         # an escalator to days before it took effect.
@@ -280,13 +311,43 @@ def arrears_lines(
                     f"{INDUSTRY_PROFILES[vertical]['name']} — {count} "
                     f"{plural(vertical, count)} added mid-period, "
                     f"part period to {window_close.date().isoformat()}"
-                    + (" (incl. per-unit add-ons)" if per_unit_rate else "")
+                    + (" (incl. per-unit add-ons)" if folded else "")
                 ),
                 "quantity": count,
                 "unit_price_usd": round(rate, 2),
                 "amount_usd": amount,
             }
         )
+
+    # The per-unit add-ons on per-location sectors, caught up sensor by
+    # sensor. Its own line because it has its own count: two thermometers
+    # added to a shop that already existed owe no location, and do owe the
+    # add-on on two sensors.
+    if per_unit_rate:
+        addon_rate = per_unit_rate * multiplier
+        for vertical, fractions in sorted(late_sensors.items()):
+            billable = [
+                f for f in fractions
+                if round(addon_rate * f * sub.months_per_period, 2) >= 0.01
+            ]
+            amount = round(addon_rate * sum(billable) * sub.months_per_period, 2)
+            if amount <= 0:
+                continue
+            count = len(billable)
+            lines.append(
+                {
+                    "kind": "arrears",
+                    "description": (
+                        f"{INDUSTRY_PROFILES[vertical]['name']} — per-unit "
+                        f"add-ons on {count} sensor{'' if count == 1 else 's'} "
+                        f"added mid-period, part period to "
+                        f"{window_close.date().isoformat()}"
+                    ),
+                    "quantity": count,
+                    "unit_price_usd": round(addon_rate, 2),
+                    "amount_usd": amount,
+                }
+            )
     return lines
 
 

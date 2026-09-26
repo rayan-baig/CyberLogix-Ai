@@ -190,9 +190,16 @@ def quote(
             detail="units_per_branch must be at least 1.",
         )
 
+    from pricing import per_site
+
     entry = PRICE_BOOK[vertical]
     units = total_branch_locations * units_per_branch
-    per_unit_monthly = round(entry["monthly_usd"] * units, 2)
+    # What the rate card actually bills on. A per-location sector is billed
+    # one price per branch whatever is inside it, so multiplying by sensors
+    # per branch quoted a rate card no customer is ever charged -- and made
+    # the volume contract look like it was saving them money it was not.
+    billed = total_branch_locations if per_site(vertical) else units
+    per_unit_monthly = round(entry["monthly_usd"] * billed, 2)
     cluster_total = cluster_monthly(total_branch_locations, entry["monthly_usd"])
 
     cheaper = "per_unit" if per_unit_monthly <= cluster_total else "enterprise_volume"
@@ -211,7 +218,7 @@ def quote(
         "per_unit": {
             "model": "Per unit from the rate card",
             "unit": entry["unit"],
-            "units": units,
+            "units": billed,
             "unit_price_usd": entry["monthly_usd"],
             "monthly_usd": per_unit_monthly,
             "annual_usd": round(per_unit_monthly * 12, 2),

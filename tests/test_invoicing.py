@@ -4,12 +4,19 @@ Two properties carry the whole module: an issued invoice's figures never
 move, and its number is never reused. Everything else is bookkeeping.
 """
 
+# Racks, because these tests are about invoice arithmetic -- N units at a
+# unit price -- and a rack is billed per sensor. Restaurants bill per
+# location now, so N freezers in one shop is one line of one; these tests
+# would stop testing what they were written for.
+RATE = 899.0
+
+
 def estate(api, operator_factory, sensor_factory, units=2, sites=1):
     headers, _, _ = operator_factory(plan="enterprise")
     for n in range(sites):
         api.post("/api/sites", headers=headers, json={"name": f"Site {n}"})
     for n in range(units):
-        sensor_factory(headers, sensor_id=f"FRZ-{n}", vertical="restaurant")
+        sensor_factory(headers, sensor_id=f"RACK-{n}", vertical="cybersecurity")
     return headers
 
 
@@ -51,7 +58,7 @@ def test_an_invoice_totals_its_lines(api, operator_factory, sensor_factory):
 
     assert invoice["state"] == "issued"
     assert invoice["lines"][0]["quantity"] == 3
-    assert invoice["total_usd"] == 3 * 999.0
+    assert invoice["total_usd"] == 3 * RATE
     assert invoice["total_usd"] == round(
         sum(line["amount_usd"] for line in invoice["lines"]), 2)
 
@@ -81,7 +88,7 @@ def test_add_ons_and_setup_appear_as_their_own_lines(
     assert all(ADD_ONS[key]["basis"] == "per estate"
                for key in ("vault", "benchmarks")), (
         "a per-unit add-on would need multiplying by the unit count here")
-    assert invoice["total_usd"] == round(2 * 999.0 + add_ons + 3000.0, 2)
+    assert invoice["total_usd"] == round(2 * RATE + add_ons + 3000.0, 2)
 
 
 def test_the_figures_never_move_after_issue(
@@ -94,7 +101,7 @@ def test_the_figures_never_move_after_issue(
 
     # The estate doubles the next morning.
     for n in range(2, 6):
-        sensor_factory(headers, sensor_id=f"FRZ-{n}", vertical="restaurant")
+        sensor_factory(headers, sensor_id=f"RACK-{n}", vertical="cybersecurity")
 
     reread = api.get(f"/api/invoices/{invoice['invoice_id']}",
                      headers=headers).json()
@@ -103,7 +110,7 @@ def test_the_figures_never_move_after_issue(
 
     # And the next invoice reflects the new estate.
     later = issue(api, headers)
-    assert later["total_usd"] == 6 * 999.0
+    assert later["total_usd"] == 6 * RATE
 
 
 def test_numbers_are_sequential_and_never_reused(
@@ -170,19 +177,19 @@ def test_a_short_payment_leaves_the_invoice_open(
     $47,999 out of the ledger entirely.
     """
     headers = estate(api, operator_factory, sensor_factory, units=2)
-    invoice = issue(api, headers)          # 2 x $999 = $1,998
+    invoice = issue(api, headers)          # 2 x $899 = $1,798
 
     out = settle(api, headers, invoice['invoice_id'], **{"reference": "WIRE-8823", "amount_usd": 1000.0}).json()
     assert out["invoice"]["state"] == "part_paid"
     assert out["invoice"]["amount_paid_usd"] == 1000.0
-    assert out["invoice"]["balance_usd"] == 998.0
+    assert out["invoice"]["balance_usd"] == 2 * RATE - 1000.0
     assert out["invoice"]["open"] is True
-    assert "998.00 is still outstanding" in out["message"]
+    assert f"{2 * RATE - 1000.0:,.2f} is still outstanding" in out["message"]
 
     # And it is still being chased.
     ledger = api.get("/api/invoices", headers=headers).json()
     assert ledger["outstanding_count"] == 1
-    assert ledger["outstanding_usd"] == 998.0
+    assert ledger["outstanding_usd"] == 2 * RATE - 1000.0
     assert ledger["part_paid_count"] == 1
 
 
@@ -194,7 +201,7 @@ def test_the_balance_settles_on_the_second_payment(
     iid = invoice["invoice_id"]
 
     settle(api, headers, iid, **{"reference": "WIRE-1", "amount_usd": 1000.0})
-    out = settle(api, headers, iid, **{"reference": "WIRE-2", "amount_usd": 998.0}).json()
+    out = settle(api, headers, iid, **{"reference": "WIRE-2", "amount_usd": 2 * RATE - 1000.0}).json()
 
     assert out["invoice"]["state"] == "paid"
     assert out["invoice"]["balance_usd"] == 0.0
@@ -218,7 +225,7 @@ def test_a_part_paid_invoice_still_goes_overdue(
 
     ledger = api.get("/api/invoices", headers=headers).json()
     assert ledger["overdue_count"] == 1
-    assert ledger["outstanding_usd"] == 1498.0
+    assert ledger["outstanding_usd"] == 2 * RATE - 500.0
 
 
 def test_a_paid_invoice_cannot_be_voided(
@@ -265,7 +272,7 @@ def test_the_ledger_reports_what_is_outstanding(
     ledger = api.get("/api/invoices", headers=headers).json()
     assert ledger["count"] == 2
     assert ledger["outstanding_count"] == 1
-    assert ledger["outstanding_usd"] == 2 * 999.0
+    assert ledger["outstanding_usd"] == 2 * RATE
     assert ledger["overdue_count"] == 0
 
 

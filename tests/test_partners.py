@@ -99,13 +99,14 @@ def test_a_partner_sees_their_own_book_and_its_run_rate(
     assert out["accounts"] == 1
     assert out["units"] == 3
     assert out["book"][0]["company_name"] == "Bella Vista"
-    assert out["book"][0]["run_rate_monthly_usd"] == 3 * 999.0
+    # Three freezers in one restaurant: one location, $249.
+    assert out["book"][0]["run_rate_monthly_usd"] == 249.0
 
 
 def test_commission_is_paid_on_cash_received_not_on_the_rate_card(
     api, admin, operator_factory, sensor_factory
 ):
-    """The account is worth $2,997 a month. It has paid nothing.
+    """The account is worth $249 a month. It has paid nothing.
 
     Paying a partner on the rate card means paying 20% of a number that
     never arrived — every month, forever, on an account that may never
@@ -118,7 +119,7 @@ def test_commission_is_paid_on_cash_received_not_on_the_rate_card(
     attach(api, admin, body["partner_id"], tenant["tenant_id"])
 
     statement = api.get("/api/partners/me/statement", headers=key).json()
-    assert statement["lines"][0]["run_rate_monthly_usd"] == 3 * 999.0
+    assert statement["lines"][0]["run_rate_monthly_usd"] == 249.0
     assert statement["collected_usd"] == 0.0
     assert statement["commission_usd"] == 0.0, (
         "20% of money that never arrived."

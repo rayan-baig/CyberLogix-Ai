@@ -45,7 +45,7 @@ def test_the_seat_limit_names_the_plan_the_price_and_the_route(
 
     assert "Growth" in detail, "the refusal does not say which plan to move to"
     assert "50" in detail, "it does not say how much room that buys"
-    assert "$999" in detail, "it does not say what a unit costs"
+    assert "$249" in detail, "it does not say what a unit costs"
     assert "/api/licenses/me/plan" in detail, "it does not say how"
     assert "nothing is lost" in detail
 
@@ -242,9 +242,11 @@ def test_a_per_unit_add_on_owes_arrears_on_units_added_mid_period(
              json={"add_ons": ["per_unit_example"]})
     run_billing()
 
+    # Racks: this is about units added mid-period, and a rack is billed per
+    # sensor. Six restaurant thermometers in one new shop are one location.
     for i in range(6):
         api.post("/api/licenses/me/sensors", headers=headers, json={
-            "sensor_id": f"NEW-{i}", "industry_vertical": "restaurant",
+            "sensor_id": f"NEW-{i}", "industry_vertical": "cybersecurity",
             "location_name": "Annexe"})
 
     sub = STORE.active_subscription(tenant["tenant_id"])
@@ -261,7 +263,7 @@ def test_a_per_unit_add_on_owes_arrears_on_units_added_mid_period(
     arrears = [l for l in invoice.lines if l["kind"] == "arrears"][0]
     # Six units, half a month, at the unit rate *plus* the per-unit add-on.
     assert arrears["amount_usd"] == pytest.approx(
-        (999.0 + 149.0) * 6 * 0.5, rel=1e-3
+        (899.0 + 149.0) * 6 * 0.5, rel=1e-3
     )
     assert "add-ons" in arrears["description"]
 
@@ -274,7 +276,7 @@ def test_a_per_estate_add_on_owes_no_arrears(api, contracted):
     run_billing()
 
     api.post("/api/licenses/me/sensors", headers=headers, json={
-        "sensor_id": "NEW-1", "industry_vertical": "restaurant",
+        "sensor_id": "NEW-1", "industry_vertical": "cybersecurity",
         "location_name": "Annexe"})
     sub = STORE.active_subscription(tenant["tenant_id"])
     sub.started_at = add_months(utc_now(), -1)
@@ -288,5 +290,5 @@ def test_a_per_estate_add_on_owes_no_arrears(api, contracted):
 
     invoice = max(STORE.invoices_for(tenant["tenant_id"]), key=lambda i: i.number)
     arrears = [l for l in invoice.lines if l["kind"] == "arrears"][0]
-    assert arrears["amount_usd"] == pytest.approx(999.0 * 0.5, rel=1e-3)
+    assert arrears["amount_usd"] == pytest.approx(899.0 * 0.5, rel=1e-3)
     assert "add-ons" not in arrears["description"]

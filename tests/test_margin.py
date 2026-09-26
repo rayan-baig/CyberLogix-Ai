@@ -275,23 +275,56 @@ def test_the_target_is_missed_honestly_and_the_gap_is_named(api):
 
 
 def test_good_collection_meets_the_target_without_touching_a_setting(api):
-    """Which is the only way it is allowed to be met."""
+    """Which is the only way it is allowed to be met.
+
+    Two shops, not one: at $249 a location a single shop carrying the whole
+    hosting bill cannot reach the target however well it is collected --
+    see the test below, which pins that on purpose.
+    """
     _traded(STORE, invoices=40, unpaid=0)
 
-    verdict = margin.target("restaurant", 1)
+    verdict = margin.target("restaurant", 2)
 
     assert verdict["achieved_percent"] >= 95.0
     assert verdict["met"] is True
 
 
+def test_one_shop_alone_cannot_carry_the_hosting_at_the_target(api):
+    """A fact about the price, pinned so it cannot be edited away.
+
+    Restaurants moved from $999 per sensor to $249 per location. Hosting is
+    $14.65 a month for the whole company, and the target is computed as if
+    the estate named were the whole company. At $999 one shop carried that
+    as 1.5% of its payment; at $249 it is 5.9%, and even with every invoice
+    paid on time and by transfer one shop keeps 93.9%. The second shop is
+    what meets the target (96.9%) -- the business growing, not a changed
+    assumption. If someone makes this pass by editing a cost constant, that
+    is the thing the margin module says it must never be.
+    """
+    _traded(STORE, invoices=40, unpaid=0)
+
+    alone = margin.target("restaurant", 1)
+    two = margin.target("restaurant", 2)
+
+    assert alone["met"] is False
+    assert alone["biggest_lever"]["line"] == "fixed costs"
+    assert two["met"] is True
+
+
 def test_it_says_what_bad_debt_rate_would_meet_the_target(api):
-    """A target without a number to aim at is a mood."""
+    """A target without a number to aim at is a mood.
+
+    Five shops, a small chain: large enough that the shared hosting leaves a
+    bad-debt allowance to aim at. A single shop has none -- its ceiling is
+    zero, which is the test above said another way.
+    """
     _traded(STORE)
 
-    ceiling = margin.target("restaurant", 1)["bad_debt_ceiling_percent"]
+    ceiling = margin.target("restaurant", 5)["bad_debt_ceiling_percent"]
 
-    assert 2.0 < ceiling < 5.0
+    assert 0.0 < ceiling < 5.0
     assert margin.measured_rates()["measured_bad_debt_percent"] > ceiling
+    assert margin.target("restaurant", 1)["bad_debt_ceiling_percent"] == 0.0
 
 
 def test_the_bad_debt_is_named_because_nobody_collects_from_a_percentage(api):
