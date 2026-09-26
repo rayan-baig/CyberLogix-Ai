@@ -367,7 +367,21 @@ def issue_invoice(
         "Invoice issued: %s tenant=%s total=%.2f",
         invoice.number, tenant.tenant_id, invoice.total_usd,
     )
-    return invoice.public()
+    # Sent the moment it exists, exactly as the scheduled billing run sends
+    # its own. This path used to create the invoice and stop, so the first
+    # the customer heard of a hand-issued invoice was the dunning notice for
+    # missing it -- chased for a demand they were never sent. Net 30 starts
+    # when accounts payable sees the document, not when the ledger says so.
+    #
+    # Imported here: contracts imports this module, so importing it at the
+    # top would be a cycle. send_invoice never raises and is keyed on the
+    # invoice, so a failed send cannot undo the invoice or send it twice.
+    from contracts import send_invoice
+
+    delivery = send_invoice(tenant, invoice)
+    # The operator is told what actually happened, not left to assume it
+    # arrived: with mail unconfigured this says so instead of looking sent.
+    return {**invoice.public(), "delivery": delivery}
 
 
 @router.get("/{invoice_id}")

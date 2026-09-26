@@ -589,3 +589,40 @@ def test_an_invoice_written_before_payments_were_kept_still_loads(api):
 
     assert restored.payments == []
     assert restored.amount_paid_usd == 40.0
+
+
+# ---- a hand-issued invoice reaches the customer -------------------------
+
+
+def test_a_hand_issued_invoice_is_emailed_the_moment_it_exists(
+        api, operator_factory, sensor_factory, mailbox):
+    """The operator path created the invoice and stopped.
+
+    The scheduled billing run has always sent its invoices; this route
+    never did, so the first a customer heard of a hand-issued invoice was
+    the dunning notice for missing it. Asserted on the message the
+    transport was handed, not on a function being called.
+    """
+    headers = estate(api, operator_factory, sensor_factory)
+    contact = api.get("/api/licenses/me", headers=headers).json()["contact_email"]
+
+    invoice = issue(api, headers)
+
+    to_customer = [m for m in mailbox if m["To"] == contact]
+    assert len(to_customer) == 1, f"expected one email to {contact}, got {len(to_customer)}"
+    assert invoice["number"] in to_customer[0]["Subject"]
+    assert invoice["delivery"]["sent"] is True
+
+
+def test_the_operator_is_told_when_it_did_not_go(
+        api, operator_factory, sensor_factory):
+    """With mail unconfigured the invoice still issues -- a failed send must
+    not undo it -- and the response says it did not arrive, rather than
+    leaving the operator to assume it did."""
+    headers = estate(api, operator_factory, sensor_factory)
+
+    invoice = issue(api, headers)
+
+    assert invoice["invoice_id"], "the invoice itself must still exist"
+    assert invoice["delivery"]["sent"] is False
+    assert invoice["delivery"]["status"], "and it must say why"
