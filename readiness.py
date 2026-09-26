@@ -15,11 +15,16 @@ have different answers:
   "Draft" on line one is not one to put in front of a paying customer.
 
 A deployment can pass the first and fail the second, and that is a
-perfectly good way to launch: real customers, real sensors, real alerts,
-trials only, no money moving. Leaving CYBERLOGIX_PROVISIONING_KEY unset
-enforces it -- no paid account can be created at all -- so it is a shape
-you can choose deliberately rather than one you have to be careful
-about.
+perfectly good way to launch: real customers, real sensors, real alerts.
+What it is not is a trials-only guarantee. An owner can move their own
+account off the trial (POST /api/licenses/me/plan) and sign a contract,
+with or without CYBERLOGIX_PROVISIONING_KEY -- deliberately, because the
+alternative was a finished trial that could not pay without somebody
+answering an email. The key only decides whether the operator can create
+a paid account directly. This file used to say leaving it unset meant
+"no paid account can be created at all"; that was never true, and the
+money checks below are what actually decide whether an invoice is fit to
+send.
 
 Nothing here talks to the network, and nothing reads os.environ. Every
 other module in this application freezes its configuration into a
@@ -258,30 +263,35 @@ def report() -> Dict[str, Any]:
     unattended_blocks = blocking(UNATTENDED)
     import licenses
 
-    paid_accounts_possible = bool(licenses.PROVISIONING_KEY)
+    # Always true. An owner can move their own account onto a paid plan
+    # whether or not the provisioning key is set -- see the module note.
+    # This was derived from the key, and reported "trials only" for a
+    # deployment where any owner could start paying with one click.
+    paid_accounts_possible = True
 
     return {
         "can_monitor": not monitor_blocks,
         "can_take_money": not money_blocks,
         "runs_unattended": not unattended_blocks,
         "paid_accounts_possible": paid_accounts_possible,
+        "operator_can_create_paid_accounts": bool(licenses.PROVISIONING_KEY),
         "shape": (
             "closed -- alerts cannot leave the building"
             if monitor_blocks else
-            "trials only: real customers, real alerts, no money moving"
-            if not paid_accounts_possible else
             "open for business"
             if not money_blocks else
-            "taking money with something missing from the invoice"
+            "monitoring -- and a customer can start paying before the "
+            "invoice is ready"
         ),
         "blocking": len(monitor_blocks) + len(money_blocks)
         + len(unattended_blocks),
         "checks": found,
         "note": (
             "Two questions, not one. A deployment that can monitor but "
-            "cannot invoice is a perfectly good way to launch -- and "
-            "leaving CYBERLOGIX_PROVISIONING_KEY unset enforces it, "
-            "because no paid account can be created at all."
+            "cannot invoice is a perfectly good way to launch -- but it is "
+            "not a trials-only lock. Any owner can move off the trial "
+            "themselves, so until the money checks pass, the first "
+            "invoice a customer triggers will go out missing something."
         ),
     }
 

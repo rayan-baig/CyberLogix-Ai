@@ -69,7 +69,12 @@ def test_an_unconfigured_deployment_cannot_monitor(monkeypatch):
 
 
 def test_delivery_alone_makes_it_fit_to_monitor(monkeypatch):
-    """And that is a launch: real customers, real alerts, no money."""
+    """A launch you can monitor with -- but not a trials-only lock.
+
+    This test used to assert the lie: that with the provisioning key unset
+    no paid account could exist and the shape was "trials only". Any owner
+    could move off the trial with one click the whole time.
+    """
     import licenses
 
     configure_delivery(monkeypatch)
@@ -79,8 +84,30 @@ def test_delivery_alone_makes_it_fit_to_monitor(monkeypatch):
 
     assert r["can_monitor"] is True
     assert r["can_take_money"] is False
-    assert r["paid_accounts_possible"] is False
-    assert "trials only" in r["shape"]
+    assert "trials only" not in r["shape"]
+    assert r["operator_can_create_paid_accounts"] is False
+
+
+def test_what_readiness_says_about_paid_accounts_is_what_the_app_does(
+        api, tenant_factory, owner_headers, monkeypatch):
+    """The claim checked against the behaviour, not against another claim.
+
+    With the provisioning key unset, readiness reported
+    paid_accounts_possible=False -- and in the same deployment an owner
+    moved their own account onto Growth. DEPLOY.md told the reader to rely
+    on that as the trials-only guarantee. If the two ever disagree again,
+    one of them is lying and this fails.
+    """
+    import licenses
+
+    monkeypatch.setattr(licenses, "PROVISIONING_KEY", "")
+    headers, _ = tenant_factory(plan="trial")
+
+    upgraded = api.post("/api/licenses/me/plan",
+                        headers=owner_headers(headers), json={"plan": "growth"})
+    paid_happened = upgraded.status_code == 200
+
+    assert readiness.report()["paid_accounts_possible"] is paid_happened
 
 
 def test_the_draft_agreements_block_taking_money(monkeypatch):

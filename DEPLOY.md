@@ -41,9 +41,14 @@ in a few days.
 tax ID and a bank account, and a lawyer who has read the agreements.
 Not achievable in a few days, and not a software problem.
 
-Leaving `CYBERLOGIX_PROVISIONING_KEY` unset enforces the first one: no
-paid account can be created at all, through any route. So the trials-only
-launch is a shape you choose, not one you have to police.
+There is no switch that makes a deployment trials-only. Any owner can
+move their own account off the trial from the console and sign a
+contract, whether or not `CYBERLOGIX_PROVISIONING_KEY` is set -- on
+purpose, so a finished trial can pay without somebody answering an
+email. The key only lets the operator create a paid account directly.
+An earlier version of this page said leaving it unset meant no paid
+account could be created at all. That was never true. If money must
+not move yet, the money checks in `readiness.py` are what to watch.
 
 ---
 

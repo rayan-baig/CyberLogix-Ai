@@ -79,9 +79,10 @@ services:
       - key: PUBLIC_BASE_URL
         sync: false
 
-      # Left unset on purpose: unset means no paid account can be created
-      # through any route, which is the trials-only launch DEPLOY.md
-      # describes. Set it only once a lawyer has read the agreements.
+      # Lets the operator create a paid account directly. Leaving it unset
+      # does NOT make this trials-only: any owner can still move off the
+      # trial from the console and be invoiced. Set it when you need to
+      # provision paid accounts yourself.
       - key: CYBERLOGIX_PROVISIONING_KEY
         sync: false
 

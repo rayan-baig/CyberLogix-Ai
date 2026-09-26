@@ -894,10 +894,12 @@ async function loadHealth() {
     ["Runs unattended", fit.runs_unattended ? "yes" : "no",
      "something outside notices if this dies"],
     ["Can it ask to be paid", fit.can_take_money ? "yes" : "no",
-     fit.paid_accounts_possible
-       ? "paid accounts can be created"
-       : "provisioning key unset, so trials only \u2014 no paid account "
-         + "can be created at all"],
+     // Not "trials only" when the provisioning key is unset: any owner can
+     // move off the trial from the console, so that line was untrue.
+     fit.can_take_money
+       ? "invoices carry everything a finance team needs"
+       : "an owner can move off the trial at any time \u2014 the first "
+         + "invoice they trigger will be missing something"],
   ]);
   itemsInto("launch-list", fit.checks
     .filter((c) => c.state !== "ok")
