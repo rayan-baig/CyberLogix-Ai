@@ -833,3 +833,282 @@ def test_the_nag_settles_to_one_email_per_seven_days(api, kitchen, dana):
     # Days 8 through 28 spans blocks 1, 2, 3 and 4. Three weeks, four
     # emails, and no two of them a day apart.
     assert stamps == ["week-1", "week-2", "week-3", "week-4"]
+
+
+# --- the 15% actually becomes an invoice line -----------------------------
+#
+# our_share_usd was computed and shown and never billed: nothing outside
+# people.py referred to it. These pin that it is billed, and -- because it
+# is money -- that it is billed exactly once, only on refunds, never on a
+# trial, and never inflated by the terms that apply to the subscription.
+
+ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+
+
+def _refund(api, headers, off_id, amount, label="Health cover"):
+    made = api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": label,
+        "kind": "benefits", "monthly_usd": 320.0})
+    assert made.status_code == 201, made.text
+    cost_id = made.json()["cost"]["cost_id"]
+    stopped = api.post(f"/api/people/recovery/{cost_id}/stop", headers=headers,
+                       json={"stopped_on": day(-5), "refunded_usd": amount})
+    assert stopped.status_code == 200, stopped.text
+    return cost_id
+
+
+def _hand_invoice(api, headers):
+    tenant_id = api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+    resp = api.post("/api/invoices", params={"tenant_id": tenant_id}, headers=ADMIN,
+                    json={"include_add_ons": "", "include_setup": False,
+                          "period_days": 30})
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _share_lines(invoice):
+    return [line for line in invoice["lines"] if line["kind"] == "recovery_share"]
+
+
+def test_a_refund_puts_fifteen_percent_on_the_next_invoice(api, departed):
+    headers, _, off_id = departed
+    _refund(api, headers, off_id, 1000.0)
+
+    lines = _share_lines(_hand_invoice(api, headers))
+
+    assert len(lines) == 1
+    assert lines[0]["amount_usd"] == 150.0
+    assert lines[0]["basis_usd"] == 1000.0
+
+
+def test_the_same_refund_is_never_billed_twice(api, departed):
+    """The property the whole design is built around. What has been billed
+    is read back from the invoices, so a second invoice finds it billed."""
+    headers, _, off_id = departed
+    _refund(api, headers, off_id, 1000.0)
+
+    first = _hand_invoice(api, headers)
+    second = _hand_invoice(api, headers)
+
+    assert len(_share_lines(first)) == 1
+    assert _share_lines(second) == []
+
+
+def test_a_later_refund_bills_only_the_new_money(api, departed):
+    headers, _, off_id = departed
+    _refund(api, headers, off_id, 1000.0)
+    _hand_invoice(api, headers)
+
+    _refund(api, headers, off_id, 400.0, label="Gym membership")
+    lines = _share_lines(_hand_invoice(api, headers))
+
+    assert len(lines) == 1
+    assert lines[0]["basis_usd"] == 400.0
+    assert lines[0]["amount_usd"] == 60.0
+
+
+def test_a_voided_invoice_gives_its_refunds_back_to_be_billed(api, departed):
+    """Void is how a wrong invoice is withdrawn. Its share must come due
+    again, or the refund it covered is never billed at all."""
+    headers, _, off_id = departed
+    _refund(api, headers, off_id, 1000.0)
+    wrong = _hand_invoice(api, headers)
+    tenant_id = api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+    voided = api.post(f"/api/invoices/{wrong['invoice_id']}/void",
+                      params={"tenant_id": tenant_id}, headers=ADMIN, json={})
+    assert voided.status_code == 200, voided.text
+
+    lines = _share_lines(_hand_invoice(api, headers))
+
+    assert len(lines) == 1 and lines[0]["amount_usd"] == 150.0
+
+
+def test_no_refund_means_no_share(api, departed):
+    """Money still bleeding, or already wasted, is not money recovered."""
+    headers, _, off_id = departed
+    api.post("/api/people/recovery", headers=headers, json={
+        "offboarding_id": off_id, "label": "Phone plan",
+        "kind": "phone", "monthly_usd": 55.0})
+
+    assert _share_lines(_hand_invoice(api, headers)) == []
+
+
+def test_a_trial_is_never_charged_the_share(api, tenant_factory, owner_headers,
+                                            sensor_factory):
+    """The free test run stays free. A trial is not charged for anything."""
+    from people import recovery_share_line
+    from store import STORE
+
+    headers, _ = tenant_factory(plan="trial", company_name="Pilot Site")
+    auth = {**headers, **owner_headers(headers)}
+    person = api.post("/api/people", headers=auth, json={
+        "full_name": "Sam Lee", "role": "Cook",
+        "email": "sam@pilot.example", "phone": "+15550199"}).json()["person"]
+    off_id = api.post("/api/people/departures", headers=auth, json={
+        "staff_id": person["staff_id"], "left_on": day(-60),
+        "reason": "Left"}).json()["offboarding"]["offboarding_id"]
+    _refund(api, auth, off_id, 1000.0)
+
+    tenant_id = api.get("/api/licenses/me", headers=auth).json()["tenant_id"]
+    assert recovery_share_line(STORE.get_tenant(tenant_id)) is None
+
+
+def test_the_share_is_not_inflated_by_subscription_terms(api, departed):
+    """On an annual prepay the subscription is billed twelve months at a
+    time and discounted ten percent. Neither applies to a share of money
+    already refunded: it is fifteen percent of the refund, once."""
+    from contracts import run_billing
+    from store import STORE
+
+    headers, _, off_id = departed
+    signed = api.post("/api/contracts", headers=headers,
+                      json={"term_years": 1, "annual_prepay": True})
+    assert signed.status_code == 201, signed.text
+    _refund(api, headers, off_id, 1000.0)
+
+    run_billing()
+
+    tenant_id = api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+    issued = [i.public() for i in STORE.invoices_for(tenant_id)]
+    shares = [line for inv in issued for line in _share_lines(inv)]
+    assert len(shares) == 1
+    assert shares[0]["amount_usd"] == 150.0      # not x12, not less 10%
+    discount = [line for inv in issued for line in inv["lines"]
+                if line["kind"] == "discount"]
+    subscription = sum(line["amount_usd"] for inv in issued for line in inv["lines"]
+                       if line["kind"] in ("subscription", "add_on"))
+    assert discount, "the prepay discount should still apply to the subscription"
+    assert abs(discount[0]["amount_usd"]) == round(subscription * 0.10, 2)
+
+
+def test_a_refund_corrected_down_never_bills_negative(api, departed):
+    """There is deliberately no credit note. A refund typed in too high and
+    then corrected bills nothing further until refunds pass what was billed
+    -- it does not turn into a negative line."""
+    headers, _, off_id = departed
+    cost_id = _refund(api, headers, off_id, 1000.0)
+    _hand_invoice(api, headers)
+
+    api.post(f"/api/people/recovery/{cost_id}/stop", headers=headers,
+             json={"stopped_on": day(-5), "refunded_usd": 400.0})
+    after = _hand_invoice(api, headers)
+
+    assert _share_lines(after) == []
+    assert all(line["amount_usd"] >= 0 for line in after["lines"]
+               if line["kind"] != "discount")
+
+
+def test_two_invoices_at_once_cannot_both_bill_one_refund(
+        api, departed, monkeypatch):
+    """What the store lock around price-and-issue is for.
+
+    The share already billed is read from the invoices on file. Two
+    invoices priced in the same moment would both read "nothing billed yet"
+    and both charge the refund. The window is widened here on purpose, so
+    this fails every time the lock is missing rather than once in a while.
+    """
+    import threading
+    import time
+
+    import people
+    from invoicing import InvoiceRequest, issue_invoice
+    from store import STORE
+
+    headers, _, off_id = departed
+    _refund(api, headers, off_id, 1000.0)
+    tenant_id = api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+
+    real = people.recovery_share_line
+
+    def slow(tenant):
+        line = real(tenant)
+        time.sleep(0.25)            # between reading the ledger and issuing
+        return line
+
+    monkeypatch.setattr(people, "recovery_share_line", slow)
+    request = InvoiceRequest(include_add_ons="", include_setup=False, period_days=30)
+    errors = []
+
+    def issue():
+        try:
+            issue_invoice(payload=request, tenant_id=tenant_id, _=None)
+        except Exception as exc:     # surfaced below, not swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=issue) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors, errors
+    billed = [line for inv in STORE.invoices_for(tenant_id)
+              for line in inv.lines if line.get("kind") == "recovery_share"]
+    assert len(billed) == 1, f"one refund billed {len(billed)} times"
+
+
+def test_the_billing_run_and_a_hand_invoice_cannot_both_bill_one_refund(
+        api, departed, monkeypatch):
+    """The same race across the two paths that price an invoice.
+
+    The billing run and the operator's route both call build_lines, so both
+    must hold the lock from pricing to issue. Holding it in only one still
+    lets the other read "nothing billed yet" while the first is mid-issue.
+    """
+    import threading
+    import time
+
+    import people
+    from contracts import run_billing
+    from invoicing import InvoiceRequest, issue_invoice
+    from store import STORE
+
+    headers, _, off_id = departed
+    signed = api.post("/api/contracts", headers=headers, json={"term_years": 1})
+    assert signed.status_code == 201, signed.text
+    _refund(api, headers, off_id, 1000.0)
+    tenant_id = api.get("/api/licenses/me", headers=headers).json()["tenant_id"]
+
+    real = people.recovery_share_line
+    run_has_read = threading.Event()
+
+    def slow(tenant):
+        line = real(tenant)
+        if threading.current_thread().name == "billing-run":
+            run_has_read.set()
+        time.sleep(0.4)
+        return line
+
+    monkeypatch.setattr(people, "recovery_share_line", slow)
+    request = InvoiceRequest(include_add_ons="", include_setup=False, period_days=30)
+    errors = []
+
+    # The dangerous order, forced rather than hoped for. The first version
+    # of this test left the order to the scheduler; the hand invoice
+    # happened to take the lock first, the run then blocked before it ever
+    # priced anything, and the test passed with the run's lock removed --
+    # guarding nothing. The run reads first here, every time.
+    def by_hand():
+        try:
+            assert run_has_read.wait(timeout=5), "the billing run never priced"
+            issue_invoice(payload=request, tenant_id=tenant_id, _=None)
+        except Exception as exc:
+            errors.append(exc)
+
+    def by_run():
+        try:
+            run_billing()
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=by_run, name="billing-run"),
+               threading.Thread(target=by_hand, name="by-hand")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors, errors
+    billed = [line for inv in STORE.invoices_for(tenant_id)
+              for line in inv.lines if line.get("kind") == "recovery_share"]
+    assert len(billed) == 1, f"one refund billed {len(billed)} times"

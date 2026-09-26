@@ -334,65 +334,70 @@ def bill_period(
         return None
 
     try:
-        multiplier = sub.rate_multiplier(index)
-        months = sub.months_per_period
-        # Not on a re-bill of period 0: the commissioning fee was already
-        # charged on the invoice that was voided, or it was not, and
-        # `setup_billed` is the record of which.
-        include_setup = index == 0 and not sub.setup_billed
-        lines = build_lines(
-            tenant,
-            list(sub.add_ons),
-            include_setup,
-            rate_multiplier=multiplier,
-            months=months,
-        )
-        lines += arrears_lines(tenant, sub, index)
-
-        if not lines:
-            # An estate with nothing registered yet. Not an error, and not
-            # a period to burn: hand it back so it bills once there is
-            # something to bill for.
-            STORE.release_billing_period(sub, index)
-            return None
-
-        from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT
-
-        if sub.annual_prepay:
-            recurring = round(
-                sum(
-                    line["amount_usd"]
-                    for line in lines
-                    if line["kind"] in ("subscription", "add_on")
-                ),
-                2,
+        # Held from pricing to issue, for the reason given in
+        # invoicing.issue_invoice: the recovery share already billed is
+        # read from the invoices on file, and this invoice must join them
+        # before anyone else reads that answer. Reentrant, so safe.
+        with STORE._lock:
+            multiplier = sub.rate_multiplier(index)
+            months = sub.months_per_period
+            # Not on a re-bill of period 0: the commissioning fee was already
+            # charged on the invoice that was voided, or it was not, and
+            # `setup_billed` is the record of which.
+            include_setup = index == 0 and not sub.setup_billed
+            lines = build_lines(
+                tenant,
+                list(sub.add_ons),
+                include_setup,
+                rate_multiplier=multiplier,
+                months=months,
             )
-            discount = round(
-                recurring * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2
-            )
-            if discount:
-                lines.append(
-                    {
-                        "kind": "discount",
-                        "description": (
-                            f"Annual prepayment discount "
-                            f"({ANNUAL_PREPAY_DISCOUNT_PERCENT:g}%)"
-                        ),
-                        "quantity": 1,
-                        "unit_price_usd": -discount,
-                        "amount_usd": -discount,
-                    }
+            lines += arrears_lines(tenant, sub, index)
+
+            if not lines:
+                # An estate with nothing registered yet. Not an error, and not
+                # a period to burn: hand it back so it bills once there is
+                # something to bill for.
+                STORE.release_billing_period(sub, index)
+                return None
+
+            from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT
+
+            if sub.annual_prepay:
+                recurring = round(
+                    sum(
+                        line["amount_usd"]
+                        for line in lines
+                        if line["kind"] in ("subscription", "add_on")
+                    ),
+                    2,
                 )
+                discount = round(
+                    recurring * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2
+                )
+                if discount:
+                    lines.append(
+                        {
+                            "kind": "discount",
+                            "description": (
+                                f"Annual prepayment discount "
+                                f"({ANNUAL_PREPAY_DISCOUNT_PERCENT:g}%)"
+                            ),
+                            "quantity": 1,
+                            "unit_price_usd": -discount,
+                            "amount_usd": -discount,
+                        }
+                    )
 
-        invoice = STORE.create_invoice(
-            tenant=tenant,
-            lines=lines,
-            period_days=30 * months,
-            terms_days=PAYMENT_TERMS_DAYS,
-            purchase_order=sub.purchase_order,
-            source=sub.subscription_id,
-            billing_period=index,
-        )
+            invoice = STORE.create_invoice(
+                tenant=tenant,
+                lines=lines,
+                period_days=30 * months,
+                terms_days=PAYMENT_TERMS_DAYS,
+                purchase_order=sub.purchase_order,
+                source=sub.subscription_id,
+                billing_period=index,
+            )
     except Exception:
         STORE.release_billing_period(sub, index)
         raise

@@ -290,6 +290,17 @@ def build_lines(
                 }
             )
 
+    # The share of money recovered for staff who have left. After the
+    # recurring lines and outside `recurring()` on purpose, like the setup
+    # fee: it is a share of refunds already received, so the contract
+    # escalator does not apply and it is not multiplied by the months of
+    # an annual prepay. Its kind keeps it out of the prepay discount too.
+    from people import recovery_share_line
+
+    share = recovery_share_line(tenant)
+    if share:
+        lines.append(share)
+
     return lines
 
 
@@ -341,23 +352,29 @@ def issue_invoice(
             detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
         )
 
-    lines = build_lines(tenant, wanted, payload.include_setup)
-    if not lines:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "There is nothing to bill: no units are registered and no "
-                "add-ons were selected."
-            ),
-        )
+    # Held from pricing to issue. build_lines reads what recovery share has
+    # already been billed from the invoices on file; releasing the lock
+    # before this invoice joins them would let a billing run in the same
+    # moment read the same answer and bill the same refund twice. The store
+    # lock is reentrant, so everything underneath takes it again freely.
+    with STORE._lock:
+        lines = build_lines(tenant, wanted, payload.include_setup)
+        if not lines:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "There is nothing to bill: no units are registered and no "
+                    "add-ons were selected."
+                ),
+            )
 
-    invoice = STORE.create_invoice(
-        tenant=tenant,
-        lines=lines,
-        period_days=payload.period_days,
-        terms_days=PAYMENT_TERMS_DAYS,
-        purchase_order=payload.purchase_order,
-    )
+        invoice = STORE.create_invoice(
+            tenant=tenant,
+            lines=lines,
+            period_days=payload.period_days,
+            terms_days=PAYMENT_TERMS_DAYS,
+            purchase_order=payload.purchase_order,
+        )
     write_audit(
         tenant, None, "invoice.issued",
         f"{invoice.number} for ${invoice.total_usd:,.2f}, due {iso(invoice.due_at)}.",

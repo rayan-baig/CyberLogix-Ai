@@ -474,6 +474,64 @@ def recovery_for(tenant_id: str) -> Dict[str, Any]:
     }
 
 
+RECOVERY_LINE_KIND = "recovery_share"
+
+
+def recovery_share_line(tenant) -> Optional[Dict[str, Any]]:
+    """The share owed on refunds not billed yet, as one invoice line.
+
+    `our_share_usd` above was computed and shown, and nothing ever billed
+    it: no invoice line anywhere referred to it. This is that line.
+
+    What it bills, and on what:
+
+    - **Refunds only.** Money the customer has typed in as actually
+      returned -- never a projected saving, never a cancellation that
+      could be reversed next week. The same rule `recovery_for` states.
+    - **Each refund once.** What has been billed is read back from the
+      invoices themselves, every recovery line carrying the refunds it
+      covered as `basis_usd`. There is no separate counter to fall out of
+      step with the ledger: a voided invoice stops counting, so its
+      refunds come due again; an invoice that failed to be created never
+      counted at all. Callers hold the store lock from this call until
+      the invoice exists, so two invoices cannot both claim the same
+      refund.
+    - **Never on a trial.** A trial is not charged for anything, and this
+      is no exception.
+    - **Never negative.** A refund corrected downward after it was billed
+      bills nothing further until refunds pass what was already billed.
+      There is deliberately no credit note to issue.
+    """
+    if getattr(tenant, "plan", "trial") == "trial":
+        return None
+
+    refunded = recovery_for(tenant.tenant_id)["refunded_usd"]
+    already = round(sum(
+        float(line.get("basis_usd") or 0.0)
+        for invoice in STORE.invoices_for(tenant.tenant_id)
+        if invoice.state != "void"
+        for line in invoice.lines
+        if line.get("kind") == RECOVERY_LINE_KIND
+    ), 2)
+    new_refunds = round(refunded - already, 2)
+    share = round(new_refunds * RECOVERY_SHARE, 2)
+    if share <= 0:
+        # Includes a refund too small to round to a cent: it is not
+        # recorded as billed, so it waits and is billed once it adds up.
+        return None
+    return {
+        "kind": RECOVERY_LINE_KIND,
+        "description": (
+            f"Recovery share: {RECOVERY_SHARE * 100:g}% of "
+            f"${new_refunds:,.2f} refunded for staff who have left"
+        ),
+        "quantity": 1,
+        "unit_price_usd": share,
+        "amount_usd": share,
+        "basis_usd": new_refunds,
+    }
+
+
 def offboarding_state(tenant_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
     """One leaver, and what they are still costing."""
     person = {"phone": row.get("phone"), "email": row.get("email"),
