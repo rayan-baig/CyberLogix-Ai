@@ -302,7 +302,24 @@ function stepsHtml(next) {
     </div>`).join("");
 }
 
+// The console's own storage keys, spelled identically. A test ties these to
+// TOKEN_STORAGE and EMAIL_STORAGE in console.html, because a one-letter
+// drift here would bring the original bug back without an error anywhere.
+const SESSION_KEY = "cyberlogix.session";
+const EMAIL_KEY = "cyberlogix.email";
+
 function showDone(body) {
+  // The response says "You are signed in", and it was not true in the
+  // browser: the session came back and was dropped, so "Open the console"
+  // landed on the sign-in form. Kept now, the way the console keeps its
+  // own. Storage can be refused (a private window, blocked site data); if
+  // it is, the console simply asks for the password they just chose, and
+  // the email is at least filled in if that part was allowed.
+  try { if (body.token) localStorage.setItem(SESSION_KEY, body.token); } catch (_) {}
+  try {
+    if (body.user && body.user.email) localStorage.setItem(EMAIL_KEY, body.user.email);
+  } catch (_) {}
+
   const next = body.next_steps || {};
   $("panel").classList.add("done");
   $("panel").innerHTML = `

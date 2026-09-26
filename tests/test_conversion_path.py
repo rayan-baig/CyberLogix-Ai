@@ -178,3 +178,44 @@ def test_the_form_says_what_is_being_accepted():
 
     assert 'href="/legal"' in form
     assert "accept" in form.lower()
+
+
+# --- 1d: "You are signed in" --------------------------------------------------
+
+
+SIGNUP_PAGE = (ROOT / "static" / "signup.html").read_text()
+
+
+def _js_const(source, name):
+    found = re.search(rf'const {name} = "([^"]+)";', source)
+    assert found, f"{name} is not defined as a string constant"
+    return found.group(1)
+
+
+def test_signup_keeps_the_session_where_the_console_looks_for_it():
+    """The response said "You are signed in" and the browser was not.
+
+    The session came back and was dropped, so "Open the console" landed on
+    the sign-in form. Verified in Chromium against a freshly started
+    server each way -- the page cache means a restart is the only honest
+    before/after: the old page stored nothing; the fixed one lands inside
+    the console with the gate hidden.
+
+    The two pages are separate files with separate constants, so the keys
+    are compared rather than trusted: one letter of drift reintroduces the
+    bug with no error anywhere.
+    """
+    assert (_js_const(SIGNUP_PAGE, "SESSION_KEY")
+            == _js_const(CONSOLE, "TOKEN_STORAGE"))
+    assert (_js_const(SIGNUP_PAGE, "EMAIL_KEY")
+            == _js_const(CONSOLE, "EMAIL_STORAGE"))
+
+
+def test_the_session_is_kept_when_the_trial_succeeds():
+    done = SIGNUP_PAGE[SIGNUP_PAGE.index("function showDone"):]
+    done = done[:done.index("\n}\n")]
+
+    assert re.search(r"localStorage\.setItem\(SESSION_KEY,\s*body\.token\)", done)
+    # Refused storage must not break the page that shows the API key --
+    # the one screen that key is ever shown on.
+    assert done.count("try {") >= 2
