@@ -434,9 +434,20 @@ def robots(request: Request):
 
 @app.get("/sitemap.xml", include_in_schema=False)
 def sitemap(request: Request):
-    """The three pages worth finding: what it is, how to buy, and the terms."""
+    """The pages worth finding: what it is, how to buy, the terms -- and
+    one page per industry, in that industry's own words.
+
+    The industry pages were missing. They are the most findable thing in
+    the product -- "walk-in freezer alarm for restaurants" is what a
+    restaurant owner actually searches, and /for/restaurant answers it --
+    and they were crawlable but absent from the map.
+    """
+    from industries import known
+
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
-    pages = [("/", "1.0"), ("/signup", "0.9"), ("/legal", "0.4")]
+    pages = [("/", "1.0"), ("/signup", "0.9"), ("/for", "0.8")]
+    pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
+    pages += [("/legal", "0.4")]
     entries = "".join(
         f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
         for path, weight in pages

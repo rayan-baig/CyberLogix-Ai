@@ -275,7 +275,7 @@ footer a:hover, footer a:focus-visible { color: var(--ink); }
 <section class="band" id="sectors">
   <div class="wrap">
     <div class="band-head">
-      <h2>Eleven sectors, each with its own way of going wrong.</h2>
+      <h2>Twelve sectors, each with its own way of going wrong.</h2>
       <p>
         Thresholds, the language of the alert, the unit on the invoice and the
         paperwork produced afterwards are all specific to the trade. Priced per
@@ -424,8 +424,14 @@ async function paintPlans() {
                 ? p.term_days + "-day trial"
                 : "Annual term"}</li>
         </ul>
+        <!-- Every one of these starts a trial -- signup cannot hand out a
+             paid plan, and should not -- so none of them may promise one.
+             "Start on Enterprise" used to produce a 14-day, 5-sensor trial
+             with nothing on the page to say so. -->
         <a class="btn ${p.plan === "growth" ? "btn-primary" : ""}"
-           href="/signup">Start on ${esc(p.name)}</a>
+           href="/signup">${p.plan === "trial"
+             ? "Start the free trial"
+             : "Start free, then move to " + esc(p.name)}</a>
       </article>`).join("");
   } catch (err) {
     grid.innerHTML = `<p class="empty">Plans could not be loaded

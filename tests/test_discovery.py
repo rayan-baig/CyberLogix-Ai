@@ -122,3 +122,57 @@ def test_the_sitemap_lists_the_three_pages_worth_finding(api):
     # And nothing that needs a credential.
     assert "/console" not in body.text
     assert "/book" not in body.text
+
+
+def test_the_sitemap_lists_every_industry_page(api):
+    """The twelve /for pages were crawlable but missing from the map.
+
+    They are the most findable thing in the product: a restaurant owner
+    searches "walk-in freezer alarm", not "IoT thermal monitoring", and
+    /for/restaurant is the page that answers them.
+    """
+    from industries import known
+
+    body = api.get("/sitemap.xml").text
+
+    assert "<loc>http://testserver/for</loc>" in body
+    for vertical in known():
+        assert f"<loc>http://testserver/for/{vertical}</loc>" in body, vertical
+
+
+# ---- the landing page says what it does --------------------------------
+
+WORDS = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve", 13: "Thirteen",
+         14: "Fourteen", 15: "Fifteen"}
+
+
+def _landing():
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parent.parent
+            / "static" / "index.html").read_text()
+
+
+def test_the_sector_count_in_the_heading_is_the_number_shown():
+    """The heading said "Eleven sectors" above a grid of twelve.
+
+    Someone added the twelfth and nothing told them the sentence above it
+    was now wrong. Spelled out, so it cannot be computed; checked here, so
+    it cannot drift again without a failure.
+    """
+    from store import INDUSTRY_PROFILES
+
+    word = WORDS[len(INDUSTRY_PROFILES)]
+    assert f"<h2>{word} sectors," in _landing(), (
+        f"there are {len(INDUSTRY_PROFILES)} sectors; the heading should "
+        f"say {word}")
+
+
+def test_no_plan_button_promises_a_plan_signup_cannot_give():
+    """Every plan card links to /signup, and signup only ever starts a
+    trial. "Start on Enterprise" produced a 14-day, five-sensor trial with
+    nothing on the page to say so."""
+    page = _landing()
+
+    assert "Start on ${esc(p.name)}" not in page
+    assert 'href="/signup">${p.plan === "trial"' in page
