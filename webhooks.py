@@ -312,7 +312,7 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "Owlogix-AI/1.0",
+                "User-Agent": "Onyxlogix-AI/1.0",
             },
             method="POST",
         )
@@ -599,7 +599,7 @@ def test_webhook(
     event = {
         "event": "webhook.test",
         "state": "opened",
-        "title": f"Owlogix AI test — {tenant.company_name}",
+        "title": f"Onyxlogix AI test — {tenant.company_name}",
         "detail": (
             "This is a test. If you can read it, real breaches will arrive "
             "here too."

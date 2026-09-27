@@ -33,7 +33,7 @@ def configure_money(monkeypatch):
     # mail.REMIT_TO that nothing reads is how a test passes for the
     # wrong reason.
     monkeypatch.setitem(invoicing.ISSUER, "remit_to", "Acct 123, Sort 00-00")
-    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "Owlogix AI Ltd")
+    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "Onyxlogix AI Ltd")
     monkeypatch.setitem(invoicing.ISSUER, "address", "1 Example Street")
     monkeypatch.setitem(invoicing.ISSUER, "tax_id", "GB000000000")
 

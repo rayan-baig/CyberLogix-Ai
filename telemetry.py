@@ -185,7 +185,7 @@ def build_emergency_sms(
     )
 
     prompt = f"""
-    You are the Owlogix AI 24/7 automated Emergency Operations Dispatcher.
+    You are the Onyxlogix AI 24/7 automated Emergency Operations Dispatcher.
     A critical physical facility infrastructure failure has just been detected.
 
     Sector Profile: {profile['name']}

@@ -1,4 +1,4 @@
-# Owlogix AI — Master Enterprise Hub
+# Onyxlogix AI — Master Enterprise Hub
 
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
@@ -824,7 +824,7 @@ will print it and the dark console on paper is unreadable.
 ## Loss assurance
 
 The guarantee, at a flat $149 per covered unit per month: if a breach is
-recorded on a covered unit and no alert reaches anybody, Owlogix
+recorded on a covered unit and no alert reaches anybody, Onyxlogix
 reimburses the deductible for that event up to $25,000.
 
 Flat, never a share of what the customer saved. A percentage means a quiet
@@ -1533,7 +1533,7 @@ roster or audit trail.
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
-| `CYBERLOGIX_LEGAL_NAME` | `Owlogix AI` | Issuer name on invoices |
+| `CYBERLOGIX_LEGAL_NAME` | `Onyxlogix AI` | Issuer name on invoices |
 | `CYBERLOGIX_ADDRESS` | — | Issuer address on invoices |
 | `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
 | `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |

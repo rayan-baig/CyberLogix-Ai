@@ -2,7 +2,7 @@
 
 The bridge already accepted third-party hardware, and the docstring said
 "any off-the-shelf commercial sensor can POST its raw JSON straight to
-Owlogix". That was not true. The endpoint required *our* field names
+Onyxlogix". That was not true. The endpoint required *our* field names
 -- device_sn, reading_value, metric_type -- and no Monnit, SensorPush,
 Elitech or Dickson device has ever sent those. A customer had to stand up
 a translator in the middle, which is the work the claim promised to
@@ -99,7 +99,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         ),
     },
     "cyberlogix": {
-        "name": "Owlogix native",
+        "name": "Onyxlogix native",
         "serial": "device_sn",
         "value": "reading_value",
         "time": None,

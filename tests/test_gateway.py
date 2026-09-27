@@ -3,7 +3,7 @@
 
 def test_root_gateway_lists_every_module(api):
     body = api.get("/api").json()
-    assert body["system"] == "Owlogix AI Master Engine"
+    assert body["system"] == "Onyxlogix AI Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
     # Asserted against the app's own list rather than a hard-coded count,
     # so mounting a new subsystem does not fail an unrelated test.

@@ -1,4 +1,4 @@
-# Owlogix AI — Master Enterprise Hub
+# Onyxlogix AI — Master Enterprise Hub
 #
 # Production image, targeting Cloud Run but plain enough for anything that
 # runs a container.

@@ -504,7 +504,7 @@ def send_invoice(tenant: Tenant, invoice: Invoice) -> Dict[str, Any]:
         # that costs something.
         subject=(
             f"Invoice {invoice.number} from "
-            f"{issuer_block().get('legal_name', 'Owlogix AI')}: "
+            f"{issuer_block().get('legal_name', 'Onyxlogix AI')}: "
             f"${invoice.total_usd:,.2f}"
         ),
         body=(

@@ -202,7 +202,7 @@ def test_the_subject_leads_with_what_is_wrong(
 ):
     """It gets truncated, so the order decides what survives.
 
-    The first version read "Owlogix: $35,964 booked, 3 need a person
+    The first version read "Onyxlogix: $35,964 booked, 3 need a person
     (1 urgent), and something is broken" — folded across two header
     lines and cut off by every client at roughly the point where it
     stopped being reassuring.

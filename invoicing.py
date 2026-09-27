@@ -53,7 +53,7 @@ PAYMENT_TERMS_DAYS = 30
 # either. Configured rather than hard-coded, because the entity behind the
 # product is a business decision and will change once it is incorporated.
 ISSUER = {
-    "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", "Owlogix AI"),
+    "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", "Onyxlogix AI"),
     "address": os.environ.get("CYBERLOGIX_ADDRESS", ""),
     "tax_id": os.environ.get("CYBERLOGIX_TAX_ID", ""),
     "remit_to": os.environ.get("CYBERLOGIX_REMIT_TO", ""),
@@ -68,7 +68,7 @@ def issuer_block() -> Dict[str, Any]:
     a document whose whole job is to look correct.
     """
     block = {k: v for k, v in ISSUER.items() if v}
-    block.setdefault("legal_name", "Owlogix AI")
+    block.setdefault("legal_name", "Onyxlogix AI")
     if len(block) == 1:
         block["note"] = (
             "Issuer details are not configured. Set CYBERLOGIX_LEGAL_NAME, "
@@ -111,7 +111,7 @@ def render_invoice(invoice, tenant) -> str:
     out = [
         f"INVOICE {invoice.number}",
         "",
-        f"From:   {issuer.get('legal_name', 'Owlogix AI')}",
+        f"From:   {issuer.get('legal_name', 'Onyxlogix AI')}",
     ]
     for line in (issuer.get("address") or "").splitlines():
         if line.strip():

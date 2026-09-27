@@ -157,7 +157,7 @@ def signing_state() -> Dict[str, Any]:
         "algorithm": "HMAC-SHA256" if configured else None,
         "note": (
             "The chain head is counter-signed, so a recipient can confirm "
-            "this attestation was issued by Owlogix AI."
+            "this attestation was issued by Onyxlogix AI."
             if configured
             else "No signing key is configured, so this attestation carries "
             "no counter-signature. The hash chain still verifies on its own; "

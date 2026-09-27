@@ -222,7 +222,7 @@ def compliance_report(
         "non_compliant_sensors": len(non_compliant),
         "per_sensor": per_sensor,
         "attestation": (
-            "Generated automatically by the Owlogix AI Autonomous Compliance "
+            "Generated automatically by the Onyxlogix AI Autonomous Compliance "
             "Clerk from continuous sensor telemetry. Figures cover only the "
             "period stated above."
         ),
@@ -236,7 +236,7 @@ def compliance_report(
             f"{len(incidents)} incidents opened and {len(resolved)} resolved."
         )
         prompt = f"""
-        You are the Owlogix AI Autonomous Compliance Clerk writing the
+        You are the Onyxlogix AI Autonomous Compliance Clerk writing the
         executive summary that opens a temperature compliance report submitted
         to a regulatory inspector.
 
@@ -376,7 +376,7 @@ def compliance_csv(
 
     buffer.seek(0)
     filename = (
-        f"owlogix-compliance-{tenant.tenant_id}-"
+        f"onyxlogix-compliance-{tenant.tenant_id}-"
         f"{utc_now().strftime('%Y%m%d')}.csv"
     )
     return StreamingResponse(

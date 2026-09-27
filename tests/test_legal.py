@@ -75,8 +75,8 @@ def test_the_hash_moves_when_the_product_does(monkeypatch):
 
 
 def test_the_issuer_on_the_agreement_is_the_one_on_the_invoice(monkeypatch):
-    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "Owlogix AI, Inc.")
-    assert "Owlogix AI, Inc." in legal.terms_of_service()
+    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "Onyxlogix AI, Inc.")
+    assert "Onyxlogix AI, Inc." in legal.terms_of_service()
 
 
 # ---- the clauses that protect the company ------------------------------

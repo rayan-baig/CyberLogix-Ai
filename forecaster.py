@@ -231,7 +231,7 @@ def sensor_forecast(
             f"{result['likely_catastrophe']}. Schedule preventive maintenance."
         )
         prompt = f"""
-        You are the Owlogix AI predictive maintenance analyst.
+        You are the Onyxlogix AI predictive maintenance analyst.
 
         Sector: {result['industry_name']}
         Sensor: {sensor_id} at {result['location_name']}

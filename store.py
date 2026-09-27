@@ -1,4 +1,4 @@
-"""Shared domain model and in-memory state for the Owlogix AI hub.
+"""Shared domain model and in-memory state for the Onyxlogix AI hub.
 
 Every router in the suite reads and writes through the single `STORE`
 instance defined at the bottom of this module. State is held in memory and

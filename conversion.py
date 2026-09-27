@@ -209,7 +209,7 @@ def welcome(tenant: Tenant) -> Dict[str, Any]:
     """
     return send_mail(
         to_address=tenant.contact_email,
-        subject=f"{tenant.company_name}: your Owlogix trial is live",
+        subject=f"{tenant.company_name}: your Onyxlogix trial is live",
         body=(
             f"{tenant.contact_name},\n\n"
             "Your trial estate is up. It runs for "

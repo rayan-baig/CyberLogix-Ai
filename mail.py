@@ -74,7 +74,7 @@ SMTP_STARTTLS = os.environ.get("SMTP_STARTTLS", "1").strip() not in ("0", "false
 SMTP_TIMEOUT_SECONDS = float(os.environ.get("SMTP_TIMEOUT_SECONDS", "20"))
 
 MAIL_FROM = os.environ.get("MAIL_FROM", "").strip()
-MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "Owlogix AI").strip()
+MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "Onyxlogix AI").strip()
 MAIL_REPLY_TO = os.environ.get("MAIL_REPLY_TO", "").strip()
 
 # Where a customer is told to send the money. Without this an invoice is a

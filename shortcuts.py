@@ -135,7 +135,7 @@ def _fallback(profile: Dict[str, Any], evidence: Dict[str, Any], days: int) -> s
 
     lines.append("")
     lines.append(
-        "Compiled automatically by Owlogix AI from continuous sensor "
+        "Compiled automatically by Onyxlogix AI from continuous sensor "
         "telemetry. Figures cover only the period stated."
     )
     return "\n".join(lines)
@@ -191,7 +191,7 @@ def run_shortcut(
         )
 
     prompt = f"""
-    You are the Owlogix AI compliance clerk producing a document titled
+    You are the Onyxlogix AI compliance clerk producing a document titled
     "{profile['shortcut_name']}" for a {profile['name']} operator.
 
     Purpose of this document: {profile['shortcut_description']}

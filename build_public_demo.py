@@ -384,7 +384,7 @@ def build(data: dict, page_name: str = "console.html",
         '<script src="/static/circuit.js"></script>', "")
 
     page = (
-        "<title>Owlogix Console</title>\n"
+        "<title>Onyxlogix Console</title>\n"
         f"<style>\n{theme}\n\n"
         "/* --- the one thing this page adds to the product --------- */\n"
         ".demo-bar {\n"
