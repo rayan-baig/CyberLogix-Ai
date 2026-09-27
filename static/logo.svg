@@ -1,24 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
      aria-label="Owlogix AI">
   <!--
-    The branches that leave the head in the Cybersalus mark, stood
-    upright and laid out rather than scattered.
+    An owl, because an owl is awake at 3am and watching, which is the
+    whole product. Drawn in the same language as the circuit mark it
+    replaces: one gradient, round-capped traces, and a plated pad where
+    a trace ends, here at the tip of each ear.
 
-    Every branch does the same thing: leaves the rail, takes one corner
-    at 45°, and then runs *vertical* — parallel to the rail and to every
-    other branch — to its pad. Nothing runs flat, nothing wanders, and
-    the pairs are symmetric about the centre.
-
-    The earlier version gave each limb a different length and a different
-    exit height on purpose, on the theory that a real board is routed
-    around whatever is already there. On a 32px mark that theory just
-    produces mess. Order is the thing that reads at this size.
-
-    The tips step down from the centre — 5.5, then 9, then 13 — so the
-    silhouette is a clean descent instead of a hedge.
+    The head is one trace: up to the ear pads, in across the brow, and
+    round the chin. The eyes are the biggest thing on it, on purpose.
+    They are what reads at 16px when nothing else does.
   -->
   <defs>
-    <linearGradient id="clx-wash" x1="16" y1="30" x2="16" y2="4"
+    <linearGradient id="owl-wash" x1="16" y1="30" x2="16" y2="3"
                     gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#7C3FE4"/>
       <stop offset="0.5" stop-color="#5A4DE8"/>
@@ -26,25 +19,26 @@
     </linearGradient>
   </defs>
 
-  <g fill="none" stroke="url(#clx-wash)" stroke-linecap="round"
+  <g fill="none" stroke="url(#owl-wash)" stroke-linecap="round"
      stroke-linejoin="round">
-    <path d="M16 30.5 V5.5" stroke-width="2.9"/>
-    <path d="M16 20 L11 15 V9" stroke-width="2.2"/>
-    <path d="M16 20 L21 15 V9" stroke-width="2.2"/>
-    <path d="M16 26 L5 15 V13" stroke-width="2.2"/>
-    <path d="M16 26 L27 15 V13" stroke-width="2.2"/>
+    <path d="M5 6 L10.5 10.5 H21.5 L27 6 V19 C27 25.5 22 29.5 16 29.5
+             C10 29.5 5 25.5 5 19 Z" stroke-width="2.4"/>
+    <path d="M14.4 20.8 L16 23 L17.6 20.8" stroke-width="1.9"/>
   </g>
 
-  <!-- a plated pad at every tip, and a via where each pair leaves the rail -->
-  <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.6">
-    <circle cx="16" cy="5.5" r="3.1"/>
-    <circle cx="11" cy="9" r="2.4"/>
-    <circle cx="21" cy="9" r="2.4"/>
-    <circle cx="5" cy="13" r="2.4"/>
-    <circle cx="27" cy="13" r="2.4"/>
+  <!-- the eyes: a plated pad each, with the gradient for a pupil -->
+  <g fill="#FFFFFF" stroke="url(#owl-wash)" stroke-width="1.8">
+    <circle cx="11.4" cy="16" r="3.7"/>
+    <circle cx="20.6" cy="16" r="3.7"/>
   </g>
-  <g fill="#FFFFFF" stroke="url(#clx-wash)" stroke-width="1.15">
-    <circle cx="16" cy="20" r="1.5"/>
-    <circle cx="16" cy="26" r="1.5"/>
+  <g fill="url(#owl-wash)">
+    <circle cx="11.4" cy="16" r="1.5"/>
+    <circle cx="20.6" cy="16" r="1.5"/>
+  </g>
+
+  <!-- a pad at each ear tip, where the trace ends -->
+  <g fill="#FFFFFF" stroke="url(#owl-wash)" stroke-width="1.3">
+    <circle cx="5" cy="5" r="1.9"/>
+    <circle cx="27" cy="5" r="1.9"/>
   </g>
 </svg>
