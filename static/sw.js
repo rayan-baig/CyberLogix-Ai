@@ -12,7 +12,7 @@
  * loudly, that what it is showing is not live.
  */
 
-const VERSION = "clx-shell-v3";
+const VERSION = "clx-shell-v4";
 const SHELL = [
   "/console",
   "/static/theme.css",
