@@ -1,11 +1,11 @@
 # ==============================================================================
-# CyberLogix AI - BYOD Hardware Webhook & Meeting Intelligence Bridge
+# Owlogix AI - BYOD Hardware Webhook & Meeting Intelligence Bridge
 # File: hardware_bridge.py
 # ==============================================================================
 """Bring-your-own-device ingestion and sector meeting intelligence.
 
 Part 1 lets any off-the-shelf commercial sensor (Elitech, Dickson, Monnit,
-SensorPush and friends) POST its raw JSON straight to CyberLogix, so a
+SensorPush and friends) POST its raw JSON straight to Owlogix, so a
 customer needs no proprietary hardware. Webhook readings run through the
 same engine as native pulses, so BYOD estates get incidents, escalation,
 forecasting and compliance logging identically.
@@ -60,7 +60,7 @@ SUPPORTED_METRICS = (
 # ==============================================================================
 # PART 1: The BYOD Hardware Webhook Receiver (No Physical Product Needed)
 # Allows any 3rd-party commercial sensor/thermostat (Elitech, Dickson, Monnit,
-# etc.) to push raw JSON telemetry data straight to the CyberLogix AI backend.
+# etc.) to push raw JSON telemetry data straight to the Owlogix AI backend.
 # ==============================================================================
 
 
@@ -449,7 +449,7 @@ def process_voice_meeting_summarizer(
     focus_directive = SECTOR_PROMPTS[vertical]
 
     prompt = f"""
-    You are the CyberLogix AI Executive Sector Intelligence Clerk.
+    You are the Owlogix AI Executive Sector Intelligence Clerk.
     Target Industry: {vertical.upper()}
     Sector Analytical Directive: {focus_directive}
 

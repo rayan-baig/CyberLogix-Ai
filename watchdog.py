@@ -211,7 +211,7 @@ def ping() -> Dict[str, Any]:
 
     try:
         request = urllib.request.Request(
-            HEARTBEAT_URL, method="GET", headers={"User-Agent": "CyberLogix/1"}
+            HEARTBEAT_URL, method="GET", headers={"User-Agent": "Owlogix/1"}
         )
         with urllib.request.urlopen(
             request, timeout=HEARTBEAT_TIMEOUT_SECONDS

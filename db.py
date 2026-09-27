@@ -1,4 +1,4 @@
-"""SQLite persistence for the CyberLogix hub.
+"""SQLite persistence for the Owlogix hub.
 
 The platform's queries are all small in-memory scans over a single tenant's
 estate, so this is a document store rather than a relational schema: every

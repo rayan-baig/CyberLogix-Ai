@@ -85,7 +85,7 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     spoken = spoken_temperature(incident.temperature_fahrenheit, unit)
 
     fallback = (
-        f"This is an automated emergency call from CyberLogix AI for "
+        f"This is an automated emergency call from Owlogix AI for "
         f"{tenant.company_name}. Sensor {incident.sensor_id} at {location} has "
         f"been reporting a critical temperature of "
         f"{spoken} for {minutes} "
@@ -94,7 +94,7 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
     )
 
     prompt = f"""
-    You are the CyberLogix AI automated outbound emergency voice operator.
+    You are the Owlogix AI automated outbound emergency voice operator.
     You are placing a phone call because a critical facility alert was sent by
     SMS {minutes} minutes ago and nobody has acknowledged it.
 
@@ -109,7 +109,7 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
 
     Write the exact words to be spoken aloud by a text-to-speech voice down
     the phone line. Keep it under 60 spoken words. Open by identifying
-    CyberLogix AI so the person knows this is not a scam call, state the
+    Owlogix AI so the person knows this is not a scam call, state the
     specific asset at risk and the likely cause, and close by telling them to
     press 1 to acknowledge. Write plain spoken sentences only: no markdown, no
     stage directions, no bullet points, no speaker labels.

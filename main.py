@@ -1,4 +1,4 @@
-"""CyberLogix AI Master Enterprise Hub.
+"""Owlogix AI Master Enterprise Hub.
 
 Mounts every subsystem of the suite behind one FastAPI application:
 universal IoT telemetry, corporate license control, the autonomous
@@ -96,7 +96,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="CyberLogix AI Master Enterprise Hub",
+    title="Owlogix AI Master Enterprise Hub",
     description=(
         "Universal IoT Telemetry, License Control, Autonomous Operations, "
         "Voice Escalation, and Predictive Forecasting Suite."
@@ -621,7 +621,7 @@ def legal_page():
 @app.get("/api", status_code=200, tags=["Gateway"])
 def root_gateway():
     return {
-        "system": "CyberLogix AI Master Engine",
+        "system": "Owlogix AI Master Engine",
         "status": "fully_operational_stealth_mode",
         "version": app.version,
         "modules_active": MODULES_ACTIVE,
@@ -635,7 +635,7 @@ def health_check():
     """Liveness probe covering every mounted subsystem."""
     return {
         "status": "online",
-        "engine": "CyberLogix Universal Common Catastrophe IoT Engine",
+        "engine": "Owlogix Universal Common Catastrophe IoT Engine",
         "version": app.version,
         "modules_active": len(MODULES_ACTIVE),
         "active_profiles": len(INDUSTRY_PROFILES),

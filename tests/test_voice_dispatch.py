@@ -117,7 +117,7 @@ def test_voice_script_falls_back_on_outage(
         f"/api/voice/escalate/{incident_id}?force=true", headers=headers
     ).json()
     assert body["voice_dispatch_source"] == "fallback_template"
-    assert "CyberLogix AI" in body["voice_script"]
+    assert "Owlogix AI" in body["voice_script"]
 
 
 def test_incident_from_another_tenant_is_invisible(

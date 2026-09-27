@@ -1,7 +1,7 @@
 """Sensors you already own, sending what they already send.
 
 The bridge accepted third-party hardware, and its docstring said any
-off-the-shelf sensor could "POST its raw JSON straight to CyberLogix".
+off-the-shelf sensor could "POST its raw JSON straight to Owlogix".
 It could not: the endpoint required device_sn, reading_value and
 metric_type, and no Monnit, SensorPush, Elitech or Dickson device has
 ever sent those. The customer had to build the translator the claim

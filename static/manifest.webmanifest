@@ -1,6 +1,6 @@
 {
-  "name": "CyberLogix AI \u2014 Cold Chain Monitoring",
-  "short_name": "CyberLogix",
+  "name": "Owlogix AI \u2014 Cold Chain Monitoring",
+  "short_name": "Owlogix",
   "description": "Every asset under watch, what is breaching now, and what breaks next.",
   "id": "/console",
   "start_url": "/console",
