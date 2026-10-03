@@ -674,7 +674,12 @@ def run_dunning(now: Optional[datetime] = None) -> Dict[str, Any]:
             if tenant is None:
                 continue
 
-            if days >= LATE_FEE_DAYS and invoice.late_fee_invoice_id is None:
+            # A late fee is charged on the invoice that was late, never on
+            # the late fee itself: an unpaid fee used to earn its own $25
+            # minimum fee a fortnight later, and that one another, each
+            # round close to a hundred percent. It is still chased below.
+            if (days >= LATE_FEE_DAYS and invoice.late_fee_invoice_id is None
+                    and not (invoice.source or "").startswith("late_fee:")):
                 fee_invoice = issue_late_fee(tenant, invoice)
                 if fee_invoice is not None:
                     fees.append(fee_invoice.number)

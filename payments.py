@@ -210,6 +210,22 @@ def clear_unmatched(event_id: str) -> bool:
     return True
 
 
+def _payment_reference(kind: str, obj: Dict[str, Any]) -> Optional[str]:
+    """The payment intent behind this event, if it says which.
+
+    A session and a charge carry it as `payment_intent`; a payment intent
+    event is the intent itself. Stripe sometimes expands the field into an
+    object, so its `id` is taken then.
+    """
+    intent = obj.get("payment_intent")
+    if isinstance(intent, dict):
+        intent = intent.get("id")
+    if not intent and kind == "payment_intent.succeeded":
+        intent = obj.get("id")
+    intent = str(intent or "").strip()
+    return intent or None
+
+
 def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """Settle whatever this event says was paid.
 
@@ -265,14 +281,20 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"handled": False, "reason": "invoice is void", **detail}
 
     tenant = STORE.get_tenant(invoice.tenant_id)
-    # The Stripe event id as the reference, so the ledger's own duplicate
-    # check does the idempotency. A storm of retries settles it once.
-    invoice, applied = STORE.settle_invoice(invoice, event_id, amount)
+    # One payment, one reference, so the ledger's own duplicate check does
+    # the idempotency. The event id is not enough: a single card payment
+    # arrives as checkout.session.completed, payment_intent.succeeded and
+    # charge.succeeded -- three events, three ids -- and was recorded
+    # three times. All three name the same payment intent, so that is the
+    # reference whenever the event carries one. A storm of retries of any
+    # of them still settles it once.
+    reference_used = _payment_reference(kind, obj) or event_id
+    invoice, applied = STORE.settle_invoice(invoice, reference_used, amount)
 
     if applied and tenant is not None:
         from invoicing import send_receipt
 
-        send_receipt(tenant, invoice, event_id, invoice.state == "paid")
+        send_receipt(tenant, invoice, reference_used, invoice.state == "paid")
         logger.info(
             "Stripe %s settled %s with $%.2f; %s.",
             event_id, invoice.number, amount,

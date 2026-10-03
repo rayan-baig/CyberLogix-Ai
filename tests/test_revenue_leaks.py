@@ -430,10 +430,15 @@ def test_a_part_paid_invoice_that_is_voided_earns_no_commission(
     assert api.get("/api/partners/me/statement",
                    headers=partner_key).json()["commission_usd"] == 100.0
 
-    voided = api.post(f"/api/invoices/{invoice.invoice_id}/void",
+    # The operator's void button now refuses an invoice money has arrived
+    # against (tests/test_money_edges.py). The store can still void one --
+    # it is the path every other void takes -- and the commission must
+    # follow it back to zero when it does.
+    refused = api.post(f"/api/invoices/{invoice.invoice_id}/void",
              params={"tenant_id": tenant["tenant_id"]},
              headers=admin_headers, json={})
-    assert voided.status_code == 200, voided.text
+    assert refused.status_code == 409, refused.text
+    STORE.void_invoice(STORE.get_invoice(invoice.invoice_id))
     assert api.get("/api/partners/me/statement",
                    headers=partner_key).json()["commission_usd"] == 0.0, (
         "Commission was still owed on an invoice that was voided."

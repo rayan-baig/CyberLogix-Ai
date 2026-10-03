@@ -556,12 +556,31 @@ def void_invoice(
     """
     tenant = _tenant_or_404(tenant_id)
     invoice = _load(invoice_id, tenant)
+    # A second void is a double click or a retry, not a second decision.
+    # Answered as the first was, and nothing else happens: voiding again
+    # used to hand the period back for re-billing a second time, so one
+    # month ended up on two open invoices.
+    if invoice.state == "void":
+        return {"message": f"{invoice.number} was already voided.",
+                "invoice": invoice.public()}
     if invoice.state == "paid":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"{invoice.number} is settled. Issue a credit note rather "
                 "than voiding a paid invoice."
+            ),
+        )
+    # Part-paid is the same problem as paid, smaller. The replacement
+    # invoice bills the whole period again and knows nothing about the
+    # money already received, which would be left sitting on a void.
+    if invoice.amount_paid_usd > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"${invoice.amount_paid_usd:,.2f} has already been received "
+                f"against {invoice.number}. Voiding it would re-bill the "
+                "whole period and leave that money on a dead invoice."
             ),
         )
     STORE.void_invoice(invoice)

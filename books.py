@@ -326,8 +326,12 @@ def summary(
             ),
         },
         "written_off_usd": written_off,
+        # Only invoices still open are owed. A voided invoice keeps its
+        # balance figure on the record, and counting it reported money as
+        # outstanding that nobody will ever be asked for.
         "outstanding_at_period_end_usd": round(
-            sum(r["balance_usd"] for r in ledger), 2
+            sum(r["balance_usd"] for r in ledger
+                if r["state"] in ("issued", "part_paid")), 2
         ),
         "known_costs": costs,
         "note": (

@@ -3949,6 +3949,11 @@ class HubStore:
         rewinding would re-issue every period after it as well.
         """
         with self._lock:
+            # Voiding twice must not queue the period twice: after the
+            # first re-bill clears it, a second void would put it back and
+            # the same month would be invoiced again.
+            if invoice.state == "void":
+                return invoice
             invoice.state = "void"
             invoice.voided_at = utc_now()
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
@@ -4660,7 +4665,14 @@ class HubStore:
         with self._lock:
             live = self._subscriptions.get(sub.subscription_id) or sub
             carried = live.rate_multiplier(max(0, live.periods_billed - 1))
-            live.cancelled_at = utc_now()
+            now = utc_now()
+            # The new term picks up where the old one's invoices stop.
+            # Starting it "now" on an early renewal billed again the part
+            # of this month the last invoice already covered -- nineteen
+            # days twice, renewing three weeks out. A renewal after a gap
+            # starts today, never back-dated into months nobody was served.
+            covered_to = live.period_start(live.periods_billed)
+            live.cancelled_at = now
             live.cancellation_reason = "superseded by renewal"
             self._db.put("subscription", live.subscription_id, live.to_row())
         tenant = self.get_tenant(live.tenant_id)
@@ -4673,8 +4685,14 @@ class HubStore:
             purchase_order=live.purchase_order,
             auto_renew=live.auto_renew,
             signed_by=live.signed_by,
+            started_at=max(covered_to, now),
             carried_multiplier=carried,
         )
+        # Commissioning was done once, for the estate, and charged then. A
+        # renewal is the same equipment carrying on; charging it again was
+        # a second $1,500 for nothing.
+        if live.setup_billed:
+            self.mark_setup_billed(fresh)
         return fresh
 
 

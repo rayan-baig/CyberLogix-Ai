@@ -67,9 +67,15 @@ def _evidence_window(incident, start, end):
             found[row["reading_id"]] = Reading.from_row(row)
         except Exception:  # noqa: BLE001 - one malformed row must not
             continue      # empty the evidence for the whole claim
-    for reading in STORE.readings_for(incident.sensor_id, since=start):
-        if reading.recorded_at <= end:
-            found[reading.reading_id] = reading
+    # Live readings only while the sensor still belongs to this estate. A
+    # sensor id is free again once decommissioned, and another customer
+    # registering the same id would otherwise have their readings put in
+    # this customer's claim, under an attestation.
+    live = STORE.get_sensor(incident.sensor_id)
+    if live is not None and live.tenant_id == incident.tenant_id:
+        for reading in STORE.readings_for(incident.sensor_id, since=start):
+            if reading.recorded_at <= end:
+                found[reading.reading_id] = reading
     return sorted(
         (r for r in found.values()
          if r.recorded_at is not None and start <= r.recorded_at <= end),
@@ -114,6 +120,10 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
     from vault import attest_sensor, signing_state
 
     sensor = STORE.get_sensor(incident.sensor_id)
+    # The same id under another estate is somebody else's asset: its name,
+    # its site and its street address are not this customer's to see.
+    if sensor is not None and sensor.tenant_id != incident.tenant_id:
+        sensor = None
     unit = tenant.temperature_unit
     profile = INDUSTRY_PROFILES[incident.industry_vertical]
     site = (
