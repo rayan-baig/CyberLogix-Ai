@@ -94,13 +94,22 @@
     });
   }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
 
+  // The home page, the sign-up page and the industry pages share this
+  // file, so each list names the pieces of all three. A selector that
+  // matches nothing on a page costs nothing there.
+  var HEADLINE = ".hero h1, main > section > h1, #page > h1";
+  var TYPED = ".hero .kicker, #page > .eyebrow";
   var REVEAL = [
     ".band-head h2", ".band-head p", ".closer h2", ".closer p",
-    ".ladder", ".sector", ".plan", ".proof-item", ".cta-row", ".lede"
+    ".ladder", ".sector", ".plan", ".proof-item", ".cta-row",
+    ".lede:not(h1)", ".points li", "#panel",
+    "#page > .standfirst", ".slab", ".does li", ".ind", ".foot"
   ].join(",");
-  var GLOW = ".sector, .plan, .rung";
+  var GLOW = ".sector, .plan, .rung, .ind";
 
   function prepare(scope) {
+    Array.prototype.forEach.call(scope.querySelectorAll(HEADLINE), splitWords);
+    Array.prototype.forEach.call(scope.querySelectorAll(TYPED), typeOut);
     Array.prototype.forEach.call(scope.querySelectorAll(REVEAL), function (el) {
       if (el.hasAttribute("data-reveal")) return;
       el.setAttribute("data-reveal", "");
@@ -129,10 +138,8 @@
   }, { passive: true });
 
   function start() {
-    splitWords(document.querySelector(".hero h1"));
-    typeOut(document.querySelector(".hero .kicker"));
-    // the hero's lede and buttons are on screen already; they come in
-    // just after the headline rather than waiting for a scroll
+    // what is on screen already comes in straight away, just after the
+    // headline, rather than waiting for a scroll
     prepare(document);
     new MutationObserver(function (records) {
       records.forEach(function (r) {
