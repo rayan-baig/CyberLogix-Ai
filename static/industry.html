@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#05070D">
-<title>Onyxlogix — for your industry</title>
+<title>CyberLogix — for your industry</title>
 <link rel="icon" href="/static/logo-mark.svg">
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/motion.css">
@@ -103,7 +103,7 @@ h1.lede {
     <span class="brand-mark" aria-hidden="true">
       <img src="/static/logo.svg" alt="" width="30" height="30">
     </span>
-    <span class="brand-name">Onyxlogix <em>AI</em></span>
+    <span class="brand-name">CyberLogix <em>AI</em></span>
     <span class="grow"></span>
     <a class="btn btn-sm" href="/for">All industries</a>
   </div>
@@ -124,7 +124,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
 const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
 
 function renderIndex(rows) {
-  document.title = "Onyxlogix — who this is for";
+  document.title = "CyberLogix — who this is for";
   $("page").innerHTML =
     `<div class="eyebrow">Who this is for</div>
      <h1 class="lede">Twelve industries with the same problem.</h1>
@@ -139,7 +139,7 @@ function renderIndex(rows) {
 }
 
 function renderIndustry(d) {
-  document.title = `Onyxlogix — for ${d.name}`;
+  document.title = `CyberLogix — for ${d.name}`;
   $("page").innerHTML = `
     <div class="eyebrow">${esc(d.name)}</div>
     <h1 class="lede">We watch ${esc(d.protects)}, and wake somebody up

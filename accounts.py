@@ -514,10 +514,10 @@ def _send_reset(address: str) -> None:
 
     send_mail(
         to_address=user.email,
-        subject="Reset your Onyxlogix password",
+        subject="Reset your CyberLogix password",
         body=(
             f"{user.full_name},\n\n"
-            "Somebody asked to reset the password on your Onyxlogix "
+            "Somebody asked to reset the password on your CyberLogix "
             f"account{f' for {tenant.company_name}' if tenant else ''}.\n\n"
             f"{where}\n\n"
             "It works once and expires in 24 hours. Using it signs out "
