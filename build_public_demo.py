@@ -53,6 +53,7 @@ PATHS = [
     "/api/sites", "/api/invoices", "/api/contracts",
     "/api/billing/pricing",
     "/api/autopilot/compliance?days=7",
+    "/api/accounts/businesses",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
@@ -232,6 +233,16 @@ window.fetch = function (input, init) {
     }
   }
 
+  // The business switcher. The demo holds one business's figures, so it
+  // says what the live app would do rather than pretending to go there.
+  if (method === "POST" && /^[/]api[/]accounts[/]businesses/.test(url.pathname)) {
+    return reply({ detail: url.pathname.endsWith("/switch")
+      ? "In the live app this opens that business, with its own units and alerts. "
+        + "The demo holds one business, so it stays here."
+      : "In the live app this adds the business on a free trial and opens it. "
+        + "The demo is read-only, so it does not save." }, 403);
+  }
+
   if (method !== "GET") {
     // Everything else is read-only on purpose. A demo that looked like
     // it saved something and did not would be worse than one that says
@@ -275,7 +286,31 @@ def capture() -> dict:
             "password": credentials["password"],
         })
         signed_in.raise_for_status()
-        head = {"Authorization": f"Bearer {signed_in.json()['token']}"}
+        token = signed_in.json()["token"]
+        home = signed_in.json()["tenant"]["tenant_id"]
+
+        # A second business for the same owner, so the business switcher
+        # has something to show: a bakery with one freezer, running fine.
+        # Adding it opens it, so the session is then switched back home.
+        added = client.post(
+            "/api/accounts/businesses",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"company_name": "Harbor Bakery", "industry_vertical": "restaurant"},
+        )
+        added.raise_for_status()
+        bakery_key = {"X-CyberLogix-Key": added.json()["api_key"]}
+        client.post("/api/licenses/me/sensors", headers=bakery_key, json={
+            "sensor_id": "BAKERY-FREEZER", "industry_vertical": "restaurant",
+            "location_name": "Pastry freezer"}).raise_for_status()
+        client.post("/api/sensor-pulse", headers=bakery_key, json={
+            "sensor_id": "BAKERY-FREEZER", "temperature_fahrenheit": 2.0,
+        }).raise_for_status()
+        back = client.post(
+            f"/api/accounts/businesses/{home}/switch",
+            headers={"Authorization": f"Bearer {added.json()['token']}"},
+        )
+        back.raise_for_status()
+        head = {"Authorization": f"Bearer {back.json()['token']}"}
 
         for path in PATHS:
             got = client.get(path, headers=head)

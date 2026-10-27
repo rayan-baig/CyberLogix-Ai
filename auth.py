@@ -202,7 +202,7 @@ def optional_operator(
         return None
 
     user = STORE.get_user(session.user_id)
-    if user is None or user.disabled:
+    if user is None or not STORE.person_active(user):
         return None
     return user
 
@@ -232,7 +232,7 @@ def _resolve_tenant(
                 detail="Session token is invalid or expired. Sign in again.",
             )
         user = STORE.get_user(session.user_id)
-        if user is None or user.disabled:
+        if user is None or not STORE.person_active(user):
             STORE.revoke_session(session.token)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

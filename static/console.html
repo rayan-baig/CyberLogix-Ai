@@ -129,7 +129,11 @@
     <span class="nav-spacer"></span>
     <span class="status-line">System status: <b id="sys-status">online</b></span>
     <span class="chip" id="chip-user">—</span>
-    <span class="chip" id="chip-company">—</span>
+    <!-- The business switcher. Somebody with one business sees their
+         company's name; somebody with several opens their list here. -->
+    <button class="chip chip-btn" id="chip-company" type="button"
+            aria-haspopup="dialog" title="Your businesses">—</button>
+    <span class="biz-badge" id="biz-badge" hidden></span>
     <span class="chip" id="chip-plan">—</span>
     <span class="chip" id="chip-seats">—</span>
     <span class="chip" id="chip-spend">—</span>
@@ -1307,6 +1311,7 @@ async function refresh() {
                           : api("/api/accounts/me")),
     roster: () => api("/api/contacts"),
     team: () => api("/api/accounts/users"),
+    businesses: () => api("/api/accounts/businesses"),
     catalogue: () => (state.shortcutCatalogue
       ? Promise.resolve(state.shortcutCatalogue) : api("/api/shortcuts")),
     hooks: () => api("/api/webhooks"),
@@ -1341,6 +1346,8 @@ async function refresh() {
   state.unit = overview.temperature_unit || "F";
 
   render(overview, health);
+  // Never a broken panel: without the list the chip is just the name.
+  try { paintBusinessChip(got.businesses || null); } catch (_) { /* the estate is the page */ }
   renderSites(overview);
   renderVault();
   loadBenchmarks(overview);
@@ -1429,7 +1436,7 @@ function render(d, health) {
   // freezer, and a legal check that 500s must not take that away.
   checkTerms().catch(() => { /* the estate is the page */ });
 
-  $("chip-company").textContent = t.company_name;
+  $("chip-company").textContent = `${t.company_name} ▾`;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
   $("chip-spend").textContent = d.subscription
@@ -3801,6 +3808,174 @@ async function openDrawer(sensorId, options = {}) {
   showDrawer();
   $("drawer-close").addEventListener("click", closeDrawer);
 }
+
+/* ---------------- your businesses ----------------
+   One sign-in, several businesses. The company chip in the nav is the
+   switcher: it opens this panel, which lists every business this person
+   can open with what needs them there, and adds another. Switching swaps
+   the session for one on the other business and reloads, so nothing from
+   one business's page is left painted while the next one loads. */
+
+function businessStatus(b) {
+  if (b.removed) return { kind: "unknown", text: "You no longer have access" };
+  if (b.licence === "suspended") return { kind: "unknown", text: "Licence suspended" };
+  const parts = [];
+  if (b.open_alerts) parts.push(`${b.open_alerts} open alert${b.open_alerts === 1 ? "" : "s"}`);
+  if (b.sensors_offline) parts.push(`${b.sensors_offline} unit${b.sensors_offline === 1 ? "" : "s"} offline`);
+  if (b.licence === "grace") parts.push(`trial ended, ${b.grace_days_left} day${b.grace_days_left === 1 ? "" : "s"} of monitoring left`);
+  if (b.licence === "lapsed") parts.push("no longer monitored");
+  if (parts.length) return { kind: b.open_alerts || b.licence === "lapsed" ? "critical" : "elevated", text: parts.join(" · ") };
+  return { kind: "low", text: b.sensors ? "All clear" : "No units yet" };
+}
+
+/* The chip: the business you are in, and a count of what needs you in the
+   others, so trouble somewhere else is not invisible from here. */
+function paintBusinessChip(list) {
+  state.businesses = list || null;
+  const badge = $("biz-badge");
+  if (!list || list.count < 2) { badge.hidden = true; return; }
+  const elsewhere = list.businesses.filter((b) => !b.current && b.can_open && b.needs_attention);
+  badge.hidden = !elsewhere.length;
+  badge.textContent = String(elsewhere.length);
+  badge.title = elsewhere.length
+    ? `${elsewhere.length} of your other businesses need${elsewhere.length === 1 ? "s" : ""} you`
+    : "";
+}
+
+async function openBusinesses() {
+  let list;
+  try {
+    list = await api("/api/accounts/businesses");
+  } catch (err) {
+    toast(err.message, "err");
+    return;
+  }
+  paintBusinessChip(list);
+  const t = list.totals;
+  const rows = list.businesses.map((b) => {
+    const st = businessStatus(b);
+    const action = b.current
+      ? `<span class="card-note">You are here</span>`
+      : b.can_open
+        ? `<button class="btn btn-sm btn-primary" type="button" data-open-biz="${esc(b.tenant_id)}">Open</button>`
+        : "";
+    return `<article class="biz-row${b.current ? " is-current" : ""}">
+        <div class="grow">
+          <div class="biz-name">${esc(b.company_name)}</div>
+          <div class="biz-meta">${b.industry ? esc(b.industry) + " · " : ""}you are ${esc(b.role)}
+            · ${b.sensors} unit${b.sensors === 1 ? "" : "s"}</div>
+          <div class="biz-state">${badge(st.kind, st.text)}</div>
+        </div>
+        ${action}
+      </article>`;
+  }).join("");
+
+  const sectorOptions = (state.industries || [])
+    .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`).join("");
+  const addForm = list.can_add ? `
+      <form id="biz-add" class="biz-add">
+        <div class="card-title">Add a business</div>
+        <p class="biz-meta">It starts on the free trial, under the terms you already
+          agreed to. You become its owner, and it keeps its own units, alerts, team
+          and bills, separate from your other businesses.</p>
+        <div class="field"><label for="biz-name">Business name</label>
+          <input id="biz-name" required maxlength="200" autocomplete="organization"></div>
+        <div class="field"><label for="biz-sector">Sector</label>
+          <select id="biz-sector">${sectorOptions}</select></div>
+        <button class="btn btn-primary" type="submit">Add and open it</button>
+      </form>`
+    : `<p class="biz-meta">${list.businesses.length >= list.max_businesses
+        ? `You have the most businesses one sign-in can hold (${list.max_businesses}).`
+        : "Only an owner can add a business. Open one you own to add another."}</p>`;
+
+  $("drawer").innerHTML = `
+    <div class="drawer-head">
+      <div class="grow">
+        <div class="drawer-title" id="drawer-title">Your businesses</div>
+        <div class="drawer-sub">Signed in as ${esc(list.person.full_name)}. Each business
+          keeps its own data, and your role in it.</div>
+      </div>
+      <button class="btn btn-sm" id="drawer-close">Close</button>
+    </div>
+    <p class="biz-totals">${list.count} business${list.count === 1 ? "" : "es"}
+      · ${t.open_alerts} open alert${t.open_alerts === 1 ? "" : "s"}
+      · ${t.sensors_offline} unit${t.sensors_offline === 1 ? "" : "s"} offline</p>
+    <div class="biz-list">${rows}</div>
+    ${addForm}
+    <div id="biz-made" hidden></div>
+  `;
+  showDrawer();
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("drawer").querySelectorAll("[data-open-biz]").forEach((btn) => {
+    btn.addEventListener("click", () => switchBusiness(btn.dataset.openBiz, btn));
+  });
+  const form = $("biz-add");
+  if (form) {
+    const sector = state.data && state.data.tenant && state.data.tenant.industry_vertical;
+    if (sector) $("biz-sector").value = sector;
+    form.addEventListener("submit", addBusiness);
+  }
+}
+
+/* A new session for the other business, then a clean page. */
+function landIn(token) {
+  try { localStorage.setItem(TOKEN_STORAGE, token); } catch (_) {}
+  location.reload();
+}
+
+async function switchBusiness(tenantId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const opened = await api(`/api/accounts/businesses/${encodeURIComponent(tenantId)}/switch`, {
+      method: "POST",
+    });
+    landIn(opened.token);
+  } catch (err) {
+    toast(err.message, "err");
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function addBusiness(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const made = await api("/api/accounts/businesses", {
+      method: "POST",
+      body: JSON.stringify({
+        company_name: $("biz-name").value.trim(),
+        industry_vertical: $("biz-sector").value || null,
+      }),
+    });
+    // The old session ended when this one began, so the panel can only
+    // move forward. The sensor key is shown once, here, as sign-up does.
+    event.target.hidden = true;
+    const box = $("biz-made");
+    box.innerHTML = `
+      <div class="card-title">${esc(made.tenant.company_name)} is ready</div>
+      <p class="biz-meta">Its sensor key, for plugging units in. It is shown once:
+        copy it somewhere safe now.</p>
+      <code class="biz-key" id="biz-key"></code>
+      <div class="biz-actions">
+        <button class="btn btn-sm" type="button" id="biz-copy">Copy key</button>
+        <button class="btn btn-sm btn-primary" type="button" id="biz-go">Open ${esc(made.tenant.company_name)}</button>
+      </div>`;
+    $("biz-key").textContent = made.api_key;
+    box.hidden = false;
+    $("drawer-close").onclick = () => landIn(made.token);
+    $("biz-go").addEventListener("click", () => landIn(made.token));
+    $("biz-copy").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(made.api_key); toast("Key copied.", "ok"); }
+      catch (_) { toast("Select the key and copy it by hand.", "err"); }
+    });
+  } catch (err) {
+    toast(err.message, "err");
+    btn.disabled = false;
+  }
+}
+
+$("chip-company").addEventListener("click", openBusinesses);
 
 function showDrawer() {
   // Remembered so focus can go back where it came from, rather than

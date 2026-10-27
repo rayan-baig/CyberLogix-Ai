@@ -137,7 +137,7 @@ def require_operator(session: LoginSession = Depends(require_session)) -> User:
     from auth import licence_state
 
     user = STORE.get_user(session.user_id)
-    if user is None or user.disabled:
+    if user is None or not STORE.person_active(user):
         STORE.revoke_session(session.token)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -266,8 +266,19 @@ def login(payload: LoginRequest):
     # trial becomes a lost customer rather than a paying one.
     from auth import licence_state
 
-    tenant = STORE.get_tenant(user.tenant_id)
-    if tenant is None or licence_state(tenant) == "suspended":
+    # Somebody with several businesses lands in the first one that is
+    # open to them. A suspension in one business must not lock its owner
+    # out of the others.
+    for record in STORE.logins_of(user):
+        tenant = STORE.get_tenant(record.tenant_id)
+        if (
+            not record.disabled
+            and tenant is not None
+            and licence_state(tenant) != "suspended"
+        ):
+            user = record
+            break
+    else:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="The license for this account is not active.",
@@ -308,12 +319,14 @@ def change_password(
     payload: PasswordChange, user: User = Depends(require_operator)
 ):
     """Rotate your own password, invalidating other sessions is not implied."""
-    if not verify_password(payload.current_password, user.password_hash):
+    # One password per person, whichever of their businesses is open.
+    person = STORE.person_of(user)
+    if not verify_password(payload.current_password, person.password_hash):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Current password is incorrect.",
         )
-    STORE.set_user_password(user, payload.new_password)
+    STORE.set_user_password(person, payload.new_password)
     audit(user, "account.password_changed", "Changed their own password.")
     return {"message": "Password updated."}
 
@@ -330,11 +343,25 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
     """Add an operator to this tenant. Owners only."""
     role = _validate_role(payload.role)
 
-    if STORE.user_by_email(str(payload.email)) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="That email address is already registered.",
+    existing = STORE.user_by_email(str(payload.email))
+    if existing is not None:
+        # Somebody who already runs or works at another business on
+        # CyberLogix. They keep their own sign-in and password; this
+        # business is added to the list they can switch between. Nothing
+        # of theirs is shared with this business, and nothing of this
+        # business's with theirs, beyond what this role allows here.
+        if STORE.login_in(existing, owner.tenant_id) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{existing.email} already has access to this business.",
+            )
+        linked = STORE.link_user(existing, owner.tenant_id, role)
+        audit(
+            owner, "account.invited",
+            f"Added {linked.email} as {role}. They already had a CyberLogix "
+            "sign-in, so they keep it and switch to this business from it.",
         )
+        return linked.public()
 
     created = STORE.create_user(
         tenant_id=owner.tenant_id,
@@ -407,6 +434,18 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
     if target is None or target.tenant_id != owner.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No such user."
+        )
+    if target.linked_to is not None:
+        # Their password belongs to their sign-in, which lives with another
+        # business. Resetting it from here would let one business's owner
+        # take over somebody's access to every business they have.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{target.email} signs in with their own CyberLogix login, "
+                "which this business does not manage. They can reset it "
+                "themselves from the sign-in page."
+            ),
         )
 
     token = STORE.issue_reset(target)

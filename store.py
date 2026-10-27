@@ -1202,7 +1202,15 @@ SESSION_TTL_HOURS = 12
 
 @dataclass
 class User:
-    """A named human operator inside a tenant."""
+    """A named human operator inside a tenant.
+
+    One person who runs several businesses has one of these per business,
+    so that each business keeps its own role for them and nothing about
+    one business can leak into another. Only the first is a sign-in: it
+    owns the email address and the password. The rest carry `linked_to`,
+    the user_id of that first one, cannot be signed into directly, and are
+    reached by switching business from a session of the same person.
+    """
 
     user_id: str
     tenant_id: str
@@ -1213,6 +1221,7 @@ class User:
     created_at: datetime
     last_login_at: Optional[datetime] = None
     disabled: bool = False
+    linked_to: Optional[str] = None
 
     def can(self, required: str) -> bool:
         """True when this user's role is at least `required`."""
@@ -1229,6 +1238,7 @@ class User:
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
             "disabled": self.disabled,
+            "linked_to": self.linked_to,
         }
 
     @classmethod
@@ -1243,6 +1253,7 @@ class User:
             created_at=_parse(row["created_at"]),
             last_login_at=_parse(row.get("last_login_at")),
             disabled=row.get("disabled", False),
+            linked_to=row.get("linked_to"),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1256,6 +1267,9 @@ class User:
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
             "disabled": self.disabled,
+            # True when this person signs in with a login that belongs to
+            # another business, and reaches this one by switching.
+            "linked": self.linked_to is not None,
         }
 
 
@@ -2487,7 +2501,8 @@ class HubStore:
             for row in self._db.all("user"):
                 user = User.from_row(row)
                 self._users[user.user_id] = user
-                self._emails[user.email] = user.user_id
+                if user.linked_to is None:
+                    self._emails[user.email] = user.user_id
 
             for row in self._db.all("session"):
                 session = LoginSession.from_row(row)
@@ -3384,6 +3399,67 @@ class HubStore:
         with self._lock:
             return self._users.get(user_id)
 
+    # ---- one person, several businesses ---------------------------------
+
+    def link_user(self, person: User, tenant_id: str, role: str) -> User:
+        """Give a person a place in another business, under their own login.
+
+        The new record has the person's name and email for the team list,
+        but no password of its own and no entry in the email index: the
+        email still signs in to the person's first login and nothing else.
+        """
+        with self._lock:
+            person = self.person_of(person)
+            user = User(
+                user_id=self._next_id("USR"),
+                tenant_id=tenant_id,
+                email=person.email,
+                full_name=person.full_name,
+                role=role,
+                # Never matches anything: this record is not a sign-in.
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                created_at=utc_now(),
+                linked_to=person.user_id,
+            )
+            self._users[user.user_id] = user
+            self._db.put("user", user.user_id, user.to_row())
+            return user
+
+    def person_of(self, user: User) -> User:
+        """The sign-in behind a user record: itself, or the one it links to."""
+        with self._lock:
+            if user.linked_to is None:
+                return user
+            return self._users.get(user.linked_to) or user
+
+    def person_active(self, user: User) -> bool:
+        """False when this record, or the sign-in behind it, is switched off.
+
+        Disabling somebody's login has to close every business they could
+        switch into, not only the one it was disabled in.
+        """
+        if user.disabled:
+            return False
+        person = self.person_of(user)
+        return person is user or not person.disabled
+
+    def logins_of(self, user: User) -> List[User]:
+        """Every business record of the person behind `user`, first login first."""
+        with self._lock:
+            person = self.person_of(user)
+            linked = sorted(
+                (u for u in self._users.values() if u.linked_to == person.user_id),
+                key=lambda u: u.created_at,
+            )
+            return [person] + linked
+
+    def login_in(self, user: User, tenant_id: str) -> Optional[User]:
+        """This person's record in one particular business, if they have one."""
+        for record in self.logins_of(user):
+            if record.tenant_id == tenant_id:
+                return record
+        return None
+
     def user_by_email(self, email: str) -> Optional[User]:
         with self._lock:
             user_id = self._emails.get((email or "").strip().lower())
@@ -3402,9 +3478,16 @@ class HubStore:
             self._db.put("user", user.user_id, user.to_row())
             if disabled:
                 # Revoke live tokens so a disabled account loses access now,
-                # not whenever its session happens to expire.
+                # not whenever its session happens to expire. A disabled
+                # sign-in takes its linked businesses with it.
+                closing = {user.user_id}
+                if user.linked_to is None:
+                    closing |= {
+                        u.user_id for u in self._users.values()
+                        if u.linked_to == user.user_id
+                    }
                 for token in [
-                    t for t, s in self._sessions.items() if s.user_id == user.user_id
+                    t for t, s in self._sessions.items() if s.user_id in closing
                 ]:
                     self.revoke_session(token)
             return user

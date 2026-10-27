@@ -292,6 +292,33 @@ a { color: var(--accent); }
   border: 1px solid var(--border); background: transparent;
   font-size: 13px; color: var(--ink-2); white-space: nowrap;
 }
+/* The company chip doubles as the business switcher. */
+.chip-btn { cursor: pointer; font: inherit; font-size: 13px; color: var(--ink); }
+.chip-btn:hover { border-color: var(--border-lit); background: var(--accent-dim); }
+.biz-badge {
+  margin-left: -12px; align-self: flex-start; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 999px; background: var(--critical); color: #1a0702;
+  font: 600 11px/18px var(--sans); text-align: center;
+}
+.biz-totals { color: var(--ink-2); font-size: 13.5px; margin: 0 0 12px; }
+.biz-list { display: grid; gap: 10px; margin-bottom: 20px; }
+.biz-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: 12px; background: var(--raised); box-shadow: var(--lift-1);
+}
+.biz-row.is-current { outline: 1px solid var(--accent); }
+.biz-row > .grow { flex: 1 1 auto; min-width: 0; }
+.biz-row > .btn, .biz-row > .card-note { flex: 0 0 auto; width: auto; }
+.biz-name { font-family: var(--display); font-weight: 600; font-size: 15.5px; }
+.biz-meta { color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
+.biz-add { padding: 14px; border-radius: 12px; background: var(--surface-2);
+           border: 1px solid var(--border); }
+.biz-add .card-title { margin-bottom: 4px; }
+.biz-key { display: block; padding: 10px; margin: 8px 0; border-radius: 8px;
+           background: var(--sunken); font-family: var(--mono); font-size: 12.5px;
+           word-break: break-all; }
+.biz-actions { display: flex; gap: 8px; }
+.biz-actions .btn { width: auto; }
 main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 .layout { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 22px; }
 @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0,1fr); } }

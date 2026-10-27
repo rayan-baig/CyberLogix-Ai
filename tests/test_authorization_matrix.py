@@ -34,6 +34,11 @@ UNGATED_BY_DESIGN = {
     "/api/accounts/login": "public by definition",
     "/api/accounts/logout": "ends your own session, nobody else's",
     "/api/accounts/me/password": "changes your own password",
+    "/api/accounts/businesses/{tenant_id}/switch": (
+        "moves your own session to another business you already hold a "
+        "record in, refused for any other. It grants nothing: the role you "
+        "have in that business is checked by every route you call there"
+    ),
     "/api/accounts/reset": "redeems a reset token; the token is the credential",
     "/api/payments/stripe": (
         "Stripe's webhook. It holds no credential of ours, so the request "

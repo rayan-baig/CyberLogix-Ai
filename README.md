@@ -24,6 +24,7 @@ ask for.
 | Operations Console | `/console` | Browser UI over the whole platform |
 | Public Front Door | `/` | What the product is, who it is for, what it costs |
 | Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
+| Several Businesses | `/api/accounts/businesses` | One sign-in, several businesses, and a switcher between them |
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 | On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
 | Pricing & Billing | `/api/billing` | Per-unit rate card, invoice, ROI |
@@ -191,6 +192,29 @@ any line can be checked against it.
 
 A tenant with no sensors in that vertical gets `409`, not an empty document —
 a compliance sheet with nothing behind it reads as an attestation.
+
+## Several businesses
+
+One person can run several businesses from one sign-in: an owner with a
+restaurant and a pharmacy, or a manager looking after shops that are
+separate companies. The company name at the top of the console is the
+switcher. It lists every business the person can open, with how many
+alerts and offline units each one has, and a red count appears on it when
+one of the *other* businesses needs them.
+
+- **Add a business** (owners only) starts it on the usual free trial,
+  under the same terms, with you as its owner. It gets its own sensor key,
+  shown once. A sign-in can hold up to `CYBERLOGIX_MAX_BUSINESSES` (10).
+- **Add an existing person** to your team by their email, as you would
+  anyone: they keep their own sign-in and password, and your business
+  appears in their switcher with the role you gave them. You cannot reset
+  their password, because it is their way into every business they have.
+- **Each business stays separate.** The person has one record per
+  business (`User.linked_to` points at their sign-in), so their role is
+  per business and every permission check works exactly as before.
+  Switching ends the session on one business and starts one on the other.
+  Turning off somebody's sign-in turns off every business it reaches;
+  removing them from one business leaves the others alone.
 
 ## Who gets alerted
 
