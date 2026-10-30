@@ -68,11 +68,24 @@ def test_the_image_excludes_what_must_never_ship():
 
 
 def test_the_image_runs_as_an_unprivileged_user():
+    """The application never runs as root.
+
+    The container starts as root only so its entrypoint can give a root-owned
+    disk to `cyberlogix` (otherwise the app cannot create its database there
+    and crashes on start), then drops to that user before anything else runs.
+    So the check is on the entrypoint: it must hand over with setpriv to
+    `cyberlogix`, and run nothing after the hand-over but the command.
+    """
     dockerfile = (ROOT / "Dockerfile").read_text()
-    assert re.search(r"^USER\s+cyberlogix", dockerfile, re.M)
-    # And the USER line comes after the last RUN that needs root.
-    user_at = dockerfile.index("\nUSER ")
-    assert "useradd" in dockerfile[:user_at]
+    assert "useradd" in dockerfile and "cyberlogix" in dockerfile
+    assert re.search(r'^ENTRYPOINT \["/app/docker-entrypoint.sh"\]', dockerfile, re.M)
+    entry = (ROOT / "docker-entrypoint.sh").read_text()
+    assert 'exec setpriv --reuid=cyberlogix --regid=cyberlogix --init-groups "$@"' in entry
+    # Whatever runs as root is limited to making and owning the data folders.
+    root_part = entry.split('if [ "$(id -u)" = "0" ]; then', 1)[1].split("exec setpriv", 1)[0]
+    commands = {line.split()[0] for line in root_part.splitlines()
+                if line.strip() and not line.strip().startswith("#")}
+    assert commands <= {"for", "[", "mkdir", "chown", "done"}, commands
 
 
 def environment_variables_read_by_the_code():
