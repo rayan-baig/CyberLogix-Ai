@@ -1828,6 +1828,52 @@ class Contact:
 
 
 @dataclass
+class JoinCode:
+    """A one-time code that lets somebody add a business to their sign-in.
+
+    Made by an owner of the business and handed over out of band; entered by
+    the person, from their own signed-in account. Both have to act, so no
+    business can attach itself to somebody's sign-in by knowing their email.
+    Only the hash is stored.
+    """
+
+    token_hash: str
+    tenant_id: str
+    role: str
+    issued_by: str
+    issued_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+
+    @property
+    def spent(self) -> bool:
+        return self.used_at is not None or utc_now() >= self.expires_at
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "token_hash": self.token_hash,
+            "tenant_id": self.tenant_id,
+            "role": self.role,
+            "issued_by": self.issued_by,
+            "issued_at": iso(self.issued_at),
+            "expires_at": iso(self.expires_at),
+            "used_at": iso(self.used_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "JoinCode":
+        return cls(
+            token_hash=row["token_hash"],
+            tenant_id=row["tenant_id"],
+            role=row["role"],
+            issued_by=row["issued_by"],
+            issued_at=_parse(row["issued_at"]),
+            expires_at=_parse(row["expires_at"]),
+            used_at=_parse(row.get("used_at")),
+        )
+
+
+@dataclass
 class ResetToken:
     """A one-time password reset, issued by an owner.
 
@@ -2441,6 +2487,7 @@ class HubStore:
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._subscriptions: Dict[str, Subscription] = {}
         self._resets: Dict[str, ResetToken] = {}
+        self._join_codes: Dict[str, JoinCode] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
         self._invoices: Dict[str, Invoice] = {}
         self._anchors: Dict[str, VaultAnchor] = {}
@@ -2554,6 +2601,13 @@ class HubStore:
                     self._db.delete("reset", reset.token_hash)
                 else:
                     self._resets[reset.token_hash] = reset
+
+            for row in self._db.all("join_code"):
+                code = JoinCode.from_row(row)
+                if code.spent:
+                    self._db.delete("join_code", code.token_hash)
+                else:
+                    self._join_codes[code.token_hash] = code
 
             for row in self._db.all("usage"):
                 usage = UsageDay.from_row(row)
@@ -2825,7 +2879,12 @@ class HubStore:
                 raise SeatClaimRefused(
                     f"Sensor '{sensor_id}' is already registered.", "id_taken"
                 )
-            if external_device_sn and external_device_sn in self._devices:
+            # A serial that is some sensor's id would capture that sensor's
+            # readings: the device posting it resolved here first, and the
+            # other company's freezer went quiet in their console while its
+            # readings were held for the company that claimed the serial.
+            if external_device_sn and (external_device_sn in self._devices
+                                       or external_device_sn in self._sensors):
                 raise SeatClaimRefused(
                     f"Device serial '{external_device_sn}' is already bound "
                     "to a sensor.",
@@ -2903,17 +2962,21 @@ class HubStore:
         with self._lock:
             return self._sensors.get(sensor_id)
 
-    def sensor_by_device(self, device_sn: str) -> Optional[Sensor]:
+    def sensor_by_device(self, device_sn: str, tenant_id: Optional[str] = None) -> Optional[Sensor]:
         """Resolve a third-party device serial to its licensed sensor.
 
         Falls back to treating the serial as a sensor_id, so hardware whose
-        serial was used directly at registration still resolves.
+        serial was used directly at registration still resolves. Given a
+        tenant, only that tenant's sensors count: another company's serial
+        mapping can never stand in front of this company's own sensor.
         """
         with self._lock:
-            mapped = self._devices.get((device_sn or "").strip())
-            if mapped is not None:
-                return self._sensors.get(mapped)
-            return self._sensors.get((device_sn or "").strip())
+            key = (device_sn or "").strip()
+            candidates = [self._sensors.get(self._devices.get(key, "")), self._sensors.get(key)]
+            for sensor in candidates:
+                if sensor is not None and (tenant_id is None or sensor.tenant_id == tenant_id):
+                    return sensor
+            return None
 
     def device_sn_taken(self, device_sn: str) -> bool:
         with self._lock:
@@ -3433,15 +3496,18 @@ class HubStore:
             return self._users.get(user.linked_to) or user
 
     def person_active(self, user: User) -> bool:
-        """False when this record, or the sign-in behind it, is switched off.
+        """False when this person has been removed from this business.
 
-        Disabling somebody's login has to close every business they could
-        switch into, not only the one it was disabled in.
+        Only this record decides. The sign-in record also stands for its
+        person's place in whichever business they joined first, so treating
+        "removed from that business" as "this person is switched off" let one
+        business's owner lock somebody out of every other business they had.
         """
-        if user.disabled:
-            return False
-        person = self.person_of(user)
-        return person is user or not person.disabled
+        return not user.disabled and self._users.get(self.person_of(user).user_id) is not None
+
+    def open_logins_of(self, user: User) -> List[User]:
+        """The person's records that have not been removed, first login first."""
+        return [r for r in self.logins_of(user) if not r.disabled]
 
     def logins_of(self, user: User) -> List[User]:
         """Every business record of the person behind `user`, first login first."""
@@ -3477,15 +3543,11 @@ class HubStore:
             user.disabled = disabled
             self._db.put("user", user.user_id, user.to_row())
             if disabled:
-                # Revoke live tokens so a disabled account loses access now,
-                # not whenever its session happens to expire. A disabled
-                # sign-in takes its linked businesses with it.
+                # Revoke live tokens so a removed person loses access to this
+                # business now, not whenever the session happens to expire.
+                # Only this business: their places elsewhere are not this
+                # business's to close.
                 closing = {user.user_id}
-                if user.linked_to is None:
-                    closing |= {
-                        u.user_id for u in self._users.values()
-                        if u.linked_to == user.user_id
-                    }
                 for token in [
                     t for t, s in self._sessions.items() if s.user_id in closing
                 ]:
@@ -3504,15 +3566,19 @@ class HubStore:
             self._db.put("user", user.user_id, user.to_row())
             return user
 
-    def start_session(self, user: User) -> LoginSession:
+    def start_session(self, user: User, not_after: Optional[datetime] = None) -> LoginSession:
+        """A new session. `not_after` caps it, for a switch between businesses."""
         with self._lock:
             now = utc_now()
+            expires = now + timedelta(hours=SESSION_TTL_HOURS)
+            if not_after is not None:
+                expires = min(expires, not_after)
             session = LoginSession(
                 token=f"cls_{secrets.token_urlsafe(32)}",
                 user_id=user.user_id,
                 tenant_id=user.tenant_id,
                 issued_at=now,
-                expires_at=now + timedelta(hours=SESSION_TTL_HOURS),
+                expires_at=expires,
             )
             self._sessions[session.token] = session
             user.last_login_at = now
@@ -4281,6 +4347,35 @@ class HubStore:
 
     # ---- password resets -------------------------------------------------
 
+    def issue_join_code(self, owner: User, role: str, ttl_hours: int = 72) -> str:
+        """A one-time code to join this owner's business, returned once."""
+        with self._lock:
+            token = f"clj_{secrets.token_urlsafe(24)}"
+            now = utc_now()
+            code = JoinCode(
+                token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                tenant_id=owner.tenant_id,
+                role=role,
+                issued_by=owner.user_id,
+                issued_at=now,
+                expires_at=now + timedelta(hours=ttl_hours),
+            )
+            self._join_codes[code.token_hash] = code
+            self._db.put("join_code", code.token_hash, code.to_row())
+            return token
+
+    def redeem_join_code(self, token: str) -> Optional[JoinCode]:
+        """Spend a join code. None if it is unknown, used or expired."""
+        with self._lock:
+            digest = hashlib.sha256((token or "").strip().encode("utf-8")).hexdigest()
+            code = self._join_codes.get(digest)
+            if code is None or code.spent:
+                return None
+            code.used_at = utc_now()
+            self._join_codes.pop(digest, None)
+            self._db.delete("join_code", digest)
+            return code
+
     def issue_reset(self, user: User, ttl_hours: int = 24) -> str:
         """Create a reset and return the plaintext token, once."""
         with self._lock:
@@ -4306,7 +4401,7 @@ class HubStore:
                 return None
 
             user = self._users.get(reset.user_id)
-            if user is None or user.disabled:
+            if user is None or not self.open_logins_of(user):
                 return None
 
             self.set_user_password(user, new_password)
@@ -4314,9 +4409,12 @@ class HubStore:
             self._resets.pop(digest, None)
             self._db.delete("reset", digest)
 
-            # A reset means the old sessions should not outlive it.
+            # A reset means the old sessions should not outlive it, in any of
+            # the person's businesses: a stolen session in one used to stay
+            # live, and could switch into the others.
+            records = {r.user_id for r in self.logins_of(user)}
             for tok in [
-                s for s, sess in self._sessions.items() if sess.user_id == user.user_id
+                s for s, sess in self._sessions.items() if sess.user_id in records
             ]:
                 self.revoke_session(tok)
             return user

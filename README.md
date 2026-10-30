@@ -205,16 +205,23 @@ one of the *other* businesses needs them.
 - **Add a business** (owners only) starts it on the usual free trial,
   under the same terms, with you as its owner. It gets its own sensor key,
   shown once. A sign-in can hold up to `CYBERLOGIX_MAX_BUSINESSES` (10).
-- **Add an existing person** to your team by their email, as you would
-  anyone: they keep their own sign-in and password, and your business
-  appears in their switcher with the role you gave them. You cannot reset
-  their password, because it is their way into every business they have.
+- **Let somebody with a sign-in join your business** with a join code: an
+  owner makes one (choosing the role), gives it to the person directly, and
+  they enter it from their own account under *Join a business*. It works
+  once and lasts three days. Adding an existing person by email alone is
+  refused: both of you have to agree, so no business can attach itself to
+  somebody's sign-in by knowing their address.
+- **Nobody else manages your sign-in.** No business can reset the password
+  of a sign-in that is also used for other businesses, the one that happens
+  to hold it included; the person resets it themselves from the sign-in
+  page. A reset ends their sessions in every business.
 - **Each business stays separate.** The person has one record per
   business (`User.linked_to` points at their sign-in), so their role is
   per business and every permission check works exactly as before.
-  Switching ends the session on one business and starts one on the other.
-  Turning off somebody's sign-in turns off every business it reaches;
-  removing them from one business leaves the others alone.
+  Switching ends the session on one business and starts one on the other,
+  never lasting longer than the session it replaced. Removing somebody
+  from a business closes only that business, whichever one their sign-in
+  lives in, and the removed business shows them its name and nothing more.
 
 ## Who gets alerted
 

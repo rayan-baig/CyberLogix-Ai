@@ -3888,6 +3888,33 @@ async function openBusinesses() {
         ? `You have the most businesses one sign-in can hold (${list.max_businesses}).`
         : "Only an owner can add a business. Open one you own to add another."}</p>`;
 
+  // Joining somebody else's business needs a code its owner made, entered
+  // here from your own account: both of you have to agree. An owner makes
+  // codes for the business that is open now.
+  const here = list.businesses.find((b) => b.current);
+  const joinForm = `
+      <form id="biz-join" class="biz-add">
+        <div class="card-title">Join a business</div>
+        <p class="biz-meta">Got a join code from a business's owner? Enter it to add
+          that business here. It works once.</p>
+        <div class="field"><label for="biz-code">Join code</label>
+          <input id="biz-code" required minlength="8" maxlength="120" autocomplete="off"></div>
+        <button class="btn" type="submit">Join</button>
+      </form>`;
+  const codeForm = here && here.role === "owner" ? `
+      <form id="biz-invite" class="biz-add">
+        <div class="card-title">Let someone join ${esc(here.company_name)}</div>
+        <p class="biz-meta">For somebody who already has a CyberLogix sign-in. Make a
+          code, give it to them yourself, and they add this business from their own
+          account. It works once and lasts three days.</p>
+        <div class="field"><label for="biz-role">Their role here</label>
+          <select id="biz-role"><option value="viewer">Viewer</option>
+            <option value="operator" selected>Operator</option>
+            <option value="owner">Owner</option></select></div>
+        <button class="btn" type="submit">Make a join code</button>
+        <code class="biz-key" id="biz-joincode" hidden></code>
+      </form>` : "";
+
   $("drawer").innerHTML = `
     <div class="drawer-head">
       <div class="grow">
@@ -3902,6 +3929,8 @@ async function openBusinesses() {
       · ${t.sensors_offline} unit${t.sensors_offline === 1 ? "" : "s"} offline</p>
     <div class="biz-list">${rows}</div>
     ${addForm}
+    ${joinForm}
+    ${codeForm}
     <div id="biz-made" hidden></div>
   `;
   showDrawer();
@@ -3914,6 +3943,46 @@ async function openBusinesses() {
     const sector = state.data && state.data.tenant && state.data.tenant.industry_vertical;
     if (sector) $("biz-sector").value = sector;
     form.addEventListener("submit", addBusiness);
+  }
+  $("biz-join").addEventListener("submit", joinBusiness);
+  const invite = $("biz-invite");
+  if (invite) invite.addEventListener("submit", makeJoinCode);
+}
+
+async function joinBusiness(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const joined = await api("/api/accounts/businesses/join", {
+      method: "POST",
+      body: JSON.stringify({ code: $("biz-code").value.trim() }),
+    });
+    toast(joined.message, "ok");
+    openBusinesses();
+  } catch (err) {
+    toast(err.message, "err");
+    btn.disabled = false;
+  }
+}
+
+async function makeJoinCode(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const made = await api("/api/accounts/businesses/join-codes", {
+      method: "POST",
+      body: JSON.stringify({ role: $("biz-role").value }),
+    });
+    const box = $("biz-joincode");
+    box.textContent = made.code;
+    box.hidden = false;
+    toast("Shown once. Give it to them yourself.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    btn.disabled = false;
   }
 }
 

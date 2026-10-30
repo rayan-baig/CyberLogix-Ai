@@ -251,7 +251,9 @@ def login(payload: LoginRequest):
     stored = user.password_hash if user else "scrypt$00$00"
     correct = verify_password(payload.password, stored)
 
-    if user is None or not correct or user.disabled:
+    # Removed from every business they had: nothing left to sign in to. The
+    # same answer as a wrong password, so it says nothing about the account.
+    if user is None or not correct or not STORE.open_logins_of(user):
         _record_failure(throttle_key)
         logger.warning("Failed login for %s", payload.email)
         raise HTTPException(
@@ -345,23 +347,21 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
 
     existing = STORE.user_by_email(str(payload.email))
     if existing is not None:
-        # Somebody who already runs or works at another business on
-        # CyberLogix. They keep their own sign-in and password; this
-        # business is added to the list they can switch between. Nothing
-        # of theirs is shared with this business, and nothing of this
-        # business's with theirs, beyond what this role allows here.
-        if STORE.login_in(existing, owner.tenant_id) is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"{existing.email} already has access to this business.",
-            )
-        linked = STORE.link_user(existing, owner.tenant_id, role)
-        audit(
-            owner, "account.invited",
-            f"Added {linked.email} as {role}. They already had a CyberLogix "
-            "sign-in, so they keep it and switch to this business from it.",
+        # Somebody who already has a CyberLogix sign-in. This used to link
+        # them in on the spot, which let any business attach itself to a
+        # stranger's sign-in by knowing their email, told the inviter the
+        # person's real name, and (with a sign-in an owner had made up for
+        # an address they did not control) let that owner into every
+        # business later added to it. Now the person has to agree: the
+        # owner makes a join code, and the person enters it from their own
+        # account. The answer does not repeat anything about them.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "That email already has a CyberLogix sign-in. Make a join code "
+                "and give it to them; they add your business from their own account."
+            ),
         )
-        return linked.public()
 
     created = STORE.create_user(
         tenant_id=owner.tenant_id,
@@ -435,10 +435,12 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No such user."
         )
-    if target.linked_to is not None:
-        # Their password belongs to their sign-in, which lives with another
-        # business. Resetting it from here would let one business's owner
-        # take over somebody's access to every business they have.
+    if target.linked_to is not None or len(STORE.logins_of(target)) > 1:
+        # Their password belongs to their sign-in, which they also use for
+        # other businesses. Resetting it from here would let one business's
+        # owner take over somebody's access to every business they have,
+        # including that person's own. That held for linked records before;
+        # it holds for the sign-in record too, which merely lives here.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -540,7 +542,7 @@ def _send_reset(address: str) -> None:
     from mail import send as send_mail
 
     user = STORE.user_by_email(address)
-    if user is None or user.disabled:
+    if user is None or not STORE.open_logins_of(user):
         logger.info("Password reset asked for an address with no account.")
         return
 

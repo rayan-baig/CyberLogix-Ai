@@ -39,6 +39,11 @@ UNGATED_BY_DESIGN = {
         "record in, refused for any other. It grants nothing: the role you "
         "have in that business is checked by every route you call there"
     ),
+    "/api/accounts/businesses/join": (
+        "adds a business to your own sign-in, and only with a one-time code "
+        "that business's owner made: the code is the owner's consent, the "
+        "session is yours. It grants exactly the role the owner chose"
+    ),
     "/api/accounts/reset": "redeems a reset token; the token is the credential",
     "/api/payments/stripe": (
         "Stripe's webhook. It holds no credential of ours, so the request "

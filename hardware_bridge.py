@@ -192,7 +192,7 @@ def ingest_third_party_hardware_webhook(
             detail=f"Unsupported metric_type. Supported: {list(SUPPORTED_METRICS)}",
         )
 
-    sensor = STORE.sensor_by_device(payload.device_sn)
+    sensor = STORE.sensor_by_device(payload.device_sn, tenant.tenant_id)
     if sensor is None or sensor.tenant_id != tenant.tenant_id:
         # Not an error worth throwing the reading away over. A device
         # that is sending us readings has already done the hard part;

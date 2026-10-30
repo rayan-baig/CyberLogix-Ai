@@ -190,17 +190,26 @@ def test_data_stays_with_its_business_after_a_switch(api):
     assert STORE.sensors_for(bakery["tenant"]["tenant_id"]) == []
 
 
+def _join(api, owner_token, joiner_token, role="operator"):
+    """An owner makes a join code; the person enters it from their own account."""
+    made = api.post("/api/accounts/businesses/join-codes", headers=_bearer(owner_token),
+                    json={"role": role})
+    assert made.status_code == 201, made.text
+    joined = api.post("/api/accounts/businesses/join", headers=_bearer(joiner_token),
+                      json={"code": made.json()["code"]})
+    assert joined.status_code == 200, joined.text
+    return joined.json()
+
+
+def _record_in(email, tenant_id):
+    return STORE.login_in(STORE.user_by_email(email), tenant_id)
+
+
 def test_a_role_does_not_cross_from_one_business_to_another(api):
     """Owner of your own place, viewer at the one you were invited into."""
     dana = _signup(api, DANA)
     sam = _signup(api, SAM)
-    invited = api.post(
-        "/api/accounts/users", headers=_bearer(sam["token"]),
-        json={"email": DANA["email"], "full_name": "Dana Reyes",
-              "password": "ignored-for-existing", "role": "viewer"},
-    )
-    assert invited.status_code == 201, invited.text
-    assert invited.json()["linked"] is True
+    _join(api, sam["token"], dana["token"], role="viewer")
 
     opened = api.post(
         f"/api/accounts/businesses/{sam['tenant']['tenant_id']}/switch",
@@ -222,58 +231,86 @@ def test_a_role_does_not_cross_from_one_business_to_another(api):
     assert resp.status_code == 403
 
 
-def test_adding_an_existing_person_keeps_their_password(api):
+def test_nobody_is_linked_in_by_email_alone(api):
+    """Knowing someone's email used to be enough to attach a business to
+    their sign-in, and the answer told the inviter their real name."""
     _signup(api, DANA)
     sam = _signup(api, SAM)
-    api.post(
+    resp = api.post(
         "/api/accounts/users", headers=_bearer(sam["token"]),
-        json={"email": DANA["email"], "full_name": "Somebody Else",
-              "password": "attacker-chosen-password", "role": "operator"},
+        json={"email": DANA["email"], "full_name": "Anyone",
+              "password": "attacker-chosen-password", "role": "owner"},
     )
-    # The password typed by the other business's owner opens nothing.
+    assert resp.status_code == 409
+    assert "Dana" not in resp.text
+    assert _record_in(DANA["email"], sam["tenant"]["tenant_id"]) is None
+    # And the password typed by the other business's owner opens nothing.
     wrong = api.post(
         "/api/accounts/login",
         json={"email": DANA["email"], "password": "attacker-chosen-password"},
     )
     assert wrong.status_code == 401
-    assert _login(api, DANA)["user"]["full_name"] == "Dana Reyes"
 
 
-def test_adding_the_same_person_twice_is_refused(api):
-    _signup(api, DANA)
+def test_a_join_code_works_once_and_only_for_its_business(api):
+    dana = _signup(api, DANA)
     sam = _signup(api, SAM)
-    body = {"email": DANA["email"], "full_name": "Dana", "password":
-            "whatever-long-one", "role": "viewer"}
-    assert api.post("/api/accounts/users", headers=_bearer(sam["token"]), json=body).status_code == 201
-    assert api.post("/api/accounts/users", headers=_bearer(sam["token"]), json=body).status_code == 409
+    code = api.post("/api/accounts/businesses/join-codes", headers=_bearer(sam["token"]),
+                    json={"role": "operator"}).json()["code"]
+    assert api.post("/api/accounts/businesses/join", headers=_bearer(dana["token"]),
+                    json={"code": code}).status_code == 200
+    again = api.post("/api/accounts/businesses/join", headers=_bearer(dana["token"]),
+                     json={"code": code})
+    assert again.status_code == 404
+    assert api.post("/api/accounts/businesses/join", headers=_bearer(dana["token"]),
+                    json={"code": "clj_made-up-code"}).status_code == 404
+
+
+def test_only_an_owner_makes_join_codes(api):
+    dana = _signup(api, DANA)
+    sam = _signup(api, SAM)
+    _join(api, sam["token"], dana["token"], role="operator")
+    opened = api.post(f"/api/accounts/businesses/{sam['tenant']['tenant_id']}/switch",
+                      headers=_bearer(dana["token"])).json()
+    resp = api.post("/api/accounts/businesses/join-codes", headers=_bearer(opened["token"]),
+                    json={"role": "owner"})
+    assert resp.status_code == 403
 
 
 def test_another_business_cannot_reset_your_password(api):
     """Their reset would be a key to every business you have."""
-    _signup(api, DANA)
+    dana = _signup(api, DANA)
     sam = _signup(api, SAM)
-    linked = api.post(
-        "/api/accounts/users", headers=_bearer(sam["token"]),
-        json={"email": DANA["email"], "full_name": "Dana", "password":
-              "whatever-long-one", "role": "operator"},
-    ).json()
-    resp = api.post(
-        f"/api/accounts/users/{linked['user_id']}/reset", headers=_bearer(sam["token"])
-    )
+    _join(api, sam["token"], dana["token"])
+    linked = _record_in(DANA["email"], sam["tenant"]["tenant_id"])
+    resp = api.post(f"/api/accounts/users/{linked.user_id}/reset", headers=_bearer(sam["token"]))
     assert resp.status_code == 409
     assert _login(api, DANA)["token"]
+
+
+def test_the_business_holding_your_sign_in_cannot_reset_it_either(api):
+    """Sam's employee joins Carol's business too. Sam's business holds the
+    sign-in record, but resetting it would hand Sam the way into Carol's."""
+    sam = _signup(api, SAM)
+    api.post("/api/accounts/users", headers=_bearer(sam["token"]),
+             json={"email": "op@x.example", "full_name": "Op",
+                   "password": "operator-password-1", "role": "operator"})
+    op = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    carol = _signup(api, DANA)
+    _join(api, carol["token"], op["token"], role="owner")
+
+    record = STORE.user_by_email("op@x.example")
+    resp = api.post(f"/api/accounts/users/{record.user_id}/reset", headers=_bearer(sam["token"]))
+    assert resp.status_code == 409
 
 
 def test_removing_someone_from_your_business_leaves_their_own_alone(api):
     dana = _signup(api, DANA)
     sam = _signup(api, SAM)
-    linked = api.post(
-        "/api/accounts/users", headers=_bearer(sam["token"]),
-        json={"email": DANA["email"], "full_name": "Dana", "password":
-              "whatever-long-one", "role": "operator"},
-    ).json()
+    _join(api, sam["token"], dana["token"])
+    linked = _record_in(DANA["email"], sam["tenant"]["tenant_id"])
     assert api.post(
-        f"/api/accounts/users/{linked['user_id']}/disable", headers=_bearer(sam["token"])
+        f"/api/accounts/users/{linked.user_id}/disable", headers=_bearer(sam["token"])
     ).status_code == 200
 
     # Dana is still fine at her own business...
@@ -287,19 +324,45 @@ def test_removing_someone_from_your_business_leaves_their_own_alone(api):
     row = [b for b in _list(api, dana["token"])["businesses"]
            if b["tenant_id"] == sam["tenant"]["tenant_id"]][0]
     assert row["removed"] and not row["can_open"]
+    # And sees nothing of how Sam's business is doing any more.
+    assert row["sensors"] == 0 and row["open_alerts"] == 0 and row["licence"] is None
 
 
-def test_switching_off_a_sign_in_closes_every_business_it_reaches(api):
+def test_the_business_holding_your_sign_in_cannot_lock_you_out_of_the_others(api):
+    """Removing someone from the business their sign-in happens to live in
+    used to switch off the person, everywhere."""
+    sam = _signup(api, SAM)
+    api.post("/api/accounts/users", headers=_bearer(sam["token"]),
+             json={"email": "op@x.example", "full_name": "Op",
+                   "password": "operator-password-1", "role": "operator"})
+    op = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    carol = _signup(api, DANA)
+    _join(api, carol["token"], op["token"], role="operator")
+
+    record = STORE.user_by_email("op@x.example")
+    assert api.post(f"/api/accounts/users/{record.user_id}/disable",
+                    headers=_bearer(sam["token"])).status_code == 200
+    back = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    assert back["tenant"]["tenant_id"] == carol["tenant"]["tenant_id"]
+
+
+def test_a_password_reset_closes_sessions_in_every_business(api):
     first = _signup(api, DANA)
-    bakery = api.post(
-        "/api/accounts/businesses",
-        headers=_bearer(first["token"]),
-        json={"company_name": "Harbor Bakery"},
-    ).json()
-    person = STORE.user_by_email(DANA["email"])
-    STORE.set_user_disabled(person, True)
+    bakery = api.post("/api/accounts/businesses", headers=_bearer(first["token"]),
+                      json={"company_name": "Harbor Bakery"}).json()
+    token = STORE.issue_reset(STORE.user_by_email(DANA["email"]))
+    assert STORE.redeem_reset(token, "a-whole-new-password") is not None
     assert api.get("/api/accounts/me", headers=_bearer(bakery["token"])).status_code == 401
-    assert api.get("/api/licenses/me", headers=_bearer(bakery["token"])).status_code == 401
+
+
+def test_switching_never_makes_a_session_last_longer(api):
+    first = _signup(api, DANA)
+    bakery = api.post("/api/accounts/businesses", headers=_bearer(first["token"]),
+                      json={"company_name": "Harbor Bakery"}).json()
+    before = STORE._sessions[bakery["token"]].expires_at
+    back = api.post(f"/api/accounts/businesses/{first['tenant']['tenant_id']}/switch",
+                    headers=_bearer(bakery["token"])).json()
+    assert STORE._sessions[back["token"]].expires_at <= before
 
 
 def test_a_password_change_from_any_business_is_the_one_password(api):
@@ -363,15 +426,42 @@ def test_a_linked_record_survives_a_restart(api):
     assert len(STORE.logins_of(person)) == 2
 
 
-def test_a_switched_off_sign_in_is_refused_even_with_a_live_session(api):
-    """Belt and braces: disabling revokes sessions, but a session that
-    outlived that (restored from a backup taken before, say) must still
-    not open a linked business."""
-    first = _signup(api, DANA)
-    bakery = api.post(
-        "/api/accounts/businesses",
-        headers=_bearer(first["token"]),
-        json={"company_name": "Harbor Bakery"},
-    ).json()
-    STORE.user_by_email(DANA["email"]).disabled = True  # no revocation
-    assert api.get("/api/accounts/me", headers=_bearer(bakery["token"])).status_code == 401
+# ---- found in review: a device's key, a viewer, and a borrowed serial ------
+
+def test_a_device_key_sent_in_a_payload_is_not_kept(api):
+    import byod
+    dana = _signup(api, DANA)
+    tenant_id = dana["tenant"]["tenant_id"]
+    key = STORE.get_tenant(tenant_id).api_key
+    byod.remember(tenant_id, {"api_key_token": key, "temp": 3, "nested": {"key": key}},
+                  {"understood": False}, "not_understood")
+    shown = api.get("/api/v1/bridge/samples", headers=_bearer(dana["token"])).text
+    assert key not in shown and "[removed]" in shown
+
+
+def test_a_viewer_cannot_write_readings(api):
+    dana = _signup(api, DANA)
+    sam = _signup(api, SAM)
+    _join(api, sam["token"], dana["token"], role="viewer")
+    viewer = api.post(f"/api/accounts/businesses/{sam['tenant']['tenant_id']}/switch",
+                      headers=_bearer(dana["token"])).json()
+    resp = api.post("/api/sensor-pulse", headers=_bearer(viewer["token"]),
+                    json={"sensor_id": "ANY-1", "temperature_f": 90})
+    assert resp.status_code == 403
+
+
+def test_one_company_cannot_claim_another_companys_sensor_id_as_a_serial(api):
+    dana = _signup(api, DANA)
+    sam = _signup(api, SAM)
+    dana_key = STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key
+    sam_key = STORE.get_tenant(sam["tenant"]["tenant_id"]).api_key
+    made = api.post("/api/licenses/me/sensors", headers={"X-CyberLogix-Key": dana_key},
+                    json={"sensor_id": "RACK-01", "industry_vertical": "cybersecurity",
+                          "location_name": "Rack"})
+    assert made.status_code in (200, 201), made.text
+    claimed = api.post("/api/licenses/me/sensors", headers={"X-CyberLogix-Key": sam_key},
+                       json={"sensor_id": "SAM-1", "industry_vertical": "cybersecurity",
+                             "location_name": "Shelf", "external_device_sn": "RACK-01"})
+    assert claimed.status_code >= 400
+    assert STORE.sensor_by_device("RACK-01", dana["tenant"]["tenant_id"]).tenant_id == dana["tenant"]["tenant_id"]
+    assert STORE.sensor_by_device("RACK-01", sam["tenant"]["tenant_id"]) is None

@@ -88,6 +88,18 @@ def _summary(record: User, current_tenant_id: str) -> Optional[dict]:
     tenant = STORE.get_tenant(record.tenant_id)
     if tenant is None:
         return None
+    if record.disabled:
+        # A business that has removed this person is still listed, so they
+        # can see why it vanished from their switcher, but nothing about how
+        # it is doing: they used to keep seeing its alerts and sensors live.
+        return {
+            "tenant_id": tenant.tenant_id,
+            "company_name": tenant.company_name,
+            "industry": None, "role": None, "current": False,
+            "can_open": False, "removed": True, "licence": None,
+            "grace_days_left": None, "sensors": 0, "sensors_offline": 0,
+            "open_alerts": 0, "needs_attention": False,
+        }
     sensors = STORE.sensors_for(tenant.tenant_id)
     offline = sum(1 for s in sensors if s.offline())
     alerts = sum(1 for i in STORE.incidents_for(tenant.tenant_id) if i.unresolved)
@@ -99,10 +111,8 @@ def _summary(record: User, current_tenant_id: str) -> Optional[dict]:
         "industry": sector.get("name"),
         "role": record.role,
         "current": tenant.tenant_id == current_tenant_id,
-        # A business that has removed this person is still listed, so they
-        # can see why it vanished from their switcher, but cannot be opened.
-        "can_open": not record.disabled and state != "suspended",
-        "removed": record.disabled,
+        "can_open": state != "suspended",
+        "removed": False,
         "licence": state,
         "grace_days_left": grace_days_left(tenant),
         "sensors": len(sensors),
@@ -144,7 +154,10 @@ def my_businesses(
 def _open(record: User, previous: User, session: LoginSession) -> dict:
     """End the session on one business and start one on another."""
     tenant = STORE.get_tenant(record.tenant_id)
-    new_session = STORE.start_session(record)
+    # No later than the session it replaces: switching used to start a fresh
+    # twelve hours, so a stolen session could be kept alive for ever by
+    # switching back and forth.
+    new_session = STORE.start_session(record, not_after=session.expires_at)
     STORE.revoke_session(session.token)
     if previous.tenant_id != record.tenant_id:
         came_from = STORE.get_tenant(previous.tenant_id)
@@ -270,3 +283,84 @@ def add_business(
         "api_key": tenant.api_key,
     })
     return opened
+
+
+class JoinRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(..., min_length=8, max_length=120)
+
+
+class JoinCodeRequest(BaseModel):
+    role: str = Field("operator", description="The role the person will have here.")
+
+
+@router.post("/join-codes", status_code=status.HTTP_201_CREATED)
+def make_join_code(
+    payload: JoinCodeRequest,
+    owner: User = Depends(require_role("owner")),
+):
+    """A one-time code for somebody who already has a CyberLogix sign-in.
+
+    Give it to them yourself; they enter it from their own account, and this
+    business is added to the ones they can switch between. It works once and
+    expires in three days. Owners only.
+    """
+    from accounts import _validate_role
+
+    role = _validate_role(payload.role)
+    code = STORE.issue_join_code(owner, role)
+    STORE.record_audit(
+        tenant_id=owner.tenant_id,
+        actor=f"{owner.full_name} <{owner.email}>",
+        actor_role=owner.role,
+        action="account.join_code_issued",
+        detail=f"Made a one-time join code for a new {role}.",
+    )
+    return {
+        "code": code,
+        "role": role,
+        "expires_in_hours": 72,
+        "message": "Shown once. It works once and expires in three days.",
+    }
+
+
+@router.post("/join")
+def join_business(
+    payload: JoinRequest,
+    user: User = Depends(_signed_in),
+):
+    """Add a business to your sign-in with the code its owner gave you."""
+    from auth import licence_state
+
+    code = STORE.redeem_join_code(payload.code)
+    tenant = STORE.get_tenant(code.tenant_id) if code else None
+    if code is None or tenant is None or licence_state(tenant) == "suspended":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That code is not valid. Ask for a new one.",
+        )
+    if STORE.login_in(user, code.tenant_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have access to that business.",
+        )
+    if len(STORE.logins_of(user)) >= MAX_BUSINESSES_PER_PERSON:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"You already have {MAX_BUSINESSES_PER_PERSON} businesses.",
+        )
+    record = STORE.link_user(user, code.tenant_id, code.role)
+    STORE.record_audit(
+        tenant_id=code.tenant_id,
+        actor=f"{record.full_name} <{record.email}>",
+        actor_role=record.role,
+        action="account.joined",
+        detail=f"Joined as {record.role} with a join code.",
+    )
+    return {
+        "message": f"{tenant.company_name} is added. Switch to it from your businesses.",
+        "tenant_id": tenant.tenant_id,
+        "company_name": tenant.company_name,
+        "role": record.role,
+    }
