@@ -548,3 +548,30 @@ def test_trials_are_only_made_at_the_public_front_door(api):
         "company_name": "Farm", "contact_name": "F", "contact_phone": "+15550101",
         "contact_email": "f@farm.example", "plan": "trial"})
     assert resp.status_code == 403
+
+
+def test_a_burst_of_requests_cannot_overshoot_the_daily_cap(api):
+    """Checked before the call and counted after it, forty AI requests at
+    once on a cap of 25 made forty calls."""
+    import threading
+    import costs
+    dana = _signup(api, DANA)
+    tenant_id = dana["tenant"]["tenant_id"]
+    cap = costs.caps_for(tenant_id)["ai_calls"]
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(costs.reserve(tenant_id, "ai")[0]))
+               for _ in range(cap + 15)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results.count(True) == cap
+    assert STORE.usage_for(tenant_id).ai_calls == cap
+
+
+def test_alerts_are_never_sent_to_premium_or_satellite_numbers():
+    import notifications
+    for number in ("+88213 123456", "00 882 13 123", "+870 77 1234", "+979 1234 5678"):
+        result = notifications._precheck("sms", number)
+        assert result is not None and result.get("detail", "").startswith("That number")
+    assert not notifications.premium_destination("+1 555 0100")

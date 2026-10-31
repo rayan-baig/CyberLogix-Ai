@@ -202,11 +202,38 @@ def _undelivered(channel: str, to: str, status: str, detail: str) -> Dict[str, A
     }
 
 
+# Number ranges no alert has any business calling, and the ones toll fraud
+# uses: international shared-cost and satellite networks (+881, +882, +883,
+# +870) and international premium-rate (+979). A roster could hold any
+# string, so an account could have its own breaches text and call numbers
+# whose owner is paid per call, on the operator's Twilio bill. Refused here,
+# at the one place every text and call passes through.
+BLOCKED_PREFIXES = ("+881", "+882", "+883", "+870", "+979")
+
+
+def premium_destination(to: str) -> bool:
+    """Whether an international number (+ or 00 form) is in a blocked range."""
+    raw = (to or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if raw.startswith("00"):
+        digits = digits[2:]
+    elif not raw.startswith("+"):
+        return False
+    return ("+" + digits).startswith(BLOCKED_PREFIXES)
+
+
 def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
     """Return an undelivered record when the message cannot be attempted."""
     if not to or not to.strip():
         return _undelivered(
             channel, to, "no_recipient", "No contact number on file for this tenant."
+        )
+
+    if premium_destination(to):
+        logger.warning("Refused a %s to a premium or shared-cost number (%s).", channel, to)
+        return _undelivered(
+            channel, to, "blocked_destination",
+            "That number is in a premium-rate or satellite range, which alerts are never sent to.",
         )
 
     if not _configured():
@@ -248,7 +275,7 @@ def send_sms(
     to: str, body: str, tenant_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Send an SMS, returning a delivery record instead of raising."""
-    from costs import allow_message, record
+    from costs import allow_message, record, release, reserve
 
     allowed, reason = allow_message(tenant_id, "sms")
     if not allowed:
@@ -259,6 +286,13 @@ def send_sms(
     blocked = _precheck("sms", to)
     if blocked is not None:
         return blocked
+
+    # The place under the cap is taken now, at the last moment, together with
+    # the check (see costs.reserve).
+    allowed, reason = reserve(tenant_id, "sms")
+    if not allowed:
+        record(tenant_id, "sms_suppressed")
+        return _undelivered("sms", to, "budget_exceeded", reason)
 
     # Folded into GSM-7 and trimmed to one segment before it goes
     # anywhere: this is the only choke point every message passes
@@ -271,7 +305,7 @@ def send_sms(
         message = _get_client().messages.create(
             to=to, from_=TWILIO_FROM_NUMBER, body=text
         )
-        record(tenant_id, "sms_sent")
+        # sms_sent was counted by reserve(), before the send.
         # Billed per segment, so counted per segment. Counting messages
         # is what hid a 3x overspend on the largest delivery line.
         record(tenant_id, "sms_segments", parts)
@@ -291,6 +325,7 @@ def send_sms(
         }
     except Exception as exc:  # noqa: BLE001 - a send failure must not kill the breach path
         logger.exception("SMS to %s failed (%s).", to, exc)
+        release(tenant_id, "sms")
         return _undelivered("sms", to, "send_failed", f"Twilio rejected the send: {exc}")
 
 
@@ -373,7 +408,7 @@ def place_voice_call(
     action_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place an outbound call that speaks `spoken_text`, twice."""
-    from costs import allow_message, record
+    from costs import allow_message, record, release, reserve
 
     allowed, reason = allow_message(tenant_id, "voice")
     if not allowed:
@@ -385,13 +420,18 @@ def place_voice_call(
     if blocked is not None:
         return blocked
 
+    allowed, reason = reserve(tenant_id, "voice")
+    if not allowed:
+        record(tenant_id, "voice_suppressed")
+        return _undelivered("voice", to, "budget_exceeded", reason)
+
     try:
         call = _get_client().calls.create(
             to=to,
             from_=TWILIO_FROM_NUMBER,
             twiml=build_twiml(spoken_text, action_url),
         )
-        record(tenant_id, "voice_calls")
+        # voice_calls was counted by reserve(), before the call.
         logger.info("Voice call placed to %s (sid=%s).", to, call.sid)
         return {
             "channel": "voice",
@@ -403,6 +443,7 @@ def place_voice_call(
         }
     except Exception as exc:  # noqa: BLE001 - a dial failure must not kill escalation
         logger.exception("Voice call to %s failed (%s).", to, exc)
+        release(tenant_id, "voice")
         return _undelivered(
             "voice", to, "call_failed", f"Twilio rejected the call: {exc}"
         )
