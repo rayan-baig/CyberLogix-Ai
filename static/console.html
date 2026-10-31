@@ -4142,7 +4142,15 @@ function renderTeam(team) {
       ${u.disabled || u.user_id === (state.user && state.user.user_id)
         ? ""
         : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>`}
-    </div>`).join("");
+    </div>`).join("")
+    // The business's master key, for scripts and devices without their own
+    // key. Owners can replace it the day it turns up somewhere it should not.
+    + (state.user && state.user.role === "owner" ? `
+    <div style="display:flex;align-items:center;gap:9px;padding:10px 0 2px">
+      <span class="grow" style="font-size:12px;color:var(--muted)">
+        Master key leaked, or someone left who had it?</span>
+      <button class="btn btn-sm" data-rekey-business="1">Replace master key</button>
+    </div>` : "");
 }
 
 /* Only the sectors this estate actually has sensors in: a health inspector
@@ -4326,6 +4334,19 @@ document.addEventListener("click", (event) => {
     act(() => api(`/api/licenses/me/sensors/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }), `${id} retired.`);
+  }
+
+  if (btn.dataset.rekeyBusiness) {
+    if (!confirm(
+      "Replace this business's master key?\n\n"
+      + "The current key stops working immediately. Any script or device that "
+      + "still uses it will be refused until you give it the new one. Sensors "
+      + "with their own keys carry on as before."
+    )) return;
+    act(async () => {
+      const rotated = await api("/api/licenses/me/rotate-key", { method: "POST" });
+      showIssuedKey("this business (master key)", rotated.api_key);
+    }, "New master key issued.");
   }
 
   if (btn.dataset.rekey) {

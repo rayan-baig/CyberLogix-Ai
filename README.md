@@ -429,6 +429,12 @@ cable, in a room the public can often walk into. A sensor key is worth one
 freezer's readings, and a leaked one is re-keyed with a single call
 instead of re-keying an estate.
 
+The master key itself can be replaced too: `POST /api/licenses/me/rotate-key`
+(the console's *Replace master key*, under the team list). An owner's
+signed-in session only, never the key, so whoever leaked it cannot rotate it
+and lock the business out. The old key stops working at once; sensors on
+their own keys are not affected.
+
 Two routes refuse a machine credential outright — `POST
 /api/licenses/me/suspend` and `POST /api/licenses/me/plan`. Turning off a
 company's monitoring, or moving it onto a plan without voice escalation,

@@ -533,6 +533,37 @@ def rotate_sensor_key(
     }
 
 
+@router.post("/me/rotate-key")
+def rotate_business_key(owner: User = Depends(require_role("owner"))):
+    """Replace this business's master key. The old one stops working now.
+
+    For the day the key turns up somewhere it should not be: pasted into a
+    chat, left in a script, sent by a device in a payload. Until this existed
+    a leaked master key could not be taken back at all.
+
+    An owner's signed-in session only, never the key itself: whoever had
+    leaked it could otherwise rotate it and lock the business out of its own
+    estate. Sensors on their own per-sensor keys are not affected.
+    """
+    tenant = STORE.get_tenant(owner.tenant_id)
+    new_key = STORE.rotate_api_key(tenant)
+    STORE.record_audit(
+        tenant_id=tenant.tenant_id,
+        actor=f"{owner.full_name} <{owner.email}>",
+        actor_role=owner.role,
+        action="license.key_rotated",
+        detail="Replaced the business's master key. The old key no longer works.",
+    )
+    return {
+        "api_key": new_key,
+        "message": (
+            "New master key issued and shown once. The old key stopped working "
+            "immediately: update any script or device that still uses it. "
+            "Sensors with their own keys carry on as before."
+        ),
+    }
+
+
 @router.delete("/me/sensors/{sensor_id}")
 def decommission_sensor(
     sensor_id: str,

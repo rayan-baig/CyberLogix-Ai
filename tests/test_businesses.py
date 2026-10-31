@@ -465,3 +465,39 @@ def test_one_company_cannot_claim_another_companys_sensor_id_as_a_serial(api):
     assert claimed.status_code >= 400
     assert STORE.sensor_by_device("RACK-01", dana["tenant"]["tenant_id"]).tenant_id == dana["tenant"]["tenant_id"]
     assert STORE.sensor_by_device("RACK-01", sam["tenant"]["tenant_id"]) is None
+
+
+def test_an_owner_can_replace_a_leaked_master_key(api):
+    dana = _signup(api, DANA)
+    tenant_id = dana["tenant"]["tenant_id"]
+    old = STORE.get_tenant(tenant_id).api_key
+    resp = api.post("/api/licenses/me/rotate-key", headers=_bearer(dana["token"]))
+    assert resp.status_code == 200, resp.text
+    new = resp.json()["api_key"]
+    assert new != old
+    # The old key opens nothing; the new one does.
+    assert api.get("/api/licenses/me", headers={"X-CyberLogix-Key": old}).status_code == 401
+    assert api.get("/api/licenses/me", headers={"X-CyberLogix-Key": new}).status_code == 200
+    # And it survives a restart.
+    STORE.forget()
+    STORE.load()
+    assert STORE.tenant_by_key(new).tenant_id == tenant_id
+
+
+def test_the_key_itself_cannot_replace_the_key(api):
+    """Whoever leaked it would lock the business out of its own estate."""
+    dana = _signup(api, DANA)
+    key = STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key
+    resp = api.post("/api/licenses/me/rotate-key", headers={"X-CyberLogix-Key": key})
+    assert resp.status_code in (401, 403)
+    assert STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key == key
+
+
+def test_only_an_owner_replaces_the_key(api):
+    dana = _signup(api, DANA)
+    sam = _signup(api, SAM)
+    _join(api, sam["token"], dana["token"], role="operator")
+    operator = api.post(f"/api/accounts/businesses/{sam['tenant']['tenant_id']}/switch",
+                        headers=_bearer(dana["token"])).json()
+    assert api.post("/api/licenses/me/rotate-key",
+                    headers=_bearer(operator["token"])).status_code == 403

@@ -2948,6 +2948,15 @@ class HubStore:
             sensor_id = self._ingest_keys.get(key or "")
             return self._sensors.get(sensor_id) if sensor_id else None
 
+    def rotate_api_key(self, tenant: Tenant) -> str:
+        """Issue the business a new master key; the old one stops at once."""
+        with self._lock:
+            self._keys.pop(tenant.api_key, None)
+            tenant.api_key = f"clx_{secrets.token_urlsafe(32)}"
+            self._keys[tenant.api_key] = tenant.tenant_id
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+            return tenant.api_key
+
     def rotate_ingest_key(self, sensor: Sensor) -> str:
         """Issue a new key for one sensor and retire the old one."""
         with self._lock:
