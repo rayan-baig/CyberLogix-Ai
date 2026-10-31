@@ -131,11 +131,19 @@ def list_plans():
 # Enterprise accounts rather than hand them to everybody.
 PROVISIONING_KEY = os.environ.get("CYBERLOGIX_PROVISIONING_KEY", "").strip()
 
+# Days of monitoring a lapsed licence gets on moving up a plan, to pay in.
+UPGRADE_GRACE_DAYS = 14
+
 
 def _require_provisioning(supplied: Optional[str], plan: str) -> None:
-    """Refuse to provision a paid plan without the provisioning key."""
-    if plan == "trial":
-        return
+    """Refuse to provision any account here without the provisioning key.
+
+    Trials included. A trial needed no key on this route, and unlike
+    POST /api/signup it had no rate limit, so anyone could make trial
+    accounts by the hundred; each one could then be bootstrapped and spend
+    the operator's SMS, voice and AI budget. The public way to a trial is
+    /api/signup, which is limited.
+    """
     if not PROVISIONING_KEY:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -277,6 +285,16 @@ def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
                 "move onto a paid plan, or get in touch if you need longer."
             ),
         )
+    if plan == tenant.plan:
+        # Choosing the plan you are on used to start a fresh term: a lapsed
+        # licence renewed itself, for nothing, with one call.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"You are already on {PLAN_TIERS[plan]['name']}. Your licence runs "
+                "on from paid invoices, not from choosing the plan again."
+            ),
+        )
     if target < current:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -334,7 +352,18 @@ def change_plan(
             ),
         )
 
-    STORE.change_plan(tenant, plan)
+    # A self-service change moves the plan and nothing else. It used to start
+    # the new plan's full term as well, so a trial could become a year of
+    # Enterprise with no money involved. The term now runs on from paid
+    # invoices (store.settle_invoice); only the operator grants one directly.
+    STORE.change_plan(tenant, plan, extend_term=operator_led)
+    if not operator_led:
+        # Except this: somebody whose licence has run out and who moves up a
+        # plan gets monitoring back at once, for long enough to settle the
+        # first invoice. Without it they could not pay because they had not
+        # paid. It only happens moving up, and there are only so many steps
+        # up, so it cannot be repeated into free time.
+        STORE.grant_grace(tenant, UPGRADE_GRACE_DAYS)
     return tenant.public(sensor_count=seats_used)
 
 

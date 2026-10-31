@@ -74,7 +74,7 @@ def test_a_plausible_quantity_field_cannot_be_ignored_into_an_overcharge(
 
     resp = api.post(
         "/api/v1/enterprise-billing/provision-cluster",
-        headers={**headers, **owner},
+        headers={**headers, **owner, "X-CyberLogix-Admin": "test-admin-key"},
         json={
             "corporate_client_name": "Chain Co",
             "industry_vertical": "restaurant",

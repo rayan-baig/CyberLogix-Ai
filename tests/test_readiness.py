@@ -100,8 +100,10 @@ def test_what_readiness_says_about_paid_accounts_is_what_the_app_does(
     """
     import licenses
 
-    monkeypatch.setattr(licenses, "PROVISIONING_KEY", "")
+    # The trial is made first: /api/licenses/tenants now needs the key for
+    # every plan (trials come from the rate-limited /api/signup otherwise).
     headers, _ = tenant_factory(plan="trial")
+    monkeypatch.setattr(licenses, "PROVISIONING_KEY", "")
 
     upgraded = api.post("/api/licenses/me/plan",
                         headers=owner_headers(headers), json={"plan": "growth"})

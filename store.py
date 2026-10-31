@@ -2827,12 +2827,32 @@ class HubStore:
         with self._lock:
             return list(self._tenants.values())
 
-    def change_plan(self, tenant: Tenant, plan: str) -> Tenant:
+    def change_plan(self, tenant: Tenant, plan: str, extend_term: bool = True) -> Tenant:
+        """Move a tenant to a plan. `extend_term` also starts the plan's term."""
         with self._lock:
             tenant.plan = plan
-            tenant.expires_at = utc_now() + timedelta(days=PLAN_TIERS[plan]["term_days"])
+            if extend_term:
+                tenant.expires_at = utc_now() + timedelta(days=PLAN_TIERS[plan]["term_days"])
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
+
+    def grant_grace(self, tenant: Tenant, days: int) -> None:
+        """An expired licence runs again until `days` from now. Never shortens one."""
+        with self._lock:
+            floor = utc_now() + timedelta(days=days)
+            if tenant.expires_at < utc_now():
+                tenant.expires_at = floor
+                self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+
+    def extend_licence(self, tenant_id: str, days: int) -> None:
+        """Paid time: the licence runs on by `days` from today or its end, later."""
+        with self._lock:
+            tenant = self._tenants.get(tenant_id)
+            if tenant is None or days <= 0:
+                return
+            start = max(tenant.expires_at, utc_now())
+            tenant.expires_at = start + timedelta(days=days)
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
 
     def set_suspended(self, tenant: Tenant, suspended: bool) -> Tenant:
         with self._lock:
@@ -4084,12 +4104,17 @@ class HubStore:
             )
             self._db.put("invoice", candidate.invoice_id, candidate.to_row())
 
+            was_paid = live.state == "paid"
             live.payments = payments
             live.amount_paid_usd = total_paid
             live.payment_reference = reference
             live.paid_at = now
             live.state = state
             _mirror_payment(invoice, live)
+            # The licence runs on from money that has arrived: an invoice paid
+            # in full buys its period. Nothing else lengthens a paid term.
+            if state == "paid" and not was_paid:
+                self.extend_licence(live.tenant_id, live.period_days)
             return live, True
 
     def void_invoice(self, invoice: Invoice) -> Invoice:

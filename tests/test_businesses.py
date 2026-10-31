@@ -501,3 +501,50 @@ def test_only_an_owner_replaces_the_key(api):
                         headers=_bearer(dana["token"])).json()
     assert api.post("/api/licenses/me/rotate-key",
                     headers=_bearer(operator["token"])).status_code == 403
+
+
+# ---- found in review: billing and a way past the webhook address check -----
+
+def test_a_percent_encoded_host_cannot_reach_this_machine(api):
+    import webhooks
+    for url in ("https://127.0.0.%31/admin", "https://%6c%6fcalhost/x",
+                "https://%31%32%37.%30.%30.%31/x"):
+        assert webhooks._post(url, {"x": 1}) == (False, "refused_private_address")
+    # A name that does not resolve is refused, not waved through.
+    assert webhooks._resolves_privately("no-such-host.invalid")
+    # Carrier-grade NAT (and one cloud's metadata address) is not the internet.
+    import ipaddress
+    from pollers import _reaches_the_public_internet
+    assert not _reaches_the_public_internet(ipaddress.ip_address("100.100.100.200"))
+
+
+def test_choosing_your_own_plan_again_does_not_renew_it(api):
+    dana = _signup(api, DANA)
+    tenant = STORE.get_tenant(dana["tenant"]["tenant_id"])
+    trial_end = tenant.expires_at
+    up = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth"})
+    assert up.status_code == 200, up.text
+    # The plan moved; the paid term did not appear from nowhere.
+    assert STORE.get_tenant(tenant.tenant_id).expires_at == trial_end
+    again = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth"})
+    assert again.status_code == 409
+
+
+def test_a_paid_invoice_is_what_runs_the_licence_on(api):
+    from datetime import timedelta
+    dana = _signup(api, DANA)
+    tenant = STORE.get_tenant(dana["tenant"]["tenant_id"])
+    before = tenant.expires_at
+    invoice = STORE.create_invoice(tenant, [{"description": "Month", "amount_usd": 100.0}], period_days=30)
+    # Part of it buys nothing yet; all of it buys the month.
+    STORE.settle_invoice(invoice, "pay-1", 40.0)
+    assert STORE.get_tenant(tenant.tenant_id).expires_at == before
+    STORE.settle_invoice(invoice, "pay-2", invoice.total_usd - 40.0)
+    assert STORE.get_tenant(tenant.tenant_id).expires_at >= before + timedelta(days=30) - timedelta(seconds=5)
+
+
+def test_trials_are_only_made_at_the_public_front_door(api):
+    resp = api.post("/api/licenses/tenants", json={
+        "company_name": "Farm", "contact_name": "F", "contact_phone": "+15550101",
+        "contact_email": "f@farm.example", "plan": "trial"})
+    assert resp.status_code == 403

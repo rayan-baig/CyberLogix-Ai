@@ -70,6 +70,7 @@ NOT_FETCHED = {
     "/api/accounts/bootstrap", "/api/accounts/login", "/api/accounts/logout",
     "/api/accounts/me/password", "/api/autopilot/sweep",
     "/api/accounts/businesses/join", "/api/accounts/businesses/join-codes",
+    "/api/licenses/me/rotate-key",
     "/api/autopilot/compliance.csv", "/api/claims", "/api/contracts/billing-run",
     "/api/contracts/renew", "/api/contracts/add-ons",
     "/api/doorstep/adopt", "/api/legal/accept",
