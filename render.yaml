@@ -113,6 +113,11 @@ services:
       - key: CYBERLOGIX_ALLOWED_ORIGINS
         sync: false
 
+      # Optional: the same value as MTRX Horizon's MTRX_STATS_KEY, so the
+      # owner's console can show user counts. Unset, /api/stats does not exist.
+      - key: STATS_KEY
+        sync: false
+
       # Email. Without these, invoices, reminders and password resets are
       # written down and never reach anyone. See DEPLOY.md for SPF/DKIM.
       - key: SMTP_HOST

@@ -634,6 +634,26 @@ def root_gateway():
     }
 
 
+@app.get("/api/stats", include_in_schema=False)
+def usage_stats(request: Request):
+    """User counts for the owner's MTRX Horizon console, and nothing else.
+
+    Off unless STATS_KEY is set (the same value as the console's
+    MTRX_STATS_KEY), and answered only to that key.
+    """
+    import hmac as _hmac
+
+    from store import STORE
+
+    key = os.environ.get("STATS_KEY", "").strip()
+    if not key:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    sent = request.headers.get("authorization", "")
+    if not _hmac.compare_digest(sent.encode(), f"Bearer {key}".encode()):
+        return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return STORE.usage_counts()
+
+
 @app.get("/api/health", status_code=200, tags=["Gateway"])
 def health_check():
     """Liveness probe covering every mounted subsystem."""

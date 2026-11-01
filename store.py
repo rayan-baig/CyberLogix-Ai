@@ -3616,6 +3616,16 @@ class HubStore:
             self._db.put("user", user.user_id, user.to_row())
             return user
 
+    def usage_counts(self, days: int = 30) -> Dict[str, int]:
+        """People with a sign-in, and how many signed in lately. Counts only."""
+        cutoff = utc_now() - timedelta(days=days)
+        with self._lock:
+            people = [u for u in self._users.values() if u.linked_to is None]
+            return {
+                "users": len(people),
+                "active_users": sum(1 for u in people if u.last_login_at and u.last_login_at >= cutoff),
+            }
+
     def person_of(self, user: User) -> User:
         """The sign-in behind a user record: itself, or the one it links to."""
         with self._lock:
