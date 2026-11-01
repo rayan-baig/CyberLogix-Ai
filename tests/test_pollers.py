@@ -560,3 +560,89 @@ def test_a_source_removed_during_a_fetch_stays_removed(api, estate, monkeypatch)
         _time.sleep(0.05)
     assert STORE._db.get(pollers.SOURCE_KIND, made["source_id"]) is None
     assert not STORE.readings_for("FRZ-1")
+
+
+# --- the same reading, fetched twice ----------------------------------------
+
+
+def _poll(api, headers, source_id):
+    return api.post(f"/api/pollers/{source_id}/test", headers=headers).json()
+
+
+def test_a_reading_already_taken_is_not_taken_again(api, estate, monkeypatch):
+    """A vendor's "latest" endpoint keeps answering with the last reading
+    it has, however old. Taken again on every poll, a sensor whose battery
+    died read as alive for ever (it never went offline, so nobody was told)
+    and one old warm reading re-opened the incident each time somebody
+    resolved it, texting the whole roster again for a fault already dealt
+    with."""
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+    stale = {"samples": [{"sensor": "SP-0001", "temperature": 55.0,
+                          "observed": "2026-09-20T10:00:00Z"}]}
+    monkeypatch.setattr(pollers, "_fetch", lambda u, h: stale)
+
+    first = _poll(api, headers, made["source_id"])
+    assert first["result"]["ingested"] == 1
+    incident = STORE.latest_unresolved_incident("FRZ-1")
+    assert incident is not None
+    STORE.resolve_incident(incident, "Dana")
+    before = STORE.get_sensor("FRZ-1").last_seen
+
+    again = _poll(api, headers, made["source_id"])
+
+    assert again["result"]["ingested"] == 0
+    assert len(STORE.readings_for("FRZ-1")) == 1
+    assert STORE.get_sensor("FRZ-1").last_seen == before
+    assert STORE.latest_unresolved_incident("FRZ-1") is None
+    # Nothing new is not the vendor failing: the source is not called broken.
+    assert again["source"]["consecutive_failures"] == 0
+    assert "nothing new" in again["result"]["detail"].lower()
+
+
+def test_a_newer_reading_is_still_taken(api, estate, monkeypatch):
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+    reply = {"samples": [{"sensor": "SP-0001", "temperature": 30.0,
+                          "observed": "2026-09-20T10:00:00Z"}]}
+    monkeypatch.setattr(pollers, "_fetch", lambda u, h: reply)
+    _poll(api, headers, made["source_id"])
+
+    reply = {"samples": [{"sensor": "SP-0001", "temperature": 31.0,
+                          "observed": "2026-09-20T10:10:00Z"}]}
+    out = _poll(api, headers, made["source_id"])
+
+    assert out["result"]["ingested"] == 1
+    assert STORE.get_sensor("FRZ-1").last_temperature == 31.0
+
+
+def test_history_newest_first_leaves_the_newest_reading_current(api, estate,
+                                                               monkeypatch):
+    """Vendors often list samples newest first. Taken in the order given,
+    the oldest one became the sensor's current temperature."""
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+    monkeypatch.setattr(pollers, "_fetch", lambda u, h: {"samples": [
+        {"sensor": "SP-0001", "temperature": 31.0, "observed": "2026-09-20T10:20:00Z"},
+        {"sensor": "SP-0001", "temperature": 30.0, "observed": "2026-09-20T10:10:00Z"},
+        {"sensor": "SP-0001", "temperature": 29.0, "observed": "2026-09-20T10:00:00Z"},
+    ]})
+
+    out = _poll(api, headers, made["source_id"])
+
+    assert out["result"]["ingested"] == 3
+    assert STORE.get_sensor("FRZ-1").last_temperature == 31.0
+    # And the next poll, with the same three, takes none of them.
+    assert _poll(api, headers, made["source_id"])["result"]["ingested"] == 0
+
+
+@pytest.mark.parametrize("stamp", [1790000000, 1790000000000, "/Date(1790000000000)/",
+                                   "2026-09-20 10:00:00", "2026-09-20T10:00:00.123+00:00"])
+def test_the_usual_ways_of_writing_a_time_are_understood(api, estate, monkeypatch, stamp):
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+    monkeypatch.setattr(pollers, "_fetch", lambda u, h: {"samples": [
+        {"sensor": "SP-0001", "temperature": 30.0, "observed": stamp}]})
+
+    assert _poll(api, headers, made["source_id"])["result"]["ingested"] == 1
+    assert _poll(api, headers, made["source_id"])["result"]["ingested"] == 0
