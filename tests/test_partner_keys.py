@@ -73,3 +73,41 @@ def test_a_key_stored_before_hashing_still_works_and_is_rewritten(tmp_path):
     for (table,) in con.execute("select name from sqlite_master where type='table'"):
         everything += json.dumps(con.execute(f"select * from {table}").fetchall())
     assert "clx_ptr_legacy_plain_key" not in everything
+
+
+def test_business_and_sensor_keys_are_not_stored(tmp_path):
+    """A backup used to hold every business's master key and every sensor's key."""
+    path = str(tmp_path / "hub.sqlite3")
+    store = HubStore(db=Database(path))
+    tenant = store.create_tenant("A", "n", "+1", "a@example.com", "growth")
+    sensor = store.register_sensor("FRZ-1", tenant.tenant_id, "restaurant", "Walk-in")
+    con = sqlite3.connect(path)
+    everything = ""
+    for (table,) in con.execute("select name from sqlite_master where type='table'"):
+        everything += json.dumps(con.execute(f"select * from {table}").fetchall())
+    assert tenant.api_key.startswith("clx_") and tenant.api_key not in everything
+    assert sensor.ingest_key.startswith("clx_snr_") and sensor.ingest_key not in everything
+    again = HubStore(db=Database(path))
+    assert again.tenant_by_key(tenant.api_key).tenant_id == tenant.tenant_id
+    assert again.sensor_by_ingest_key(sensor.ingest_key).sensor_id == "FRZ-1"
+    assert again.tenant_by_key(tenant.key_hash) is None
+
+
+def test_keys_stored_before_hashing_keep_working(tmp_path):
+    path = str(tmp_path / "hub.sqlite3")
+    store = HubStore(db=Database(path))
+    tenant = store.create_tenant("A", "n", "+1", "a@example.com", "growth")
+    sensor = store.register_sensor("FRZ-1", tenant.tenant_id, "restaurant", "Walk-in")
+    # Rewrite both rows the way an older version stored them.
+    trow = {**tenant.to_row(), "api_key": "clx_legacy_tenant"}
+    trow.pop("key_hash")
+    srow = {**sensor.to_row(), "ingest_key": "clx_snr_legacy_sensor"}
+    srow.pop("ingest_key_hash")
+    store._db.put("tenant", tenant.tenant_id, trow)
+    store._db.put("sensor", sensor.sensor_id, srow)
+    again = HubStore(db=Database(path))
+    assert again.tenant_by_key("clx_legacy_tenant").tenant_id == tenant.tenant_id
+    assert again.sensor_by_ingest_key("clx_snr_legacy_sensor").sensor_id == "FRZ-1"
+    raw = json.dumps(sqlite3.connect(path).execute("select * from sqlite_master").fetchall())
+    third = HubStore(db=Database(path))
+    assert "clx_legacy_tenant" not in json.dumps(third._db.get("tenant", tenant.tenant_id)) and raw

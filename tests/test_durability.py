@@ -57,7 +57,9 @@ def test_every_entity_survives_a_restart_field_for_field(tmp_path):
     assert t2.company_name == "Blue Harbor"
     assert t2.temperature_unit == "C"
     assert t2.partner_id == partner.partner_id
-    assert t2.api_key == tenant.api_key
+    # The key survives as a key (its hash), not as text on disk.
+    assert second.tenant_by_key(tenant.api_key).tenant_id == tenant.tenant_id
+    assert t2.api_key == ""
 
     s2 = second.get_sensor("FRZ-1")
     assert (s2.site_id, s2.external_device_sn) == (site.site_id, "ELITECH-1")

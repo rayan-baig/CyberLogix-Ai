@@ -418,8 +418,7 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
 def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]:
     """Hand each row to the translator the webhook path already uses."""
     import byod
-    from hardware_bridge import GenericWebhookPayload, \
-        ingest_third_party_hardware_webhook
+    from hardware_bridge import GenericWebhookPayload, ingest_for_tenant
 
     rows = _rows_in(payload)
     if not rows:
@@ -438,19 +437,17 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
             skipped.append(verdict.get("missing") or ["unit"])
             continue
         try:
-            # It authenticates from the token on the payload, the same
-            # way the webhook path does, so the account's own key is
-            # what is passed. No separate trust path for polled
-            # readings: they land under exactly the checks a pushed one
-            # gets, including the serial having to be a registered
-            # device on this account.
-            ingest_third_party_hardware_webhook(
+            # Exactly the checks a pushed reading gets, including the
+            # serial having to be a registered device on this account
+            # and the licence being current; only the credential is
+            # skipped, because this source is already known to be theirs.
+            ingest_for_tenant(
+                tenant,
                 GenericWebhookPayload(
                     device_sn=verdict["serial"],
-                    api_key_token=tenant.api_key,
                     reading_value=verdict["value"],
                     metric_type=verdict["unit"],
-                )
+                ),
             )
             byod.remember(tenant.tenant_id, entry, verdict, "ingested")
             taken += 1

@@ -669,6 +669,9 @@ class Tenant:
     contact_phone: str
     contact_email: str
     plan: str
+    # The master key itself is held only in memory, right after it is made or
+    # replaced, for the one response that shows it. On disk it is a SHA-256:
+    # a copy of the database or a backup used to hold every business's key.
     api_key: str
     activated_at: datetime
     expires_at: datetime
@@ -684,6 +687,7 @@ class Tenant:
     # about freezers rather than about "units" before they have registered
     # anything at all.
     industry_vertical: Optional[str] = None
+    key_hash: str = ""
 
     @property
     def expired(self) -> bool:
@@ -704,7 +708,7 @@ class Tenant:
             "contact_phone": self.contact_phone,
             "contact_email": self.contact_email,
             "plan": self.plan,
-            "api_key": self.api_key,
+            "key_hash": self.key_hash,
             "activated_at": iso(self.activated_at),
             "expires_at": iso(self.expires_at),
             "suspended": self.suspended,
@@ -722,7 +726,8 @@ class Tenant:
             contact_phone=row["contact_phone"],
             contact_email=row["contact_email"],
             plan=row["plan"],
-            api_key=row["api_key"],
+            api_key="",
+            key_hash=row.get("key_hash") or (hash_secret(row["api_key"]) if row.get("api_key") else ""),
             activated_at=_parse(row["activated_at"]),
             expires_at=_parse(row["expires_at"]),
             suspended=row.get("suspended", False),
@@ -767,8 +772,11 @@ class Sensor:
     location_name: str
     registered_at: datetime
     # Its own credential, scoped to this one asset. See `claim_sensor_seat`
-    # for why a sensor must not be carrying the tenant's key.
+    # for why a sensor must not be carrying the tenant's key. Like the
+    # business key, the key itself lives only in memory after it is made;
+    # what is kept is its SHA-256.
     ingest_key: str = ""
+    ingest_key_hash: str = ""
     external_device_sn: Optional[str] = None
     site_id: Optional[str] = None
     battery_percent: Optional[float] = None
@@ -837,7 +845,7 @@ class Sensor:
             "industry_vertical": self.industry_vertical,
             "location_name": self.location_name,
             "registered_at": iso(self.registered_at),
-            "ingest_key": self.ingest_key,
+            "ingest_key_hash": self.ingest_key_hash,
             "external_device_sn": self.external_device_sn,
             "site_id": self.site_id,
             "battery_percent": self.battery_percent,
@@ -857,7 +865,8 @@ class Sensor:
             industry_vertical=row["industry_vertical"],
             location_name=row["location_name"],
             registered_at=_parse(row["registered_at"]),
-            ingest_key=row.get("ingest_key") or "",
+            ingest_key_hash=row.get("ingest_key_hash")
+            or (hash_secret(row["ingest_key"]) if row.get("ingest_key") else ""),
             external_device_sn=row.get("external_device_sn"),
             site_id=row.get("site_id"),
             battery_percent=row.get("battery_percent"),
@@ -2568,7 +2577,10 @@ class HubStore:
             for row in self._db.all("tenant"):
                 tenant = Tenant.from_row(row)
                 self._tenants[tenant.tenant_id] = tenant
-                self._keys[tenant.api_key] = tenant.tenant_id
+                self._keys[tenant.key_hash] = tenant.tenant_id
+                if "api_key" in row:
+                    # Written before keys were hashed: drop the plain key.
+                    self._db.put("tenant", tenant.tenant_id, tenant.to_row())
 
             for row in self._db.all("sensor"):
                 sensor = Sensor.from_row(row)
@@ -2578,8 +2590,10 @@ class HubStore:
                 )
                 if sensor.external_device_sn:
                     self._devices[sensor.external_device_sn] = sensor.sensor_id
-                if sensor.ingest_key:
-                    self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
+                if sensor.ingest_key_hash:
+                    self._ingest_keys[sensor.ingest_key_hash] = sensor.sensor_id
+                if "ingest_key" in row:
+                    self._db.put("sensor", sensor.sensor_id, sensor.to_row())
 
             readings = [Reading.from_row(row) for row in self._db.all("reading")]
             # Ordered by time, then by id. The id tiebreak is not
@@ -2839,13 +2853,14 @@ class HubStore:
                 contact_phone=contact_phone,
                 contact_email=contact_email,
                 plan=plan,
-                api_key=f"clx_{secrets.token_urlsafe(32)}",
+                api_key=(key := f"clx_{secrets.token_urlsafe(32)}"),
+                key_hash=hash_secret(key),
                 activated_at=now,
                 expires_at=now + timedelta(days=PLAN_TIERS[plan]["term_days"]),
                 industry_vertical=industry_vertical,
             )
             self._tenants[tenant.tenant_id] = tenant
-            self._keys[tenant.api_key] = tenant.tenant_id
+            self._keys[tenant.key_hash] = tenant.tenant_id
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
 
@@ -2874,7 +2889,7 @@ class HubStore:
                     "sensors or invoices.", tenant_id,
                 )
                 return False
-            self._keys.pop(tenant.api_key, None)
+            self._keys.pop(tenant.key_hash, None)
             self._tenants.pop(tenant_id, None)
             self._db.delete("tenant", tenant_id)
             return True
@@ -2884,8 +2899,10 @@ class HubStore:
             return self._tenants.get(tenant_id)
 
     def tenant_by_key(self, api_key: str) -> Optional[Tenant]:
+        if not api_key:
+            return None
         with self._lock:
-            tenant_id = self._keys.get(api_key or "")
+            tenant_id = self._keys.get(hash_secret(api_key))
             return self._tenants.get(tenant_id) if tenant_id else None
 
     def list_tenants(self) -> List[Tenant]:
@@ -3005,11 +3022,12 @@ class HubStore:
                 industry_vertical=industry_vertical,
                 location_name=location_name,
                 registered_at=utc_now(),
-                ingest_key=f"clx_snr_{secrets.token_urlsafe(24)}",
+                ingest_key=(key := f"clx_snr_{secrets.token_urlsafe(24)}"),
+                ingest_key_hash=hash_secret(key),
                 external_device_sn=external_device_sn,
             )
             self._sensors[sensor_id] = sensor
-            self._ingest_keys[sensor.ingest_key] = sensor_id
+            self._ingest_keys[sensor.ingest_key_hash] = sensor_id
             if external_device_sn:
                 self._devices[external_device_sn] = sensor_id
             self._readings.setdefault(
@@ -3029,26 +3047,30 @@ class HubStore:
         serial cable. This key does one thing: report readings, for one
         asset.
         """
+        if not key:
+            return None
         with self._lock:
-            sensor_id = self._ingest_keys.get(key or "")
+            sensor_id = self._ingest_keys.get(hash_secret(key))
             return self._sensors.get(sensor_id) if sensor_id else None
 
     def rotate_api_key(self, tenant: Tenant) -> str:
         """Issue the business a new master key; the old one stops at once."""
         with self._lock:
-            self._keys.pop(tenant.api_key, None)
+            self._keys.pop(tenant.key_hash, None)
             tenant.api_key = f"clx_{secrets.token_urlsafe(32)}"
-            self._keys[tenant.api_key] = tenant.tenant_id
+            tenant.key_hash = hash_secret(tenant.api_key)
+            self._keys[tenant.key_hash] = tenant.tenant_id
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant.api_key
 
     def rotate_ingest_key(self, sensor: Sensor) -> str:
         """Issue a new key for one sensor and retire the old one."""
         with self._lock:
-            if sensor.ingest_key:
-                self._ingest_keys.pop(sensor.ingest_key, None)
+            if sensor.ingest_key_hash:
+                self._ingest_keys.pop(sensor.ingest_key_hash, None)
             sensor.ingest_key = f"clx_snr_{secrets.token_urlsafe(24)}"
-            self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
+            sensor.ingest_key_hash = hash_secret(sensor.ingest_key)
+            self._ingest_keys[sensor.ingest_key_hash] = sensor.sensor_id
             self._db.put("sensor", sensor.sensor_id, sensor.to_row())
             return sensor.ingest_key
 
@@ -3086,8 +3108,8 @@ class HubStore:
             # The key dies with the sensor. A decommissioned asset whose
             # credential still resolves is a decommissioned asset that can
             # still write readings.
-            if doomed.ingest_key:
-                self._ingest_keys.pop(doomed.ingest_key, None)
+            if doomed.ingest_key_hash:
+                self._ingest_keys.pop(doomed.ingest_key_hash, None)
             del self._sensors[sensor_id]
             evicted = self._readings.pop(sensor_id, None)
             self._db.delete("sensor", sensor_id)
