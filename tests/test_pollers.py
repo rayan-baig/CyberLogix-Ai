@@ -408,3 +408,95 @@ def test_one_estate_cannot_touch_anothers_source(api, estate, tenant_factory,
                     headers=other).status_code == 404
     assert api.delete(f"/api/pollers/{mine['source_id']}",
                       headers=other).status_code == 404
+
+
+# --- one slow vendor must not hold up the alarms ---------------------------
+
+
+def test_slow_vendors_do_not_hold_up_the_sweep(api, estate, monkeypatch):
+    """The pass used to fetch one source after another just ahead of the
+    sweep that phones people, so a handful of stuck vendors delayed every
+    escalation in the fleet by minutes."""
+    import threading
+    import time as _time
+
+    headers, _ = estate
+    for i in range(4):
+        assert source(api, headers, name=f"Vendor {i}").status_code == 201
+    release = threading.Event()
+
+    def stuck(url, h):
+        release.wait(10)
+        return {"samples": []}
+
+    monkeypatch.setattr(pollers, "_fetch", stuck)
+    monkeypatch.setattr(pollers, "POLL_PASS_SECONDS", 0.5)
+    started = _time.monotonic()
+    first = pollers.run_poll_pass()
+    assert _time.monotonic() - started < 3
+    assert first["still_running"] == 4
+    # Still being fetched: the next pass does not start them a second time.
+    assert pollers.run_poll_pass()["still_running"] == 0
+    release.set()
+    for _ in range(50):
+        if not pollers._in_flight:
+            break
+        _time.sleep(0.05)
+    assert not pollers._in_flight
+
+
+def test_sources_run_side_by_side(api, estate, monkeypatch):
+    import threading
+
+    headers, _ = estate
+    for i in range(3):
+        source(api, headers, name=f"Vendor {i}")
+    seen, lock, gate = set(), threading.Lock(), threading.Barrier(3, timeout=5)
+
+    def together(url, h):
+        gate.wait()            # only returns if all three are in flight at once
+        with lock:
+            seen.add(threading.get_ident())
+        return {"samples": []}
+
+    monkeypatch.setattr(pollers, "_fetch", together)
+    out = pollers.run_poll_pass()
+    assert out["polled"] == 3 and len(seen) == 3
+
+
+def test_an_account_has_a_ceiling_on_sources(api, estate):
+    headers, _ = estate
+    for i in range(pollers.MAX_SOURCES_PER_TENANT):
+        assert source(api, headers, name=f"Vendor {i}").status_code == 201
+    assert source(api, headers, name="One too many").status_code == 409
+
+
+def test_a_trickling_vendor_hits_the_deadline(estate, monkeypatch):
+    class Trickle:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, n):
+            return b" "
+
+    monkeypatch.setattr(pollers, "_resolve_to_public", lambda host: None)
+    monkeypatch.setattr(pollers._OPENER, "open", lambda request, timeout: Trickle())
+    monkeypatch.setattr(pollers, "FETCH_DEADLINE_SECONDS", 0.2)
+    with pytest.raises(TimeoutError):
+        pollers._fetch("https://sensors.example/samples", {})
+
+
+def test_an_unexpected_fault_does_not_show_its_insides(api, estate, monkeypatch):
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+
+    def broken(url, h):
+        raise KeyError("/srv/app/internal_module.py secret_thing")
+
+    monkeypatch.setattr(pollers, "_fetch", broken)
+    out = api.post(f"/api/pollers/{made['source_id']}/test", headers=headers).json()
+    assert out["result"]["status"] == "failed"
+    assert "internal_module" not in out["result"]["detail"]
