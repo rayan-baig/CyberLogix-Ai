@@ -1,0 +1,22 @@
+# Once a month, one pull request per kind of package, with every update
+# grouped together. Security fixes are not batched: GitHub opens those as
+# soon as a hole is published, if Dependabot security updates are switched
+# on in the repository's settings.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns: ["*"]
