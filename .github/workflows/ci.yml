@@ -1,0 +1,29 @@
+# Every push runs the whole suite and builds the production image.
+#
+# Fifteen hundred tests guard billing, escalation and who can see which
+# business. They only guard anything if something runs them.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # what the Dockerfile ships
+          cache: pip
+      # Pillow is for the one test that checks the app icons are real images.
+      - run: pip install -r requirements.txt pytest httpx pillow pip-audit
+      - name: Tests
+        run: python -m pytest -q
+      - name: Known security holes in dependencies
+        run: pip-audit -r requirements.txt
+      - name: The production image builds
+        run: docker build -t cyberlogix:ci .
