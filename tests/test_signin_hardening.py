@@ -197,3 +197,44 @@ def test_a_reset_email_that_never_went_is_scrubbed_too(api, monkeypatch):
     assert "clr_" in queued.body                                     # still needed to send it
     STORE.scrub_stale_sensitive_mail(now=utc_now() + timedelta(days=30))
     assert "clr_" not in queued.body
+
+
+def test_a_copy_of_the_database_holds_no_working_session(api, tmp_path):
+    """A backup used to hold every live session in the clear."""
+    import json
+    import sqlite3
+
+    from db import Database
+    from store import HubStore
+
+    path = str(tmp_path / "hub.sqlite3")
+    store = HubStore(db=Database(path))
+    tenant = store.create_tenant("A", "n", "+1", "a@example.com", "growth")
+    user = store.create_user(tenant.tenant_id, "dana@example.com", "Dana", "owner", "correct-horse")
+    session = store.start_session(user)
+    con = sqlite3.connect(path)
+    everything = ""
+    for (table,) in con.execute("select name from sqlite_master where type='table'"):
+        everything += json.dumps(con.execute(f"select * from {table}").fetchall())
+    assert session.secret.startswith("cls_") and session.secret not in everything
+    again = HubStore(db=Database(path))
+    assert again.session_by_token(session.secret).user_id == user.user_id
+    assert again.session_by_token(session.token) is None      # the stored hash is not itself a key
+
+
+def test_a_session_stored_before_hashing_survives_the_upgrade(tmp_path):
+    from datetime import timedelta
+
+    from db import Database
+    from store import HubStore, iso, utc_now
+
+    path = str(tmp_path / "hub.sqlite3")
+    store = HubStore(db=Database(path))
+    tenant = store.create_tenant("A", "n", "+1", "a@example.com", "growth")
+    user = store.create_user(tenant.tenant_id, "dana@example.com", "Dana", "owner", "correct-horse")
+    store._db.put("session", "cls_legacy_plain_token", {
+        "token": "cls_legacy_plain_token", "user_id": user.user_id, "tenant_id": tenant.tenant_id,
+        "issued_at": iso(utc_now()), "expires_at": iso(utc_now() + timedelta(hours=4))})
+    again = HubStore(db=Database(path))
+    assert again.session_by_token("cls_legacy_plain_token").user_id == user.user_id
+    assert again._db.get("session", "cls_legacy_plain_token") is None

@@ -368,10 +368,10 @@ def test_switching_never_makes_a_session_last_longer(api):
     first = _signup(api, DANA)
     bakery = api.post("/api/accounts/businesses", headers=_bearer(first["token"]),
                       json={"company_name": "Harbor Bakery"}).json()
-    before = STORE._sessions[bakery["token"]].expires_at
+    before = STORE.session_by_token(bakery["token"]).expires_at
     back = api.post(f"/api/accounts/businesses/{first['tenant']['tenant_id']}/switch",
                     headers=_bearer(bakery["token"])).json()
-    assert STORE._sessions[back["token"]].expires_at <= before
+    assert STORE.session_by_token(back["token"]).expires_at <= before
 
 
 def test_a_password_change_from_any_business_is_the_one_password(api):

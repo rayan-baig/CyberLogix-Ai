@@ -1288,13 +1288,21 @@ class User:
 
 @dataclass
 class LoginSession:
-    """A bearer token issued at login."""
+    """A bearer token issued at login.
+
+    `token` is the SHA-256 of the bearer token, and is what the store keys
+    sessions by and writes to disk. The bearer token itself is `secret`, set
+    only on the object start_session returns, so the one response that hands
+    it out can. A copy of the database or a backup used to hold every live
+    session in the clear: anybody with one could sign in as anybody.
+    """
 
     token: str
     user_id: str
     tenant_id: str
     issued_at: datetime
     expires_at: datetime
+    secret: str = ""
 
     @property
     def expired(self) -> bool:
@@ -2601,6 +2609,13 @@ class HubStore:
 
             for row in self._db.all("session"):
                 session = LoginSession.from_row(row)
+                if session.token.startswith("cls_"):
+                    # Written before tokens were hashed: keep the session,
+                    # lose the plain token from disk.
+                    self._db.delete("session", session.token)
+                    session.token = hash_secret(session.token)
+                    if not session.expired:
+                        self._db.put("session", session.token, session.to_row())
                 if session.expired:
                     self._db.delete("session", session.token)
                 else:
@@ -3672,12 +3687,14 @@ class HubStore:
             expires = now + timedelta(hours=SESSION_TTL_HOURS)
             if not_after is not None:
                 expires = min(expires, not_after)
+            secret = f"cls_{secrets.token_urlsafe(32)}"
             session = LoginSession(
-                token=f"cls_{secrets.token_urlsafe(32)}",
+                token=hash_secret(secret),
                 user_id=user.user_id,
                 tenant_id=user.tenant_id,
                 issued_at=now,
                 expires_at=expires,
+                secret=secret,
             )
             self._sessions[session.token] = session
             user.last_login_at = now
@@ -3686,8 +3703,11 @@ class HubStore:
             return session
 
     def session_by_token(self, token: str) -> Optional[LoginSession]:
+        """The session for a bearer token, as the caller sent it."""
+        if not token:
+            return None
         with self._lock:
-            session = self._sessions.get(token or "")
+            session = self._sessions.get(hash_secret(token))
             if session is None:
                 return None
             if session.expired:

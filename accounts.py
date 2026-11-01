@@ -328,7 +328,7 @@ def login(payload: LoginRequest, request: Request):
     session = STORE.start_session(user)
     audit(user, "account.login", "Signed in to the console.")
     return {
-        "token": session.token,
+        "token": session.secret,
         "expires_at": session.expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "user": user.public(),
         "tenant": tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id)),

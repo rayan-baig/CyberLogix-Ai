@@ -176,7 +176,7 @@ def _open(record: User, previous: User, session: LoginSession) -> dict:
             record.tenant_id,
         )
     return {
-        "token": new_session.token,
+        "token": new_session.secret,
         "expires_at": iso(new_session.expires_at),
         "user": record.public(),
         "tenant": tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id)),

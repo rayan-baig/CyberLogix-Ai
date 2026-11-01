@@ -280,7 +280,7 @@ def start_trial(payload: SignupRequest, request: Request):
             f"{tenant.company_name} is live on a "
             f"{tier['term_days']}-day trial. You are signed in."
         ),
-        "token": session.token,
+        "token": session.secret,
         "expires_at": iso(session.expires_at),
         "user": user.public(),
         "tenant": tenant.public(sensor_count=0),
@@ -290,7 +290,7 @@ def start_trial(payload: SignupRequest, request: Request):
         # The session just created, so the one step that needs a
         # signed-in person is a command they can actually paste.
         "next_steps": first_steps(
-            tenant.api_key, example_vertical, bearer_token=session.token
+            tenant.api_key, example_vertical, bearer_token=session.secret
         ),
     }
 
