@@ -143,6 +143,13 @@ CYBERLOGIX_HEARTBEAT_URL=
 `.env` holds the credential that reads every customer's contact details.
 It is not a file to commit, paste into a chat, or email to yourself.
 
+**One proxy, not two.** With `CYBERLOGIX_TRUST_PROXY_HEADER=1` the app takes
+the visitor's address from the last entry in `X-Forwarded-For`, the one your
+own proxy (or Render's) added. If you ever put a second proxy in front, such
+as Cloudflare, that last entry becomes Cloudflare's address, every visitor
+looks like the same few addresses, and one stranger's wrong passwords can
+lock everyone out. Change how the address is read before adding one.
+
 ---
 
 ## 4. The dead man's switch
