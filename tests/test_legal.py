@@ -187,7 +187,7 @@ def test_the_privacy_statement_still_refuses_the_obvious_things():
 
 
 def test_every_document_is_marked_a_draft():
-    """An 11-year-old's AI-written contract is not a reviewed contract."""
+    """An unreviewed draft is not a reviewed contract, and must say so."""
     for slug in legal.DOCUMENTS:
         doc = legal.document(slug)
         assert doc["draft"] is True

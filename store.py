@@ -20,7 +20,7 @@ from collections import OrderedDict, deque
 from itertools import islice
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from db import Database
 
@@ -2811,6 +2811,7 @@ class HubStore:
             self._contracts.clear()
             self._subscriptions.clear()
             self._resets.clear()
+            self._join_codes.clear()
             self._usage.clear()
             self._ai_cache.clear()
             self._expenses.clear()
@@ -2903,6 +2904,117 @@ class HubStore:
             self._tenants.pop(tenant_id, None)
             self._db.delete("tenant", tenant_id)
             return True
+
+    # ---- a business leaving: everything it has, and deleting it -----------
+
+    # Kinds that never hold one business's data: the platform's own
+    # settings, its expenses and error log, the AI wording cache (keyed by
+    # wording, shared), resellers, payments nobody could match, and the
+    # list of addresses that asked never to be mailed again — deleting an
+    # address from that list would mean writing to it again.
+    _NOT_A_BUSINESS_KIND = frozenset({
+        "meta", "aicache", "mailblock", "partner", "expense", "fault",
+        "unmatched_payment",
+    })
+    # Kept after a business deletes itself: the bills it was sent. Tax law
+    # makes a seller keep them for years, and each one already carries the
+    # company name it was issued to.
+    KEPT_AFTER_ERASE = frozenset({"invoice"})
+    # Never handed out in an export, even to the owner.
+    _SECRET_FIELDS = frozenset({
+        "password_hash", "key_hash", "api_key", "token", "token_hash",
+        "secret", "ingest_key", "ingest_key_hash",
+    })
+
+    def _rows_of_tenant_locked(self, tenant_id: str) -> List[Tuple[str, str, Dict[str, Any]]]:
+        sensors = {s.sensor_id for s in self._sensors.values() if s.tenant_id == tenant_id}
+        users = {u.user_id for u in self._users.values() if u.tenant_id == tenant_id}
+        sites = {s.site_id for s in self._sites.values() if s.tenant_id == tenant_id}
+        incidents = {i.incident_id for i in self._incidents.values() if i.tenant_id == tenant_id}
+        found: List[Tuple[str, str, Dict[str, Any]]] = []
+        for kind in self._db.kinds():
+            if kind in self._NOT_A_BUSINESS_KIND:
+                continue
+            for rec_id, data in self._db.rows(kind):
+                owner = data.get("tenant_id")
+                if owner is not None:
+                    # A row that names its business belongs to that one,
+                    # whatever else it points at.
+                    mine = owner == tenant_id
+                else:
+                    mine = (
+                        rec_id == tenant_id
+                        or data.get("sensor_id") in sensors
+                        or data.get("user_id") in users
+                        or data.get("site_id") in sites
+                        or data.get("incident_id") in incidents
+                    )
+                if mine:
+                    found.append((kind, rec_id, data))
+        return found
+
+    def export_tenant(self, tenant_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Everything stored for one business, by kind, minus secrets."""
+        with self._lock:
+            rows = self._rows_of_tenant_locked(tenant_id)
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        for kind, _rec_id, data in rows:
+            clean = {k: v for k, v in data.items() if k not in self._SECRET_FIELDS}
+            if kind == "poll_source" and isinstance(clean.get("headers"), dict):
+                # A vendor password. The console never shows it back; nor
+                # does the download.
+                clean["headers"] = {name: "(hidden)" for name in clean["headers"]}
+            if kind == "webhook" and clean.get("target"):
+                clean["target"] = AlertWebhook.from_row(data).masked_target()
+            if kind == "mail" and clean.get("sensitive"):
+                # A reset or sign-in link not yet scrubbed. Handing it to an
+                # owner would let them into that person's other businesses.
+                clean["body"] = "(hidden: it held a sign-in link)"
+            out.setdefault(kind, []).append(clean)
+        return out
+
+    def erase_tenant(self, tenant_id: str) -> Dict[str, int]:
+        """Delete a business and everything it has, except the bills.
+
+        A person who also works at other businesses keeps those: their
+        sign-in (email and password) moves to their record at the next
+        business, so deleting one business never locks anybody out of
+        another. Returns how many records of each kind were deleted.
+        """
+        with self._lock:
+            if tenant_id not in self._tenants:
+                return {}
+            for person in [u for u in self._users.values()
+                           if u.tenant_id == tenant_id and u.linked_to is None]:
+                elsewhere = sorted(
+                    (u for u in self._users.values()
+                     if u.linked_to == person.user_id and u.tenant_id != tenant_id),
+                    key=lambda u: (u.disabled, u.created_at),
+                )
+                if not elsewhere:
+                    continue
+                heir, rest = elsewhere[0], elsewhere[1:]
+                heir.linked_to = None
+                heir.email = person.email
+                heir.password_hash = person.password_hash
+                heir.password_from_owner = person.password_from_owner
+                heir.last_login_at = person.last_login_at
+                self._db.put("user", heir.user_id, heir.to_row())
+                for other in rest:
+                    other.linked_to = heir.user_id
+                    self._db.put("user", other.user_id, other.to_row())
+
+            doomed: Dict[str, List[str]] = {}
+            for kind, rec_id, _data in self._rows_of_tenant_locked(tenant_id):
+                if kind not in self.KEPT_AFTER_ERASE:
+                    doomed.setdefault(kind, []).append(rec_id)
+            for kind, ids in doomed.items():
+                self._db.delete_many(kind, ids)
+            # Rebuild the working set from what is left on disk, the same
+            # way a restore does, so no index anywhere still points at it.
+            self._forget_locked()
+            self.load()
+            return {kind: len(ids) for kind, ids in doomed.items()}
 
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         with self._lock:

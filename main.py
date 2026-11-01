@@ -32,6 +32,7 @@ from accounts import router as accounts_router
 from automation import router as autopilot_router
 from benchmarks import router as benchmarks_router
 from businesses import router as businesses_router
+from erase import router as erase_router
 from claims import router as claims_router
 from console_api import router as console_router
 from contracts import router as contracts_router
@@ -133,6 +134,7 @@ app.include_router(bridge_router)
 app.include_router(console_router)
 app.include_router(accounts_router)
 app.include_router(businesses_router)
+app.include_router(erase_router)
 app.include_router(costs_router)
 app.include_router(contacts_router)
 app.include_router(billing_router)

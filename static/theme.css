@@ -1181,3 +1181,14 @@ body[data-stale] #offline-banner {
   font-size: 14.5px; line-height: 1.6;
   color: var(--muted); max-width: 62ch;
 }
+
+/* The one button that deletes a whole business. Red so nobody mistakes it. */
+.danger-btn {
+  color: var(--critical);
+  border-color: color-mix(in srgb, var(--critical) 55%, transparent);
+}
+.danger-btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 16%, transparent);
+}

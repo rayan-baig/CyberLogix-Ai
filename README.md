@@ -34,7 +34,7 @@ ask for.
 | Outbound Alert Webhooks | `/api/webhooks` | Slack, Teams, PagerDuty, generic JSON |
 | Compliance Vault | `/api/vault` | Hash-chained readings and verifiable attestations |
 | Insurance Claim Packets | `/api/claims` | Everything an adjuster asks for, assembled |
-| Loss Assurance | `/api/assurance` | The guarantee, and what would void it |
+| Leaving | `/api/accounts/business` | Download everything, or delete everything |
 | Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
@@ -346,7 +346,6 @@ for comparison rather than charged.
 
 | Add-on | Basis | Price |
 |---|---|---|
-| Loss Assurance | per covered unit | $149 / month |
 | Certified Compliance Vault | per estate | $499 / month |
 | Sector Benchmarks | per estate | $299 / month |
 | Equipment Intelligence | per estate | $399 / month |
@@ -858,29 +857,23 @@ The console renders it as a document and prints it: a dedicated print
 stylesheet re-sets the whole thing for ink, because the adjuster's office
 will print it and the dark console on paper is unreadable.
 
-## Loss assurance
+## Download everything, delete everything
 
-The guarantee, at a flat $149 per covered unit per month: if a breach is
-recorded on a covered unit and no alert reaches anybody, CyberLogix
-reimburses the deductible for that event up to $25,000.
+An owner has two buttons on the Setup tab. **Download everything** gives one
+JSON file of every record held for the business, with passwords, keys and
+tokens left out (`GET /api/accounts/business/export`). **Delete everything**
+removes the business, its sensors, readings, people, incidents, mail and
+records from the live database at once (`POST /api/accounts/business/erase`).
 
-Flat, never a share of what the customer saved. A percentage means a quiet
-year pays nothing for the same standing obligation, and it puts the vendor
-against the customer the moment a claim is marginal.
+It asks for the business's name typed out and the owner's password, and it
+refuses while a bill is unpaid, so it is never a way to make a debt vanish.
+The bills already sent are kept, because a seller has to keep its bills.
+A person who also works at another business keeps that one: their sign-in
+moves to it. Daily backups hold a copy until they age out, and the privacy
+statement says how long.
 
-What makes it defensible rather than reckless is that an operator can void
-their own cover without realising — a dead battery, an empty roster, a
-sensor offline for a week. So `GET /api/assurance/cover` computes
-eligibility continuously and names exactly what to fix, **before** an event:
-
-> BLOOD-07 battery is at 12.0% and will go dark before it is noticed
-
-A guarantee whose exclusions only appear at claim time is a trick; one that
-tells you what to fix this morning is a service.
-
-`GET /api/assurance/performance` publishes our own miss rate, counting an
-alert we composed but could not send as a miss. A guarantee from a vendor
-who hides that number is a slogan.
+(There used to be a "Loss Assurance" guarantee here. It was withdrawn; the
+claim packet still helps a customer claim on their own insurer.)
 
 ## Benchmarks and equipment intelligence
 
@@ -1501,24 +1494,23 @@ is not one.
 
 ## The agreements
 
-`/legal` serves the Master Subscription Agreement, the Loss Assurance
-terms, the Service Level Commitment, the privacy and data-processing
+`/legal` serves the Master Subscription Agreement, the Service Level
+Commitment, the privacy and data-processing
 statement, and the acceptable-use policy. Readable without an account,
 because terms nobody can read before signing up are a surprise rather than
 terms.
 
-They are generated from the code they describe. The payout cap comes from
-`assurance.py`, the payment terms and late charge from the billing code,
-the delinquency threshold from `contracts.py`, and the cover exclusions
-from the function that actually applies them. Change a constant and the
+They are written in plain words and generated from the code they
+describe: the alert times from `store.py`, the payment terms and late
+charge from the billing code, the delinquency threshold from
+`contracts.py`, and the backup window from `backup.py`. Change a constant and the
 agreement says the new figure the same day, and the SHA-256 of the text
 moves so a customer can tell a rewording from a re-pricing.
 
 The clause that matters is the limitation of liability: twelve months of
-fees, with Loss Assurance deliberately outside it. A cryostorage
-customer's tank is worth more than this company will ever earn, and
-uncapped, one claim ends the company rather than the contract. Burying the
-guarantee under the general cap would have made the guarantee worthless.
+fees. A cryostorage customer's tank is worth more than this company will
+ever earn, and uncapped, one claim ends the company rather than the
+contract.
 
 Acceptance records the SHA-256 of the exact text against the tenant's
 audit trail, at sign-up and through `POST /api/legal/accept`. An

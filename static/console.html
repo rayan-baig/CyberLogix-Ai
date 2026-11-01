@@ -407,6 +407,33 @@
             <p class="card-plain">Every change anybody made to this account, and when.</p>
             <div id="audit-body"></div>
           </section>
+
+          <section class="card" id="find-leave" data-group="setup" data-find="download all data export delete everything erase close account leave privacy" data-label="Download or delete everything">
+            <div class="card-head">
+              <span class="card-title">Download or delete everything</span>
+              <span class="card-note">Owners only</span>
+            </div>
+            <p class="card-plain">Your data is yours. Take a copy, or delete it all.</p>
+            <div id="leave-owner" hidden>
+              <button class="btn btn-sm" id="leave-download" type="button">Download everything</button>
+              <form id="leave-form" style="margin-top:16px">
+                <p class="card-plain"><strong>Delete everything</strong> removes this business,
+                  its sensors, readings, people, alerts and records, right away. It cannot be
+                  undone. We keep only the bills we already sent you, because the law says we
+                  must. Our daily backups still hold a copy for a few days, then that is gone too.</p>
+                <div class="field">
+                  <label for="leave-name">Type this business's name</label>
+                  <input id="leave-name" autocomplete="off" required>
+                </div>
+                <div class="field">
+                  <label for="leave-password">Your password</label>
+                  <input id="leave-password" type="password" autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-sm danger-btn" type="submit">Delete everything</button>
+              </form>
+            </div>
+            <p class="card-plain" id="leave-not-owner">Only an owner can download or delete everything.</p>
+          </section>
         </div>
       </div>
 
@@ -1066,6 +1093,57 @@ function signOutLocally() {
   primeTheGate();
 }
 
+/* Download or delete everything. The server checks the role, the typed
+   name and the password; this only shows the buttons to an owner. */
+function renderLeave() {
+  const owner = Boolean(state.user && state.user.role === "owner");
+  $("leave-owner").hidden = !owner;
+  $("leave-not-owner").hidden = owner;
+}
+
+$("leave-download").addEventListener("click", async () => {
+  const button = $("leave-download");
+  button.disabled = true;
+  try {
+    const body = await api("/api/accounts/business/export");
+    const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `cyberlogix-${body.tenant_id}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("leave-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.target.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await api("/api/accounts/business/erase", {
+      method: "POST",
+      body: JSON.stringify({
+        company_name: $("leave-name").value.trim(),
+        password: $("leave-password").value,
+      }),
+    });
+    $("leave-password").value = "";
+    signOutLocally();
+    toast("Deleted. Everything for that business is gone, except the bills we sent.");
+  } catch (err) {
+    $("leave-password").value = "";
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $("sign-out").addEventListener("click", async () => {
   try { await api("/api/accounts/logout", { method: "POST" }); } catch (_) {}
   signOutLocally();
@@ -1362,6 +1440,7 @@ async function refresh() {
   paint("invoices", () => renderInvoices(got.invoices));
   paint("costs", () => renderCosts(got.costs));
   paint("audit", () => renderAudit(got.audit));
+  renderLeave();
   paint("roster", () => renderRoster(got.roster));
   paint("forecast", () => renderForecast(got.forecast));
   paint("claims", () => renderClaims(got.claims));
