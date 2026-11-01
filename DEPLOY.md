@@ -275,3 +275,10 @@ traceback and a count, instead of as a customer asking why.
   refuses everything — which is correct, because an unsigned payment
   webhook that trusts its body is a button for marking every invoice in
   the system paid.
+  In Stripe: Developers → Webhooks → add endpoint
+  `https://your.domain/api/payments/stripe`, subscribe it to
+  **`checkout.session.completed`** (what a payment link produces), and copy
+  its signing secret here. Make the payment link pass the invoice number as
+  `?client_reference_id={invoice}` (that is what `CYBERLOGIX_PAY_URL` is for)
+  so each payment finds its invoice; anything that cannot be matched waits at
+  `/api/payments/unmatched` rather than being guessed at.

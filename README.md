@@ -1708,10 +1708,13 @@ Things this repository does not do for you, in the order they will bite:
 - **Twilio is not live.** Until the three variables are set, every alert is
   composed, recorded and never sent. `/api/health` says `dry_run`, and the
   console shows a banner.
-- **Payments are not collected.** Invoices are issued and tracked; a
-  processor has to be wired to `POST /api/invoices/{id}/paid`.
-- **Nothing is backed up.** The SQLite file on a mounted volume survives a
-  restart, not a deleted volume.
+- **Card payments need Stripe set up.** Invoices are issued, chased and
+  matched to payments arriving at the Stripe webhook; until
+  `STRIPE_WEBHOOK_SECRET` and a payment link are set (DEPLOY.md, "Before a
+  paying customer"), payments are recorded by hand.
+- **Backups stay on the server.** A verified snapshot is taken daily, but
+  on the same disk; copying them somewhere else is yours to arrange
+  (DEPLOY.md section 7).
 - **The LLC does not exist yet.** `CYBERLOGIX_LEGAL_NAME` and the other
   issuer fields go on every invoice; an invoice from an entity that cannot
   receive money is not a document anyone can pay.
@@ -1720,7 +1723,6 @@ Things this repository does not do for you, in the order they will bite:
   them says "draft" on its first line. The limitation of liability is the
   clause to have checked first: one that turns out to be unenforceable is
   worse than none, because it was relied on.
-- **`CYBERLOGIX_PROVISIONING_KEY` is unset.** No paid account can be
-  created until it is. That is the safe direction — the endpoint used to
-  be anonymous and took the plan as a parameter — but it does mean the
-  first real customer cannot be provisioned without setting it.
+- **`CYBERLOGIX_PROVISIONING_KEY` is unset.** You cannot create a paid
+  account directly yourself until it is. Customers are not blocked: an owner
+  can still move off the trial from the console and be invoiced.

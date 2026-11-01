@@ -100,3 +100,37 @@ services:
         sync: false
       - key: CYBERLOGIX_HEARTBEAT_URL
         sync: false
+
+      # Your own address, e.g. https://alerts.yourcompany.com. Left unset,
+      # any website may call the API from a visitor's browser.
+      - key: CYBERLOGIX_ALLOWED_ORIGINS
+        sync: false
+
+      # Email. Without these, invoices, reminders and password resets are
+      # written down and never reach anyone. See DEPLOY.md for SPF/DKIM.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: CYBERLOGIX_OPERATOR_EMAIL
+        sync: false
+
+      # Payments and the details every invoice must carry.
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: CYBERLOGIX_PAY_URL
+        sync: false
+      - key: CYBERLOGIX_LEGAL_NAME
+        sync: false
+      - key: CYBERLOGIX_ADDRESS
+        sync: false
+      - key: CYBERLOGIX_TAX_ID
+        sync: false
+      - key: CYBERLOGIX_REMIT_TO
+        sync: false
