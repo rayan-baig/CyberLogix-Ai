@@ -99,11 +99,31 @@ def _gates(route):
     return found
 
 
+def _all_api_routes():
+    """Every route, with its full path and its dependencies.
+
+    FastAPI used to list every route flat in app.routes. From 0.16x an
+    included router stays nested, and its routes (with the router's prefix
+    and dependencies applied) come from its effective route contexts. Both
+    shapes are read, so this check works whichever version is installed.
+    """
+    for r in app.routes:
+        if isinstance(r, APIRoute):
+            yield r
+            continue
+        contexts = getattr(r, "effective_route_contexts", None)
+        if contexts is None:
+            continue
+        for context in (contexts() if callable(contexts) else contexts):
+            if isinstance(getattr(context, "original_route", None), APIRoute):
+                yield context
+
+
 def _mutating_routes():
     return [
         r
-        for r in app.routes
-        if isinstance(r, APIRoute) and r.methods & MUTATING
+        for r in _all_api_routes()
+        if r.methods & MUTATING
         and r.path.startswith("/api/")
     ]
 
