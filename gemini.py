@@ -114,7 +114,7 @@ def safe_generate(
     """
     # Imported here because costs.py depends on the store, which must not be
     # pulled in at gemini import time.
-    from costs import allow_ai_call, cache_key, record
+    from costs import allow_ai_call, cache_key, record, reserve
 
     key = cache_key(prompt, purpose)
     cached = STORE.cache_get(key)
@@ -137,6 +137,14 @@ def safe_generate(
         )
         return fallback, "fallback_template"
 
+    # The place under today's cap is taken together with the check (see
+    # costs.reserve). It is kept even if the call then fails: a call that
+    # was made was paid for.
+    allowed, reason = reserve(tenant_id, "ai")
+    if not allowed:
+        record(tenant_id, "ai_suppressed")
+        return fallback, "fallback_template"
+
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -145,7 +153,6 @@ def safe_generate(
         text = (response.text or "").strip()
         if not text:
             raise ValueError("Gemini returned an empty body.")
-        record(tenant_id, "ai_calls")
         STORE.cache_put(key, text)
         _note_success()
         return text, "gemini"

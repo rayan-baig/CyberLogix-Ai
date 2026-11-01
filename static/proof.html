@@ -199,7 +199,7 @@ function render(r) {
     "Recorded and published through CyberLogix AI. The verification above "
     + "runs against a public endpoint that needs no account, so neither the "
     + "operator nor CyberLogix has to be taken at their word. "
-    + (r.signing && r.signing.signed
+    + (r.signing && r.signing.counter_signed
        ? "This record also carries a counter-signature."
        : "This deployment has no signing key configured, so the record "
          + "carries no counter-signature — the chain still stands on its own.");

@@ -138,8 +138,12 @@ def test_the_welcome_email_prints_no_command_that_would_fail(
     for command in commands:
         # The email has the real host substituted in; put the token back
         # so the parser can aim it at the test client.
+        # The key is not emailed (it would sit in the mail log for good):
+        # the reader pastes theirs where the placeholder is, as here.
+        assert "YOUR_API_KEY" in command and signed_up["api_key"] not in body
         resp = _run(api, command.replace("https://hub.example", "$HOST")
-                    .replace("http://testserver", "$HOST"))
+                    .replace("http://testserver", "$HOST")
+                    .replace("YOUR_API_KEY", signed_up["api_key"]))
         assert resp.status_code < 400, (
             f"the welcome email prints a command that fails with "
             f"{resp.status_code}: {resp.text}\n  {command}"

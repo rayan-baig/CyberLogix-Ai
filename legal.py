@@ -60,35 +60,22 @@ from store import (
 
 router = APIRouter(prefix="/api/legal", tags=["Legal"])
 
-# Bumped by hand when the *meaning* changes. The body hash moves on its own
-# whenever a figure underneath it does, which is the point: a customer can
-# tell a rewording from a re-pricing.
-# Bumped when the documents say something materially different, not when
-# a sentence is tidied. 1.1 added the mail host as a sub-processor and
-# said honestly what a backup does to a deletion request — both are
-# things a customer would want to be asked about again rather than have
-# quietly changed under an acceptance they already gave.
-TERMS_VERSION = "1.1"
-EFFECTIVE_DATE = "2026-09-12"
+# Bumped when the documents say something different, not when a sentence
+# is tidied. 1.1 added the mail host and what backups do to a deletion.
+# 2.0 rewrote all four in plain words, added the owner's "Delete
+# everything" and "Download everything" buttons, and took out the Loss
+# Assurance add-on, which had been withdrawn from the product but was
+# still being promised here.
+TERMS_VERSION = "2.0"
+EFFECTIVE_DATE = "2026-11-01"
 
-# The single most valuable clause in the whole set, and the reason this
-# module exists at all.
-#
-# A cryostorage customer's tank is worth more than this company will earn
-# in its lifetime. Without a cap, one claim ends everything — not the
-# contract, the company. With one, the exposure is a known number that can
-# be insured against and priced into the rate.
-#
-# Twelve months of fees is the ordinary enterprise-software position and
-# the one a customer's counsel expects to see. The Loss Assurance add-on
-# sits *outside* it deliberately: that is the product actually accepting a
-# defined risk, and burying it under the general cap would make the
-# add-on meaningless.
+# The cap on what we can owe. Without one, a single claim about a lost
+# freezer of stock could end the company. Twelve months of fees is the
+# usual figure for business software.
 LIABILITY_CAP_MONTHS = 12
 
 # Uptime the platform commits to, and what missing it costs. Credits, not
-# damages — the standard structure, and one that cannot compound into
-# something unpayable.
+# damages: a refund off the next bill, never a sum that can grow.
 UPTIME_TARGET_PERCENT = 99.5
 SERVICE_CREDIT_TABLE = [
     (99.5, 99.0, 10),
@@ -98,9 +85,9 @@ SERVICE_CREDIT_TABLE = [
 MAX_CREDIT_PERCENT = 50
 
 DISCLAIMER = (
-    "Draft. Generated from the running system so the figures cannot drift "
-    "from the product, but not reviewed by a lawyer. Do not put it in "
-    "front of a paying customer until one has read it."
+    "Draft, written in plain words. The numbers come straight from the "
+    "code, so they match what the service really does. It is not "
+    "reviewed by a lawyer."
 )
 
 
@@ -118,125 +105,113 @@ def terms_of_service() -> str:
 
 > {DISCLAIMER}
 
-This agreement is between {issuer_block().get('legal_name')} ("we", "us")
-and the organisation that subscribes to the service ("you").
+This is the deal between {issuer_block().get('legal_name')} ("we") and the
+business that signs up ("you").
 
-## 1. What the service is
+## 1. What we do
 
-We monitor temperature and humidity readings sent to us by sensors you
-operate, compare them against limits you set, and attempt to notify the
-people you nominate when a reading falls outside those limits.
+Your sensors send us temperature and humidity readings. We check them
+against the limits you set. When a reading goes outside a limit, we try
+to reach the people you told us to reach.
 
-## 2. What the service is not
+## 2. What we do not do
 
-**It is not a substitute for your own equipment, alarms, or staff.** We
-observe your equipment; we do not control it, repair it, or operate it.
-A failure we do not detect, or detect but cannot deliver a message about,
-is still your equipment's failure. You remain responsible for the goods
-in your care.
+**We are not a substitute for your own equipment, alarms or staff.** We
+watch your fridges and freezers. We do not control them or fix them. If
+something breaks and we miss it, or we can't get the message through, the
+goods are still in your care.
 
-**It depends on things we do not control.** Notifications travel over
-mobile networks and the public internet, and both fail. Sensors run on
-batteries and go silent. If a person you nominated does not answer their
-phone, we cannot make them answer it.
+**Some things are out of our hands.** Texts and calls travel over phone
+networks and the internet, and those sometimes fail. Sensor batteries run
+out. If nobody answers the phone, we can't make them.
 
-**It is not certified.** Nothing in the service is approved as a medical
-device, a safety instrumented system, or a substitute for a regulatory
-control required of you.
+**We are not certified.** CyberLogix is not a medical device, not a
+safety instrumented system, and not a replacement for any check the law
+requires you to run yourself.
 
-## 3. What we commit to
+## 3. What we promise
 
-We will attempt to dispatch a notification within {DISPATCH_SLA_SECONDS}
-seconds of receiving a reading that breaches a limit you set. An
-unacknowledged breach is escalated to a voice call after
-{VOICE_ESCALATION_GRACE_MINUTES:g} minutes. A sensor that has not reported
-for {SENSOR_OFFLINE_AFTER_MINUTES} minutes is reported to you as offline.
+* We try to send an alert within {DISPATCH_SLA_SECONDS} seconds of a
+  reading that breaks one of your limits.
+* If nobody acknowledges it, we phone after
+  {VOICE_ESCALATION_GRACE_MINUTES:g} minutes.
+* If a sensor goes quiet for {SENSOR_OFFLINE_AFTER_MINUTES} minutes, we
+  tell you it is offline.
 
-Availability of the platform is covered by the Service Level Commitment,
-which is part of this agreement.
+How often the service is up is in the Service Level Commitment, which is
+part of this deal.
 
-## 4. What you commit to
+## 4. What you promise
 
-* Keep at least one reachable person on the on-call roster, with a
-  correct phone number.
-* Keep sensor batteries above the warning level and act when we tell you
-  a sensor has gone quiet.
-* Set limits that reflect what you are actually storing.
-* Tell us within thirty days if you dispute an invoice.
+* Keep at least one person on call who will answer, with the right number.
+* Keep sensor batteries charged, and act when we say a sensor went quiet.
+* Set limits that fit what you actually store.
+* Tell us within thirty days if you think a bill is wrong.
 
-These are not formalities. Each of them is a way the service silently
-stops working, and each is one we report to you before an event rather
-than after one — see the Loss Assurance terms.
+Each of these is a way alerts can quietly stop working, so we warn you
+when one slips.
 
-## 5. Fees
+## 5. Paying
 
-Fees are as set out in your order. Invoices are payable net
-{PAYMENT_TERMS_DAYS} days. Overdue amounts carry a late charge of
-{LATE_FEE_MONTHLY_PERCENT:g}% per month, or the maximum your jurisdiction
-allows if that is lower.
+Prices are on your order. Bills are due net {PAYMENT_TERMS_DAYS} days.
+Late bills get a late charge of {LATE_FEE_MONTHLY_PERCENT:g}% per month,
+or less if the law where you are says so.
 
-An account more than {DELINQUENT_AFTER_DAYS} days overdue loses access to
-reporting and certification features — benchmarks, attestations, exports —
-until the balance is cleared.
+If a bill is more than {DELINQUENT_AFTER_DAYS} days late, reports,
+certificates and downloads pause until it is paid.
 
-**Monitoring, alerting and escalation are never withheld for non-payment.**
-We will chase you for money. We will not stop watching your freezers to do
-it.
+**Monitoring and alerting are never withheld for non-payment.** We will
+ask you for money. We will never stop watching your freezers to get it.
 
 ## 6. Your data
 
-You own your readings. We store them to run the service, and we keep the
-hash chain that makes them tamper-evident. What we share, with whom, and
-for how long we keep it is in the Privacy and Data Processing statement.
+Your readings belong to you. What we keep, who else sees it, and for how
+long is in the Privacy statement.
 
-If you leave, you can export everything, and we delete it on request —
-except records we are required to keep, and the anonymised aggregates
-already contributed to sector benchmarks, which cannot be traced back to
-you and cannot be unmixed.
+An owner can download everything at any time, and can delete everything
+with the "Delete everything" button. The only things kept after that are
+the bills we already sent, because the law says we must keep them, and
+the anonymous sector averages your numbers were already mixed into, which
+can't be traced back to you or pulled back out.
 
 ## 7. Limitation of liability
 
-**Read this clause. It is the one that matters.**
+**Please read this part.**
 
-Except for the Loss Assurance add-on, which is a separate and deliberate
-commitment described in its own terms, our total liability to you for
-everything arising out of this agreement is limited to the fees you paid
-us in the {LIABILITY_CAP_MONTHS} months before the claim.
+If something goes wrong, the most we will ever owe you, for everything
+put together, is what you paid us in the {LIABILITY_CAP_MONTHS} months
+before the claim.
 
-We are not liable for lost profits, lost revenue, lost or spoiled goods,
-business interruption, or any indirect or consequential loss, even where
-we were told it could happen.
+We are not responsible for lost profits, lost sales, spoiled or lost
+goods, time your business could not run, or any other indirect or
+consequential loss, even if someone told us it might happen.
 
-This limit does not apply to death or personal injury caused by our
-negligence, to fraud, or to anything else a court will not allow us to
-limit.
+This limit does not cover death or injury caused by our carelessness,
+fraud, or anything else the law does not allow us to limit.
 
-**Why this is here, in plain terms.** A single tank of stored embryos is
-worth more than this company will ever earn. If one claim could be
-unlimited, no monitoring service could exist at this price — and the
-alternative you would be offered is no service at all. The cap is what
-makes the price possible. The Loss Assurance add-on is where we accept a
-defined, funded share of that risk on purpose.
+**Why this is here.** One freezer of stock can be worth more than this
+company will ever earn. Without a limit, one claim could close the
+company, and nobody could offer this service at this price. If you need
+cover for the goods themselves, that is what insurance is for, and the
+claim packet the service builds is made to help you claim on it.
 
-## 8. No warranty beyond this
+## 8. No other promises
 
-The service is provided as described here and in the Service Level
-Commitment, and otherwise without warranty. We do not promise it will be
-uninterrupted or error-free.
+The service comes as described here and in the Service Level Commitment,
+and with no other promise. We do not promise it will never go down or
+never have a bug.
 
-## 9. Term and termination
+## 9. Ending the deal
 
-Your order sets the term. Either of us may terminate for a material breach
-the other has not fixed within thirty days of being told about it. On
-termination you owe the fees already invoiced; we stop billing you for
-periods after it.
+Your order says how long the deal runs. Either of us can end it if the
+other breaks it in a big way and does not fix it within thirty days of
+being told. You pay bills already sent; we stop billing you after that.
 
-## 10. General
+## 10. Everything else
 
-Neither of us is liable for a failure caused by something genuinely
-outside our control. Notices go to the addresses on the order. This
-agreement is the whole of what we have agreed, and changes to it have to
-be in writing.
+Neither of us is to blame for things truly out of our control. Notices go
+to the addresses on the order. This page is the whole deal, and any change
+has to be in writing.
 """
 
 
@@ -251,34 +226,30 @@ def service_level() -> str:
 
 > {DISCLAIMER}
 
-## The commitment
+## The promise
 
-The ingest and alerting path will be available at least
-{UPTIME_TARGET_PERCENT:g}% of each calendar month.
+Receiving readings and sending alerts will work at least
+{UPTIME_TARGET_PERCENT:g}% of every calendar month.
 
-"Available" means we accept readings and attempt to dispatch alerts.
-Scheduled maintenance announced at least 48 hours ahead does not count
-against it, and neither does an outage in a network or telephony carrier
-we do not operate.
+Maintenance we tell you about at least 48 hours ahead does not count, and
+neither does an outage at a phone or internet company we don't run.
 
 ## If we miss it
 
-| Monthly availability | Credit against that month's fee |
+| Monthly availability | Credit off that month's bill |
 |---|---|
 {rows}
 
-Credits are the only remedy for missed availability, cap out at
-{MAX_CREDIT_PERCENT}% of the month, and are applied to your next invoice.
-Ask for one within thirty days of the month in question.
+A credit is the only thing you get for missed uptime. It is never more
+than {MAX_CREDIT_PERCENT}% of the month, and it comes off your next bill.
+Ask for it within thirty days of that month.
 
-## What is deliberately not in here
+## What we do not promise
 
-We do not commit to delivering a message to a human being. We commit to
-attempting dispatch within {DISPATCH_SLA_SECONDS} seconds. Carriers drop
-texts and people silence phones, and a commitment we cannot keep is worth
-less than an honest one — which is exactly why the escalation ladder ends
-in a voice call after {VOICE_ESCALATION_GRACE_MINUTES:g} minutes rather
-than in a promise.
+We don't promise a person will read the alert. We promise to try to send
+it within {DISPATCH_SLA_SECONDS} seconds. Phone companies drop texts and
+people silence phones, which is why an alert nobody answers turns into a
+phone call after {VOICE_ESCALATION_GRACE_MINUTES:g} minutes.
 """
 
 
@@ -289,24 +260,23 @@ def privacy_statement() -> str:
 
 > {DISCLAIMER}
 
-## What we hold
+## What we keep
 
-**Readings.** Temperature, humidity, battery level, a timestamp, and which
-sensor sent them. This is equipment data, not personal data.
+**Readings.** Temperature, humidity, battery level, the time, and which
+sensor sent it. This is about machines, not people.
 
-**People.** For each person on your on-call roster: name, mobile number,
-email, role. This is personal data, and it exists for one purpose — so we
-can reach a human being when your equipment fails.
+**People on call.** For each person you put on call: name, mobile number,
+email and job. We keep these for one reason: to reach a person when a
+freezer fails.
 
-**Operators.** Name, email and a hashed password for each person who signs
-in, plus an audit record of what they did.
+**People who sign in.** Name, email, a scrambled (hashed) password, and a
+record of what each one did.
 
-**Mail we send you.** The address, the subject and the body of every
-invoice, notice and report we send, and whether the mail host accepted
-it. We keep it so that "we never received that invoice" has an answer
-other than both of us guessing. If an address bounces or you unsubscribe,
-we keep that address on a suppression list — deleting the record of your
-having said stop would mean writing to you again.
+**Mail we send you.** Who it went to, the subject, the message, and
+whether the mail service took it. That way, "we never got that bill" has
+a real answer. If an address bounces or asks us to stop, we keep that
+address on a "do not mail" list, because forgetting it would mean
+writing to it again.
 
 We do not sell any of it, and we do not use it to train anything.
 
@@ -314,62 +284,63 @@ We do not sell any of it, and we do not use it to train anything.
 
 | Sub-processor | What reaches them | Why |
 |---|---|---|
-| Twilio | The mobile number, and the text of the alert (which names the site and the temperature) | Sending the text and placing the call |
-| Google (Gemini API) | The wording of an alert being drafted: the sector, the reading and the limit | Writing the alert in language the recipient will act on |
-| Our mail host | The recipient's address and the whole message, which for an invoice is what you owe and for a weekly report is how many readings your estate took and which units went quiet | Delivering it |
+| Twilio | The mobile number, and the text of the alert (which names the site and the temperature) | Sending the text and making the call |
+| Google (Gemini API) | The wording of an alert being drafted: the type of business, the reading and the limit | Writing the alert so the person reading it acts on it |
+| Our mail host | The recipient's address and the whole message, which for a bill is what you owe and for a weekly report is how many readings came in and which units went quiet | Delivering it |
 
-Sensor readings in bulk, your customer list, and your operators'
-credentials are sent to neither.
+Nobody else gets your readings in bulk, your customer list, or your
+passwords.
 
-## Anonymised benchmarks
+## Anonymous sector averages
 
-If you use Sector Benchmarks, your estate's aggregate statistics — how
-often units breach, how quickly they are acknowledged — are mixed into
-sector-wide figures. Nothing identifying you goes in, and a figure that
-could be traced back to a single operator is suppressed rather than shown.
-Once mixed, a contribution cannot be extracted again.
+If you use Sector Benchmarks, your totals (how often units go out of
+range, how fast people respond) are mixed into averages for your whole
+industry. Nothing that names you goes in, and a number that could point
+back to one business is hidden. Once mixed in, it can't be pulled out.
 
-## How long
+## How long we keep things
 
-**Readings are a rolling window, not an archive.** We keep the most
-recent {MAX_READINGS_PER_SENSOR} readings per sensor and delete the rest.
-At a five-minute pulse that is under two days. This paragraph used to
-promise seven years of them, which was not true of anything the system
-actually did — so if you need a longer record, export it on a schedule
-that fits the window we keep. Every report and attestation states the
-window it can answer for and says plainly when the period you asked
-about is longer than that.
+**Readings: only the newest.** We keep the latest
+{MAX_READINGS_PER_SENSOR} readings for each sensor and delete older ones.
+With a reading every five minutes, that is under two days. If you need a
+longer history, download it regularly. Every report says how far back it
+can see.
 
-Incidents, invoices and audit records are different: those are kept for
-the life of the account and for seven years after it, because that is
-how long an insurer or an inspector may ask about an event. When an
-incident opens, and again when it is resolved, the readings around it
-are copied onto the incident itself — so the evidence for an event that
-mattered survives the rolling window even though the routine readings
-either side of it do not.
+**Alerts, bills and the "who did what" record** are kept while your
+account is open, so you can show an inspector or insurer what happened.
+When an alert starts and ends, the readings around it are saved with the
+alert, so they last longer than the normal readings.
 
-Sign-in sessions expire on their own. Ask us to delete and we delete
-everything we are not required to keep.
+**Sign-ins** run out on their own.
 
-**Backups are the honest exception.** We take a verified snapshot of the
-whole database daily and keep the last {BACKUP_KEEP}. A deletion takes
-effect immediately in the live system and then propagates as those
-snapshots age out, so the last copy of deleted data is gone within
+## Download it, or delete it
+
+An owner can press **Download everything** to get one file with every
+record we hold for the business (passwords, keys and codes left out).
+
+An owner can press **Delete everything**. It deletes the business, its
+sensors, readings, people, alerts, mail and records straight away. To
+stop slips, it asks for the business's name and the owner's password, and
+it waits until no bill is unpaid. Two things stay:
+
+* **The bills we already sent.** The law makes a seller keep its bills
+  for years. Each one shows the company name, what was charged and
+  whether it was paid.
+* **Anonymous sector averages**, as above.
+
+**Backups.** Every day we save a checked snapshot of the whole database
+and keep the last {BACKUP_KEEP}. So after you delete, an old copy sits in
+those backups until they are replaced, and it is gone within
 {BACKUP_KEEP} days. We do not restore a backup to bring back something
-you asked us to delete. Saying "we delete everything" without this
-paragraph would have been untrue of any system that can survive losing a
-disk, which is every system worth trusting with a compliance record.
+you deleted.
 
-## Your rights
+You can also just ask us for a copy, a fix, or a deletion.
 
-Ask for a copy, a correction, or a deletion, and we will do it. Everything
-in the account is exportable through the API without asking us at all.
+## Where it is stored
 
-## Where it lives
-
-On our infrastructure and our sub-processors'. Tell us before you sign if
-you need it kept in a particular country — we would rather say no than
-find out afterwards.
+On our servers and our sub-processors' servers. If you need your data
+kept in one country, tell us before you sign up. We would rather say no
+than surprise you later.
 """
 
 
@@ -381,35 +352,33 @@ def acceptable_use() -> str:
 
 > {DISCLAIMER}
 
-## Do not
+## Please don't
 
-* Point the service at equipment where a missed alert would injure or kill
-  someone, unless an independent safety system is also in place. We are a
-  second pair of eyes, never the only pair.
-* Register sensors you do not operate, or send readings for someone else's
-  estate.
-* Use alert routing to send anything that is not an operational alert.
-  The on-call roster is not a marketing list, and abusing it will get the
-  telephony account shut down for every customer on it.
-* Share one login between people. Every operator gets their own, because
-  the audit record is only worth something if a name in it means a person.
+* Use us as the only safety system on equipment where a missed alert
+  could hurt or kill someone. We are a second pair of eyes, never the
+  only pair.
+* Add sensors that aren't yours, or send readings for someone else.
+* Use alerts for anything that isn't a real alert. The on-call list is
+  not a marketing list, and misuse can get the phone account shut down
+  for every customer.
+* Share one login between people. Everyone gets their own, so "who did
+  what" means something.
 
-## Keep working
+## Keep it working
 
-* At least one reachable person on the roster, per site.
-* Batteries above the warning level.
+* At least one person on call who will answer, for every location.
+* Sensor batteries charged.
 * Limits set to what you actually store.
-* Sensor ingest keys kept secret, and rotated when someone leaves.
+* Sensor keys kept secret, and changed when someone leaves.
 
-## If you do not pay
+## If you don't pay
 
-Reminders go out on {reminders} past due. A late charge of
-{LATE_FEE_MONTHLY_PERCENT:g}% per month applies from day
-{REMINDER_DAYS[2]}. At {DELINQUENT_AFTER_DAYS} days past due the account
-is delinquent and reporting features are withheld.
+We send reminders on {reminders} after the due date. A late charge of
+{LATE_FEE_MONTHLY_PERCENT:g}% per month starts on day {REMINDER_DAYS[2]}.
+At {DELINQUENT_AFTER_DAYS} days late, reports and downloads pause.
 
-Monitoring and alerting continue regardless. We will not put your stored
-goods at risk to collect an invoice.
+Monitoring and alerting continue no matter what. We will never put your
+stock at risk to collect a bill.
 """
 
 
@@ -475,8 +444,7 @@ def index():
         "draft": True,
         "disclaimer": DISCLAIMER,
         "liability_cap": (
-            f"{LIABILITY_CAP_MONTHS} months of fees, with Loss Assurance "
-            "outside it."
+            f"{LIABILITY_CAP_MONTHS} months of fees."
         ),
     }
 

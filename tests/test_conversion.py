@@ -74,7 +74,10 @@ def test_signing_up_gets_the_setup_commands_by_email(api, mailbox):
     assert len(mailbox) == 1
     body = mailbox[0].get_content()
     assert "curl -X POST https://hub.example/api/licenses/me/sensors" in body
-    assert tenant.api_key in body
+    # The master key is never emailed: it would live at the mail provider
+    # and in the mail log for good. The commands carry a placeholder.
+    assert tenant.api_key not in body
+    assert "YOUR_API_KEY" in body
 
 
 def test_the_welcome_speaks_the_sector_they_chose(api, mailbox):

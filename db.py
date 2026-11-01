@@ -191,6 +191,20 @@ class Database:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def rows(self, kind: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """Every record of one kind, with its id. all() drops the id."""
+        with self._lock:
+            found = self._conn.execute(
+                "SELECT rec_id, data FROM records WHERE kind = ?", (kind,)
+            ).fetchall()
+        return [(rec_id, json.loads(data)) for rec_id, data in found]
+
+    def kinds(self) -> List[str]:
+        """Every kind of record that has at least one row."""
+        with self._lock:
+            found = self._conn.execute("SELECT DISTINCT kind FROM records").fetchall()
+        return [row[0] for row in found]
+
     def count(self, kind: str) -> int:
         with self._lock:
             row = self._conn.execute(

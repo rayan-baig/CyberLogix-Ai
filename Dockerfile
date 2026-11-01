@@ -45,13 +45,19 @@ ENV CYBERLOGIX_DB_PATH=/app/data/cyberlogix.db
 
 RUN mkdir -p /app/data \
     && useradd --create-home --shell /usr/sbin/nologin cyberlogix \
-    && chown -R cyberlogix:cyberlogix /app
-USER cyberlogix
+    && chown -R cyberlogix:cyberlogix /app \
+    && chmod 755 /app/docker-entrypoint.sh
 
 EXPOSE 8080
+
+# The container starts as root for one reason: a host's disk is often mounted
+# owned by root, and the app could not create its database on it. The
+# entrypoint gives the data folders to `cyberlogix` and then drops to that
+# user with setpriv, before the application starts. Nothing else runs as root.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # One worker on purpose. The unattended sweep runs in-process, so a second
 # worker would escalate the same incident twice; scale out by setting
 # CYBERLOGIX_SWEEP_SECONDS=0 and driving POST /api/autopilot/sweep from an
 # external scheduler instead.
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

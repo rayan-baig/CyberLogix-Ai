@@ -279,13 +279,32 @@ def _apply(flat, preset, source) -> Dict[str, Any]:
 # --- what your device actually sent ----------------------------------------
 
 
+# Fields a device may carry its credential in. Taken out before a payload is
+# kept: kept verbatim, a device that sent the business's master key in its
+# body showed that key to everyone who could open the samples screen,
+# viewers included, and the key opens the whole estate.
+SECRET_FIELDS = {"api_key_token", "key", "api_key", "apikey", "token", "secret",
+                 "password", "authorization", "x-cyberlogix-key"}
+
+
+def _without_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: ("[removed]" if str(k).lower() in SECRET_FIELDS else _without_secrets(v))
+                for k, v in value.items()}
+    if isinstance(value, list):
+        return [_without_secrets(v) for v in value]
+    return value
+
+
 def remember(tenant_id: str, payload: Any, verdict: Dict[str, Any],
              outcome: str) -> None:
-    """Keep the payload verbatim, so onboarding is not guesswork.
+    """Keep the payload as it arrived, so onboarding is not guesswork.
 
     The single most useful thing when wiring up hardware is being able to
     see what arrived, and it is the thing vendor dashboards are worst at.
+    Everything but credentials, which are replaced with "[removed]".
     """
+    payload = _without_secrets(payload)
     now = utc_now()
     row = {
         "sample_id": f"{tenant_id}:{now.timestamp()}",
@@ -312,4 +331,6 @@ def remember(tenant_id: str, payload: Any, verdict: Dict[str, Any],
 def samples_for(tenant_id: str, limit: int = 25) -> List[Dict[str, Any]]:
     mine = [r for r in STORE._db.all(KIND) if r.get("tenant_id") == tenant_id]
     mine.sort(key=lambda r: r.get("at") or "", reverse=True)
-    return mine[:limit]
+    # Cleaned on the way out as well, for samples kept before credentials
+    # were removed on the way in.
+    return [{**r, "payload": _without_secrets(r.get("payload"))} for r in mine[:limit]]

@@ -3,11 +3,17 @@
 import pytest
 
 
+# The platform operator, who now sets a cluster's terms with the owner. A
+# cluster contract replaces the rate card, so its sector and branch count are
+# the price; an owner alone used to choose both (see the last tests here).
+ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+
+
 def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",
               branches=12, email="cfo@harborgrill.example"):
     return api.post(
         "/api/v1/enterprise-billing/provision-cluster",
-        headers=headers,
+        headers={**headers, **ADMIN},
         json={
             "corporate_client_name": name,
             "industry_vertical": vertical,
@@ -235,7 +241,7 @@ def test_branch_count_can_be_changed(api, operator_factory):
     account = provision(api, headers, branches=6).json()["account_id"]
     body = api.post(
         f"/api/v1/enterprise-billing/account/{account}/branches",
-        headers=headers, json={"total_branch_locations": 11},
+        headers={**headers, **ADMIN}, json={"total_branch_locations": 11},
     ).json()
     assert body["previous_monthly_usd"] == 6 * 249.0
     assert body["financial_summary"]["monthly_subscription_usd"] == pytest.approx(2670.53)
@@ -324,3 +330,19 @@ def test_contract_survives_a_restart(tmp_path):
     assert restored.account_id == contract.account_id
     assert restored.enrolled_branches == 12
     assert restored.monthly_usd == pytest.approx(2913.3)
+
+
+def test_an_owner_alone_cannot_set_their_own_cluster_price(api, operator_factory):
+    """Found in review: an owner billed a ten-sensor superyacht estate as one
+    logistics branch, about 4% of its price, by filling in this form."""
+    headers, _, _ = operator_factory()
+    resp = api.post(
+        "/api/v1/enterprise-billing/provision-cluster", headers=headers,
+        json={"corporate_client_name": "Cheap Co", "industry_vertical": "logistics",
+              "total_branch_locations": 1, "billing_contact_email": "a@example.com"},
+    )
+    assert resp.status_code in (401, 403)
+    account = provision(api, headers, branches=6).json()["account_id"]
+    lowered = api.post(f"/api/v1/enterprise-billing/account/{account}/branches",
+                       headers=headers, json={"total_branch_locations": 1})
+    assert lowered.status_code in (401, 403)

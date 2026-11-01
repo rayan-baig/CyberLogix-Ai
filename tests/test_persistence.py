@@ -108,7 +108,7 @@ def test_expired_sessions_are_dropped_on_load(shared_db):
     first._db.put("session", session.token, session.to_row())
 
     second = build(shared_db)
-    assert second.session_by_token(session.token) is None
+    assert second.session_by_token(session.secret) is None
 
 
 def test_reading_eviction_prunes_the_database(shared_db, monkeypatch):

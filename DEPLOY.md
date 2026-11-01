@@ -126,6 +126,9 @@ Then copy `.env.example` to `.env` and fill in, at minimum:
 ```
 CYBERLOGIX_DB_PATH=/app/data/cyberlogix.db
 CYBERLOGIX_BACKUP_DIR=/srv/backups
+# Behind any proxy (Caddy, nginx, a load balancer): so each visitor is counted
+# as themselves for sign-in limits, not all as the proxy. Render: already set.
+CYBERLOGIX_TRUST_PROXY_HEADER=1
 CYBERLOGIX_ADMIN_KEY=<generated above>
 CYBERLOGIX_ALLOWED_ORIGINS=https://your.domain
 PUBLIC_BASE_URL=https://your.domain
@@ -275,3 +278,10 @@ traceback and a count, instead of as a customer asking why.
   refuses everything — which is correct, because an unsigned payment
   webhook that trusts its body is a button for marking every invoice in
   the system paid.
+  In Stripe: Developers → Webhooks → add endpoint
+  `https://your.domain/api/payments/stripe`, subscribe it to
+  **`checkout.session.completed`** (what a payment link produces), and copy
+  its signing secret here. Make the payment link pass the invoice number as
+  `?client_reference_id={invoice}` (that is what `CYBERLOGIX_PAY_URL` is for)
+  so each payment finds its invoice; anything that cannot be matched waits at
+  `/api/payments/unmatched` rather than being guessed at.

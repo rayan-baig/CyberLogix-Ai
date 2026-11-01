@@ -202,7 +202,7 @@ def optional_operator(
         return None
 
     user = STORE.get_user(session.user_id)
-    if user is None or user.disabled:
+    if user is None or not STORE.person_active(user):
         return None
     return user
 
@@ -232,7 +232,7 @@ def _resolve_tenant(
                 detail="Session token is invalid or expired. Sign in again.",
             )
         user = STORE.get_user(session.user_id)
-        if user is None or user.disabled:
+        if user is None or not STORE.person_active(user):
             STORE.revoke_session(session.token)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -331,6 +331,20 @@ def require_ingest(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown tenant."
             )
         return IngestPrincipal(_reject_inactive(tenant), sensor)
+
+    # A person signed in may write readings too (a manual entry, a test), but
+    # only somebody who could act on them. A viewer's session used to be
+    # enough to raise a false alarm, with its texts, or to post calm readings
+    # that made a dead sensor look alive.
+    token = _bearer(authorization)
+    if token:
+        session = STORE.session_by_token(token)
+        user = STORE.get_user(session.user_id) if session else None
+        if user is not None and not user.can("operator"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Writing readings needs the 'operator' role.",
+            )
 
     return IngestPrincipal(
         require_tenant(

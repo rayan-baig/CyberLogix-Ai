@@ -17,14 +17,15 @@ Endpoints that record who did something require the person.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from store import ROLES, STORE, LoginSession, Tenant, User, verify_password
+from store import ROLES, STORE, LoginSession, Tenant, User, hash_secret, verify_password
 
 logger = logging.getLogger("cyberlogix.accounts")
 
@@ -35,17 +36,55 @@ MIN_PASSWORD_LENGTH = 10
 # Login throttling. A shared in-process window is enough for a single
 # instance and costs nothing; a distributed deployment would move this to
 # the same store the sessions live in.
+#
+# Failures are counted three ways. Per address *and* caller is the tight
+# one: it stops guessing one person's password, but only for whoever is
+# guessing. Counting per address alone (as this used to) let anybody lock
+# the real owner out for as long as they liked by typing a wrong password
+# eight times every five minutes. Per caller catches one machine trying a
+# common password against many addresses. The looser per-address count
+# answers wrong guesses spread across many machines with 429, but never
+# turns away the right password: a stranger with a handful of addresses
+# could otherwise keep the owner of a monitoring product, who may need to
+# acknowledge an alarm, out of it at will.
 MAX_LOGIN_ATTEMPTS = 8
+MAX_LOGIN_ATTEMPTS_PER_CALLER = 30
+MAX_LOGIN_ATTEMPTS_PER_ADDRESS = 50
 LOGIN_WINDOW_SECONDS = 300
 _login_attempts: Dict[str, List[float]] = defaultdict(list)
+_login_lock = threading.Lock()
 
 
-def _throttle(key: str) -> None:
+def _login_keys(email: str, caller: str) -> Dict[str, int]:
+    """The counts checked before the password: these refuse outright."""
+    return {
+        f"pair:{email}|{caller}": MAX_LOGIN_ATTEMPTS,
+        f"caller:{caller}": MAX_LOGIN_ATTEMPTS_PER_CALLER,
+    }
+
+
+def _recent(key: str, now: float) -> List[float]:
+    recent = [t for t in _login_attempts.get(key, ()) if now - t < LOGIN_WINDOW_SECONDS]
+    if recent:
+        _login_attempts[key] = recent
+    else:
+        _login_attempts.pop(key, None)
+    return recent
+
+
+def _sweep(now: float) -> None:
+    """Forget windows that have run out, so the table cannot grow for ever."""
+    if len(_login_attempts) > 5000:
+        for key in list(_login_attempts):
+            _recent(key, now)
+
+
+def _throttle(key: str, limit: int = MAX_LOGIN_ATTEMPTS) -> None:
     """Reject a caller that has failed too often in the recent window."""
     now = time.monotonic()
-    recent = [t for t in _login_attempts[key] if now - t < LOGIN_WINDOW_SECONDS]
-    _login_attempts[key] = recent
-    if len(recent) >= MAX_LOGIN_ATTEMPTS:
+    _sweep(now)
+    recent = _recent(key, now)
+    if len(recent) >= limit:
         oldest = min(recent)
         wait = int(LOGIN_WINDOW_SECONDS - (now - oldest)) + 1
         raise HTTPException(
@@ -111,7 +150,10 @@ def require_session(
             detail="Missing bearer token. Sign in at /api/accounts/login.",
         )
 
-    session = STORE.session_by_token(authorization.split(None, 1)[1].strip())
+    from auth import _bearer
+
+    token = _bearer(authorization)
+    session = STORE.session_by_token(token) if token else None
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -137,7 +179,7 @@ def require_operator(session: LoginSession = Depends(require_session)) -> User:
     from auth import licence_state
 
     user = STORE.get_user(session.user_id)
-    if user is None or user.disabled:
+    if user is None or not STORE.person_active(user):
         STORE.revoke_session(session.token)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -239,10 +281,20 @@ def bootstrap_owner(payload: UserCreate, tenant: Tenant = Depends(require_tenant
 
 
 @router.post("/login")
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, request: Request):
     """Exchange an email and password for a bearer session token."""
-    throttle_key = str(payload.email).strip().lower()
-    _throttle(throttle_key)
+    import signup
+
+    address = str(payload.email).strip().lower()
+    keys = _login_keys(address, signup.caller_key(request))
+    # Every key is recorded before the password is checked, and handed back
+    # on success. Checking first and recording after would let a burst of
+    # parallel guesses all read the same count and all get through.
+    with _login_lock:
+        for key, limit in keys.items():
+            _throttle(key, limit)
+        for key in keys:
+            _record_failure(key)
 
     user = STORE.user_by_email(str(payload.email))
 
@@ -251,23 +303,52 @@ def login(payload: LoginRequest):
     stored = user.password_hash if user else "scrypt$00$00"
     correct = verify_password(payload.password, stored)
 
-    if user is None or not correct or user.disabled:
-        _record_failure(throttle_key)
+    # Removed from every business they had: nothing left to sign in to. The
+    # same answer as a wrong password, so it says nothing about the account.
+    if user is None or not correct or not STORE.open_logins_of(user):
         logger.warning("Failed login for %s", payload.email)
+        with _login_lock:
+            spread = f"address:{address}"
+            over = len(_recent(spread, time.monotonic())) >= MAX_LOGIN_ATTEMPTS_PER_ADDRESS
+            _record_failure(spread)
+        if over:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed sign-in attempts. Try again in a few minutes.",
+                headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is incorrect.",
         )
 
-    _clear_failures(throttle_key)
+    # Right password: this attempt was not a failure, and the pair starts
+    # over. The wider counts keep their history, so somebody who knows one
+    # password cannot use it to wipe the record of guesses at others.
+    with _login_lock:
+        for key in keys:
+            if _login_attempts.get(key):
+                _login_attempts[key].pop()
+        _clear_failures(f"pair:{address}|{signup.caller_key(request)}")
 
     # Signing in survives a lapse. Somebody whose trial ended has to be
     # able to get in and buy something; locking them out is how a finished
     # trial becomes a lost customer rather than a paying one.
     from auth import licence_state
 
-    tenant = STORE.get_tenant(user.tenant_id)
-    if tenant is None or licence_state(tenant) == "suspended":
+    # Somebody with several businesses lands in the first one that is
+    # open to them. A suspension in one business must not lock its owner
+    # out of the others.
+    for record in STORE.logins_of(user):
+        tenant = STORE.get_tenant(record.tenant_id)
+        if (
+            not record.disabled
+            and tenant is not None
+            and licence_state(tenant) != "suspended"
+        ):
+            user = record
+            break
+    else:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="The license for this account is not active.",
@@ -276,7 +357,7 @@ def login(payload: LoginRequest):
     session = STORE.start_session(user)
     audit(user, "account.login", "Signed in to the console.")
     return {
-        "token": session.token,
+        "token": session.secret,
         "expires_at": session.expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "user": user.public(),
         "tenant": tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id)),
@@ -305,17 +386,35 @@ def whoami(user: User = Depends(require_operator)):
 
 @router.post("/me/password")
 def change_password(
-    payload: PasswordChange, user: User = Depends(require_operator)
+    payload: PasswordChange,
+    user: User = Depends(require_operator),
+    session: LoginSession = Depends(require_session),
 ):
-    """Rotate your own password, invalidating other sessions is not implied."""
-    if not verify_password(payload.current_password, user.password_hash):
+    """Change your own password. Every other session, in every business, is
+    signed out, and any reset link still outstanding stops working: somebody
+    changing a password they think is known to someone else wants exactly
+    that, and a session left open elsewhere would defeat it."""
+    # One password per person, whichever of their businesses is open.
+    person = STORE.person_of(user)
+    # A stolen session must not be a free way to guess the password, now that
+    # the right guess also signs every other session out.
+    guard = f"pwchange:{person.user_id}"
+    with _login_lock:
+        _throttle(guard, MAX_LOGIN_ATTEMPTS)
+    if not verify_password(payload.current_password, person.password_hash):
+        with _login_lock:
+            _record_failure(guard)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Current password is incorrect.",
         )
-    STORE.set_user_password(user, payload.new_password)
+    STORE.set_user_password(person, payload.new_password)
+    signed_out = STORE.revoke_sessions_of(person, keep=session.token)
     audit(user, "account.password_changed", "Changed their own password.")
-    return {"message": "Password updated."}
+    return {
+        "message": "Password updated. Every other session was signed out.",
+        "other_sessions_signed_out": signed_out,
+    }
 
 
 @router.get("/users")
@@ -330,10 +429,22 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
     """Add an operator to this tenant. Owners only."""
     role = _validate_role(payload.role)
 
-    if STORE.user_by_email(str(payload.email)) is not None:
+    existing = STORE.user_by_email(str(payload.email))
+    if existing is not None:
+        # Somebody who already has a CyberLogix sign-in. This used to link
+        # them in on the spot, which let any business attach itself to a
+        # stranger's sign-in by knowing their email, told the inviter the
+        # person's real name, and (with a sign-in an owner had made up for
+        # an address they did not control) let that owner into every
+        # business later added to it. Now the person has to agree: the
+        # owner makes a join code, and the person enters it from their own
+        # account. The answer does not repeat anything about them.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="That email address is already registered.",
+            detail=(
+                "That email already has a CyberLogix sign-in. Make a join code "
+                "and give it to them; they add your business from their own account."
+            ),
         )
 
     created = STORE.create_user(
@@ -342,6 +453,9 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
         full_name=payload.full_name,
         role=role,
         password=payload.password,
+        # The owner chose it, so the owner knows it: the person is asked to
+        # set their own, and cannot join other businesses until they do.
+        password_from_owner=True,
     )
     audit(owner, "account.invited", f"Added {created.email} as {role}.")
     return created.public()
@@ -408,8 +522,22 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No such user."
         )
+    if target.linked_to is not None or len(STORE.logins_of(target)) > 1:
+        # Their password belongs to their sign-in, which they also use for
+        # other businesses. Resetting it from here would let one business's
+        # owner take over somebody's access to every business they have,
+        # including that person's own. That held for linked records before;
+        # it holds for the sign-in record too, which merely lives here.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{target.email} signs in with their own CyberLogix login, "
+                "which this business does not manage. They can reset it "
+                "themselves from the sign-in page."
+            ),
+        )
 
-    token = STORE.issue_reset(target)
+    token = STORE.issue_reset(target, by_owner=True)
     audit(owner, "account.reset_issued", f"Issued a password reset for {target.email}.")
     return {
         "reset_token": token,
@@ -501,7 +629,7 @@ def _send_reset(address: str) -> None:
     from mail import send as send_mail
 
     user = STORE.user_by_email(address)
-    if user is None or user.disabled:
+    if user is None or not STORE.open_logins_of(user):
         logger.info("Password reset asked for an address with no account.")
         return
 
@@ -529,9 +657,13 @@ def _send_reset(address: str) -> None:
         ),
         # The token is in the key, so asking three times produces three
         # different links rather than one email and two silences.
-        dedupe_key=f"reset:{token[:16]}",
+        # Its hash, not a slice of it: the key is kept long after the link
+        # is used.
+        dedupe_key=f"reset:{hash_secret(token)[:16]}",
         klass="transactional",
         tenant_id=user.tenant_id,
+        # The stored copy loses the link once it has been sent.
+        sensitive=True,
     )
     STORE.record_audit(
         tenant_id=user.tenant_id,

@@ -80,9 +80,13 @@ _all: Deque[float] = deque()
 
 def caller_key(request: Request) -> str:
     if TRUST_PROXY_HEADER:
-        forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0]
-        if forwarded.strip():
-            return forwarded.strip()
+        # The LAST entry: the one our own proxy added for the connection it
+        # actually received. Anything to its left was sent by the caller and
+        # can say anything; taking the first one let a client pick its own
+        # identity and step around every per-caller limit.
+        parts = [p.strip() for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
+        if parts:
+            return parts[-1]
     client = request.client
     return client.host if client else "unknown"
 
@@ -280,7 +284,7 @@ def start_trial(payload: SignupRequest, request: Request):
             f"{tenant.company_name} is live on a "
             f"{tier['term_days']}-day trial. You are signed in."
         ),
-        "token": session.token,
+        "token": session.secret,
         "expires_at": iso(session.expires_at),
         "user": user.public(),
         "tenant": tenant.public(sensor_count=0),
@@ -290,7 +294,7 @@ def start_trial(payload: SignupRequest, request: Request):
         # The session just created, so the one step that needs a
         # signed-in person is a command they can actually paste.
         "next_steps": first_steps(
-            tenant.api_key, example_vertical, bearer_token=session.token
+            tenant.api_key, example_vertical, bearer_token=session.secret
         ),
     }
 

@@ -184,7 +184,22 @@ def ingest_third_party_hardware_webhook(
     freezer and a hangar are judged by their own rules.
     """
     tenant, scoped = _authenticate_webhook(payload.api_key_token, authorization)
+    return ingest_reading(tenant, scoped, payload, signed=x_signature is not None)
 
+
+def ingest_for_tenant(tenant: Tenant, payload: "GenericWebhookPayload") -> Dict[str, Any]:
+    """A reading our own server fetched for this business (the vendor pollers).
+
+    The same checks as a pushed reading, minus the credential: the poller
+    already knows whose source it is. It used to authenticate by putting the
+    business's own API key in the payload, which meant that key had to be
+    kept in the clear for ever.
+    """
+    return ingest_reading(_reject_lapsed(tenant), None, payload)
+
+
+def ingest_reading(tenant: Tenant, scoped, payload: "GenericWebhookPayload", signed: bool = False) -> Dict[str, Any]:
+    """Score and store one reading for an authenticated caller."""
     metric = payload.metric_type.strip().lower()
     if metric not in SUPPORTED_METRICS:
         raise HTTPException(
@@ -192,7 +207,7 @@ def ingest_third_party_hardware_webhook(
             detail=f"Unsupported metric_type. Supported: {list(SUPPORTED_METRICS)}",
         )
 
-    sensor = STORE.sensor_by_device(payload.device_sn)
+    sensor = STORE.sensor_by_device(payload.device_sn, tenant.tenant_id)
     if sensor is None or sensor.tenant_id != tenant.tenant_id:
         # Not an error worth throwing the reading away over. A device
         # that is sending us readings has already done the hard part;
@@ -262,7 +277,7 @@ def ingest_third_party_hardware_webhook(
                 if sensor.battery_low
                 else "Sensor health recorded."
             ),
-            "signature_present": x_signature is not None,
+            "signature_present": signed,
             "ingested_at": iso(utc_now()),
         }
 
@@ -287,7 +302,7 @@ def ingest_third_party_hardware_webhook(
                 "Humidity recorded as context. Thermal thresholds are scored "
                 "on temperature readings."
             ),
-            "signature_present": x_signature is not None,
+            "signature_present": signed,
             "ingested_at": iso(utc_now()),
         }
 
@@ -336,7 +351,7 @@ def ingest_third_party_hardware_webhook(
         "normalised_temperature_f": temperature,
         "alert_triggered": alert_triggered,
         "action_taken_by_ai": action,
-        "signature_present": x_signature is not None,
+        "signature_present": signed,
         "telemetry_result": result,
         "ingested_at": iso(utc_now()),
     }

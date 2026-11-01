@@ -31,6 +31,8 @@ from fastapi.staticfiles import StaticFiles
 from accounts import router as accounts_router
 from automation import router as autopilot_router
 from benchmarks import router as benchmarks_router
+from businesses import router as businesses_router
+from erase import router as erase_router
 from claims import router as claims_router
 from console_api import router as console_router
 from contracts import router as contracts_router
@@ -131,6 +133,8 @@ app.include_router(forecaster_router)
 app.include_router(bridge_router)
 app.include_router(console_router)
 app.include_router(accounts_router)
+app.include_router(businesses_router)
+app.include_router(erase_router)
 app.include_router(costs_router)
 app.include_router(contacts_router)
 app.include_router(billing_router)
@@ -310,7 +314,9 @@ async def unhandled_error_handler(request: Request, exc: Exception):
 
     row = faults.record(
         f"{request.method} {request.url.path}", exc,
-        context=f"query={dict(request.query_params)}",
+        # Parameter names and lengths, not values: some routes take a key in
+        # the query (?k= on the bridge), and the fault list is kept for good.
+        context="query=" + str({k: f"<{len(v)} chars>" for k, v in request.query_params.items()}),
     )
     return JSONResponse(
         status_code=500,
@@ -628,6 +634,26 @@ def root_gateway():
         "docs": "/docs",
         "console": "/",
     }
+
+
+@app.get("/api/stats", include_in_schema=False)
+def usage_stats(request: Request):
+    """User counts for the owner's MTRX Horizon console, and nothing else.
+
+    Off unless STATS_KEY is set (the same value as the console's
+    MTRX_STATS_KEY), and answered only to that key.
+    """
+    import hmac as _hmac
+
+    from store import STORE
+
+    key = os.environ.get("STATS_KEY", "").strip()
+    if not key:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    sent = request.headers.get("authorization", "")
+    if not _hmac.compare_digest(sent.encode(), f"Bearer {key}".encode()):
+        return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return STORE.usage_counts()
 
 
 @app.get("/api/health", status_code=200, tags=["Gateway"])

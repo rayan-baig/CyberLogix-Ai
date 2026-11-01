@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from accounts import require_role
-from auth import require_tenant, write_audit
+from auth import require_platform_admin, require_tenant, write_audit
 from store import (
     STORE,
     EnterpriseContract,
@@ -259,6 +259,12 @@ def provision_enterprise_cluster(
     payload: EnterpriseOnboardRequest,
     tenant: Tenant = Depends(require_tenant),
     owner: User = Depends(require_role("owner")),
+    # The operator's, as well as the owner's. A cluster contract replaces the
+    # rate card for all billing, priced on a sector and branch count the
+    # customer typed: an owner could bill a ten-sensor superyacht estate as
+    # one logistics branch, at about 4% of its price. Setting what a customer
+    # pays is the vendor's decision, made with them, not a form they fill in.
+    _: None = Depends(require_platform_admin),
 ):
     """Provision an enterprise volume account for the calling tenant."""
     vertical = _validate_vertical(payload.industry_vertical)
@@ -333,6 +339,8 @@ def change_branch_count(
     payload: BranchChange,
     tenant: Tenant = Depends(require_tenant),
     owner: User = Depends(require_role("owner")),
+    # Operator as well: the branch count is the price. See provision-cluster.
+    _: None = Depends(require_platform_admin),
 ):
     """Re-enroll a contract at a new branch count."""
     contract = _load(account_id, tenant)

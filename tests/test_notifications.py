@@ -160,8 +160,16 @@ def test_pressing_one_acknowledges_the_incident(
     assert token, "escalating must mint a keypress secret"
 
     path = f"/api/voice/keypress/{incident_id}/{token}"
-    url = f"http://testserver{path}"
+    # Twilio signs the address it was given, which is the public one. The
+    # app itself sees http://testserver, as it would see its own address
+    # behind a proxy that ends TLS; checking against that refused every
+    # genuine keypress.
+    url = notifications.acknowledgement_url(incident_id, token)
+    assert url.startswith("https://hub.example.com/")
     form = {"Digits": "1", "To": "+15550003"}
+    forged_elsewhere = api.post(path, data=form, headers={
+        "X-Twilio-Signature": _sign(f"http://testserver{path}", form)})
+    assert forged_elsewhere.status_code == 403
     resp = api.post(path, data=form,
                     headers={"X-Twilio-Signature": _sign(url, form)})
 

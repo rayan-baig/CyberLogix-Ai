@@ -34,6 +34,16 @@ UNGATED_BY_DESIGN = {
     "/api/accounts/login": "public by definition",
     "/api/accounts/logout": "ends your own session, nobody else's",
     "/api/accounts/me/password": "changes your own password",
+    "/api/accounts/businesses/{tenant_id}/switch": (
+        "moves your own session to another business you already hold a "
+        "record in, refused for any other. It grants nothing: the role you "
+        "have in that business is checked by every route you call there"
+    ),
+    "/api/accounts/businesses/join": (
+        "adds a business to your own sign-in, and only with a one-time code "
+        "that business's owner made: the code is the owner's consent, the "
+        "session is yours. It grants exactly the role the owner chose"
+    ),
     "/api/accounts/reset": "redeems a reset token; the token is the credential",
     "/api/payments/stripe": (
         "Stripe's webhook. It holds no credential of ours, so the request "
@@ -89,11 +99,31 @@ def _gates(route):
     return found
 
 
+def _all_api_routes():
+    """Every route, with its full path and its dependencies.
+
+    FastAPI used to list every route flat in app.routes. From 0.16x an
+    included router stays nested, and its routes (with the router's prefix
+    and dependencies applied) come from its effective route contexts. Both
+    shapes are read, so this check works whichever version is installed.
+    """
+    for r in app.routes:
+        if isinstance(r, APIRoute):
+            yield r
+            continue
+        contexts = getattr(r, "effective_route_contexts", None)
+        if contexts is None:
+            continue
+        for context in (contexts() if callable(contexts) else contexts):
+            if isinstance(getattr(context, "original_route", None), APIRoute):
+                yield context
+
+
 def _mutating_routes():
     return [
         r
-        for r in app.routes
-        if isinstance(r, APIRoute) and r.methods & MUTATING
+        for r in _all_api_routes()
+        if r.methods & MUTATING
         and r.path.startswith("/api/")
     ]
 

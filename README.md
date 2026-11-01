@@ -24,6 +24,7 @@ ask for.
 | Operations Console | `/console` | Browser UI over the whole platform |
 | Public Front Door | `/` | What the product is, who it is for, what it costs |
 | Operator Accounts & Audit | `/api/accounts` | People, roles, durable audit trail |
+| Several Businesses | `/api/accounts/businesses` | One sign-in, several businesses, and a switcher between them |
 | Spend Controls | `/api/costs` | Caching, daily caps, cost reporting |
 | On-Call Roster | `/api/contacts` | Who gets woken, and in what order |
 | Pricing & Billing | `/api/billing` | Per-unit rate card, invoice, ROI |
@@ -33,7 +34,7 @@ ask for.
 | Outbound Alert Webhooks | `/api/webhooks` | Slack, Teams, PagerDuty, generic JSON |
 | Compliance Vault | `/api/vault` | Hash-chained readings and verifiable attestations |
 | Insurance Claim Packets | `/api/claims` | Everything an adjuster asks for, assembled |
-| Loss Assurance | `/api/assurance` | The guarantee, and what would void it |
+| Leaving | `/api/accounts/business` | Download everything, or delete everything |
 | Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
@@ -192,6 +193,36 @@ any line can be checked against it.
 A tenant with no sensors in that vertical gets `409`, not an empty document —
 a compliance sheet with nothing behind it reads as an attestation.
 
+## Several businesses
+
+One person can run several businesses from one sign-in: an owner with a
+restaurant and a pharmacy, or a manager looking after shops that are
+separate companies. The company name at the top of the console is the
+switcher. It lists every business the person can open, with how many
+alerts and offline units each one has, and a red count appears on it when
+one of the *other* businesses needs them.
+
+- **Add a business** (owners only) starts it on the usual free trial,
+  under the same terms, with you as its owner. It gets its own sensor key,
+  shown once. A sign-in can hold up to `CYBERLOGIX_MAX_BUSINESSES` (10).
+- **Let somebody with a sign-in join your business** with a join code: an
+  owner makes one (choosing the role), gives it to the person directly, and
+  they enter it from their own account under *Join a business*. It works
+  once and lasts three days. Adding an existing person by email alone is
+  refused: both of you have to agree, so no business can attach itself to
+  somebody's sign-in by knowing their address.
+- **Nobody else manages your sign-in.** No business can reset the password
+  of a sign-in that is also used for other businesses, the one that happens
+  to hold it included; the person resets it themselves from the sign-in
+  page. A reset ends their sessions in every business.
+- **Each business stays separate.** The person has one record per
+  business (`User.linked_to` points at their sign-in), so their role is
+  per business and every permission check works exactly as before.
+  Switching ends the session on one business and starts one on the other,
+  never lasting longer than the session it replaced. Removing somebody
+  from a business closes only that business, whichever one their sign-in
+  lives in, and the removed business shows them its name and nothing more.
+
 ## Who gets alerted
 
 Alerts go to an on-call roster, not one number. The text goes to **everyone**
@@ -315,7 +346,6 @@ for comparison rather than charged.
 
 | Add-on | Basis | Price |
 |---|---|---|
-| Loss Assurance | per covered unit | $149 / month |
 | Certified Compliance Vault | per estate | $499 / month |
 | Sector Benchmarks | per estate | $299 / month |
 | Equipment Intelligence | per estate | $399 / month |
@@ -397,6 +427,12 @@ of a walk-in freezer — reachable by anyone with a screwdriver and a serial
 cable, in a room the public can often walk into. A sensor key is worth one
 freezer's readings, and a leaked one is re-keyed with a single call
 instead of re-keying an estate.
+
+The master key itself can be replaced too: `POST /api/licenses/me/rotate-key`
+(the console's *Replace master key*, under the team list). An owner's
+signed-in session only, never the key, so whoever leaked it cannot rotate it
+and lock the business out. The old key stops working at once; sensors on
+their own keys are not affected.
 
 Two routes refuse a machine credential outright — `POST
 /api/licenses/me/suspend` and `POST /api/licenses/me/plan`. Turning off a
@@ -821,29 +857,23 @@ The console renders it as a document and prints it: a dedicated print
 stylesheet re-sets the whole thing for ink, because the adjuster's office
 will print it and the dark console on paper is unreadable.
 
-## Loss assurance
+## Download everything, delete everything
 
-The guarantee, at a flat $149 per covered unit per month: if a breach is
-recorded on a covered unit and no alert reaches anybody, CyberLogix
-reimburses the deductible for that event up to $25,000.
+An owner has two buttons on the Setup tab. **Download everything** gives one
+JSON file of every record held for the business, with passwords, keys and
+tokens left out (`GET /api/accounts/business/export`). **Delete everything**
+removes the business, its sensors, readings, people, incidents, mail and
+records from the live database at once (`POST /api/accounts/business/erase`).
 
-Flat, never a share of what the customer saved. A percentage means a quiet
-year pays nothing for the same standing obligation, and it puts the vendor
-against the customer the moment a claim is marginal.
+It asks for the business's name typed out and the owner's password, and it
+refuses while a bill is unpaid, so it is never a way to make a debt vanish.
+The bills already sent are kept, because a seller has to keep its bills.
+A person who also works at another business keeps that one: their sign-in
+moves to it. Daily backups hold a copy until they age out, and the privacy
+statement says how long.
 
-What makes it defensible rather than reckless is that an operator can void
-their own cover without realising — a dead battery, an empty roster, a
-sensor offline for a week. So `GET /api/assurance/cover` computes
-eligibility continuously and names exactly what to fix, **before** an event:
-
-> BLOOD-07 battery is at 12.0% and will go dark before it is noticed
-
-A guarantee whose exclusions only appear at claim time is a trick; one that
-tells you what to fix this morning is a service.
-
-`GET /api/assurance/performance` publishes our own miss rate, counting an
-alert we composed but could not send as a miss. A guarantee from a vendor
-who hides that number is a slogan.
+(There used to be a "Loss Assurance" guarantee here. It was withdrawn; the
+claim packet still helps a customer claim on their own insurer.)
 
 ## Benchmarks and equipment intelligence
 
@@ -1464,24 +1494,23 @@ is not one.
 
 ## The agreements
 
-`/legal` serves the Master Subscription Agreement, the Loss Assurance
-terms, the Service Level Commitment, the privacy and data-processing
+`/legal` serves the Master Subscription Agreement, the Service Level
+Commitment, the privacy and data-processing
 statement, and the acceptable-use policy. Readable without an account,
 because terms nobody can read before signing up are a surprise rather than
 terms.
 
-They are generated from the code they describe. The payout cap comes from
-`assurance.py`, the payment terms and late charge from the billing code,
-the delinquency threshold from `contracts.py`, and the cover exclusions
-from the function that actually applies them. Change a constant and the
+They are written in plain words and generated from the code they
+describe: the alert times from `store.py`, the payment terms and late
+charge from the billing code, the delinquency threshold from
+`contracts.py`, and the backup window from `backup.py`. Change a constant and the
 agreement says the new figure the same day, and the SHA-256 of the text
 moves so a customer can tell a rewording from a re-pricing.
 
 The clause that matters is the limitation of liability: twelve months of
-fees, with Loss Assurance deliberately outside it. A cryostorage
-customer's tank is worth more than this company will ever earn, and
-uncapped, one claim ends the company rather than the contract. Burying the
-guarantee under the general cap would have made the guarantee worthless.
+fees. A cryostorage customer's tank is worth more than this company will
+ever earn, and uncapped, one claim ends the company rather than the
+contract.
 
 Acceptance records the SHA-256 of the exact text against the tenant's
 audit trail, at sign-up and through `POST /api/legal/accept`. An
@@ -1671,10 +1700,13 @@ Things this repository does not do for you, in the order they will bite:
 - **Twilio is not live.** Until the three variables are set, every alert is
   composed, recorded and never sent. `/api/health` says `dry_run`, and the
   console shows a banner.
-- **Payments are not collected.** Invoices are issued and tracked; a
-  processor has to be wired to `POST /api/invoices/{id}/paid`.
-- **Nothing is backed up.** The SQLite file on a mounted volume survives a
-  restart, not a deleted volume.
+- **Card payments need Stripe set up.** Invoices are issued, chased and
+  matched to payments arriving at the Stripe webhook; until
+  `STRIPE_WEBHOOK_SECRET` and a payment link are set (DEPLOY.md, "Before a
+  paying customer"), payments are recorded by hand.
+- **Backups stay on the server.** A verified snapshot is taken daily, but
+  on the same disk; copying them somewhere else is yours to arrange
+  (DEPLOY.md section 7).
 - **The LLC does not exist yet.** `CYBERLOGIX_LEGAL_NAME` and the other
   issuer fields go on every invoice; an invoice from an entity that cannot
   receive money is not a document anyone can pay.
@@ -1683,7 +1715,6 @@ Things this repository does not do for you, in the order they will bite:
   them says "draft" on its first line. The limitation of liability is the
   clause to have checked first: one that turns out to be unenforceable is
   worse than none, because it was relied on.
-- **`CYBERLOGIX_PROVISIONING_KEY` is unset.** No paid account can be
-  created until it is. That is the safe direction — the endpoint used to
-  be anonymous and took the plan as a parameter — but it does mean the
-  first real customer cannot be provisioned without setting it.
+- **`CYBERLOGIX_PROVISIONING_KEY` is unset.** You cannot create a paid
+  account directly yourself until it is. Customers are not blocked: an owner
+  can still move off the trial from the console and be invoiced.

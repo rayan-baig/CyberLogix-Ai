@@ -69,7 +69,10 @@ def test_sms_goes_to_everyone_on_the_roster(
 
     body = breach(api, headers, sensor_factory)
 
-    assert sent["sms"] == ["+15550001", "+15550002", "+15550003"]
+    # Everyone, in whatever order: the texts go out in parallel, so the order
+    # they reach the provider is not fixed, and comparing it made this test
+    # fail about one run in six.
+    assert sorted(sent["sms"]) == ["+15550001", "+15550002", "+15550003"]
     assert len(body["sms_fanout"]) == 3
     assert body["notified_count"] == 3
     assert body["sms_fanout"][0]["contact_name"] == "Night Engineer"

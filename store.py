@@ -20,7 +20,7 @@ from collections import OrderedDict, deque
 from itertools import islice
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from db import Database
 
@@ -84,6 +84,11 @@ def iso(moment: Optional[datetime]) -> Optional[str]:
     if moment is None:
         return None
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hash_secret(value: str) -> str:
+    """How a bearer secret is kept at rest: its SHA-256, never the secret."""
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
 def _parse(value: Optional[str]) -> Optional[datetime]:
@@ -664,6 +669,9 @@ class Tenant:
     contact_phone: str
     contact_email: str
     plan: str
+    # The master key itself is held only in memory, right after it is made or
+    # replaced, for the one response that shows it. On disk it is a SHA-256:
+    # a copy of the database or a backup used to hold every business's key.
     api_key: str
     activated_at: datetime
     expires_at: datetime
@@ -679,6 +687,7 @@ class Tenant:
     # about freezers rather than about "units" before they have registered
     # anything at all.
     industry_vertical: Optional[str] = None
+    key_hash: str = ""
 
     @property
     def expired(self) -> bool:
@@ -699,7 +708,7 @@ class Tenant:
             "contact_phone": self.contact_phone,
             "contact_email": self.contact_email,
             "plan": self.plan,
-            "api_key": self.api_key,
+            "key_hash": self.key_hash,
             "activated_at": iso(self.activated_at),
             "expires_at": iso(self.expires_at),
             "suspended": self.suspended,
@@ -717,7 +726,8 @@ class Tenant:
             contact_phone=row["contact_phone"],
             contact_email=row["contact_email"],
             plan=row["plan"],
-            api_key=row["api_key"],
+            api_key="",
+            key_hash=row.get("key_hash") or (hash_secret(row["api_key"]) if row.get("api_key") else ""),
             activated_at=_parse(row["activated_at"]),
             expires_at=_parse(row["expires_at"]),
             suspended=row.get("suspended", False),
@@ -762,8 +772,11 @@ class Sensor:
     location_name: str
     registered_at: datetime
     # Its own credential, scoped to this one asset. See `claim_sensor_seat`
-    # for why a sensor must not be carrying the tenant's key.
+    # for why a sensor must not be carrying the tenant's key. Like the
+    # business key, the key itself lives only in memory after it is made;
+    # what is kept is its SHA-256.
     ingest_key: str = ""
+    ingest_key_hash: str = ""
     external_device_sn: Optional[str] = None
     site_id: Optional[str] = None
     battery_percent: Optional[float] = None
@@ -832,7 +845,7 @@ class Sensor:
             "industry_vertical": self.industry_vertical,
             "location_name": self.location_name,
             "registered_at": iso(self.registered_at),
-            "ingest_key": self.ingest_key,
+            "ingest_key_hash": self.ingest_key_hash,
             "external_device_sn": self.external_device_sn,
             "site_id": self.site_id,
             "battery_percent": self.battery_percent,
@@ -852,7 +865,8 @@ class Sensor:
             industry_vertical=row["industry_vertical"],
             location_name=row["location_name"],
             registered_at=_parse(row["registered_at"]),
-            ingest_key=row.get("ingest_key") or "",
+            ingest_key_hash=row.get("ingest_key_hash")
+            or (hash_secret(row["ingest_key"]) if row.get("ingest_key") else ""),
             external_device_sn=row.get("external_device_sn"),
             site_id=row.get("site_id"),
             battery_percent=row.get("battery_percent"),
@@ -1202,7 +1216,15 @@ SESSION_TTL_HOURS = 12
 
 @dataclass
 class User:
-    """A named human operator inside a tenant."""
+    """A named human operator inside a tenant.
+
+    One person who runs several businesses has one of these per business,
+    so that each business keeps its own role for them and nothing about
+    one business can leak into another. Only the first is a sign-in: it
+    owns the email address and the password. The rest carry `linked_to`,
+    the user_id of that first one, cannot be signed into directly, and are
+    reached by switching business from a session of the same person.
+    """
 
     user_id: str
     tenant_id: str
@@ -1213,6 +1235,12 @@ class User:
     created_at: datetime
     last_login_at: Optional[datetime] = None
     disabled: bool = False
+    linked_to: Optional[str] = None
+    # The password was chosen by a business owner (an invite, or a reset the
+    # owner issued), so that owner knows it. Cleared when the person sets
+    # their own. While it is set the sign-in stays inside that one business:
+    # it cannot join or start others, which the owner could then walk into.
+    password_from_owner: bool = False
 
     def can(self, required: str) -> bool:
         """True when this user's role is at least `required`."""
@@ -1229,6 +1257,8 @@ class User:
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
             "disabled": self.disabled,
+            "linked_to": self.linked_to,
+            "password_from_owner": self.password_from_owner,
         }
 
     @classmethod
@@ -1243,6 +1273,8 @@ class User:
             created_at=_parse(row["created_at"]),
             last_login_at=_parse(row.get("last_login_at")),
             disabled=row.get("disabled", False),
+            linked_to=row.get("linked_to"),
+            password_from_owner=bool(row.get("password_from_owner", False)),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1256,18 +1288,30 @@ class User:
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
             "disabled": self.disabled,
+            # True when this person signs in with a login that belongs to
+            # another business, and reaches this one by switching.
+            "linked": self.linked_to is not None,
+            "must_change_password": self.password_from_owner,
         }
 
 
 @dataclass
 class LoginSession:
-    """A bearer token issued at login."""
+    """A bearer token issued at login.
+
+    `token` is the SHA-256 of the bearer token, and is what the store keys
+    sessions by and writes to disk. The bearer token itself is `secret`, set
+    only on the object start_session returns, so the one response that hands
+    it out can. A copy of the database or a backup used to hold every live
+    session in the clear: anybody with one could sign in as anybody.
+    """
 
     token: str
     user_id: str
     tenant_id: str
     issued_at: datetime
     expires_at: datetime
+    secret: str = ""
 
     @property
     def expired(self) -> bool:
@@ -1462,10 +1506,16 @@ class VaultAnchor:
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     issued_at: Optional[datetime] = None
+    # The exact first and last readings covered, so the run can be found
+    # again without guessing from times kept to the second.
+    first_reading_id: Optional[str] = None
+    last_reading_id: Optional[str] = None
 
     def to_row(self) -> Dict[str, Any]:
         return {
             "anchor_id": self.anchor_id,
+            "first_reading_id": self.first_reading_id,
+            "last_reading_id": self.last_reading_id,
             "tenant_id": self.tenant_id,
             "sensor_id": self.sensor_id,
             "chain_head": self.chain_head,
@@ -1483,6 +1533,8 @@ class VaultAnchor:
             sensor_id=row["sensor_id"],
             chain_head=row["chain_head"],
             readings=row.get("readings", 0),
+            first_reading_id=row.get("first_reading_id"),
+            last_reading_id=row.get("last_reading_id"),
             period_start=row.get("period_start"),
             period_end=row.get("period_end"),
             issued_at=_parse(row.get("issued_at")),
@@ -1666,10 +1718,21 @@ class Partner:
     company_name: str
     contact_name: str
     contact_email: str
-    api_key: str
+    # The key itself is held only in memory, right after it is made, so the
+    # one response that shows it can. What is stored is its SHA-256 and the
+    # last few characters for telling keys apart: a copy of the database or
+    # a backup does not open anybody's partner portal.
+    api_key: str = ""
     commission_percent: float = DEFAULT_PARTNER_COMMISSION_PERCENT
     active: bool = True
     created_at: Optional[datetime] = None
+    key_hash: str = ""
+    key_hint: str = ""
+
+    def set_key(self, api_key: str) -> None:
+        self.api_key = api_key
+        self.key_hash = hash_secret(api_key)
+        self.key_hint = api_key[-6:]
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -1677,7 +1740,8 @@ class Partner:
             "company_name": self.company_name,
             "contact_name": self.contact_name,
             "contact_email": self.contact_email,
-            "api_key": self.api_key,
+            "key_hash": self.key_hash,
+            "key_hint": self.key_hint,
             "commission_percent": self.commission_percent,
             "active": self.active,
             "created_at": iso(self.created_at),
@@ -1685,24 +1749,32 @@ class Partner:
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "Partner":
-        return cls(
+        partner = cls(
             partner_id=row["partner_id"],
             company_name=row["company_name"],
             contact_name=row["contact_name"],
             contact_email=row["contact_email"],
-            api_key=row["api_key"],
             commission_percent=row.get(
                 "commission_percent", DEFAULT_PARTNER_COMMISSION_PERCENT
             ),
             active=row.get("active", True),
             created_at=_parse(row.get("created_at")),
+            key_hash=row.get("key_hash", ""),
+            key_hint=row.get("key_hint", ""),
         )
+        if row.get("api_key") and not partner.key_hash:
+            # Written before keys were hashed: hash it now. The store saves
+            # the row back on load, which drops the plain key from disk.
+            partner.set_key(row["api_key"])
+            partner.api_key = ""
+        return partner
 
     def public(self) -> Dict[str, Any]:
         row = self.to_row()
         # The key is a credential; it is shown once at creation and never
         # echoed back on a listing.
-        row["api_key"] = f"...{self.api_key[-6:]}"
+        row.pop("key_hash", None)
+        row["api_key"] = f"...{self.key_hint}"
         return row
 
 
@@ -1814,6 +1886,52 @@ class Contact:
 
 
 @dataclass
+class JoinCode:
+    """A one-time code that lets somebody add a business to their sign-in.
+
+    Made by an owner of the business and handed over out of band; entered by
+    the person, from their own signed-in account. Both have to act, so no
+    business can attach itself to somebody's sign-in by knowing their email.
+    Only the hash is stored.
+    """
+
+    token_hash: str
+    tenant_id: str
+    role: str
+    issued_by: str
+    issued_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+
+    @property
+    def spent(self) -> bool:
+        return self.used_at is not None or utc_now() >= self.expires_at
+
+    def to_row(self) -> Dict[str, Any]:
+        return {
+            "token_hash": self.token_hash,
+            "tenant_id": self.tenant_id,
+            "role": self.role,
+            "issued_by": self.issued_by,
+            "issued_at": iso(self.issued_at),
+            "expires_at": iso(self.expires_at),
+            "used_at": iso(self.used_at),
+        }
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any]) -> "JoinCode":
+        return cls(
+            token_hash=row["token_hash"],
+            tenant_id=row["tenant_id"],
+            role=row["role"],
+            issued_by=row["issued_by"],
+            issued_at=_parse(row["issued_at"]),
+            expires_at=_parse(row["expires_at"]),
+            used_at=_parse(row.get("used_at")),
+        )
+
+
+@dataclass
 class ResetToken:
     """A one-time password reset, issued by an owner.
 
@@ -1827,6 +1945,10 @@ class ResetToken:
     issued_at: datetime
     expires_at: datetime
     used_at: Optional[datetime] = None
+    # Issued by an owner for one of their people, rather than mailed to the
+    # person by "forgot password". Rows from before this was recorded are
+    # treated as owner-issued: the stricter checks apply to them.
+    by_owner: bool = True
 
     @property
     def spent(self) -> bool:
@@ -1840,6 +1962,7 @@ class ResetToken:
             "issued_at": iso(self.issued_at),
             "expires_at": iso(self.expires_at),
             "used_at": iso(self.used_at),
+            "by_owner": self.by_owner,
         }
 
     @classmethod
@@ -1851,6 +1974,7 @@ class ResetToken:
             issued_at=_parse(row["issued_at"]),
             expires_at=_parse(row["expires_at"]),
             used_at=_parse(row.get("used_at")),
+            by_owner=bool(row.get("by_owner", True)),
         )
 
 
@@ -2252,6 +2376,11 @@ class Expense:
         return row
 
 
+MAX_ANCHORS_PER_SENSOR_PER_DAY = 48
+
+SENSITIVE_BODY_REMOVED = "[Removed once handled: this message held a one-time link.]"
+
+
 @dataclass
 class MailMessage:
     """One outbound email, and what became of it.
@@ -2280,6 +2409,10 @@ class MailMessage:
     detail: str = ""
     sent_at: Optional[datetime] = None
     tenant_id: Optional[str] = None
+    # The body holds something that works on its own, such as a password
+    # reset link. It is kept only until the message has gone (or never
+    # will), then replaced, so the mail log is not a drawer of live links.
+    sensitive: bool = False
 
     def age_hours(self, now: Optional[datetime] = None) -> float:
         now = now or utc_now()
@@ -2299,6 +2432,7 @@ class MailMessage:
             "detail": self.detail,
             "sent_at": iso(self.sent_at) if self.sent_at else None,
             "tenant_id": self.tenant_id,
+            "sensitive": self.sensitive,
         }
 
     @classmethod
@@ -2316,6 +2450,7 @@ class MailMessage:
             detail=row.get("detail", ""),
             sent_at=_parse(row["sent_at"]) if row.get("sent_at") else None,
             tenant_id=row.get("tenant_id"),
+            sensitive=bool(row.get("sensitive", False)),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -2427,6 +2562,7 @@ class HubStore:
         self._contracts: Dict[str, EnterpriseContract] = {}
         self._subscriptions: Dict[str, Subscription] = {}
         self._resets: Dict[str, ResetToken] = {}
+        self._join_codes: Dict[str, JoinCode] = {}
         self._webhooks: Dict[str, AlertWebhook] = {}
         self._invoices: Dict[str, Invoice] = {}
         self._anchors: Dict[str, VaultAnchor] = {}
@@ -2451,7 +2587,10 @@ class HubStore:
             for row in self._db.all("tenant"):
                 tenant = Tenant.from_row(row)
                 self._tenants[tenant.tenant_id] = tenant
-                self._keys[tenant.api_key] = tenant.tenant_id
+                self._keys[tenant.key_hash] = tenant.tenant_id
+                if "api_key" in row:
+                    # Written before keys were hashed: drop the plain key.
+                    self._db.put("tenant", tenant.tenant_id, tenant.to_row())
 
             for row in self._db.all("sensor"):
                 sensor = Sensor.from_row(row)
@@ -2461,8 +2600,10 @@ class HubStore:
                 )
                 if sensor.external_device_sn:
                     self._devices[sensor.external_device_sn] = sensor.sensor_id
-                if sensor.ingest_key:
-                    self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
+                if sensor.ingest_key_hash:
+                    self._ingest_keys[sensor.ingest_key_hash] = sensor.sensor_id
+                if "ingest_key" in row:
+                    self._db.put("sensor", sensor.sensor_id, sensor.to_row())
 
             readings = [Reading.from_row(row) for row in self._db.all("reading")]
             # Ordered by time, then by id. The id tiebreak is not
@@ -2487,10 +2628,18 @@ class HubStore:
             for row in self._db.all("user"):
                 user = User.from_row(row)
                 self._users[user.user_id] = user
-                self._emails[user.email] = user.user_id
+                if user.linked_to is None:
+                    self._emails[user.email] = user.user_id
 
             for row in self._db.all("session"):
                 session = LoginSession.from_row(row)
+                if session.token.startswith("cls_"):
+                    # Written before tokens were hashed: keep the session,
+                    # lose the plain token from disk.
+                    self._db.delete("session", session.token)
+                    session.token = hash_secret(session.token)
+                    if not session.expired:
+                        self._db.put("session", session.token, session.to_row())
                 if session.expired:
                     self._db.delete("session", session.token)
                 else:
@@ -2515,7 +2664,9 @@ class HubStore:
             for row in self._db.all("partner"):
                 partner = Partner.from_row(row)
                 self._partners[partner.partner_id] = partner
-                self._partner_keys[partner.api_key] = partner.partner_id
+                self._partner_keys[partner.key_hash] = partner.partner_id
+                if "api_key" in row:
+                    self._db.put("partner", partner.partner_id, partner.to_row())
 
             for row in self._db.all("webhook"):
                 hook = AlertWebhook.from_row(row)
@@ -2539,6 +2690,13 @@ class HubStore:
                     self._db.delete("reset", reset.token_hash)
                 else:
                     self._resets[reset.token_hash] = reset
+
+            for row in self._db.all("join_code"):
+                code = JoinCode.from_row(row)
+                if code.spent:
+                    self._db.delete("join_code", code.token_hash)
+                else:
+                    self._join_codes[code.token_hash] = code
 
             for row in self._db.all("usage"):
                 usage = UsageDay.from_row(row)
@@ -2653,6 +2811,7 @@ class HubStore:
             self._contracts.clear()
             self._subscriptions.clear()
             self._resets.clear()
+            self._join_codes.clear()
             self._usage.clear()
             self._ai_cache.clear()
             self._expenses.clear()
@@ -2705,13 +2864,14 @@ class HubStore:
                 contact_phone=contact_phone,
                 contact_email=contact_email,
                 plan=plan,
-                api_key=f"clx_{secrets.token_urlsafe(32)}",
+                api_key=(key := f"clx_{secrets.token_urlsafe(32)}"),
+                key_hash=hash_secret(key),
                 activated_at=now,
                 expires_at=now + timedelta(days=PLAN_TIERS[plan]["term_days"]),
                 industry_vertical=industry_vertical,
             )
             self._tenants[tenant.tenant_id] = tenant
-            self._keys[tenant.api_key] = tenant.tenant_id
+            self._keys[tenant.key_hash] = tenant.tenant_id
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
 
@@ -2740,30 +2900,163 @@ class HubStore:
                     "sensors or invoices.", tenant_id,
                 )
                 return False
-            self._keys.pop(tenant.api_key, None)
+            self._keys.pop(tenant.key_hash, None)
             self._tenants.pop(tenant_id, None)
             self._db.delete("tenant", tenant_id)
             return True
+
+    # ---- a business leaving: everything it has, and deleting it -----------
+
+    # Kinds that never hold one business's data: the platform's own
+    # settings, its expenses and error log, the AI wording cache (keyed by
+    # wording, shared), resellers, payments nobody could match, and the
+    # list of addresses that asked never to be mailed again — deleting an
+    # address from that list would mean writing to it again.
+    _NOT_A_BUSINESS_KIND = frozenset({
+        "meta", "aicache", "mailblock", "partner", "expense", "fault",
+        "unmatched_payment",
+    })
+    # Kept after a business deletes itself: the bills it was sent. Tax law
+    # makes a seller keep them for years, and each one already carries the
+    # company name it was issued to.
+    KEPT_AFTER_ERASE = frozenset({"invoice"})
+    # Never handed out in an export, even to the owner.
+    _SECRET_FIELDS = frozenset({
+        "password_hash", "key_hash", "api_key", "token", "token_hash",
+        "secret", "ingest_key", "ingest_key_hash",
+    })
+
+    def _rows_of_tenant_locked(self, tenant_id: str) -> List[Tuple[str, str, Dict[str, Any]]]:
+        sensors = {s.sensor_id for s in self._sensors.values() if s.tenant_id == tenant_id}
+        users = {u.user_id for u in self._users.values() if u.tenant_id == tenant_id}
+        sites = {s.site_id for s in self._sites.values() if s.tenant_id == tenant_id}
+        incidents = {i.incident_id for i in self._incidents.values() if i.tenant_id == tenant_id}
+        found: List[Tuple[str, str, Dict[str, Any]]] = []
+        for kind in self._db.kinds():
+            if kind in self._NOT_A_BUSINESS_KIND:
+                continue
+            for rec_id, data in self._db.rows(kind):
+                owner = data.get("tenant_id")
+                if owner is not None:
+                    # A row that names its business belongs to that one,
+                    # whatever else it points at.
+                    mine = owner == tenant_id
+                else:
+                    mine = (
+                        rec_id == tenant_id
+                        or data.get("sensor_id") in sensors
+                        or data.get("user_id") in users
+                        or data.get("site_id") in sites
+                        or data.get("incident_id") in incidents
+                    )
+                if mine:
+                    found.append((kind, rec_id, data))
+        return found
+
+    def export_tenant(self, tenant_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Everything stored for one business, by kind, minus secrets."""
+        with self._lock:
+            rows = self._rows_of_tenant_locked(tenant_id)
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        for kind, _rec_id, data in rows:
+            clean = {k: v for k, v in data.items() if k not in self._SECRET_FIELDS}
+            if kind == "poll_source" and isinstance(clean.get("headers"), dict):
+                # A vendor password. The console never shows it back; nor
+                # does the download.
+                clean["headers"] = {name: "(hidden)" for name in clean["headers"]}
+            if kind == "webhook" and clean.get("target"):
+                clean["target"] = AlertWebhook.from_row(data).masked_target()
+            if kind == "mail" and clean.get("sensitive"):
+                # A reset or sign-in link not yet scrubbed. Handing it to an
+                # owner would let them into that person's other businesses.
+                clean["body"] = "(hidden: it held a sign-in link)"
+            out.setdefault(kind, []).append(clean)
+        return out
+
+    def erase_tenant(self, tenant_id: str) -> Dict[str, int]:
+        """Delete a business and everything it has, except the bills.
+
+        A person who also works at other businesses keeps those: their
+        sign-in (email and password) moves to their record at the next
+        business, so deleting one business never locks anybody out of
+        another. Returns how many records of each kind were deleted.
+        """
+        with self._lock:
+            if tenant_id not in self._tenants:
+                return {}
+            for person in [u for u in self._users.values()
+                           if u.tenant_id == tenant_id and u.linked_to is None]:
+                elsewhere = sorted(
+                    (u for u in self._users.values()
+                     if u.linked_to == person.user_id and u.tenant_id != tenant_id),
+                    key=lambda u: (u.disabled, u.created_at),
+                )
+                if not elsewhere:
+                    continue
+                heir, rest = elsewhere[0], elsewhere[1:]
+                heir.linked_to = None
+                heir.email = person.email
+                heir.password_hash = person.password_hash
+                heir.password_from_owner = person.password_from_owner
+                heir.last_login_at = person.last_login_at
+                self._db.put("user", heir.user_id, heir.to_row())
+                for other in rest:
+                    other.linked_to = heir.user_id
+                    self._db.put("user", other.user_id, other.to_row())
+
+            doomed: Dict[str, List[str]] = {}
+            for kind, rec_id, _data in self._rows_of_tenant_locked(tenant_id):
+                if kind not in self.KEPT_AFTER_ERASE:
+                    doomed.setdefault(kind, []).append(rec_id)
+            for kind, ids in doomed.items():
+                self._db.delete_many(kind, ids)
+            # Rebuild the working set from what is left on disk, the same
+            # way a restore does, so no index anywhere still points at it.
+            self._forget_locked()
+            self.load()
+            return {kind: len(ids) for kind, ids in doomed.items()}
 
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         with self._lock:
             return self._tenants.get(tenant_id)
 
     def tenant_by_key(self, api_key: str) -> Optional[Tenant]:
+        if not api_key:
+            return None
         with self._lock:
-            tenant_id = self._keys.get(api_key or "")
+            tenant_id = self._keys.get(hash_secret(api_key))
             return self._tenants.get(tenant_id) if tenant_id else None
 
     def list_tenants(self) -> List[Tenant]:
         with self._lock:
             return list(self._tenants.values())
 
-    def change_plan(self, tenant: Tenant, plan: str) -> Tenant:
+    def change_plan(self, tenant: Tenant, plan: str, extend_term: bool = True) -> Tenant:
+        """Move a tenant to a plan. `extend_term` also starts the plan's term."""
         with self._lock:
             tenant.plan = plan
-            tenant.expires_at = utc_now() + timedelta(days=PLAN_TIERS[plan]["term_days"])
+            if extend_term:
+                tenant.expires_at = utc_now() + timedelta(days=PLAN_TIERS[plan]["term_days"])
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
+
+    def grant_grace(self, tenant: Tenant, days: int) -> None:
+        """An expired licence runs again until `days` from now. Never shortens one."""
+        with self._lock:
+            floor = utc_now() + timedelta(days=days)
+            if tenant.expires_at < utc_now():
+                tenant.expires_at = floor
+                self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+
+    def extend_licence(self, tenant_id: str, days: int) -> None:
+        """Paid time: the licence runs on by `days` from today or its end, later."""
+        with self._lock:
+            tenant = self._tenants.get(tenant_id)
+            if tenant is None or days <= 0:
+                return
+            start = max(tenant.expires_at, utc_now())
+            tenant.expires_at = start + timedelta(days=days)
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
 
     def set_suspended(self, tenant: Tenant, suspended: bool) -> Tenant:
         with self._lock:
@@ -2810,7 +3103,12 @@ class HubStore:
                 raise SeatClaimRefused(
                     f"Sensor '{sensor_id}' is already registered.", "id_taken"
                 )
-            if external_device_sn and external_device_sn in self._devices:
+            # A serial that is some sensor's id would capture that sensor's
+            # readings: the device posting it resolved here first, and the
+            # other company's freezer went quiet in their console while its
+            # readings were held for the company that claimed the serial.
+            if external_device_sn and (external_device_sn in self._devices
+                                       or external_device_sn in self._sensors):
                 raise SeatClaimRefused(
                     f"Device serial '{external_device_sn}' is already bound "
                     "to a sensor.",
@@ -2846,11 +3144,12 @@ class HubStore:
                 industry_vertical=industry_vertical,
                 location_name=location_name,
                 registered_at=utc_now(),
-                ingest_key=f"clx_snr_{secrets.token_urlsafe(24)}",
+                ingest_key=(key := f"clx_snr_{secrets.token_urlsafe(24)}"),
+                ingest_key_hash=hash_secret(key),
                 external_device_sn=external_device_sn,
             )
             self._sensors[sensor_id] = sensor
-            self._ingest_keys[sensor.ingest_key] = sensor_id
+            self._ingest_keys[sensor.ingest_key_hash] = sensor_id
             if external_device_sn:
                 self._devices[external_device_sn] = sensor_id
             self._readings.setdefault(
@@ -2870,17 +3169,30 @@ class HubStore:
         serial cable. This key does one thing: report readings, for one
         asset.
         """
+        if not key:
+            return None
         with self._lock:
-            sensor_id = self._ingest_keys.get(key or "")
+            sensor_id = self._ingest_keys.get(hash_secret(key))
             return self._sensors.get(sensor_id) if sensor_id else None
+
+    def rotate_api_key(self, tenant: Tenant) -> str:
+        """Issue the business a new master key; the old one stops at once."""
+        with self._lock:
+            self._keys.pop(tenant.key_hash, None)
+            tenant.api_key = f"clx_{secrets.token_urlsafe(32)}"
+            tenant.key_hash = hash_secret(tenant.api_key)
+            self._keys[tenant.key_hash] = tenant.tenant_id
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+            return tenant.api_key
 
     def rotate_ingest_key(self, sensor: Sensor) -> str:
         """Issue a new key for one sensor and retire the old one."""
         with self._lock:
-            if sensor.ingest_key:
-                self._ingest_keys.pop(sensor.ingest_key, None)
+            if sensor.ingest_key_hash:
+                self._ingest_keys.pop(sensor.ingest_key_hash, None)
             sensor.ingest_key = f"clx_snr_{secrets.token_urlsafe(24)}"
-            self._ingest_keys[sensor.ingest_key] = sensor.sensor_id
+            sensor.ingest_key_hash = hash_secret(sensor.ingest_key)
+            self._ingest_keys[sensor.ingest_key_hash] = sensor.sensor_id
             self._db.put("sensor", sensor.sensor_id, sensor.to_row())
             return sensor.ingest_key
 
@@ -2888,17 +3200,21 @@ class HubStore:
         with self._lock:
             return self._sensors.get(sensor_id)
 
-    def sensor_by_device(self, device_sn: str) -> Optional[Sensor]:
+    def sensor_by_device(self, device_sn: str, tenant_id: Optional[str] = None) -> Optional[Sensor]:
         """Resolve a third-party device serial to its licensed sensor.
 
         Falls back to treating the serial as a sensor_id, so hardware whose
-        serial was used directly at registration still resolves.
+        serial was used directly at registration still resolves. Given a
+        tenant, only that tenant's sensors count: another company's serial
+        mapping can never stand in front of this company's own sensor.
         """
         with self._lock:
-            mapped = self._devices.get((device_sn or "").strip())
-            if mapped is not None:
-                return self._sensors.get(mapped)
-            return self._sensors.get((device_sn or "").strip())
+            key = (device_sn or "").strip()
+            candidates = [self._sensors.get(self._devices.get(key, "")), self._sensors.get(key)]
+            for sensor in candidates:
+                if sensor is not None and (tenant_id is None or sensor.tenant_id == tenant_id):
+                    return sensor
+            return None
 
     def device_sn_taken(self, device_sn: str) -> bool:
         with self._lock:
@@ -2914,8 +3230,8 @@ class HubStore:
             # The key dies with the sensor. A decommissioned asset whose
             # credential still resolves is a decommissioned asset that can
             # still write readings.
-            if doomed.ingest_key:
-                self._ingest_keys.pop(doomed.ingest_key, None)
+            if doomed.ingest_key_hash:
+                self._ingest_keys.pop(doomed.ingest_key_hash, None)
             del self._sensors[sensor_id]
             evicted = self._readings.pop(sensor_id, None)
             self._db.delete("sensor", sensor_id)
@@ -3364,6 +3680,7 @@ class HubStore:
         full_name: str,
         role: str,
         password: str,
+        password_from_owner: bool = False,
     ) -> User:
         with self._lock:
             user = User(
@@ -3374,6 +3691,7 @@ class HubStore:
                 role=role,
                 password_hash=hash_password(password),
                 created_at=utc_now(),
+                password_from_owner=password_from_owner,
             )
             self._users[user.user_id] = user
             self._emails[user.email] = user.user_id
@@ -3383,6 +3701,80 @@ class HubStore:
     def get_user(self, user_id: str) -> Optional[User]:
         with self._lock:
             return self._users.get(user_id)
+
+    # ---- one person, several businesses ---------------------------------
+
+    def link_user(self, person: User, tenant_id: str, role: str) -> User:
+        """Give a person a place in another business, under their own login.
+
+        The new record has the person's name and email for the team list,
+        but no password of its own and no entry in the email index: the
+        email still signs in to the person's first login and nothing else.
+        """
+        with self._lock:
+            person = self.person_of(person)
+            user = User(
+                user_id=self._next_id("USR"),
+                tenant_id=tenant_id,
+                email=person.email,
+                full_name=person.full_name,
+                role=role,
+                # Never matches anything: this record is not a sign-in.
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                created_at=utc_now(),
+                linked_to=person.user_id,
+            )
+            self._users[user.user_id] = user
+            self._db.put("user", user.user_id, user.to_row())
+            return user
+
+    def usage_counts(self, days: int = 30) -> Dict[str, int]:
+        """People with a sign-in, and how many signed in lately. Counts only."""
+        cutoff = utc_now() - timedelta(days=days)
+        with self._lock:
+            people = [u for u in self._users.values() if u.linked_to is None]
+            return {
+                "users": len(people),
+                "active_users": sum(1 for u in people if u.last_login_at and u.last_login_at >= cutoff),
+            }
+
+    def person_of(self, user: User) -> User:
+        """The sign-in behind a user record: itself, or the one it links to."""
+        with self._lock:
+            if user.linked_to is None:
+                return user
+            return self._users.get(user.linked_to) or user
+
+    def person_active(self, user: User) -> bool:
+        """False when this person has been removed from this business.
+
+        Only this record decides. The sign-in record also stands for its
+        person's place in whichever business they joined first, so treating
+        "removed from that business" as "this person is switched off" let one
+        business's owner lock somebody out of every other business they had.
+        """
+        return not user.disabled and self._users.get(self.person_of(user).user_id) is not None
+
+    def open_logins_of(self, user: User) -> List[User]:
+        """The person's records that have not been removed, first login first."""
+        return [r for r in self.logins_of(user) if not r.disabled]
+
+    def logins_of(self, user: User) -> List[User]:
+        """Every business record of the person behind `user`, first login first."""
+        with self._lock:
+            person = self.person_of(user)
+            linked = sorted(
+                (u for u in self._users.values() if u.linked_to == person.user_id),
+                key=lambda u: u.created_at,
+            )
+            return [person] + linked
+
+    def login_in(self, user: User, tenant_id: str) -> Optional[User]:
+        """This person's record in one particular business, if they have one."""
+        for record in self.logins_of(user):
+            if record.tenant_id == tenant_id:
+                return record
+        return None
 
     def user_by_email(self, email: str) -> Optional[User]:
         with self._lock:
@@ -3401,10 +3793,13 @@ class HubStore:
             user.disabled = disabled
             self._db.put("user", user.user_id, user.to_row())
             if disabled:
-                # Revoke live tokens so a disabled account loses access now,
-                # not whenever its session happens to expire.
+                # Revoke live tokens so a removed person loses access to this
+                # business now, not whenever the session happens to expire.
+                # Only this business: their places elsewhere are not this
+                # business's to close.
+                closing = {user.user_id}
                 for token in [
-                    t for t, s in self._sessions.items() if s.user_id == user.user_id
+                    t for t, s in self._sessions.items() if s.user_id in closing
                 ]:
                     self.revoke_session(token)
             return user
@@ -3415,21 +3810,45 @@ class HubStore:
             self._db.put("user", user.user_id, user.to_row())
             return user
 
-    def set_user_password(self, user: User, password: str) -> User:
+    def set_user_password(self, user: User, password: str, from_owner: bool = False) -> User:
+        """Set a sign-in's password. Every reset still outstanding for the
+        person stops working: it was issued for the password just replaced."""
         with self._lock:
             user.password_hash = hash_password(password)
+            user.password_from_owner = from_owner
             self._db.put("user", user.user_id, user.to_row())
+            self._cancel_resets({r.user_id for r in self.logins_of(user)})
             return user
 
-    def start_session(self, user: User) -> LoginSession:
+    def _cancel_resets(self, user_ids) -> None:
+        for digest in [d for d, r in self._resets.items() if r.user_id in user_ids]:
+            self._resets.pop(digest, None)
+            self._db.delete("reset", digest)
+
+    def revoke_sessions_of(self, user: User, keep: Optional[str] = None) -> int:
+        """Sign the person out everywhere, in every business, except `keep`."""
+        with self._lock:
+            records = {r.user_id for r in self.logins_of(user)}
+            doomed = [t for t, sess in self._sessions.items() if sess.user_id in records and t != keep]
+            for tok in doomed:
+                self.revoke_session(tok)
+            return len(doomed)
+
+    def start_session(self, user: User, not_after: Optional[datetime] = None) -> LoginSession:
+        """A new session. `not_after` caps it, for a switch between businesses."""
         with self._lock:
             now = utc_now()
+            expires = now + timedelta(hours=SESSION_TTL_HOURS)
+            if not_after is not None:
+                expires = min(expires, not_after)
+            secret = f"cls_{secrets.token_urlsafe(32)}"
             session = LoginSession(
-                token=f"cls_{secrets.token_urlsafe(32)}",
+                token=hash_secret(secret),
                 user_id=user.user_id,
                 tenant_id=user.tenant_id,
                 issued_at=now,
-                expires_at=now + timedelta(hours=SESSION_TTL_HOURS),
+                expires_at=expires,
+                secret=secret,
             )
             self._sessions[session.token] = session
             user.last_login_at = now
@@ -3438,8 +3857,11 @@ class HubStore:
             return session
 
     def session_by_token(self, token: str) -> Optional[LoginSession]:
+        """The session for a bearer token, as the caller sent it."""
+        if not token:
+            return None
         with self._lock:
-            session = self._sessions.get(token or "")
+            session = self._sessions.get(hash_secret(token))
             if session is None:
                 return None
             if session.expired:
@@ -3725,10 +4147,28 @@ class HubStore:
         readings: int,
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
+        first_reading_id: Optional[str] = None,
+        last_reading_id: Optional[str] = None,
     ) -> VaultAnchor:
         """Record the chain head handed out in an attestation."""
         with self._lock:
+            recent = [a for a in self.anchors_for_sensor(sensor_id)
+                      if a.issued_at and utc_now() - a.issued_at < timedelta(days=1)]
+            # The same head over the same run is already on record: asking
+            # again should not write a second row.
+            for existing in recent:
+                if (existing.tenant_id, existing.chain_head, existing.readings,
+                        existing.period_start, existing.period_end) == (
+                        tenant_id, chain_head, readings, period_start, period_end):
+                    return existing
+            # A ceiling per sensor per day. Every head is checked by /verify,
+            # so a flood of new ones costs work, and nobody needs more than
+            # one an hour or so. Past it, the newest stands for this one.
+            if len(recent) >= MAX_ANCHORS_PER_SENSOR_PER_DAY:
+                return recent[0]
             anchor = VaultAnchor(
+                first_reading_id=first_reading_id,
+                last_reading_id=last_reading_id,
                 anchor_id=self._next_id("ANC"),
                 tenant_id=tenant_id,
                 sensor_id=sensor_id,
@@ -3926,12 +4366,17 @@ class HubStore:
             )
             self._db.put("invoice", candidate.invoice_id, candidate.to_row())
 
+            was_paid = live.state == "paid"
             live.payments = payments
             live.amount_paid_usd = total_paid
             live.payment_reference = reference
             live.paid_at = now
             live.state = state
             _mirror_payment(invoice, live)
+            # The licence runs on from money that has arrived: an invoice paid
+            # in full buys its period. Nothing else lengthens a paid term.
+            if state == "paid" and not was_paid:
+                self.extend_licence(live.tenant_id, live.period_days)
             return live, True
 
     def void_invoice(self, invoice: Invoice) -> Invoice:
@@ -3995,12 +4440,12 @@ class HubStore:
                 company_name=company_name,
                 contact_name=contact_name,
                 contact_email=contact_email,
-                api_key=f"clx_ptr_{secrets.token_urlsafe(30)}",
                 commission_percent=commission_percent,
                 created_at=utc_now(),
             )
+            partner.set_key(f"clx_ptr_{secrets.token_urlsafe(30)}")
             self._partners[partner.partner_id] = partner
-            self._partner_keys[partner.api_key] = partner.partner_id
+            self._partner_keys[partner.key_hash] = partner.partner_id
             self._db.put("partner", partner.partner_id, partner.to_row())
             return partner
 
@@ -4009,9 +4454,20 @@ class HubStore:
             return self._partners.get(partner_id)
 
     def partner_by_key(self, api_key: str) -> Optional[Partner]:
+        if not api_key:
+            return None
         with self._lock:
-            partner_id = self._partner_keys.get(api_key or "")
+            partner_id = self._partner_keys.get(hash_secret(api_key))
             return self._partners.get(partner_id) if partner_id else None
+
+    def rotate_partner_key(self, partner: Partner) -> str:
+        """A new key for a partner. The old one stops working at once."""
+        with self._lock:
+            self._partner_keys.pop(partner.key_hash, None)
+            partner.set_key(f"clx_ptr_{secrets.token_urlsafe(30)}")
+            self._partner_keys[partner.key_hash] = partner.partner_id
+            self._db.put("partner", partner.partner_id, partner.to_row())
+            return partner.api_key
 
     def list_partners(self) -> List[Partner]:
         with self._lock:
@@ -4198,7 +4654,36 @@ class HubStore:
 
     # ---- password resets -------------------------------------------------
 
-    def issue_reset(self, user: User, ttl_hours: int = 24) -> str:
+    def issue_join_code(self, owner: User, role: str, ttl_hours: int = 72) -> str:
+        """A one-time code to join this owner's business, returned once."""
+        with self._lock:
+            token = f"clj_{secrets.token_urlsafe(24)}"
+            now = utc_now()
+            code = JoinCode(
+                token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                tenant_id=owner.tenant_id,
+                role=role,
+                issued_by=owner.user_id,
+                issued_at=now,
+                expires_at=now + timedelta(hours=ttl_hours),
+            )
+            self._join_codes[code.token_hash] = code
+            self._db.put("join_code", code.token_hash, code.to_row())
+            return token
+
+    def redeem_join_code(self, token: str) -> Optional[JoinCode]:
+        """Spend a join code. None if it is unknown, used or expired."""
+        with self._lock:
+            digest = hashlib.sha256((token or "").strip().encode("utf-8")).hexdigest()
+            code = self._join_codes.get(digest)
+            if code is None or code.spent:
+                return None
+            code.used_at = utc_now()
+            self._join_codes.pop(digest, None)
+            self._db.delete("join_code", digest)
+            return code
+
+    def issue_reset(self, user: User, ttl_hours: int = 24, by_owner: bool = False) -> str:
         """Create a reset and return the plaintext token, once."""
         with self._lock:
             token = f"clr_{secrets.token_urlsafe(32)}"
@@ -4209,6 +4694,7 @@ class HubStore:
                 tenant_id=user.tenant_id,
                 issued_at=now,
                 expires_at=now + timedelta(hours=ttl_hours),
+                by_owner=by_owner,
             )
             self._resets[reset.token_hash] = reset
             self._db.put("reset", reset.token_hash, reset.to_row())
@@ -4223,19 +4709,31 @@ class HubStore:
                 return None
 
             user = self._users.get(reset.user_id)
-            if user is None or user.disabled:
+            if user is None or not self.open_logins_of(user):
+                return None
+            if reset.by_owner and (
+                user.linked_to is not None
+                or user.tenant_id != reset.tenant_id
+                or len(self.logins_of(user)) > 1
+            ):
+                # The owner was allowed to issue this because the sign-in
+                # belonged to their business alone. Since then the person has
+                # joined or started another, so the password is no longer
+                # that owner's to set: the same check as at issue, made again
+                # at the moment it matters.
+                self._resets.pop(digest, None)
+                self._db.delete("reset", digest)
                 return None
 
-            self.set_user_password(user, new_password)
+            # Whoever holds an owner-issued token may be the owner, so the
+            # password it sets counts as one the owner knows.
             reset.used_at = utc_now()
-            self._resets.pop(digest, None)
-            self._db.delete("reset", digest)
+            self.set_user_password(user, new_password, from_owner=reset.by_owner)
 
-            # A reset means the old sessions should not outlive it.
-            for tok in [
-                s for s, sess in self._sessions.items() if sess.user_id == user.user_id
-            ]:
-                self.revoke_session(tok)
+            # A reset means the old sessions should not outlive it, in any of
+            # the person's businesses: a stolen session in one used to stay
+            # live, and could switch into the others.
+            self.revoke_sessions_of(user)
             return user
 
     # ---- enterprise contracts -------------------------------------------
@@ -4545,6 +5043,7 @@ class HubStore:
         body: str,
         klass: str,
         tenant_id: Optional[str] = None,
+        sensitive: bool = False,
     ) -> Optional[MailMessage]:
         """Reserve the right to send this exact message, once.
 
@@ -4570,6 +5069,7 @@ class HubStore:
                 klass=klass,
                 created_at=utc_now(),
                 tenant_id=tenant_id,
+                sensitive=sensitive,
             )
             self._mail[message.message_id] = message
             self._mail_keys[dedupe_key] = message.message_id
@@ -4591,12 +5091,30 @@ class HubStore:
             live.detail = detail
             if status == "sent":
                 live.sent_at = utc_now()
+            if live.sensitive and status in ("sent", "failed"):
+                live.body = SENSITIVE_BODY_REMOVED
+                message.body = live.body
             self._db.put("mail", live.message_id, live.to_row())
             message.attempts = live.attempts
             message.status = live.status
             message.detail = live.detail
             message.sent_at = live.sent_at
             return live
+
+    def scrub_stale_sensitive_mail(self, now: Optional[datetime] = None) -> int:
+        """Blank the body of a sensitive message that will never be sent."""
+        now = now or utc_now()
+        scrubbed = 0
+        with self._lock:
+            for m in self._mail.values():
+                if m.sensitive and m.body != SENSITIVE_BODY_REMOVED and (
+                    m.status != "queued" or m.attempts >= MAIL_MAX_ATTEMPTS
+                    or m.age_hours(now) > MAIL_MAX_AGE_HOURS
+                ):
+                    m.body = SENSITIVE_BODY_REMOVED
+                    self._db.put("mail", m.message_id, m.to_row())
+                    scrubbed += 1
+        return scrubbed
 
     def pending_mail(self, now: Optional[datetime] = None) -> List[MailMessage]:
         """Messages still worth another attempt, oldest first.

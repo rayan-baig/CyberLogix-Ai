@@ -80,7 +80,7 @@ def build(tenant: Tenant, days: int = DEFAULT_WINDOW_DAYS) -> Dict[str, Any]:
     customer -- there is only one set of numbers.
     """
     from automation import compliance_report
-    from vault import estate_attestation
+    from vault import estate_record
 
     since = utc_now() - timedelta(days=days)
     incidents = STORE.incidents_for(tenant.tenant_id, since=since)
@@ -89,7 +89,9 @@ def build(tenant: Tenant, days: int = DEFAULT_WINDOW_DAYS) -> Dict[str, Any]:
     reviewed = [i for i in incidents if i.corrective_action and i.reviewed_by]
 
     report = compliance_report(days=days, narrate=False, tenant=tenant)
-    attestation = estate_attestation(days=days, tenant=tenant)
+    # At most one recorded head per sensor per day: build() also answers the
+    # public proof link, which anybody can load as often as they like.
+    attestation = estate_record(tenant, days, anchor_daily=True)
 
     return {
         "company_name": tenant.company_name,
@@ -236,5 +238,7 @@ def public_certificate(token: str, days: Optional[int] = Query(None)):
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No published record answers to this link.")
-    window = days or row.get("period_days") or DEFAULT_WINDOW_DAYS
-    return build(tenant, days=max(7, min(int(window), 365)))
+    published = int(row.get("period_days") or DEFAULT_WINDOW_DAYS)
+    # A visitor may look at less than the owner published, never more.
+    window = min(int(days), published) if days else published
+    return build(tenant, days=max(7, min(window, 365)))

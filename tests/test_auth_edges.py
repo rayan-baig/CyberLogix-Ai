@@ -17,7 +17,7 @@ def test_an_expired_session_is_refused(api, operator_factory):
     assert api.get("/api/console/overview", headers=headers).status_code == 200
 
     token = headers["Authorization"].split()[1]
-    session = STORE._sessions[token]
+    session = STORE.session_by_token(token)
     session.expires_at -= timedelta(hours=24)
 
     assert api.get("/api/console/overview", headers=headers).status_code == 401

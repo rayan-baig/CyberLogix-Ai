@@ -393,6 +393,7 @@ def send(
     dedupe_key: str,
     klass: str = "transactional",
     tenant_id: Optional[str] = None,
+    sensitive: bool = False,
 ) -> Dict[str, Any]:
     """Send one message, at most once, ever.
 
@@ -425,6 +426,7 @@ def send(
         body=body,
         klass=klass,
         tenant_id=tenant_id,
+        sensitive=sensitive,
     )
     if message is None:
         return _result(None, False, "duplicate",
@@ -507,6 +509,7 @@ def flush_queue(limit: int = 200) -> Dict[str, Any]:
     """
     attempted = 0
     sent = 0
+    STORE.scrub_stale_sensitive_mail()
     for message in STORE.pending_mail()[:limit]:
         attempted += 1
         if deliver(message).get("sent"):

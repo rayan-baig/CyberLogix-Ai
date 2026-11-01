@@ -29,13 +29,17 @@ and the next pass tries again.
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import logging
 import socket
+import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
@@ -63,6 +67,24 @@ DEFAULT_INTERVAL_MINUTES = 10
 # Cheap hardware clouds are slow. Long enough to be patient, short enough
 # that one stuck vendor cannot hold up the whole pass.
 TIMEOUT_SECONDS = 20
+
+# The whole of one fetch, however the time is spent. The socket timeout
+# above is per read, so a vendor trickling a byte every 19 seconds could
+# hold one fetch open for as long as it liked.
+FETCH_DEADLINE_SECONDS = 30
+
+# The poll pass runs just ahead of the sweep that phones people about
+# breaches. It used to fetch every due source one after another, so ten
+# stuck vendors at 20 seconds each held every escalation in the fleet for
+# over three minutes. Now sources are fetched side by side, and the sweep
+# waits for them at most this long; anything slower finishes in the
+# background and is scored on the next pass.
+POLL_WORKERS = 8
+POLL_PASS_SECONDS = 25
+
+# Each source is a fetch our server makes on the customer's behalf. A
+# ceiling keeps one account from turning that into a crawler.
+MAX_SOURCES_PER_TENANT = 10
 
 # A vendor returning a megabyte of history is a vendor whose response is
 # not being read into memory unbounded.
@@ -290,7 +312,38 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
             "vendor picks afterwards. Save the final URL instead.")
 
 
-_OPENER = urllib.request.build_opener(_RefuseRedirects)
+_deadline = threading.local()
+
+
+class _Tracked:
+    """Remembers each socket a fetch opens, so a timer can close it."""
+
+    def connect(self):
+        super().connect()
+        socks = getattr(_deadline, "socks", None)
+        if socks is not None:
+            socks.append(self.sock)
+
+
+class _TrackedHTTPS(_Tracked, http.client.HTTPSConnection):
+    pass
+
+
+class _TrackedHTTP(_Tracked, http.client.HTTPConnection):
+    pass
+
+
+class _DeadlineHTTPS(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_TrackedHTTPS, req, context=self._context)
+
+
+class _DeadlineHTTP(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_TrackedHTTP, req)
+
+
+_OPENER = urllib.request.build_opener(_RefuseRedirects, _DeadlineHTTPS, _DeadlineHTTP)
 
 
 def _fetch(url: str, headers: Dict[str, str]) -> Any:
@@ -300,8 +353,47 @@ def _fetch(url: str, headers: Dict[str, str]) -> Any:
     request.add_header("Accept", "application/json")
     for name, value in headers.items():
         request.add_header(name, value)
-    with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-        raw = response.read(MAX_RESPONSE_BYTES + 1)
+    deadline = time.monotonic() + FETCH_DEADLINE_SECONDS
+    late = TimeoutError(f"The vendor took over {FETCH_DEADLINE_SECONDS} seconds to answer.")
+    # A hard stop for the whole fetch, headers included: at the deadline the
+    # connection is closed under whatever is reading it. Checking the clock
+    # only between body chunks let a vendor trickling its headers a byte at a
+    # time hold a worker, and the source, for as long as it liked.
+    _deadline.socks = socks = []
+    fired = threading.Event()
+
+    def _cut():
+        fired.set()
+        for sock in list(socks):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    timer = threading.Timer(FETCH_DEADLINE_SECONDS, _cut)
+    timer.daemon = True
+    timer.start()
+    chunks, size = [], 0
+    try:
+        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
+            while size <= MAX_RESPONSE_BYTES:
+                if time.monotonic() > deadline:
+                    raise late
+                chunk = response.read(min(65536, MAX_RESPONSE_BYTES + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+    except (OSError, http.client.HTTPException) as exc:
+        if fired.is_set():
+            raise late from exc
+        raise
+    finally:
+        timer.cancel()
+        _deadline.socks = None
+    if fired.is_set():
+        raise late
+    raw = b"".join(chunks)
     if len(raw) > MAX_RESPONSE_BYTES:
         raise ValueError(
             f"Response is over {MAX_RESPONSE_BYTES // 1000}kB. This is "
@@ -349,6 +441,10 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
     else:
         try:
             payload = _fetch(row["url"], row.get("headers") or {})
+            # Removed while the fetch was out: its readings are not wanted.
+            if STORE._db.get(SOURCE_KIND, row["source_id"]) is None:
+                outcome["detail"] = "The source was removed while it was being fetched."
+                return outcome
             outcome.update(_ingest(tenant, row, payload))
         except urllib.error.HTTPError as exc:
             outcome["detail"] = f"The vendor answered {exc.code}."
@@ -359,29 +455,40 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
                 "The vendor did not return JSON. That is usually a login "
                 "page, which means the credential is wrong or expired."
             )
-        except Exception as exc:  # noqa: BLE001 - one source must not stop the pass
+        except (ValueError, TimeoutError) as exc:
+            # Ours, written to be read by the customer: the address checks,
+            # the size limit, the deadline.
+            outcome["detail"] = str(exc)[:200]
+        except Exception:  # noqa: BLE001 - one source must not stop the pass
+            # Anything else is a fault on our side or deep in a library, and
+            # its text (paths, internal names) is not for the customer.
             logger.exception("Poll of %s failed.", row["source_id"])
-            outcome["detail"] = f"{type(exc).__name__}: {exc}"[:200]
+            outcome["detail"] = "Something unexpected went wrong reading this vendor. It has been logged."
 
     failed = outcome["status"] != "ok"
-    STORE._db.put(SOURCE_KIND, row["source_id"], {
-        **row,
-        "last_polled_at": iso(now),
-        "last_status": outcome["status"],
-        "last_detail": outcome["detail"],
-        "readings_ingested": row.get("readings_ingested", 0)
-                             + outcome["ingested"],
-        "consecutive_failures": (row.get("consecutive_failures", 0) + 1
-                                 if failed else 0),
-    })
+    with STORE._lock:
+        # The row as it is now, not as it was when the fetch began: writing
+        # the old copy back brought a source the owner had just removed back
+        # to life, credential and all, and undid any edit made meanwhile.
+        current = STORE._db.get(SOURCE_KIND, row["source_id"])
+        if current is not None:
+            STORE._db.put(SOURCE_KIND, row["source_id"], {
+                **current,
+                "last_polled_at": iso(now),
+                "last_status": outcome["status"],
+                "last_detail": outcome["detail"],
+                "readings_ingested": current.get("readings_ingested", 0)
+                                     + outcome["ingested"],
+                "consecutive_failures": (current.get("consecutive_failures", 0) + 1
+                                         if failed else 0),
+            })
     return outcome
 
 
 def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]:
     """Hand each row to the translator the webhook path already uses."""
     import byod
-    from hardware_bridge import GenericWebhookPayload, \
-        ingest_third_party_hardware_webhook
+    from hardware_bridge import GenericWebhookPayload, ingest_for_tenant
 
     rows = _rows_in(payload)
     if not rows:
@@ -400,19 +507,17 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
             skipped.append(verdict.get("missing") or ["unit"])
             continue
         try:
-            # It authenticates from the token on the payload, the same
-            # way the webhook path does, so the account's own key is
-            # what is passed. No separate trust path for polled
-            # readings: they land under exactly the checks a pushed one
-            # gets, including the serial having to be a registered
-            # device on this account.
-            ingest_third_party_hardware_webhook(
+            # Exactly the checks a pushed reading gets, including the
+            # serial having to be a registered device on this account
+            # and the licence being current; only the credential is
+            # skipped, because this source is already known to be theirs.
+            ingest_for_tenant(
+                tenant,
                 GenericWebhookPayload(
                     device_sn=verdict["serial"],
-                    api_key_token=tenant.api_key,
                     reading_value=verdict["value"],
                     metric_type=verdict["unit"],
-                )
+                ),
             )
             byod.remember(tenant.tenant_id, entry, verdict, "ingested")
             taken += 1
@@ -430,19 +535,64 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
                        f"used. First reason: {skipped[0] if skipped else '?'}")}
 
 
+_in_flight: set = set()
+_in_flight_lock = threading.Lock()
+
+
+def _poll_and_release(row: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+    try:
+        return poll_once(row, now)
+    finally:
+        with _in_flight_lock:
+            _in_flight.discard(row["source_id"])
+
+
 def run_poll_pass(now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Every source that is due, in one pass. Called by the scheduler."""
+    """Every source that is due, in one pass. Called by the scheduler.
+
+    Side by side, and bounded: see POLL_PASS_SECONDS. A source still being
+    fetched from an earlier pass is not started a second time.
+    """
     now = now or utc_now()
+    with _in_flight_lock:
+        rows = [r for r in STORE._db.all(SOURCE_KIND)
+                if due(r, now) and r["source_id"] not in _in_flight]
+        _in_flight.update(r["source_id"] for r in rows)
+    if not rows:
+        return {"polled": 0, "readings": 0, "failed": 0, "still_running": 0}
+
+    pool = ThreadPoolExecutor(max_workers=POLL_WORKERS, thread_name_prefix="vendor-poll")
+    futures = {}
+    for row in rows:
+        try:
+            futures[pool.submit(_poll_and_release, row, now)] = row
+        except RuntimeError:  # no thread to be had: try this one next pass
+            with _in_flight_lock:
+                _in_flight.discard(row["source_id"])
+    done, waiting = wait(futures, timeout=POLL_PASS_SECONDS)
+    # Not waited for: a stuck vendor finishes, or times out, on its own.
+    pool.shutdown(wait=False, cancel_futures=True)
+    for future in waiting:
+        if future.cancelled():
+            with _in_flight_lock:
+                _in_flight.discard(futures[future]["source_id"])
+
     polled, ingested, failed = 0, 0, 0
-    for row in list(STORE._db.all(SOURCE_KIND)):
-        if not due(row, now):
+    for future in done:
+        try:
+            outcome = future.result()
+        except Exception:  # noqa: BLE001 - poll_once never raises, but a pass must not die
+            logger.exception("A vendor poll failed unexpectedly.")
+            failed += 1
             continue
-        outcome = poll_once(row, now)
         polled += 1
         ingested += outcome["ingested"]
         if outcome["status"] != "ok":
             failed += 1
-    return {"polled": polled, "readings": ingested, "failed": failed}
+    if waiting:
+        logger.warning("%d vendor poll(s) still running after %ss; the sweep goes ahead without them.",
+                       len(waiting), POLL_PASS_SECONDS)
+    return {"polled": polled, "readings": ingested, "failed": failed, "still_running": len(waiting)}
 
 
 # --- routes ----------------------------------------------------------------
@@ -526,6 +676,12 @@ def add_source(
     Owner only: the headers are a credential, and this makes our server
     fetch a URL somebody chose.
     """
+    if len(sources_for(tenant.tenant_id)) >= MAX_SOURCES_PER_TENANT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"An account can fetch from {MAX_SOURCES_PER_TENANT} vendor clouds. "
+                    "Remove one you no longer use, or talk to us."),
+        )
     source_id = STORE._next_id("PLL")
     row = {
         "source_id": source_id,
@@ -564,7 +720,16 @@ def test_source(
     if row is None or row.get("tenant_id") != tenant.tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No such source on this account.")
-    outcome = poll_once(row)
+    with _in_flight_lock:
+        if source_id in _in_flight:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="This source is being fetched right now. Try again in a minute.")
+        _in_flight.add(source_id)
+    try:
+        outcome = poll_once(row)
+    finally:
+        with _in_flight_lock:
+            _in_flight.discard(source_id)
     write_audit(tenant, operator, "poller.tested",
                 f"{row['name']}: {outcome['status']}")
     return {"result": outcome,

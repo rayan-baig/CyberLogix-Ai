@@ -868,6 +868,20 @@ def sign(
                 "would start issuing invoices against an evaluation."
             ),
         )
+    from pricing import ANNUAL_ESCALATOR_PERCENT
+
+    # The yearly price rise is part of the price list, not the customer's to
+    # set: signing a three-year deal at 0% used to be one field away. Higher
+    # is allowed (it is their money); lower is a conversation with us.
+    if payload.term_years > 1 and payload.escalator_percent < ANNUAL_ESCALATOR_PERCENT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"A multi-year contract carries the standard "
+                f"{ANNUAL_ESCALATOR_PERCENT:g}% yearly increase. Get in touch to "
+                "agree different terms."
+            ),
+        )
     if STORE.active_subscription(tenant.tenant_id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

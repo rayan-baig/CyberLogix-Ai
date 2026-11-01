@@ -72,6 +72,13 @@ services:
       - key: CYBERLOGIX_SWEEP_SECONDS
         value: "60"
 
+      # Render's proxy sits in front of the app, so every request arrives
+      # from the proxy's address. Without this, every visitor shares one
+      # "caller", and thirty wrong passwords from anyone would lock everybody
+      # out of signing in. The app reads the address Render adds last.
+      - key: CYBERLOGIX_TRUST_PROXY_HEADER
+        value: "1"
+
       # Paste the service's own https address here after the first
       # deploy, then redeploy. Until it is set a voice call still goes
       # out and pressing 1 reaches nothing, so the alert escalates to the
@@ -99,4 +106,43 @@ services:
       - key: TWILIO_FROM_NUMBER
         sync: false
       - key: CYBERLOGIX_HEARTBEAT_URL
+        sync: false
+
+      # Your own address, e.g. https://alerts.yourcompany.com. Left unset,
+      # any website may call the API from a visitor's browser.
+      - key: CYBERLOGIX_ALLOWED_ORIGINS
+        sync: false
+
+      # Optional: the same value as MTRX Horizon's MTRX_STATS_KEY, so the
+      # owner's console can show user counts. Unset, /api/stats does not exist.
+      - key: STATS_KEY
+        sync: false
+
+      # Email. Without these, invoices, reminders and password resets are
+      # written down and never reach anyone. See DEPLOY.md for SPF/DKIM.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: CYBERLOGIX_OPERATOR_EMAIL
+        sync: false
+
+      # Payments and the details every invoice must carry.
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: CYBERLOGIX_PAY_URL
+        sync: false
+      - key: CYBERLOGIX_LEGAL_NAME
+        sync: false
+      - key: CYBERLOGIX_ADDRESS
+        sync: false
+      - key: CYBERLOGIX_TAX_ID
+        sync: false
+      - key: CYBERLOGIX_REMIT_TO
         sync: false

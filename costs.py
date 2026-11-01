@@ -167,6 +167,37 @@ def allow_message(tenant_id: Optional[str], channel: str) -> Tuple[bool, str]:
     return True, ""
 
 
+_COUNTED_AS = {"sms": "sms_sent", "voice": "voice_calls", "ai": "ai_calls"}
+
+
+def reserve(tenant_id: Optional[str], channel: str) -> Tuple[bool, str]:
+    """Take one place under today's cap, or be refused. Check and count at once.
+
+    The caps were checked before a paid call and counted after it, so calls
+    made at the same moment all saw room for one more: five breaches at once
+    on a 15-a-day trial sent thirty texts, and forty AI requests on a cap of
+    25 made forty model calls. Checking and counting together, under the
+    store's lock, means only as many go out as there is room for. A send
+    that fails hands its place back with `release`.
+    """
+    if not tenant_id:
+        return True, ""
+    with STORE._lock:
+        if channel == "ai":
+            allowed, reason = allow_ai_call(tenant_id)
+        else:
+            allowed, reason = allow_message(tenant_id, channel)
+        if allowed:
+            STORE.bump_usage(tenant_id, _COUNTED_AS[channel])
+        return allowed, reason
+
+
+def release(tenant_id: Optional[str], channel: str) -> None:
+    """Give back a place taken by `reserve` for a call that did not happen."""
+    if tenant_id:
+        STORE.bump_usage(tenant_id, _COUNTED_AS[channel], -1)
+
+
 def record(tenant_id: Optional[str], field: str, amount: int = 1) -> None:
     """Increment a usage counter, tolerating an unattributed call."""
     if tenant_id:

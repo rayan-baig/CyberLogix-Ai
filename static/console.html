@@ -129,7 +129,11 @@
     <span class="nav-spacer"></span>
     <span class="status-line">System status: <b id="sys-status">online</b></span>
     <span class="chip" id="chip-user">—</span>
-    <span class="chip" id="chip-company">—</span>
+    <!-- The business switcher. Somebody with one business sees their
+         company's name; somebody with several opens their list here. -->
+    <button class="chip chip-btn" id="chip-company" type="button"
+            aria-haspopup="dialog" title="Your businesses">—</button>
+    <span class="biz-badge" id="biz-badge" hidden></span>
     <span class="chip" id="chip-plan">—</span>
     <span class="chip" id="chip-seats">—</span>
     <span class="chip" id="chip-spend">—</span>
@@ -402,6 +406,33 @@
             </div>
             <p class="card-plain">Every change anybody made to this account, and when.</p>
             <div id="audit-body"></div>
+          </section>
+
+          <section class="card" id="find-leave" data-group="setup" data-find="download all data export delete everything erase close account leave privacy" data-label="Download or delete everything">
+            <div class="card-head">
+              <span class="card-title">Download or delete everything</span>
+              <span class="card-note">Owners only</span>
+            </div>
+            <p class="card-plain">Your data is yours. Take a copy, or delete it all.</p>
+            <div id="leave-owner" hidden>
+              <button class="btn btn-sm" id="leave-download" type="button">Download everything</button>
+              <form id="leave-form" style="margin-top:16px">
+                <p class="card-plain"><strong>Delete everything</strong> removes this business,
+                  its sensors, readings, people, alerts and records, right away. It cannot be
+                  undone. We keep only the bills we already sent you, because the law says we
+                  must. Our daily backups still hold a copy for a few days, then that is gone too.</p>
+                <div class="field">
+                  <label for="leave-name">Type this business's name</label>
+                  <input id="leave-name" autocomplete="off" required>
+                </div>
+                <div class="field">
+                  <label for="leave-password">Your password</label>
+                  <input id="leave-password" type="password" autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-sm danger-btn" type="submit">Delete everything</button>
+              </form>
+            </div>
+            <p class="card-plain" id="leave-not-owner">Only an owner can download or delete everything.</p>
           </section>
         </div>
       </div>
@@ -1062,6 +1093,57 @@ function signOutLocally() {
   primeTheGate();
 }
 
+/* Download or delete everything. The server checks the role, the typed
+   name and the password; this only shows the buttons to an owner. */
+function renderLeave() {
+  const owner = Boolean(state.user && state.user.role === "owner");
+  $("leave-owner").hidden = !owner;
+  $("leave-not-owner").hidden = owner;
+}
+
+$("leave-download").addEventListener("click", async () => {
+  const button = $("leave-download");
+  button.disabled = true;
+  try {
+    const body = await api("/api/accounts/business/export");
+    const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `cyberlogix-${body.tenant_id}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("leave-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.target.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await api("/api/accounts/business/erase", {
+      method: "POST",
+      body: JSON.stringify({
+        company_name: $("leave-name").value.trim(),
+        password: $("leave-password").value,
+      }),
+    });
+    $("leave-password").value = "";
+    signOutLocally();
+    toast("Deleted. Everything for that business is gone, except the bills we sent.");
+  } catch (err) {
+    $("leave-password").value = "";
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $("sign-out").addEventListener("click", async () => {
   try { await api("/api/accounts/logout", { method: "POST" }); } catch (_) {}
   signOutLocally();
@@ -1307,6 +1389,7 @@ async function refresh() {
                           : api("/api/accounts/me")),
     roster: () => api("/api/contacts"),
     team: () => api("/api/accounts/users"),
+    businesses: () => api("/api/accounts/businesses"),
     catalogue: () => (state.shortcutCatalogue
       ? Promise.resolve(state.shortcutCatalogue) : api("/api/shortcuts")),
     hooks: () => api("/api/webhooks"),
@@ -1341,6 +1424,8 @@ async function refresh() {
   state.unit = overview.temperature_unit || "F";
 
   render(overview, health);
+  // Never a broken panel: without the list the chip is just the name.
+  try { paintBusinessChip(got.businesses || null); } catch (_) { /* the estate is the page */ }
   renderSites(overview);
   renderVault();
   loadBenchmarks(overview);
@@ -1355,6 +1440,7 @@ async function refresh() {
   paint("invoices", () => renderInvoices(got.invoices));
   paint("costs", () => renderCosts(got.costs));
   paint("audit", () => renderAudit(got.audit));
+  renderLeave();
   paint("roster", () => renderRoster(got.roster));
   paint("forecast", () => renderForecast(got.forecast));
   paint("claims", () => renderClaims(got.claims));
@@ -1421,6 +1507,12 @@ function render(d, health) {
       "nothing — registering sensors, changing alarm limits and the " +
       "licence all need an operator or owner.";
     roleBanner.hidden = false;
+  } else if (state.user && state.user.must_change_password) {
+    // Whoever invited them chose this password, so they know it.
+    roleBanner.textContent =
+      "Your password was set by whoever added you. Change it under Team " +
+      "below so only you know it.";
+    roleBanner.hidden = false;
   } else {
     roleBanner.hidden = true;
   }
@@ -1429,7 +1521,7 @@ function render(d, health) {
   // freezer, and a legal check that 500s must not take that away.
   checkTerms().catch(() => { /* the estate is the page */ });
 
-  $("chip-company").textContent = t.company_name;
+  $("chip-company").textContent = `${t.company_name} ▾`;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
   $("chip-spend").textContent = d.subscription
@@ -3802,6 +3894,243 @@ async function openDrawer(sensorId, options = {}) {
   $("drawer-close").addEventListener("click", closeDrawer);
 }
 
+/* ---------------- your businesses ----------------
+   One sign-in, several businesses. The company chip in the nav is the
+   switcher: it opens this panel, which lists every business this person
+   can open with what needs them there, and adds another. Switching swaps
+   the session for one on the other business and reloads, so nothing from
+   one business's page is left painted while the next one loads. */
+
+function businessStatus(b) {
+  if (b.removed) return { kind: "unknown", text: "You no longer have access" };
+  if (b.licence === "suspended") return { kind: "unknown", text: "Licence suspended" };
+  const parts = [];
+  if (b.open_alerts) parts.push(`${b.open_alerts} open alert${b.open_alerts === 1 ? "" : "s"}`);
+  if (b.sensors_offline) parts.push(`${b.sensors_offline} unit${b.sensors_offline === 1 ? "" : "s"} offline`);
+  if (b.licence === "grace") parts.push(`trial ended, ${b.grace_days_left} day${b.grace_days_left === 1 ? "" : "s"} of monitoring left`);
+  if (b.licence === "lapsed") parts.push("no longer monitored");
+  if (parts.length) return { kind: b.open_alerts || b.licence === "lapsed" ? "critical" : "elevated", text: parts.join(" · ") };
+  return { kind: "low", text: b.sensors ? "All clear" : "No units yet" };
+}
+
+/* The chip: the business you are in, and a count of what needs you in the
+   others, so trouble somewhere else is not invisible from here. */
+function paintBusinessChip(list) {
+  state.businesses = list || null;
+  const badge = $("biz-badge");
+  if (!list || list.count < 2) { badge.hidden = true; return; }
+  const elsewhere = list.businesses.filter((b) => !b.current && b.can_open && b.needs_attention);
+  badge.hidden = !elsewhere.length;
+  badge.textContent = String(elsewhere.length);
+  badge.title = elsewhere.length
+    ? `${elsewhere.length} of your other businesses need${elsewhere.length === 1 ? "s" : ""} you`
+    : "";
+}
+
+async function openBusinesses() {
+  let list;
+  try {
+    list = await api("/api/accounts/businesses");
+  } catch (err) {
+    toast(err.message, "err");
+    return;
+  }
+  paintBusinessChip(list);
+  const t = list.totals;
+  const rows = list.businesses.map((b) => {
+    const st = businessStatus(b);
+    const action = b.current
+      ? `<span class="card-note">You are here</span>`
+      : b.can_open
+        ? `<button class="btn btn-sm btn-primary" type="button" data-open-biz="${esc(b.tenant_id)}">Open</button>`
+        : "";
+    return `<article class="biz-row${b.current ? " is-current" : ""}">
+        <div class="grow">
+          <div class="biz-name">${esc(b.company_name)}</div>
+          <div class="biz-meta">${b.industry ? esc(b.industry) + " · " : ""}you are ${esc(b.role)}
+            · ${b.sensors} unit${b.sensors === 1 ? "" : "s"}</div>
+          <div class="biz-state">${badge(st.kind, st.text)}</div>
+        </div>
+        ${action}
+      </article>`;
+  }).join("");
+
+  const sectorOptions = (state.industries || [])
+    .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`).join("");
+  const addForm = list.can_add ? `
+      <form id="biz-add" class="biz-add">
+        <div class="card-title">Add a business</div>
+        <p class="biz-meta">It starts on the free trial, under the terms you already
+          agreed to. You become its owner, and it keeps its own units, alerts, team
+          and bills, separate from your other businesses.</p>
+        <div class="field"><label for="biz-name">Business name</label>
+          <input id="biz-name" required maxlength="200" autocomplete="organization"></div>
+        <div class="field"><label for="biz-sector">Sector</label>
+          <select id="biz-sector">${sectorOptions}</select></div>
+        <button class="btn btn-primary" type="submit">Add and open it</button>
+      </form>`
+    : `<p class="biz-meta">${list.businesses.length >= list.max_businesses
+        ? `You have the most businesses one sign-in can hold (${list.max_businesses}).`
+        : "Only an owner can add a business. Open one you own to add another."}</p>`;
+
+  // Joining somebody else's business needs a code its owner made, entered
+  // here from your own account: both of you have to agree. An owner makes
+  // codes for the business that is open now.
+  const here = list.businesses.find((b) => b.current);
+  const joinForm = `
+      <form id="biz-join" class="biz-add">
+        <div class="card-title">Join a business</div>
+        <p class="biz-meta">Got a join code from a business's owner? Enter it to add
+          that business here. It works once.</p>
+        <div class="field"><label for="biz-code">Join code</label>
+          <input id="biz-code" required minlength="8" maxlength="120" autocomplete="off"></div>
+        <button class="btn" type="submit">Join</button>
+      </form>`;
+  const codeForm = here && here.role === "owner" ? `
+      <form id="biz-invite" class="biz-add">
+        <div class="card-title">Let someone join ${esc(here.company_name)}</div>
+        <p class="biz-meta">For somebody who already has a CyberLogix sign-in. Make a
+          code, give it to them yourself, and they add this business from their own
+          account. It works once and lasts three days.</p>
+        <div class="field"><label for="biz-role">Their role here</label>
+          <select id="biz-role"><option value="viewer">Viewer</option>
+            <option value="operator" selected>Operator</option>
+            <option value="owner">Owner</option></select></div>
+        <button class="btn" type="submit">Make a join code</button>
+        <code class="biz-key" id="biz-joincode" hidden></code>
+      </form>` : "";
+
+  $("drawer").innerHTML = `
+    <div class="drawer-head">
+      <div class="grow">
+        <div class="drawer-title" id="drawer-title">Your businesses</div>
+        <div class="drawer-sub">Signed in as ${esc(list.person.full_name)}. Each business
+          keeps its own data, and your role in it.</div>
+      </div>
+      <button class="btn btn-sm" id="drawer-close">Close</button>
+    </div>
+    <p class="biz-totals">${list.count} business${list.count === 1 ? "" : "es"}
+      · ${t.open_alerts} open alert${t.open_alerts === 1 ? "" : "s"}
+      · ${t.sensors_offline} unit${t.sensors_offline === 1 ? "" : "s"} offline</p>
+    <div class="biz-list">${rows}</div>
+    ${addForm}
+    ${joinForm}
+    ${codeForm}
+    <div id="biz-made" hidden></div>
+  `;
+  showDrawer();
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("drawer").querySelectorAll("[data-open-biz]").forEach((btn) => {
+    btn.addEventListener("click", () => switchBusiness(btn.dataset.openBiz, btn));
+  });
+  const form = $("biz-add");
+  if (form) {
+    const sector = state.data && state.data.tenant && state.data.tenant.industry_vertical;
+    if (sector) $("biz-sector").value = sector;
+    form.addEventListener("submit", addBusiness);
+  }
+  $("biz-join").addEventListener("submit", joinBusiness);
+  const invite = $("biz-invite");
+  if (invite) invite.addEventListener("submit", makeJoinCode);
+}
+
+async function joinBusiness(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const joined = await api("/api/accounts/businesses/join", {
+      method: "POST",
+      body: JSON.stringify({ code: $("biz-code").value.trim() }),
+    });
+    toast(joined.message, "ok");
+    openBusinesses();
+  } catch (err) {
+    toast(err.message, "err");
+    btn.disabled = false;
+  }
+}
+
+async function makeJoinCode(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const made = await api("/api/accounts/businesses/join-codes", {
+      method: "POST",
+      body: JSON.stringify({ role: $("biz-role").value }),
+    });
+    const box = $("biz-joincode");
+    box.textContent = made.code;
+    box.hidden = false;
+    toast("Shown once. Give it to them yourself.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* A new session for the other business, then a clean page. */
+function landIn(token) {
+  try { localStorage.setItem(TOKEN_STORAGE, token); } catch (_) {}
+  location.reload();
+}
+
+async function switchBusiness(tenantId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const opened = await api(`/api/accounts/businesses/${encodeURIComponent(tenantId)}/switch`, {
+      method: "POST",
+    });
+    landIn(opened.token);
+  } catch (err) {
+    toast(err.message, "err");
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function addBusiness(event) {
+  event.preventDefault();
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const made = await api("/api/accounts/businesses", {
+      method: "POST",
+      body: JSON.stringify({
+        company_name: $("biz-name").value.trim(),
+        industry_vertical: $("biz-sector").value || null,
+      }),
+    });
+    // The old session ended when this one began, so the panel can only
+    // move forward. The sensor key is shown once, here, as sign-up does.
+    event.target.hidden = true;
+    const box = $("biz-made");
+    box.innerHTML = `
+      <div class="card-title">${esc(made.tenant.company_name)} is ready</div>
+      <p class="biz-meta">Its sensor key, for plugging units in. It is shown once:
+        copy it somewhere safe now.</p>
+      <code class="biz-key" id="biz-key"></code>
+      <div class="biz-actions">
+        <button class="btn btn-sm" type="button" id="biz-copy">Copy key</button>
+        <button class="btn btn-sm btn-primary" type="button" id="biz-go">Open ${esc(made.tenant.company_name)}</button>
+      </div>`;
+    $("biz-key").textContent = made.api_key;
+    box.hidden = false;
+    $("drawer-close").onclick = () => landIn(made.token);
+    $("biz-go").addEventListener("click", () => landIn(made.token));
+    $("biz-copy").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(made.api_key); toast("Key copied.", "ok"); }
+      catch (_) { toast("Select the key and copy it by hand.", "err"); }
+    });
+  } catch (err) {
+    toast(err.message, "err");
+    btn.disabled = false;
+  }
+}
+
+$("chip-company").addEventListener("click", openBusinesses);
+
 function showDrawer() {
   // Remembered so focus can go back where it came from, rather than
   // dumping a keyboard user at the top of the page on close.
@@ -3898,7 +4227,15 @@ function renderTeam(team) {
       ${u.disabled || u.user_id === (state.user && state.user.user_id)
         ? ""
         : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>`}
-    </div>`).join("");
+    </div>`).join("")
+    // The business's master key, for scripts and devices without their own
+    // key. Owners can replace it the day it turns up somewhere it should not.
+    + (state.user && state.user.role === "owner" ? `
+    <div style="display:flex;align-items:center;gap:9px;padding:10px 0 2px">
+      <span class="grow" style="font-size:12px;color:var(--muted)">
+        Master key leaked, or someone left who had it?</span>
+      <button class="btn btn-sm" data-rekey-business="1">Replace master key</button>
+    </div>` : "");
 }
 
 /* Only the sectors this estate actually has sensors in: a health inspector
@@ -4082,6 +4419,19 @@ document.addEventListener("click", (event) => {
     act(() => api(`/api/licenses/me/sensors/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }), `${id} retired.`);
+  }
+
+  if (btn.dataset.rekeyBusiness) {
+    if (!confirm(
+      "Replace this business's master key?\n\n"
+      + "The current key stops working immediately. Any script or device that "
+      + "still uses it will be refused until you give it the new one. Sensors "
+      + "with their own keys carry on as before."
+    )) return;
+    act(async () => {
+      const rotated = await api("/api/licenses/me/rotate-key", { method: "POST" });
+      showIssuedKey("this business (master key)", rotated.api_key);
+    }, "New master key issued.");
   }
 
   if (btn.dataset.rekey) {
@@ -4435,7 +4785,11 @@ $("password-form").addEventListener("submit", async (event) => {
       }),
     });
     form.reset();
-    toast("Password changed. Other sessions stay signed in.");
+    if (state.user && state.user.must_change_password) {
+      state.user.must_change_password = false;
+      if (state.user.role !== "viewer") $("role-banner").hidden = true;
+    }
+    toast("Password changed. Every other session was signed out.");
   } catch (err) {
     toast(err.message || "That password could not be changed.");
   }

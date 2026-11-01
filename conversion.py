@@ -164,7 +164,10 @@ def _setup_steps(tenant: Tenant) -> str:
     from signup import first_steps
 
     try:
-        guide = first_steps(tenant.api_key, _vertical_for(tenant))
+        # Never the key itself. It was shown once, at sign-up; an email copy
+        # would sit at the mail provider and in our mail log for good, and
+        # anybody reading either could send readings as this business.
+        guide = first_steps("YOUR_API_KEY", _vertical_for(tenant))
     except Exception:  # noqa: BLE001 - a nudge must not die on formatting
         logger.exception("Could not build first steps for %s.", tenant.tenant_id)
         return f"Open {_console_url()} and register your first unit."
@@ -176,7 +179,12 @@ def _setup_steps(tenant: Tenant) -> str:
 
     host = PUBLIC_BASE_URL or "$HOST"
 
-    lines = []
+    lines = [
+        "Where a command says YOUR_API_KEY, use the key you were shown when "
+        "you signed up. We do not email it. If you did not keep it, make a "
+        f"new one in the console at {_console_url()} (the old one stops working).",
+        "",
+    ]
     for number, step in enumerate(guide.get("steps", []), start=1):
         lines.append(f"{number}. {step.get('title', '').strip()}")
         detail = (step.get("detail") or "").strip()
@@ -192,7 +200,7 @@ def _setup_steps(tenant: Tenant) -> str:
         if where:
             lines.append(f"   {where.replace('$HOST', host)}")
         lines.append("")
-    if not lines:
+    if len(lines) <= 2:
         return f"Open {_console_url()} and register your first unit."
     return "\n".join(lines).rstrip()
 

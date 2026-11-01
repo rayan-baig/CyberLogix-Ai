@@ -241,6 +241,10 @@ def test_the_real_post_never_raises(monkeypatch):
         raise OSError("connection reset by peer")
 
     monkeypatch.setattr(webhooks.urllib.request, "urlopen", _boom)
+    monkeypatch.setattr(webhooks._OPENER, "open", _boom)
+    # A public-looking host, so the post reaches the network and fails
+    # there; a name that does not resolve is now refused before that.
+    monkeypatch.setattr(webhooks, "_resolves_privately", lambda host: False)
     delivered, status = webhooks._post("https://x.example/hook", {"a": 1})
     assert delivered is False
     assert status == "unreachable"

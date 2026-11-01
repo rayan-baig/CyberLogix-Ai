@@ -241,26 +241,32 @@ def build_event(
 
 
 def _resolves_privately(host: str) -> bool:
-    """True when a hostname points anywhere inside our own network."""
+    """True unless a hostname points only at the public internet.
+
+    The same test the pollers use (pollers._reaches_the_public_internet),
+    rather than a list of its own: this one missed 100.64.0.0/10 (carrier
+    NAT, Tailscale, one cloud's metadata address) and fec0::/10.
+
+    A name that does not resolve counts as private. It used to count as
+    public, and that was a way in: `127.0.0.%31` resolves to nothing, so it
+    passed, and then urllib decoded the %31 and connected to 127.0.0.1.
+    """
+    from pollers import _reaches_the_public_internet
+
     if not host:
         return True
     try:
         infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
     except OSError:
-        # Unresolvable is not private; the post will simply fail below.
-        return False
+        return True
+    if not infos:
+        return True
     for info in infos:
         try:
             address = ipaddress.ip_address(info[4][0])
         except ValueError:
-            continue
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-        ):
+            return True
+        if not _reaches_the_public_internet(address):
             return True
     return False
 
@@ -303,6 +309,11 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
         parts = urllib.parse.urlsplit(url)
         if parts.scheme.lower() not in ALLOWED_SCHEMES:
             return False, "refused_insecure_url"
+        # A percent sign in the host is decoded by urllib when it connects
+        # but not by the check above it, so the check and the connection
+        # would be about two different machines. No real host needs one.
+        if "%" in parts.netloc:
+            return False, "refused_private_address"
         if not ALLOW_PRIVATE_WEBHOOK_TARGETS and _resolves_privately(parts.hostname):
             logger.warning("Refused a webhook post to a private address (%s).", url)
             return False, "refused_private_address"
@@ -464,6 +475,13 @@ def _validate_target(kind: str, target: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The webhook URL has no host.",
+        )
+    if "%" in parsed.netloc:
+        # Refused here too, so it is said at the door rather than discovered
+        # at the first breach. See _post.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The webhook host cannot contain percent-encoding.",
         )
     return target
 

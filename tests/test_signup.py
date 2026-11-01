@@ -210,19 +210,22 @@ def test_the_right_provisioning_key_is_accepted(api):
     assert resp.json()["tenant"]["plan"] == "enterprise"
 
 
-def test_a_trial_still_needs_no_key(api):
-    """The trial path must not be broken by locking the paid one."""
-    resp = api.post(
-        "/api/licenses/tenants",
-        json={
-            "company_name": "Kicking Tyres",
-            "contact_name": "Sam",
-            "contact_phone": "+15550112",
-            "contact_email": "sam@example.com",
-            "plan": "trial",
-        },
-    )
-    assert resp.status_code == 201
+def test_trials_come_only_from_the_limited_front_door(api):
+    """A trial on this route needed no key and had no rate limit, so trial
+    accounts could be made by the hundred, each able to spend the operator's
+    SMS, voice and AI budget. Trials now come from /api/signup, which is
+    limited; this route needs the provisioning key for every plan."""
+    body = {
+        "company_name": "Kicking Tyres",
+        "contact_name": "Sam",
+        "contact_phone": "+15550112",
+        "contact_email": "sam@example.com",
+        "plan": "trial",
+    }
+    assert api.post("/api/licenses/tenants", json=body).status_code == 403
+    keyed = api.post("/api/licenses/tenants", json=body,
+                     headers={"X-CyberLogix-Provisioning": "test-provisioning-key"})
+    assert keyed.status_code == 201
 
 
 def test_no_key_configured_means_no_paid_plans_at_all(api, monkeypatch):
