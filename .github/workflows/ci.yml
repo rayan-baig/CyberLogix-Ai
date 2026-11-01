@@ -9,6 +9,12 @@ on:
     branches: ['**']
   pull_request:
 
+# A newer push to the same branch cancels the run it replaces, so CI time
+# goes on the code that is actually there now.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
