@@ -42,8 +42,11 @@ MIN_PASSWORD_LENGTH = 10
 # guessing. Counting per address alone (as this used to) let anybody lock
 # the real owner out for as long as they liked by typing a wrong password
 # eight times every five minutes. Per caller catches one machine trying a
-# common password against many addresses, and a looser per-address count
-# still caps guessing spread across many machines.
+# common password against many addresses. The looser per-address count
+# answers wrong guesses spread across many machines with 429, but never
+# turns away the right password: a stranger with a handful of addresses
+# could otherwise keep the owner of a monitoring product, who may need to
+# acknowledge an alarm, out of it at will.
 MAX_LOGIN_ATTEMPTS = 8
 MAX_LOGIN_ATTEMPTS_PER_CALLER = 30
 MAX_LOGIN_ATTEMPTS_PER_ADDRESS = 50
@@ -53,18 +56,34 @@ _login_lock = threading.Lock()
 
 
 def _login_keys(email: str, caller: str) -> Dict[str, int]:
+    """The counts checked before the password: these refuse outright."""
     return {
         f"pair:{email}|{caller}": MAX_LOGIN_ATTEMPTS,
         f"caller:{caller}": MAX_LOGIN_ATTEMPTS_PER_CALLER,
-        f"address:{email}": MAX_LOGIN_ATTEMPTS_PER_ADDRESS,
     }
+
+
+def _recent(key: str, now: float) -> List[float]:
+    recent = [t for t in _login_attempts.get(key, ()) if now - t < LOGIN_WINDOW_SECONDS]
+    if recent:
+        _login_attempts[key] = recent
+    else:
+        _login_attempts.pop(key, None)
+    return recent
+
+
+def _sweep(now: float) -> None:
+    """Forget windows that have run out, so the table cannot grow for ever."""
+    if len(_login_attempts) > 5000:
+        for key in list(_login_attempts):
+            _recent(key, now)
 
 
 def _throttle(key: str, limit: int = MAX_LOGIN_ATTEMPTS) -> None:
     """Reject a caller that has failed too often in the recent window."""
     now = time.monotonic()
-    recent = [t for t in _login_attempts[key] if now - t < LOGIN_WINDOW_SECONDS]
-    _login_attempts[key] = recent
+    _sweep(now)
+    recent = _recent(key, now)
     if len(recent) >= limit:
         oldest = min(recent)
         wait = int(LOGIN_WINDOW_SECONDS - (now - oldest)) + 1
@@ -288,6 +307,16 @@ def login(payload: LoginRequest, request: Request):
     # same answer as a wrong password, so it says nothing about the account.
     if user is None or not correct or not STORE.open_logins_of(user):
         logger.warning("Failed login for %s", payload.email)
+        with _login_lock:
+            spread = f"address:{address}"
+            over = len(_recent(spread, time.monotonic())) >= MAX_LOGIN_ATTEMPTS_PER_ADDRESS
+            _record_failure(spread)
+        if over:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed sign-in attempts. Try again in a few minutes.",
+                headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is incorrect.",
@@ -367,7 +396,14 @@ def change_password(
     that, and a session left open elsewhere would defeat it."""
     # One password per person, whichever of their businesses is open.
     person = STORE.person_of(user)
+    # A stolen session must not be a free way to guess the password, now that
+    # the right guess also signs every other session out.
+    guard = f"pwchange:{person.user_id}"
+    with _login_lock:
+        _throttle(guard, MAX_LOGIN_ATTEMPTS)
     if not verify_password(payload.current_password, person.password_hash):
+        with _login_lock:
+            _record_failure(guard)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Current password is incorrect.",

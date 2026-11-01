@@ -29,6 +29,7 @@ and the next pass tries again.
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import logging
@@ -311,7 +312,38 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
             "vendor picks afterwards. Save the final URL instead.")
 
 
-_OPENER = urllib.request.build_opener(_RefuseRedirects)
+_deadline = threading.local()
+
+
+class _Tracked:
+    """Remembers each socket a fetch opens, so a timer can close it."""
+
+    def connect(self):
+        super().connect()
+        socks = getattr(_deadline, "socks", None)
+        if socks is not None:
+            socks.append(self.sock)
+
+
+class _TrackedHTTPS(_Tracked, http.client.HTTPSConnection):
+    pass
+
+
+class _TrackedHTTP(_Tracked, http.client.HTTPConnection):
+    pass
+
+
+class _DeadlineHTTPS(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_TrackedHTTPS, req, context=self._context)
+
+
+class _DeadlineHTTP(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_TrackedHTTP, req)
+
+
+_OPENER = urllib.request.build_opener(_RefuseRedirects, _DeadlineHTTPS, _DeadlineHTTP)
 
 
 def _fetch(url: str, headers: Dict[str, str]) -> Any:
@@ -322,17 +354,45 @@ def _fetch(url: str, headers: Dict[str, str]) -> Any:
     for name, value in headers.items():
         request.add_header(name, value)
     deadline = time.monotonic() + FETCH_DEADLINE_SECONDS
+    late = TimeoutError(f"The vendor took over {FETCH_DEADLINE_SECONDS} seconds to answer.")
+    # A hard stop for the whole fetch, headers included: at the deadline the
+    # connection is closed under whatever is reading it. Checking the clock
+    # only between body chunks let a vendor trickling its headers a byte at a
+    # time hold a worker, and the source, for as long as it liked.
+    _deadline.socks = socks = []
+    fired = threading.Event()
+
+    def _cut():
+        fired.set()
+        for sock in list(socks):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    timer = threading.Timer(FETCH_DEADLINE_SECONDS, _cut)
+    timer.daemon = True
+    timer.start()
     chunks, size = [], 0
-    with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-        while size <= MAX_RESPONSE_BYTES:
-            if time.monotonic() > deadline:
-                raise TimeoutError(
-                    f"The vendor took over {FETCH_DEADLINE_SECONDS} seconds to answer.")
-            chunk = response.read(min(65536, MAX_RESPONSE_BYTES + 1 - size))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            size += len(chunk)
+    try:
+        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
+            while size <= MAX_RESPONSE_BYTES:
+                if time.monotonic() > deadline:
+                    raise late
+                chunk = response.read(min(65536, MAX_RESPONSE_BYTES + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+    except (OSError, http.client.HTTPException) as exc:
+        if fired.is_set():
+            raise late from exc
+        raise
+    finally:
+        timer.cancel()
+        _deadline.socks = None
+    if fired.is_set():
+        raise late
     raw = b"".join(chunks)
     if len(raw) > MAX_RESPONSE_BYTES:
         raise ValueError(
@@ -381,6 +441,10 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
     else:
         try:
             payload = _fetch(row["url"], row.get("headers") or {})
+            # Removed while the fetch was out: its readings are not wanted.
+            if STORE._db.get(SOURCE_KIND, row["source_id"]) is None:
+                outcome["detail"] = "The source was removed while it was being fetched."
+                return outcome
             outcome.update(_ingest(tenant, row, payload))
         except urllib.error.HTTPError as exc:
             outcome["detail"] = f"The vendor answered {exc.code}."
@@ -402,16 +466,22 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
             outcome["detail"] = "Something unexpected went wrong reading this vendor. It has been logged."
 
     failed = outcome["status"] != "ok"
-    STORE._db.put(SOURCE_KIND, row["source_id"], {
-        **row,
-        "last_polled_at": iso(now),
-        "last_status": outcome["status"],
-        "last_detail": outcome["detail"],
-        "readings_ingested": row.get("readings_ingested", 0)
-                             + outcome["ingested"],
-        "consecutive_failures": (row.get("consecutive_failures", 0) + 1
-                                 if failed else 0),
-    })
+    with STORE._lock:
+        # The row as it is now, not as it was when the fetch began: writing
+        # the old copy back brought a source the owner had just removed back
+        # to life, credential and all, and undid any edit made meanwhile.
+        current = STORE._db.get(SOURCE_KIND, row["source_id"])
+        if current is not None:
+            STORE._db.put(SOURCE_KIND, row["source_id"], {
+                **current,
+                "last_polled_at": iso(now),
+                "last_status": outcome["status"],
+                "last_detail": outcome["detail"],
+                "readings_ingested": current.get("readings_ingested", 0)
+                                     + outcome["ingested"],
+                "consecutive_failures": (current.get("consecutive_failures", 0) + 1
+                                         if failed else 0),
+            })
     return outcome
 
 
@@ -492,7 +562,13 @@ def run_poll_pass(now: Optional[datetime] = None) -> Dict[str, Any]:
         return {"polled": 0, "readings": 0, "failed": 0, "still_running": 0}
 
     pool = ThreadPoolExecutor(max_workers=POLL_WORKERS, thread_name_prefix="vendor-poll")
-    futures = {pool.submit(_poll_and_release, row, now): row for row in rows}
+    futures = {}
+    for row in rows:
+        try:
+            futures[pool.submit(_poll_and_release, row, now)] = row
+        except RuntimeError:  # no thread to be had: try this one next pass
+            with _in_flight_lock:
+                _in_flight.discard(row["source_id"])
     done, waiting = wait(futures, timeout=POLL_PASS_SECONDS)
     # Not waited for: a stuck vendor finishes, or times out, on its own.
     pool.shutdown(wait=False, cancel_futures=True)
@@ -644,7 +720,16 @@ def test_source(
     if row is None or row.get("tenant_id") != tenant.tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No such source on this account.")
-    outcome = poll_once(row)
+    with _in_flight_lock:
+        if source_id in _in_flight:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="This source is being fetched right now. Try again in a minute.")
+        _in_flight.add(source_id)
+    try:
+        outcome = poll_once(row)
+    finally:
+        with _in_flight_lock:
+            _in_flight.discard(source_id)
     write_audit(tenant, operator, "poller.tested",
                 f"{row['name']}: {outcome['status']}")
     return {"result": outcome,

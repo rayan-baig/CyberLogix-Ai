@@ -500,3 +500,63 @@ def test_an_unexpected_fault_does_not_show_its_insides(api, estate, monkeypatch)
     out = api.post(f"/api/pollers/{made['source_id']}/test", headers=headers).json()
     assert out["result"]["status"] == "failed"
     assert "internal_module" not in out["result"]["detail"]
+
+
+def test_a_vendor_trickling_its_headers_is_cut_off(monkeypatch):
+    """The deadline used to be checked only between body chunks, so headers
+    sent a byte at a time held a worker for as long as the vendor liked."""
+    import socket
+    import threading
+    import time as _time
+
+    monkeypatch.setattr(pollers, "_resolve_to_public", lambda host: None)
+    monkeypatch.setattr(pollers, "TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(pollers, "FETCH_DEADLINE_SECONDS", 1.5)
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def serve():
+        c, _ = srv.accept()
+        c.recv(4096)
+        c.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: ")
+        try:
+            for _ in range(20):
+                _time.sleep(0.4)
+                c.sendall(b"a")
+        except OSError:
+            pass
+        c.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    started = _time.monotonic()
+    with pytest.raises(TimeoutError):
+        pollers._fetch(f"http://127.0.0.1:{port}/x", {})
+    assert _time.monotonic() - started < 4
+    srv.close()
+
+
+def test_a_source_removed_during_a_fetch_stays_removed(api, estate, monkeypatch):
+    import threading
+    import time as _time
+
+    headers, _ = estate
+    made = source(api, headers).json()["source"]
+    release = threading.Event()
+
+    def slow(url, h):
+        release.wait(5)
+        return {"samples": [{"sensor": "SP-0001", "temperature": 41.0}]}
+
+    monkeypatch.setattr(pollers, "_fetch", slow)
+    monkeypatch.setattr(pollers, "POLL_PASS_SECONDS", 0.2)
+    assert pollers.run_poll_pass()["still_running"] == 1
+    assert api.delete(f"/api/pollers/{made['source_id']}", headers=headers).status_code == 204
+    release.set()
+    for _ in range(50):
+        if not pollers._in_flight:
+            break
+        _time.sleep(0.05)
+    assert STORE._db.get(pollers.SOURCE_KIND, made["source_id"]) is None
+    assert not STORE.readings_for("FRZ-1")

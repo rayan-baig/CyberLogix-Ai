@@ -80,9 +80,13 @@ _all: Deque[float] = deque()
 
 def caller_key(request: Request) -> str:
     if TRUST_PROXY_HEADER:
-        forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0]
-        if forwarded.strip():
-            return forwarded.strip()
+        # The LAST entry: the one our own proxy added for the connection it
+        # actually received. Anything to its left was sent by the caller and
+        # can say anything; taking the first one let a client pick its own
+        # identity and step around every per-caller limit.
+        parts = [p.strip() for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
+        if parts:
+            return parts[-1]
     client = request.client
     return client.host if client else "unknown"
 

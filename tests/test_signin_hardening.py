@@ -238,3 +238,44 @@ def test_a_session_stored_before_hashing_survives_the_upgrade(tmp_path):
     again = HubStore(db=Database(path))
     assert again.session_by_token("cls_legacy_plain_token").user_id == user.user_id
     assert again._db.get("session", "cls_legacy_plain_token") is None
+
+
+def test_the_right_password_works_even_after_guesses_from_many_places(api, monkeypatch):
+    """Seven addresses with eight wrong guesses each used to lock the owner out."""
+    _signup(api, DANA)
+    n = {"i": 0}
+
+    def rotating(request):
+        n["i"] += 1
+        return f"10.9.{n['i'] // 8}.1"     # a new place every eight guesses
+
+    monkeypatch.setattr(signup, "caller_key", rotating)
+    for i in range(accounts.MAX_LOGIN_ATTEMPTS_PER_ADDRESS + 10):
+        api.post("/api/accounts/login", json={"email": DANA["email"], "password": f"guess-{i}"})
+    monkeypatch.setattr(signup, "caller_key", lambda request: "198.51.100.77")
+    assert api.post("/api/accounts/login", json={"email": DANA["email"], "password": DANA["password"]}).status_code == 200
+
+
+def test_a_forwarded_header_cannot_choose_the_caller(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(signup, "TRUST_PROXY_HEADER", True)
+    request = SimpleNamespace(headers={"x-forwarded-for": "1.2.3.4, 203.0.113.50"}, client=SimpleNamespace(host="10.0.0.1"))
+    assert signup.caller_key(request) == "203.0.113.50"
+
+
+def test_the_throttle_forgets_old_windows(monkeypatch):
+    import time as _time
+
+    accounts._login_attempts.clear()
+    accounts._login_attempts.update({f"pair:x{i}|y": [_time.monotonic() - 10_000] for i in range(6000)})
+    accounts._throttle("pair:new|y")
+    assert len(accounts._login_attempts) < 10
+
+
+def test_guessing_the_current_password_from_a_stolen_session_is_limited(api):
+    dana = _signup(api, DANA)
+    codes = [api.post("/api/accounts/me/password", headers=_bearer(dana["token"]),
+                      json={"current_password": f"wrong-{i}", "new_password": "a-brand-new-password"}).status_code
+             for i in range(accounts.MAX_LOGIN_ATTEMPTS + 1)]
+    assert codes[-1] == 429 and codes[0] == 403

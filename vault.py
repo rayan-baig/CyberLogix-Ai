@@ -41,7 +41,6 @@ from store import (
     STORE,
     Reading,
     Tenant,
-    _parse,
     display_temperature,
     iso,
     utc_now,
@@ -220,6 +219,8 @@ def attest_sensor(
             readings=len(readings),
             period_start=iso(readings[0].recorded_at) if readings else None,
             period_end=iso(readings[-1].recorded_at) if readings else None,
+            first_reading_id=readings[0].reading_id if readings else None,
+            last_reading_id=readings[-1].reading_id if readings else None,
         )
 
     return {
@@ -351,40 +352,54 @@ def sensor_attestation(
     return attestation
 
 
-def _anchored_run(readings: List[Reading], anchor) -> Optional[List[Reading]]:
-    """The run of readings an attestation covered, or None if it is gone.
+def _anchored_run(readings: List[Reading], anchor, buffer_full: bool):
+    """The run an attestation covered: ("ok", run), ("evicted", None),
+    ("broken", None) or ("empty", None).
 
-    Anchors record their period to the second, and readings arrive several a
-    second on a busy estate, so "every reading up to period_end" can take in
-    readings that came after the attestation within the same second, and a
-    run can begin part-way through its first second. So: start at each
-    reading inside that first second, take exactly as many readings as were
-    attested, and use a run that reproduces the head if there is one. An
-    edit, insertion or deletion still changes every candidate.
+    `readings` is everything still retained for the sensor, oldest first.
+    A run can only be missing because of retention if the buffer is full
+    and its oldest reading is newer than the run's start; anything else
+    missing was removed, and that is tampering. (This used to treat any
+    short run as evicted, so deleting the newest attested reading passed
+    as intact; and it assumed the oldest retained reading was the run's
+    start, so ordinary turnover looked like an edit.)
     """
+    if not anchor.readings:
+        return "empty", None
+    oldest = iso(readings[0].recorded_at) if readings else None
+
+    def gone_by_retention(edge):
+        return buffer_full and oldest is not None and edge is not None and oldest > edge
+
+    first_id = getattr(anchor, "first_reading_id", None)
+    last_id = getattr(anchor, "last_reading_id", None)
+    if first_id and last_id:
+        where = {r.reading_id: i for i, r in enumerate(readings)}
+        if last_id not in where:
+            return ("evicted", None) if gone_by_retention(anchor.period_end) else ("broken", None)
+        if first_id not in where:
+            return ("evicted", None) if (buffer_full and oldest is not None and oldest >= anchor.period_start) \
+                else ("broken", None)
+        return "ok", readings[where[first_id]:where[last_id] + 1]
+
+    # Anchors from before reading ids were recorded: match by time and count.
+    # Periods are kept to the second and readings can arrive several a
+    # second, so try each start inside the first second.
+    if gone_by_retention(anchor.period_start):
+        return "evicted", None
     after = [r for r in readings if not anchor.period_start or iso(r.recorded_at) >= anchor.period_start]
-    if len(after) < anchor.readings:
-        return None
-    if anchor.readings == 0:
-        return []
-    first_second = iso(after[0].recorded_at)
+    first_second = iso(after[0].recorded_at) if after else None
     candidates = []
     for offset, r in enumerate(after):
         if iso(r.recorded_at) != first_second or offset + anchor.readings > len(after):
             break
         candidates.append(after[offset:offset + anchor.readings])
     if not candidates:
-        return None
+        return "broken", None
     for run in candidates:
         if hmac.compare_digest(chain_head(run), anchor.chain_head):
-            return run
-    return candidates[0]
-
-
-# The newest heads checked by /verify. Attestations are made by people, not
-# page loads, so this covers years of normal use; it bounds the work if a
-# sensor has somehow collected thousands.
-MAX_ANCHORS_CHECKED = 200
+            return "ok", run
+    return "ok", candidates[0]
 
 
 @router.get("/verify/{sensor_id}")
@@ -432,26 +447,31 @@ def verify_sensor(
             ),
         }
 
-    # Every head ever issued that covers part of this window is checked, not
-    # only the newest. Checking only the newest meant any later attestation
-    # (an auditor's, a viewer's, the public proof page's) re-recorded the
-    # edited record as the new truth, and the tamper check said "intact"
-    # again. A record is intact only if it still reproduces all of them.
-    relevant = [a for a in anchors if not a.period_end or a.period_end >= iso(since)][:MAX_ANCHORS_CHECKED]
-    starts = [a.period_start for a in relevant if a.period_start]
-    if starts and min(starts) < iso(since):
-        readings = STORE.readings_for(sensor.sensor_id, since=_parse(min(starts)))
+    # Every head issued that covers part of this window is checked, not only
+    # the newest. Checking only the newest meant any later attestation (an
+    # auditor's, a viewer's, the public proof page's) re-recorded the edited
+    # record as the new truth. There is no cap on how many are checked: a cap
+    # would let somebody bury the honest ones under enough new ones. The
+    # store limits how many a sensor can collect a day instead.
+    relevant = [a for a in anchors if not a.period_end or a.period_end >= iso(since)]
+    retained = STORE.readings_for(sensor.sensor_id)
+    import store as _store
+
+    buffer_full = len(retained) >= _store.MAX_READINGS_PER_SENSOR
 
     broken, evicted_any, checked, derived = [], False, 0, {}
     for anchor in relevant:
-        # An attestation covers the readings that existed when it was
-        # issued. More have arrived since, and the ring buffer may have
-        # evicted older ones, so re-derive over exactly the run it covered.
-        window = _anchored_run(readings, anchor)
-        if window is None:
+        status, window = _anchored_run(retained, anchor, buffer_full)
+        if status == "empty":
+            continue
+        if status == "evicted":
             evicted_any = True
             continue
         checked += 1
+        if status == "broken":
+            derived[anchor.anchor_id] = (None, 0)
+            broken.append(anchor)
+            continue
         derived[anchor.anchor_id] = (chain_head(window), len(window))
         if not hmac.compare_digest(derived[anchor.anchor_id][0], anchor.chain_head):
             broken.append(anchor)

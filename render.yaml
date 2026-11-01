@@ -72,6 +72,13 @@ services:
       - key: CYBERLOGIX_SWEEP_SECONDS
         value: "60"
 
+      # Render's proxy sits in front of the app, so every request arrives
+      # from the proxy's address. Without this, every visitor shares one
+      # "caller", and thirty wrong passwords from anyone would lock everybody
+      # out of signing in. The app reads the address Render adds last.
+      - key: CYBERLOGIX_TRUST_PROXY_HEADER
+        value: "1"
+
       # Paste the service's own https address here after the first
       # deploy, then redeploy. Until it is set a voice call still goes
       # out and pressing 1 reaches nothing, so the alert escalates to the

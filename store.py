@@ -1506,10 +1506,16 @@ class VaultAnchor:
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     issued_at: Optional[datetime] = None
+    # The exact first and last readings covered, so the run can be found
+    # again without guessing from times kept to the second.
+    first_reading_id: Optional[str] = None
+    last_reading_id: Optional[str] = None
 
     def to_row(self) -> Dict[str, Any]:
         return {
             "anchor_id": self.anchor_id,
+            "first_reading_id": self.first_reading_id,
+            "last_reading_id": self.last_reading_id,
             "tenant_id": self.tenant_id,
             "sensor_id": self.sensor_id,
             "chain_head": self.chain_head,
@@ -1527,6 +1533,8 @@ class VaultAnchor:
             sensor_id=row["sensor_id"],
             chain_head=row["chain_head"],
             readings=row.get("readings", 0),
+            first_reading_id=row.get("first_reading_id"),
+            last_reading_id=row.get("last_reading_id"),
             period_start=row.get("period_start"),
             period_end=row.get("period_end"),
             issued_at=_parse(row.get("issued_at")),
@@ -2367,6 +2375,8 @@ class Expense:
         row["has_receipt"] = bool(self.receipt.strip())
         return row
 
+
+MAX_ANCHORS_PER_SENSOR_PER_DAY = 48
 
 SENSITIVE_BODY_REMOVED = "[Removed once handled: this message held a one-time link.]"
 
@@ -4015,17 +4025,28 @@ class HubStore:
         readings: int,
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
+        first_reading_id: Optional[str] = None,
+        last_reading_id: Optional[str] = None,
     ) -> VaultAnchor:
         """Record the chain head handed out in an attestation."""
         with self._lock:
+            recent = [a for a in self.anchors_for_sensor(sensor_id)
+                      if a.issued_at and utc_now() - a.issued_at < timedelta(days=1)]
             # The same head over the same run is already on record: asking
-            # twice in a quiet minute should not write a second row.
-            for existing in self.anchors_for_sensor(sensor_id)[:1]:
+            # again should not write a second row.
+            for existing in recent:
                 if (existing.tenant_id, existing.chain_head, existing.readings,
                         existing.period_start, existing.period_end) == (
                         tenant_id, chain_head, readings, period_start, period_end):
                     return existing
+            # A ceiling per sensor per day. Every head is checked by /verify,
+            # so a flood of new ones costs work, and nobody needs more than
+            # one an hour or so. Past it, the newest stands for this one.
+            if len(recent) >= MAX_ANCHORS_PER_SENSOR_PER_DAY:
+                return recent[0]
             anchor = VaultAnchor(
+                first_reading_id=first_reading_id,
+                last_reading_id=last_reading_id,
                 anchor_id=self._next_id("ANC"),
                 tenant_id=tenant_id,
                 sensor_id=sensor_id,

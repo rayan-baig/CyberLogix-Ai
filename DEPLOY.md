@@ -126,6 +126,9 @@ Then copy `.env.example` to `.env` and fill in, at minimum:
 ```
 CYBERLOGIX_DB_PATH=/app/data/cyberlogix.db
 CYBERLOGIX_BACKUP_DIR=/srv/backups
+# Behind any proxy (Caddy, nginx, a load balancer): so each visitor is counted
+# as themselves for sign-in limits, not all as the proxy. Render: already set.
+CYBERLOGIX_TRUST_PROXY_HEADER=1
 CYBERLOGIX_ADMIN_KEY=<generated above>
 CYBERLOGIX_ALLOWED_ORIGINS=https://your.domain
 PUBLIC_BASE_URL=https://your.domain
