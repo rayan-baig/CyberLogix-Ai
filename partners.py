@@ -269,6 +269,47 @@ def detach_account(partner_id: str, tenant_id: str):
     }
 
 
+def _partner_or_404(partner_id: str) -> Partner:
+    partner = STORE.get_partner(partner_id)
+    if partner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Partner '{partner_id}' not found.")
+    return partner
+
+
+class PartnerStatus(BaseModel):
+    active: bool
+
+
+@router.post("/{partner_id}/status", dependencies=[Depends(require_admin)])
+def set_partner_status(partner_id: str, payload: PartnerStatus):
+    """Suspend a reseller's portal, or open it again.
+
+    Until this existed a leaked partner key could only be cut off by
+    detaching every account from the partner one by one, or by editing the
+    database. Suspension takes effect on the next request.
+    """
+    partner = _partner_or_404(partner_id)
+    partner.active = payload.active
+    STORE.save_partner(partner)
+    logger.warning("Partner %s %s.", partner.partner_id, "reactivated" if payload.active else "suspended")
+    return {**partner.public(),
+            "message": f"{partner.company_name} is {'active' if payload.active else 'suspended'}."}
+
+
+@router.post("/{partner_id}/rotate-key", dependencies=[Depends(require_admin)])
+def rotate_partner_key(partner_id: str):
+    """Issue a new partner key. The old one stops working immediately."""
+    partner = _partner_or_404(partner_id)
+    key = STORE.rotate_partner_key(partner)
+    logger.warning("Partner %s key rotated.", partner.partner_id)
+    return {
+        **partner.public(),
+        "api_key": key,
+        "warning": "This key is shown once. The previous key no longer works.",
+    }
+
+
 # ==============================================================================
 #  Partner portal
 # ==============================================================================

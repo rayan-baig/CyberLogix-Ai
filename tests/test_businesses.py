@@ -201,6 +201,13 @@ def _join(api, owner_token, joiner_token, role="operator"):
     return joined.json()
 
 
+def _own_password(api, token, old, new):
+    """An invited person replaces the password their inviter chose."""
+    resp = api.post("/api/accounts/me/password", headers=_bearer(token),
+                    json={"current_password": old, "new_password": new})
+    assert resp.status_code == 200, resp.text
+
+
 def _record_in(email, tenant_id):
     return STORE.login_in(STORE.user_by_email(email), tenant_id)
 
@@ -296,6 +303,7 @@ def test_the_business_holding_your_sign_in_cannot_reset_it_either(api):
              json={"email": "op@x.example", "full_name": "Op",
                    "password": "operator-password-1", "role": "operator"})
     op = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    _own_password(api, op["token"], "operator-password-1", "operators-own-pass-2")
     carol = _signup(api, DANA)
     _join(api, carol["token"], op["token"], role="owner")
 
@@ -336,13 +344,14 @@ def test_the_business_holding_your_sign_in_cannot_lock_you_out_of_the_others(api
              json={"email": "op@x.example", "full_name": "Op",
                    "password": "operator-password-1", "role": "operator"})
     op = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    _own_password(api, op["token"], "operator-password-1", "operators-own-pass-2")
     carol = _signup(api, DANA)
     _join(api, carol["token"], op["token"], role="operator")
 
     record = STORE.user_by_email("op@x.example")
     assert api.post(f"/api/accounts/users/{record.user_id}/disable",
                     headers=_bearer(sam["token"])).status_code == 200
-    back = _login(api, {"email": "op@x.example", "password": "operator-password-1"})
+    back = _login(api, {"email": "op@x.example", "password": "operators-own-pass-2"})
     assert back["tenant"]["tenant_id"] == carol["tenant"]["tenant_id"]
 
 

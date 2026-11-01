@@ -41,6 +41,7 @@ from store import (
     STORE,
     Reading,
     Tenant,
+    _parse,
     display_temperature,
     iso,
     utc_now,
@@ -182,6 +183,7 @@ def attest_sensor(
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
     anchor: bool = False,
+    anchor_daily: bool = False,
 ) -> Dict[str, Any]:
     """An attestation for one sensor over a period.
 
@@ -192,6 +194,10 @@ def attest_sensor(
 
     `anchor=True` records the head, which is what later makes tampering
     detectable — a chain checked only against itself always agrees.
+    `anchor_daily=True` records it only if nothing has been recorded for
+    this sensor in the last day: for the public proof page, which anybody
+    can load as often as they like and must not be a way to fill the
+    database.
     """
     readings = STORE.readings_for(sensor.sensor_id, since=since)
     if until is not None:
@@ -203,6 +209,9 @@ def attest_sensor(
     excursions = [r for r in readings if r.breached]
     head = chain_head(readings)
 
+    if anchor_daily and not anchor:
+        latest = next(iter(STORE.anchors_for_sensor(sensor.sensor_id)), None)
+        anchor = latest is None or utc_now() - latest.issued_at >= timedelta(days=1)
     if anchor:
         STORE.anchor_chain(
             tenant_id=tenant.tenant_id,
@@ -262,6 +271,12 @@ def estate_attestation(
     digest per sensor and one over all of them, so a recipient can check
     that what they were shown is what was recorded.
     """
+    return estate_record(tenant, days)
+
+
+def estate_record(tenant: Tenant, days: int, anchor_daily: bool = False) -> Dict[str, Any]:
+    """The estate attestation. `anchor_daily` is for the public proof page:
+    see attest_sensor."""
     since = utc_now() - timedelta(days=days)
     sensors = sorted(
         STORE.sensors_for(tenant.tenant_id), key=lambda s: s.sensor_id
@@ -270,7 +285,7 @@ def estate_attestation(
     # checked against later — which is the only thing that makes the
     # tamper claim true.
     entries = [
-        attest_sensor(tenant, sensor, since, anchor=True)
+        attest_sensor(tenant, sensor, since, anchor=not anchor_daily, anchor_daily=anchor_daily)
         for sensor in sensors
     ]
 
@@ -336,6 +351,42 @@ def sensor_attestation(
     return attestation
 
 
+def _anchored_run(readings: List[Reading], anchor) -> Optional[List[Reading]]:
+    """The run of readings an attestation covered, or None if it is gone.
+
+    Anchors record their period to the second, and readings arrive several a
+    second on a busy estate, so "every reading up to period_end" can take in
+    readings that came after the attestation within the same second, and a
+    run can begin part-way through its first second. So: start at each
+    reading inside that first second, take exactly as many readings as were
+    attested, and use a run that reproduces the head if there is one. An
+    edit, insertion or deletion still changes every candidate.
+    """
+    after = [r for r in readings if not anchor.period_start or iso(r.recorded_at) >= anchor.period_start]
+    if len(after) < anchor.readings:
+        return None
+    if anchor.readings == 0:
+        return []
+    first_second = iso(after[0].recorded_at)
+    candidates = []
+    for offset, r in enumerate(after):
+        if iso(r.recorded_at) != first_second or offset + anchor.readings > len(after):
+            break
+        candidates.append(after[offset:offset + anchor.readings])
+    if not candidates:
+        return None
+    for run in candidates:
+        if hmac.compare_digest(chain_head(run), anchor.chain_head):
+            return run
+    return candidates[0]
+
+
+# The newest heads checked by /verify. Attestations are made by people, not
+# page loads, so this covers years of normal use; it bounds the work if a
+# sensor has somehow collected thousands.
+MAX_ANCHORS_CHECKED = 200
+
+
 @router.get("/verify/{sensor_id}")
 def verify_sensor(
     sensor_id: str,
@@ -381,44 +432,70 @@ def verify_sensor(
             ),
         }
 
-    latest = anchors[0]
-    # An attestation covers the readings that existed when it was issued.
-    # More have arrived since, and the ring buffer may have evicted older
-    # ones, so re-derive over exactly the run the anchor covered.
-    window = readings
-    if latest.period_start:
-        window = [r for r in window if iso(r.recorded_at) >= latest.period_start]
-    if latest.period_end:
-        window = [r for r in window if iso(r.recorded_at) <= latest.period_end]
-    rederived = chain_head(window)
+    # Every head ever issued that covers part of this window is checked, not
+    # only the newest. Checking only the newest meant any later attestation
+    # (an auditor's, a viewer's, the public proof page's) re-recorded the
+    # edited record as the new truth, and the tamper check said "intact"
+    # again. A record is intact only if it still reproduces all of them.
+    relevant = [a for a in anchors if not a.period_end or a.period_end >= iso(since)][:MAX_ANCHORS_CHECKED]
+    starts = [a.period_start for a in relevant if a.period_start]
+    if starts and min(starts) < iso(since):
+        readings = STORE.readings_for(sensor.sensor_id, since=_parse(min(starts)))
 
-    intact = hmac.compare_digest(rederived, latest.chain_head)
-    evicted = len(window) < latest.readings
+    broken, evicted_any, checked, derived = [], False, 0, {}
+    for anchor in relevant:
+        # An attestation covers the readings that existed when it was
+        # issued. More have arrived since, and the ring buffer may have
+        # evicted older ones, so re-derive over exactly the run it covered.
+        window = _anchored_run(readings, anchor)
+        if window is None:
+            evicted_any = True
+            continue
+        checked += 1
+        derived[anchor.anchor_id] = (chain_head(window), len(window))
+        if not hmac.compare_digest(derived[anchor.anchor_id][0], anchor.chain_head):
+            broken.append(anchor)
 
-    return {
-        "sensor_id": sensor.sensor_id,
-        "verifiable": True,
-        "intact": intact and not evicted,
-        "links_checked": len(window),
-        "links_when_attested": latest.readings,
-        "attested_at": iso(latest.issued_at),
-        "attested_head": latest.chain_head,
-        "rederived_head": rederived,
-        "chain_head": current,
-        "checked_at": iso(utc_now()),
-        "note": (
-            "The record still produces the head attested on "
-            f"{iso(latest.issued_at)}. Nothing in that period has changed."
-            if intact and not evicted
-            else "Readings from the attested period have since been evicted "
+    latest = relevant[0] if relevant else anchors[0]
+    intact = not broken and checked > 0
+    first_broken = broken[-1] if broken else None   # the oldest: when the change was first visible
+
+    if broken:
+        note = (
+            "The stored record does NOT reproduce the head attested on "
+            f"{iso(first_broken.issued_at)}. Something in that period has been "
+            "altered since. Investigate before relying on this record."
+        )
+    elif checked:
+        note = (
+            f"The record still reproduces all {checked} head(s) attested for this "
+            f"period, the latest on {iso(latest.issued_at)}. Nothing in it has changed."
+        )
+    else:
+        note = (
+            "Readings from the attested period have since been evicted "
             "by the retention limit, so the head cannot be reproduced. This "
             "is expected on an old attestation, and is not evidence of "
             "tampering — but it is also no longer proof of anything."
-            if evicted
-            else "The stored record does NOT reproduce the head attested on "
-            f"{iso(latest.issued_at)}. Something in that period has been "
-            "altered since. Investigate before relying on this record."
-        ),
+        )
+
+    shown = first_broken or latest
+    rederived, links = derived.get(shown.anchor_id, (None, 0))
+    return {
+        "sensor_id": sensor.sensor_id,
+        "verifiable": True,
+        "intact": intact,
+        "links_checked": links,
+        "rederived_head": rederived,
+        "attestations_checked": checked,
+        "attestations_broken": len(broken),
+        "some_attestations_evicted": evicted_any,
+        "links_when_attested": latest.readings,
+        "attested_at": iso(shown.issued_at),
+        "attested_head": shown.chain_head,
+        "chain_head": current,
+        "checked_at": iso(utc_now()),
+        "note": note,
     }
 
 

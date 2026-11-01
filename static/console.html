@@ -1428,6 +1428,12 @@ function render(d, health) {
       "nothing — registering sensors, changing alarm limits and the " +
       "licence all need an operator or owner.";
     roleBanner.hidden = false;
+  } else if (state.user && state.user.must_change_password) {
+    // Whoever invited them chose this password, so they know it.
+    roleBanner.textContent =
+      "Your password was set by whoever added you. Change it under Team " +
+      "below so only you know it.";
+    roleBanner.hidden = false;
   } else {
     roleBanner.hidden = true;
   }
@@ -4700,7 +4706,11 @@ $("password-form").addEventListener("submit", async (event) => {
       }),
     });
     form.reset();
-    toast("Password changed. Other sessions stay signed in.");
+    if (state.user && state.user.must_change_password) {
+      state.user.must_change_password = false;
+      if (state.user.role !== "viewer") $("role-banner").hidden = true;
+    }
+    toast("Password changed. Every other session was signed out.");
   } catch (err) {
     toast(err.message || "That password could not be changed.");
   }

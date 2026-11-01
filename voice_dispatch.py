@@ -193,6 +193,23 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
     }
 
 
+def _signed_url(request: Request) -> str:
+    """The address Twilio signed: the one we gave it.
+
+    Twilio signs the URL it was told to call, which acknowledgement_url()
+    builds from PUBLIC_BASE_URL. Behind a proxy that ends TLS the app sees
+    http:// and its own host, so checking against request.url refused every
+    genuine keypress and the escalation kept phoning people who had already
+    pressed 1.
+    """
+    import notifications
+
+    if notifications.PUBLIC_BASE_URL:
+        url = notifications.PUBLIC_BASE_URL + request.url.path
+        return url + (f"?{request.url.query}" if request.url.query else "")
+    return str(request.url)
+
+
 @router.post("/keypress/{incident_id}/{token}", include_in_schema=False)
 async def voice_keypress(
     incident_id: str, token: str, request: Request
@@ -208,7 +225,7 @@ async def voice_keypress(
     # url-encoded, and this keeps python-multipart off the dependency list.
     body = (await request.body()).decode("utf-8", "replace")
     form = dict(parse_qsl(body, keep_blank_values=True))
-    if not verify_twilio_signature(str(request.url), form, request.headers.get("X-Twilio-Signature", "")):
+    if not verify_twilio_signature(_signed_url(request), form, request.headers.get("X-Twilio-Signature", "")):
         logger.warning(
             "Rejected an unverified keypress callback for %s.", incident_id
         )

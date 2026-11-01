@@ -214,6 +214,23 @@ def switch_business(
     return _open(record, user, session)
 
 
+def _own_password_first(user: User) -> None:
+    """Refuse to grow a sign-in whose password a business owner chose.
+
+    An owner who invites somebody picks their first password. If the person
+    then joined or started other businesses without changing it, that owner
+    could sign in as them and walk into all of those. Set your own first.
+    """
+    if STORE.person_of(user).password_from_owner:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Your password was set by the business that invited you. "
+                "Change it under Account first, then add other businesses."
+            ),
+        )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def add_business(
     payload: NewBusiness,
@@ -229,6 +246,7 @@ def add_business(
     """
     import signup
 
+    _own_password_first(user)
     if len(STORE.logins_of(user)) >= MAX_BUSINESSES_PER_PERSON:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -333,6 +351,7 @@ def join_business(
     """Add a business to your sign-in with the code its owner gave you."""
     from auth import licence_state
 
+    _own_password_first(user)
     code = STORE.redeem_join_code(payload.code)
     tenant = STORE.get_tenant(code.tenant_id) if code else None
     if code is None or tenant is None or licence_state(tenant) == "suspended":

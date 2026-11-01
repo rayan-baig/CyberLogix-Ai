@@ -86,6 +86,11 @@ def iso(moment: Optional[datetime]) -> Optional[str]:
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def hash_secret(value: str) -> str:
+    """How a bearer secret is kept at rest: its SHA-256, never the secret."""
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
 def _parse(value: Optional[str]) -> Optional[datetime]:
     """Read back a stored ISO-8601 UTC string."""
     if not value:
@@ -1222,6 +1227,11 @@ class User:
     last_login_at: Optional[datetime] = None
     disabled: bool = False
     linked_to: Optional[str] = None
+    # The password was chosen by a business owner (an invite, or a reset the
+    # owner issued), so that owner knows it. Cleared when the person sets
+    # their own. While it is set the sign-in stays inside that one business:
+    # it cannot join or start others, which the owner could then walk into.
+    password_from_owner: bool = False
 
     def can(self, required: str) -> bool:
         """True when this user's role is at least `required`."""
@@ -1239,6 +1249,7 @@ class User:
             "last_login_at": iso(self.last_login_at),
             "disabled": self.disabled,
             "linked_to": self.linked_to,
+            "password_from_owner": self.password_from_owner,
         }
 
     @classmethod
@@ -1254,6 +1265,7 @@ class User:
             last_login_at=_parse(row.get("last_login_at")),
             disabled=row.get("disabled", False),
             linked_to=row.get("linked_to"),
+            password_from_owner=bool(row.get("password_from_owner", False)),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1270,6 +1282,7 @@ class User:
             # True when this person signs in with a login that belongs to
             # another business, and reaches this one by switching.
             "linked": self.linked_to is not None,
+            "must_change_password": self.password_from_owner,
         }
 
 
@@ -1680,10 +1693,21 @@ class Partner:
     company_name: str
     contact_name: str
     contact_email: str
-    api_key: str
+    # The key itself is held only in memory, right after it is made, so the
+    # one response that shows it can. What is stored is its SHA-256 and the
+    # last few characters for telling keys apart: a copy of the database or
+    # a backup does not open anybody's partner portal.
+    api_key: str = ""
     commission_percent: float = DEFAULT_PARTNER_COMMISSION_PERCENT
     active: bool = True
     created_at: Optional[datetime] = None
+    key_hash: str = ""
+    key_hint: str = ""
+
+    def set_key(self, api_key: str) -> None:
+        self.api_key = api_key
+        self.key_hash = hash_secret(api_key)
+        self.key_hint = api_key[-6:]
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -1691,7 +1715,8 @@ class Partner:
             "company_name": self.company_name,
             "contact_name": self.contact_name,
             "contact_email": self.contact_email,
-            "api_key": self.api_key,
+            "key_hash": self.key_hash,
+            "key_hint": self.key_hint,
             "commission_percent": self.commission_percent,
             "active": self.active,
             "created_at": iso(self.created_at),
@@ -1699,24 +1724,32 @@ class Partner:
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "Partner":
-        return cls(
+        partner = cls(
             partner_id=row["partner_id"],
             company_name=row["company_name"],
             contact_name=row["contact_name"],
             contact_email=row["contact_email"],
-            api_key=row["api_key"],
             commission_percent=row.get(
                 "commission_percent", DEFAULT_PARTNER_COMMISSION_PERCENT
             ),
             active=row.get("active", True),
             created_at=_parse(row.get("created_at")),
+            key_hash=row.get("key_hash", ""),
+            key_hint=row.get("key_hint", ""),
         )
+        if row.get("api_key") and not partner.key_hash:
+            # Written before keys were hashed: hash it now. The store saves
+            # the row back on load, which drops the plain key from disk.
+            partner.set_key(row["api_key"])
+            partner.api_key = ""
+        return partner
 
     def public(self) -> Dict[str, Any]:
         row = self.to_row()
         # The key is a credential; it is shown once at creation and never
         # echoed back on a listing.
-        row["api_key"] = f"...{self.api_key[-6:]}"
+        row.pop("key_hash", None)
+        row["api_key"] = f"...{self.key_hint}"
         return row
 
 
@@ -1887,6 +1920,10 @@ class ResetToken:
     issued_at: datetime
     expires_at: datetime
     used_at: Optional[datetime] = None
+    # Issued by an owner for one of their people, rather than mailed to the
+    # person by "forgot password". Rows from before this was recorded are
+    # treated as owner-issued: the stricter checks apply to them.
+    by_owner: bool = True
 
     @property
     def spent(self) -> bool:
@@ -1900,6 +1937,7 @@ class ResetToken:
             "issued_at": iso(self.issued_at),
             "expires_at": iso(self.expires_at),
             "used_at": iso(self.used_at),
+            "by_owner": self.by_owner,
         }
 
     @classmethod
@@ -1911,6 +1949,7 @@ class ResetToken:
             issued_at=_parse(row["issued_at"]),
             expires_at=_parse(row["expires_at"]),
             used_at=_parse(row.get("used_at")),
+            by_owner=bool(row.get("by_owner", True)),
         )
 
 
@@ -2312,6 +2351,9 @@ class Expense:
         return row
 
 
+SENSITIVE_BODY_REMOVED = "[Removed once handled: this message held a one-time link.]"
+
+
 @dataclass
 class MailMessage:
     """One outbound email, and what became of it.
@@ -2340,6 +2382,10 @@ class MailMessage:
     detail: str = ""
     sent_at: Optional[datetime] = None
     tenant_id: Optional[str] = None
+    # The body holds something that works on its own, such as a password
+    # reset link. It is kept only until the message has gone (or never
+    # will), then replaced, so the mail log is not a drawer of live links.
+    sensitive: bool = False
 
     def age_hours(self, now: Optional[datetime] = None) -> float:
         now = now or utc_now()
@@ -2359,6 +2405,7 @@ class MailMessage:
             "detail": self.detail,
             "sent_at": iso(self.sent_at) if self.sent_at else None,
             "tenant_id": self.tenant_id,
+            "sensitive": self.sensitive,
         }
 
     @classmethod
@@ -2376,6 +2423,7 @@ class MailMessage:
             detail=row.get("detail", ""),
             sent_at=_parse(row["sent_at"]) if row.get("sent_at") else None,
             tenant_id=row.get("tenant_id"),
+            sensitive=bool(row.get("sensitive", False)),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -2577,7 +2625,9 @@ class HubStore:
             for row in self._db.all("partner"):
                 partner = Partner.from_row(row)
                 self._partners[partner.partner_id] = partner
-                self._partner_keys[partner.api_key] = partner.partner_id
+                self._partner_keys[partner.key_hash] = partner.partner_id
+                if "api_key" in row:
+                    self._db.put("partner", partner.partner_id, partner.to_row())
 
             for row in self._db.all("webhook"):
                 hook = AlertWebhook.from_row(row)
@@ -3471,6 +3521,7 @@ class HubStore:
         full_name: str,
         role: str,
         password: str,
+        password_from_owner: bool = False,
     ) -> User:
         with self._lock:
             user = User(
@@ -3481,6 +3532,7 @@ class HubStore:
                 role=role,
                 password_hash=hash_password(password),
                 created_at=utc_now(),
+                password_from_owner=password_from_owner,
             )
             self._users[user.user_id] = user
             self._emails[user.email] = user.user_id
@@ -3589,11 +3641,29 @@ class HubStore:
             self._db.put("user", user.user_id, user.to_row())
             return user
 
-    def set_user_password(self, user: User, password: str) -> User:
+    def set_user_password(self, user: User, password: str, from_owner: bool = False) -> User:
+        """Set a sign-in's password. Every reset still outstanding for the
+        person stops working: it was issued for the password just replaced."""
         with self._lock:
             user.password_hash = hash_password(password)
+            user.password_from_owner = from_owner
             self._db.put("user", user.user_id, user.to_row())
+            self._cancel_resets({r.user_id for r in self.logins_of(user)})
             return user
+
+    def _cancel_resets(self, user_ids) -> None:
+        for digest in [d for d, r in self._resets.items() if r.user_id in user_ids]:
+            self._resets.pop(digest, None)
+            self._db.delete("reset", digest)
+
+    def revoke_sessions_of(self, user: User, keep: Optional[str] = None) -> int:
+        """Sign the person out everywhere, in every business, except `keep`."""
+        with self._lock:
+            records = {r.user_id for r in self.logins_of(user)}
+            doomed = [t for t, sess in self._sessions.items() if sess.user_id in records and t != keep]
+            for tok in doomed:
+                self.revoke_session(tok)
+            return len(doomed)
 
     def start_session(self, user: User, not_after: Optional[datetime] = None) -> LoginSession:
         """A new session. `not_after` caps it, for a switch between businesses."""
@@ -3906,6 +3976,13 @@ class HubStore:
     ) -> VaultAnchor:
         """Record the chain head handed out in an attestation."""
         with self._lock:
+            # The same head over the same run is already on record: asking
+            # twice in a quiet minute should not write a second row.
+            for existing in self.anchors_for_sensor(sensor_id)[:1]:
+                if (existing.tenant_id, existing.chain_head, existing.readings,
+                        existing.period_start, existing.period_end) == (
+                        tenant_id, chain_head, readings, period_start, period_end):
+                    return existing
             anchor = VaultAnchor(
                 anchor_id=self._next_id("ANC"),
                 tenant_id=tenant_id,
@@ -4178,12 +4255,12 @@ class HubStore:
                 company_name=company_name,
                 contact_name=contact_name,
                 contact_email=contact_email,
-                api_key=f"clx_ptr_{secrets.token_urlsafe(30)}",
                 commission_percent=commission_percent,
                 created_at=utc_now(),
             )
+            partner.set_key(f"clx_ptr_{secrets.token_urlsafe(30)}")
             self._partners[partner.partner_id] = partner
-            self._partner_keys[partner.api_key] = partner.partner_id
+            self._partner_keys[partner.key_hash] = partner.partner_id
             self._db.put("partner", partner.partner_id, partner.to_row())
             return partner
 
@@ -4192,9 +4269,20 @@ class HubStore:
             return self._partners.get(partner_id)
 
     def partner_by_key(self, api_key: str) -> Optional[Partner]:
+        if not api_key:
+            return None
         with self._lock:
-            partner_id = self._partner_keys.get(api_key or "")
+            partner_id = self._partner_keys.get(hash_secret(api_key))
             return self._partners.get(partner_id) if partner_id else None
+
+    def rotate_partner_key(self, partner: Partner) -> str:
+        """A new key for a partner. The old one stops working at once."""
+        with self._lock:
+            self._partner_keys.pop(partner.key_hash, None)
+            partner.set_key(f"clx_ptr_{secrets.token_urlsafe(30)}")
+            self._partner_keys[partner.key_hash] = partner.partner_id
+            self._db.put("partner", partner.partner_id, partner.to_row())
+            return partner.api_key
 
     def list_partners(self) -> List[Partner]:
         with self._lock:
@@ -4410,7 +4498,7 @@ class HubStore:
             self._db.delete("join_code", digest)
             return code
 
-    def issue_reset(self, user: User, ttl_hours: int = 24) -> str:
+    def issue_reset(self, user: User, ttl_hours: int = 24, by_owner: bool = False) -> str:
         """Create a reset and return the plaintext token, once."""
         with self._lock:
             token = f"clr_{secrets.token_urlsafe(32)}"
@@ -4421,6 +4509,7 @@ class HubStore:
                 tenant_id=user.tenant_id,
                 issued_at=now,
                 expires_at=now + timedelta(hours=ttl_hours),
+                by_owner=by_owner,
             )
             self._resets[reset.token_hash] = reset
             self._db.put("reset", reset.token_hash, reset.to_row())
@@ -4437,20 +4526,29 @@ class HubStore:
             user = self._users.get(reset.user_id)
             if user is None or not self.open_logins_of(user):
                 return None
+            if reset.by_owner and (
+                user.linked_to is not None
+                or user.tenant_id != reset.tenant_id
+                or len(self.logins_of(user)) > 1
+            ):
+                # The owner was allowed to issue this because the sign-in
+                # belonged to their business alone. Since then the person has
+                # joined or started another, so the password is no longer
+                # that owner's to set: the same check as at issue, made again
+                # at the moment it matters.
+                self._resets.pop(digest, None)
+                self._db.delete("reset", digest)
+                return None
 
-            self.set_user_password(user, new_password)
+            # Whoever holds an owner-issued token may be the owner, so the
+            # password it sets counts as one the owner knows.
             reset.used_at = utc_now()
-            self._resets.pop(digest, None)
-            self._db.delete("reset", digest)
+            self.set_user_password(user, new_password, from_owner=reset.by_owner)
 
             # A reset means the old sessions should not outlive it, in any of
             # the person's businesses: a stolen session in one used to stay
             # live, and could switch into the others.
-            records = {r.user_id for r in self.logins_of(user)}
-            for tok in [
-                s for s, sess in self._sessions.items() if sess.user_id in records
-            ]:
-                self.revoke_session(tok)
+            self.revoke_sessions_of(user)
             return user
 
     # ---- enterprise contracts -------------------------------------------
@@ -4760,6 +4858,7 @@ class HubStore:
         body: str,
         klass: str,
         tenant_id: Optional[str] = None,
+        sensitive: bool = False,
     ) -> Optional[MailMessage]:
         """Reserve the right to send this exact message, once.
 
@@ -4785,6 +4884,7 @@ class HubStore:
                 klass=klass,
                 created_at=utc_now(),
                 tenant_id=tenant_id,
+                sensitive=sensitive,
             )
             self._mail[message.message_id] = message
             self._mail_keys[dedupe_key] = message.message_id
@@ -4806,12 +4906,30 @@ class HubStore:
             live.detail = detail
             if status == "sent":
                 live.sent_at = utc_now()
+            if live.sensitive and status in ("sent", "failed"):
+                live.body = SENSITIVE_BODY_REMOVED
+                message.body = live.body
             self._db.put("mail", live.message_id, live.to_row())
             message.attempts = live.attempts
             message.status = live.status
             message.detail = live.detail
             message.sent_at = live.sent_at
             return live
+
+    def scrub_stale_sensitive_mail(self, now: Optional[datetime] = None) -> int:
+        """Blank the body of a sensitive message that will never be sent."""
+        now = now or utc_now()
+        scrubbed = 0
+        with self._lock:
+            for m in self._mail.values():
+                if m.sensitive and m.body != SENSITIVE_BODY_REMOVED and (
+                    m.status != "queued" or m.attempts >= MAIL_MAX_ATTEMPTS
+                    or m.age_hours(now) > MAIL_MAX_AGE_HOURS
+                ):
+                    m.body = SENSITIVE_BODY_REMOVED
+                    self._db.put("mail", m.message_id, m.to_row())
+                    scrubbed += 1
+        return scrubbed
 
     def pending_mail(self, now: Optional[datetime] = None) -> List[MailMessage]:
         """Messages still worth another attempt, oldest first.

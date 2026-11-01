@@ -17,14 +17,15 @@ Endpoints that record who did something require the person.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from store import ROLES, STORE, LoginSession, Tenant, User, verify_password
+from store import ROLES, STORE, LoginSession, Tenant, User, hash_secret, verify_password
 
 logger = logging.getLogger("cyberlogix.accounts")
 
@@ -35,17 +36,36 @@ MIN_PASSWORD_LENGTH = 10
 # Login throttling. A shared in-process window is enough for a single
 # instance and costs nothing; a distributed deployment would move this to
 # the same store the sessions live in.
+#
+# Failures are counted three ways. Per address *and* caller is the tight
+# one: it stops guessing one person's password, but only for whoever is
+# guessing. Counting per address alone (as this used to) let anybody lock
+# the real owner out for as long as they liked by typing a wrong password
+# eight times every five minutes. Per caller catches one machine trying a
+# common password against many addresses, and a looser per-address count
+# still caps guessing spread across many machines.
 MAX_LOGIN_ATTEMPTS = 8
+MAX_LOGIN_ATTEMPTS_PER_CALLER = 30
+MAX_LOGIN_ATTEMPTS_PER_ADDRESS = 50
 LOGIN_WINDOW_SECONDS = 300
 _login_attempts: Dict[str, List[float]] = defaultdict(list)
+_login_lock = threading.Lock()
 
 
-def _throttle(key: str) -> None:
+def _login_keys(email: str, caller: str) -> Dict[str, int]:
+    return {
+        f"pair:{email}|{caller}": MAX_LOGIN_ATTEMPTS,
+        f"caller:{caller}": MAX_LOGIN_ATTEMPTS_PER_CALLER,
+        f"address:{email}": MAX_LOGIN_ATTEMPTS_PER_ADDRESS,
+    }
+
+
+def _throttle(key: str, limit: int = MAX_LOGIN_ATTEMPTS) -> None:
     """Reject a caller that has failed too often in the recent window."""
     now = time.monotonic()
     recent = [t for t in _login_attempts[key] if now - t < LOGIN_WINDOW_SECONDS]
     _login_attempts[key] = recent
-    if len(recent) >= MAX_LOGIN_ATTEMPTS:
+    if len(recent) >= limit:
         oldest = min(recent)
         wait = int(LOGIN_WINDOW_SECONDS - (now - oldest)) + 1
         raise HTTPException(
@@ -111,7 +131,10 @@ def require_session(
             detail="Missing bearer token. Sign in at /api/accounts/login.",
         )
 
-    session = STORE.session_by_token(authorization.split(None, 1)[1].strip())
+    from auth import _bearer
+
+    token = _bearer(authorization)
+    session = STORE.session_by_token(token) if token else None
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -239,10 +262,20 @@ def bootstrap_owner(payload: UserCreate, tenant: Tenant = Depends(require_tenant
 
 
 @router.post("/login")
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, request: Request):
     """Exchange an email and password for a bearer session token."""
-    throttle_key = str(payload.email).strip().lower()
-    _throttle(throttle_key)
+    import signup
+
+    address = str(payload.email).strip().lower()
+    keys = _login_keys(address, signup.caller_key(request))
+    # Every key is recorded before the password is checked, and handed back
+    # on success. Checking first and recording after would let a burst of
+    # parallel guesses all read the same count and all get through.
+    with _login_lock:
+        for key, limit in keys.items():
+            _throttle(key, limit)
+        for key in keys:
+            _record_failure(key)
 
     user = STORE.user_by_email(str(payload.email))
 
@@ -254,14 +287,20 @@ def login(payload: LoginRequest):
     # Removed from every business they had: nothing left to sign in to. The
     # same answer as a wrong password, so it says nothing about the account.
     if user is None or not correct or not STORE.open_logins_of(user):
-        _record_failure(throttle_key)
         logger.warning("Failed login for %s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is incorrect.",
         )
 
-    _clear_failures(throttle_key)
+    # Right password: this attempt was not a failure, and the pair starts
+    # over. The wider counts keep their history, so somebody who knows one
+    # password cannot use it to wipe the record of guesses at others.
+    with _login_lock:
+        for key in keys:
+            if _login_attempts.get(key):
+                _login_attempts[key].pop()
+        _clear_failures(f"pair:{address}|{signup.caller_key(request)}")
 
     # Signing in survives a lapse. Somebody whose trial ended has to be
     # able to get in and buy something; locking them out is how a finished
@@ -318,9 +357,14 @@ def whoami(user: User = Depends(require_operator)):
 
 @router.post("/me/password")
 def change_password(
-    payload: PasswordChange, user: User = Depends(require_operator)
+    payload: PasswordChange,
+    user: User = Depends(require_operator),
+    session: LoginSession = Depends(require_session),
 ):
-    """Rotate your own password, invalidating other sessions is not implied."""
+    """Change your own password. Every other session, in every business, is
+    signed out, and any reset link still outstanding stops working: somebody
+    changing a password they think is known to someone else wants exactly
+    that, and a session left open elsewhere would defeat it."""
     # One password per person, whichever of their businesses is open.
     person = STORE.person_of(user)
     if not verify_password(payload.current_password, person.password_hash):
@@ -329,8 +373,12 @@ def change_password(
             detail="Current password is incorrect.",
         )
     STORE.set_user_password(person, payload.new_password)
+    signed_out = STORE.revoke_sessions_of(person, keep=session.token)
     audit(user, "account.password_changed", "Changed their own password.")
-    return {"message": "Password updated."}
+    return {
+        "message": "Password updated. Every other session was signed out.",
+        "other_sessions_signed_out": signed_out,
+    }
 
 
 @router.get("/users")
@@ -369,6 +417,9 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
         full_name=payload.full_name,
         role=role,
         password=payload.password,
+        # The owner chose it, so the owner knows it: the person is asked to
+        # set their own, and cannot join other businesses until they do.
+        password_from_owner=True,
     )
     audit(owner, "account.invited", f"Added {created.email} as {role}.")
     return created.public()
@@ -450,7 +501,7 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
             ),
         )
 
-    token = STORE.issue_reset(target)
+    token = STORE.issue_reset(target, by_owner=True)
     audit(owner, "account.reset_issued", f"Issued a password reset for {target.email}.")
     return {
         "reset_token": token,
@@ -570,9 +621,13 @@ def _send_reset(address: str) -> None:
         ),
         # The token is in the key, so asking three times produces three
         # different links rather than one email and two silences.
-        dedupe_key=f"reset:{token[:16]}",
+        # Its hash, not a slice of it: the key is kept long after the link
+        # is used.
+        dedupe_key=f"reset:{hash_secret(token)[:16]}",
         klass="transactional",
         tenant_id=user.tenant_id,
+        # The stored copy loses the link once it has been sent.
+        sensitive=True,
     )
     STORE.record_audit(
         tenant_id=user.tenant_id,

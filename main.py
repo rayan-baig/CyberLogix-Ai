@@ -312,7 +312,9 @@ async def unhandled_error_handler(request: Request, exc: Exception):
 
     row = faults.record(
         f"{request.method} {request.url.path}", exc,
-        context=f"query={dict(request.query_params)}",
+        # Parameter names and lengths, not values: some routes take a key in
+        # the query (?k= on the bridge), and the fault list is kept for good.
+        context="query=" + str({k: f"<{len(v)} chars>" for k, v in request.query_params.items()}),
     )
     return JSONResponse(
         status_code=500,
