@@ -93,6 +93,11 @@ MAX_RESPONSE_BYTES = 2_000_000
 
 # Consecutive failures before the console calls a source broken rather
 # than merely quiet. Two is a blip; five is a Tuesday that is not ending.
+# At that point the source also stops being asked, and the owner is told:
+# asking a vendor every ten minutes, all night, with a credential it has
+# stopped accepting is how the vendor ends up locking the account, and
+# a source that fails in silence is a freezer nobody is watching. "Try
+# now" in the console asks again, and one success starts it up again.
 FAILURES_BEFORE_BROKEN = 5
 
 # Outcomes that are the source working. "unchanged" is a vendor answering
@@ -130,6 +135,8 @@ def public(row: Dict[str, Any]) -> Dict[str, Any]:
         "readings_ingested": row.get("readings_ingested", 0),
         "consecutive_failures": failures,
         "broken": failures >= FAILURES_BEFORE_BROKEN,
+        "stopped": bool(row.get("stopped_at")),
+        "stopped_at": row.get("stopped_at"),
         "added_at": row.get("added_at"),
     }
 
@@ -141,7 +148,7 @@ def due(row: Dict[str, Any], now: Optional[datetime] = None) -> bool:
     produces data on the next pass rather than after a wait nobody
     understands.
     """
-    if not row.get("enabled", True):
+    if not row.get("enabled", True) or row.get("stopped_at"):
         return False
     last = row.get("last_polled_at")
     if not last:
@@ -267,7 +274,7 @@ def refuse_a_host_pointing_inward(host: str) -> None:
             "address. This fetches from the public internet only.")
 
 
-def _resolve_to_public(host: str) -> None:
+def _resolve_to_public(host: str) -> Optional[List[str]]:
     """Refuse unless every address this name resolves to is public.
 
     The save-time check reads the URL; this one asks a resolver, and it
@@ -275,10 +282,11 @@ def _resolve_to_public(host: str) -> None:
     in spelling and point at 169.254.169.254 -- which on a cloud host is
     the credentials of the machine this runs on.
 
-    A name that changes answer between this call and the connect is not
-    closed by this. Closing that means connecting to the address checked
-    rather than the name, which costs the certificate check; refusing
-    redirects and re-checking every fetch is where that trade is drawn.
+    Returns the addresses it checked, and the connection is made to one
+    of those, never to the name again (see `_connect_checked`). A name
+    that answers with a public address for this check and a private one
+    a moment later, for the connect -- DNS rebinding -- therefore gets
+    nowhere: the second answer is never asked for.
     """
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
@@ -286,12 +294,39 @@ def _resolve_to_public(host: str) -> None:
         raise ValueError(f"'{host}' does not resolve to anything.") from exc
     if not infos:
         raise ValueError(f"'{host}' does not resolve to anything.")
+    checked: List[str] = []
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if not _reaches_the_public_internet(ip):
             raise ValueError(
                 f"'{host}' resolves to {ip}, which is inside a private "
                 "network. This fetches from the public internet only.")
+        if str(ip) not in checked:
+            checked.append(str(ip))
+    return checked
+
+
+def _connect_checked(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                     source_address=None):
+    """Open the socket to an address that was checked, not to the name.
+
+    Takes the place of `socket.create_connection` inside the HTTP(S)
+    connection, so the name is resolved once, here, every address it gave
+    is checked, and the socket goes to one of those. TLS still verifies
+    the certificate against the name: http.client wraps this socket with
+    the hostname, not the address.
+    """
+    host, port = address
+    checked = _resolve_to_public(host)
+    if checked is None:  # the checks have been switched off (tests only)
+        return socket.create_connection(address, timeout, source_address)
+    last: Optional[OSError] = None
+    for ip in checked:
+        try:
+            return socket.create_connection((ip, port), timeout, source_address)
+        except OSError as exc:
+            last = exc
+    raise last or OSError(f"Could not connect to '{host}'.")
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -321,7 +356,15 @@ _deadline = threading.local()
 
 
 class _Tracked:
-    """Remembers each socket a fetch opens, so a timer can close it."""
+    """Remembers each socket a fetch opens, so a timer can close it.
+
+    And opens it with `_connect_checked`, so it reaches only an address
+    the checks have passed.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect_checked
 
     def connect(self):
         super().connect()
@@ -348,7 +391,11 @@ class _DeadlineHTTP(urllib.request.HTTPHandler):
         return self.do_open(_TrackedHTTP, req)
 
 
-_OPENER = urllib.request.build_opener(_RefuseRedirects, _DeadlineHTTPS, _DeadlineHTTP)
+# No proxy, whatever the environment says. A proxy resolves the name
+# itself, so every address check here would be about a connection that
+# is never made.
+_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _RefuseRedirects, _DeadlineHTTPS, _DeadlineHTTP)
 
 
 def _fetch(url: str, headers: Dict[str, str]) -> Any:
@@ -446,11 +493,15 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
     else:
         try:
             payload = _fetch(row["url"], row.get("headers") or {})
-            # Removed while the fetch was out: its readings are not wanted.
-            if STORE._db.get(SOURCE_KIND, row["source_id"]) is None:
-                outcome["detail"] = "The source was removed while it was being fetched."
-                return outcome
-            outcome.update(_ingest(tenant, row, payload))
+            # Checked and ingested under the source's own lock, which
+            # removal takes too: a source removed while its fetch was out
+            # writes nothing, and once removal has returned nothing it
+            # fetched can be written afterwards.
+            with _source_lock(row["source_id"]):
+                if STORE._db.get(SOURCE_KIND, row["source_id"]) is None:
+                    outcome["detail"] = "The source was removed while it was being fetched."
+                    return outcome
+                outcome.update(_ingest(tenant, row, payload))
         except urllib.error.HTTPError as exc:
             outcome["detail"] = f"The vendor answered {exc.code}."
         except urllib.error.URLError as exc:
@@ -472,24 +523,67 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
 
     observed = outcome.pop("observed", None) or {}
     failed = outcome["status"] not in OK_STATUSES
+    stopped_now: Optional[Dict[str, Any]] = None
     with STORE._lock:
         # The row as it is now, not as it was when the fetch began: writing
         # the old copy back brought a source the owner had just removed back
         # to life, credential and all, and undid any edit made meanwhile.
         current = STORE._db.get(SOURCE_KIND, row["source_id"])
         if current is not None:
-            STORE._db.put(SOURCE_KIND, row["source_id"], {
+            failures = current.get("consecutive_failures", 0) + 1 if failed else 0
+            stopped_at = current.get("stopped_at") if failed else None
+            if failures >= FAILURES_BEFORE_BROKEN and not stopped_at:
+                stopped_at = iso(now)
+            updated = {
                 **current,
                 "last_polled_at": iso(now),
                 "last_status": outcome["status"],
                 "last_detail": outcome["detail"],
                 "readings_ingested": current.get("readings_ingested", 0)
                                      + outcome["ingested"],
-                "consecutive_failures": (current.get("consecutive_failures", 0) + 1
-                                         if failed else 0),
+                "consecutive_failures": failures,
+                "stopped_at": stopped_at,
                 "last_observed": {**(current.get("last_observed") or {}), **observed},
-            })
+            }
+            STORE._db.put(SOURCE_KIND, row["source_id"], updated)
+            if stopped_at and not current.get("stopped_at"):
+                stopped_now = updated
+    if stopped_now is not None and tenant is not None:
+        _tell_the_owner_it_stopped(tenant, stopped_now)
     return outcome
+
+
+def _tell_the_owner_it_stopped(tenant: Tenant, row: Dict[str, Any]) -> None:
+    """Write it down and email the account, once per stop. Never raises."""
+    try:
+        detail = (row.get("last_detail") or "").strip() or "no reason was given"
+        write_audit(
+            tenant, None, "poller.stopped",
+            f"{row['name']}: stopped after {row['consecutive_failures']} failures "
+            f"in a row. Last: {detail}",
+            fallback_actor="Vendor polling",
+        )
+        import mail
+
+        mail.send(
+            to_address=tenant.contact_email,
+            subject=f"{tenant.company_name}: we have stopped fetching from {row['name']}",
+            body=(
+                f"We could not get readings from {row['name']} "
+                f"{row['consecutive_failures']} times in a row, so we have "
+                "stopped asking it.\n\n"
+                f"The last answer was: {detail}\n\n"
+                "Until this is fixed, nothing from the sensors behind it is "
+                "arriving, and nobody will be alerted about them. That is "
+                "usually an expired password or API token at the vendor.\n\n"
+                "Fix it, then open the console and press Try now on this "
+                "source. One good answer starts it again."
+            ),
+            dedupe_key=f"poller-stopped:{row['source_id']}:{row['stopped_at']}",
+            tenant_id=tenant.tenant_id,
+        )
+    except Exception:  # noqa: BLE001 - telling the owner must not stop the pass
+        logger.exception("Could not tell the owner that %s stopped.", row.get("source_id"))
 
 
 _MS_DATE = re.compile(r"/Date\((-?\d+)")
@@ -621,6 +715,15 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
 _in_flight: set = set()
 _in_flight_lock = threading.Lock()
 
+# One lock per source, held while a fetched answer is written and while the
+# source is removed. See poll_once.
+_source_locks: Dict[str, threading.Lock] = {}
+
+
+def _source_lock(source_id: str) -> threading.Lock:
+    with _in_flight_lock:
+        return _source_locks.setdefault(source_id, threading.Lock())
+
 
 def _poll_and_release(row: Dict[str, Any], now: datetime) -> Dict[str, Any]:
     try:
@@ -740,7 +843,8 @@ def list_sources(tenant: Tenant = Depends(require_tenant)):
         "broken": len(broken),
         "note": (
             f"{len(broken)} source(s) have failed {FAILURES_BEFORE_BROKEN} "
-            "times in a row. Nothing is arriving from them."
+            "times in a row. Nothing is arriving from them, and they are no "
+            "longer being asked: fix the credential, then press Try now."
             if broken else
             "Some sensors only talk to their own vendor's cloud. Point us "
             "at that cloud's API and we fetch from it on a timer."
@@ -830,6 +934,11 @@ def remove_source(
     if row is None or row.get("tenant_id") != tenant.tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No such source on this account.")
-    STORE._db.delete(SOURCE_KIND, source_id)
+    # Waits for an answer being written right now, so that once this has
+    # returned nothing this source fetched is ever written again.
+    with _source_lock(source_id):
+        STORE._db.delete(SOURCE_KIND, source_id)
+    with _in_flight_lock:
+        _source_locks.pop(source_id, None)
     write_audit(tenant, operator, "poller.removed", row["name"])
     return None
