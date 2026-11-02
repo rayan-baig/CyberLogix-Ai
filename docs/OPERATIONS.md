@@ -28,7 +28,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
-| `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizon` | Issuer name on invoices and in the agreements: MTRX Horizon's registered name |
+| `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizyn` | Issuer name on invoices and in the agreements: MTRX Horizyn's registered name |
 | `CYBERLOGIX_ADDRESS` | — | Issuer address on invoices |
 | `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
 | `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |
@@ -243,8 +243,8 @@ Things this repository does not do for you, in the order they will bite:
   on the same disk; copying them somewhere else is yours to arrange
   ([DEPLOY.md](../DEPLOY.md) section 7).
 - **The company is not incorporated yet.** CyberLogix is a product of MTRX
-  Horizon, so `CYBERLOGIX_LEGAL_NAME` and the other issuer fields are MTRX
-  Horizon's registered details; they go on every invoice, and an invoice
+  Horizyn, so `CYBERLOGIX_LEGAL_NAME` and the other issuer fields are MTRX
+  Horizyn's registered details; they go on every invoice, and an invoice
   from an entity that cannot receive money is not a document anyone can
   pay.
 - **The agreements have not been read by a lawyer.** They are generated

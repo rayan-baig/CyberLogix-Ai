@@ -59,8 +59,8 @@ the only step with a lead time measured in days — DNS propagates slowly
 and mail reputation builds slowly. Done on the last day, invoices land
 in spam for a fortnight.
 
-**CyberLogix has no domain of its own.** It is a product of MTRX Horizon,
-and MTRX Horizon owns the one domain: its own site on the apex (and
+**CyberLogix has no domain of its own.** It is a product of MTRX Horizyn,
+and MTRX Horizyn owns the one domain: its own site on the apex (and
 `www`), each product on a subdomain. CyberLogix lives at
 `cyberlogix.<your domain>`, beside `rankup.<your domain>` and
 `omniarmor.<your domain>`. Below, `example.com` stands for that domain.
@@ -90,14 +90,14 @@ lets no other site (siblings included) call its API from a browser.
    Leave `CYBERLOGIX_ALLOWED_ORIGINS` unset unless a page on another
    origin genuinely has to call this API; then name that exact origin.
    Never `*`, and never the parent domain or a sibling as a convenience.
-5. **MTRX Horizon.** In MTRX Horizon's settings, CyberLogix's address is
+5. **MTRX Horizyn.** In MTRX Horizyn's settings, CyberLogix's address is
    `https://cyberlogix.example.com` and its stats address is
-   `https://cyberlogix.example.com/api/stats` (MTRX Horizon's README names
+   `https://cyberlogix.example.com/api/stats` (MTRX Horizyn's README names
    the two settings; `STATS_KEY` here matches its `MTRX_STATS_KEY`).
 
 ### Mail, from the one domain
 
-Every MTRX Horizon product sends mail as the one domain, so the mail
+Every MTRX Horizyn product sends mail as the one domain, so the mail
 records are set up once, on the parent domain, by whoever runs it — not
 once per app. Your mail provider gives you the exact values:
 
@@ -114,7 +114,7 @@ customer (and a spam filter) can tell the products apart:
 needs to be verified with the mail provider too (it adds its DKIM record
 there), and is covered by the parent's DMARC policy. Keep
 `MAIL_FROM_NAME=CyberLogix AI`; every message already says in its footer
-that CyberLogix is a product of MTRX Horizon.
+that CyberLogix is a product of MTRX Horizyn.
 
 Without all three records, `MAIL_FROM` is an address the receiving server
 has no reason to trust, and the collections ladder in `mail.py` will run
@@ -362,9 +362,9 @@ traceback and a count, instead of as a customer asking why.
 - **The invoice says who is asking.** `CYBERLOGIX_LEGAL_NAME`,
   `CYBERLOGIX_ADDRESS`, `CYBERLOGIX_TAX_ID`, `CYBERLOGIX_REMIT_TO`.
   These are the entity's details, not the software's. CyberLogix is a
-  product of MTRX Horizon, so they are MTRX Horizon's: set
+  product of MTRX Horizyn, so they are MTRX Horizyn's: set
   `CYBERLOGIX_LEGAL_NAME` to its registered name exactly as registered
-  (unset, invoices and the agreements say "MTRX Horizon").
+  (unset, invoices and the agreements say "MTRX Horizyn").
 - **`STRIPE_WEBHOOK_SECRET`**, if you take cards. Unset, the webhook
   refuses everything — which is correct, because an unsigned payment
   webhook that trusts its body is a button for marking every invoice in

@@ -82,7 +82,7 @@ services:
         value: "1"
 
       # Paste the service's own https address here after the first
-      # deploy -- https://cyberlogix.<MTRX Horizon's domain> once the
+      # deploy -- https://cyberlogix.<MTRX Horizyn's domain> once the
       # custom domain is added (DEPLOY.md section 1) -- then redeploy. Until it is set a voice call still goes
       # out and pressing 1 reaches nothing, so the alert escalates to the
       # next person as though it had been ignored.
@@ -113,12 +113,12 @@ services:
 
       # Leave unset: every page is served from the app's own origin, and
       # unset lets no other site call the API from a browser -- not even
-      # MTRX Horizon's other products on sibling subdomains. Name an exact
+      # MTRX Horizyn's other products on sibling subdomains. Name an exact
       # origin only if a page elsewhere truly needs it. Never *.
       - key: CYBERLOGIX_ALLOWED_ORIGINS
         sync: false
 
-      # Optional: the same value as MTRX Horizon's MTRX_STATS_KEY, so the
+      # Optional: the same value as MTRX Horizyn's MTRX_STATS_KEY, so the
       # owner's console can show user counts. Unset, /api/stats does not exist.
       - key: STATS_KEY
         sync: false

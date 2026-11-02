@@ -1,13 +1,13 @@
 # CyberLogix AI — Master Enterprise Hub
 
-CyberLogix is a product of MTRX Horizon. It watches the temperature of
+CyberLogix is a product of MTRX Horizyn. It watches the temperature of
 things that must not get warm — walk-in freezers, server racks, vaccine
 fridges, wine cellars, engine bays — and makes sure a person finds out
 in minutes, not hours.
 
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
-In production it runs on its own subdomain of MTRX Horizon's domain,
+In production it runs on its own subdomain of MTRX Horizyn's domain,
 `cyberlogix.<your domain>`, beside the company's other products;
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
 

@@ -1,4 +1,4 @@
-"""User counts for the owner's MTRX Horizon console: counts only, behind a key."""
+"""User counts for the owner's MTRX Horizyn console: counts only, behind a key."""
 
 
 def test_off_unless_a_key_is_set(api, monkeypatch):

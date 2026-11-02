@@ -115,8 +115,8 @@ app = FastAPI(
 # none. The console, the sign-up, proof and legal pages are all served from
 # this same origin, which needs no CORS at all, so nothing is lost.
 #
-# CyberLogix runs on a subdomain of MTRX Horizon's domain, beside the other
-# MTRX Horizon products on their own subdomains. A wildcard default would
+# CyberLogix runs on a subdomain of MTRX Horizyn's domain, beside the other
+# MTRX Horizyn products on their own subdomains. A wildcard default would
 # let any of those siblings -- and every other site -- read what this API
 # answers. Each subdomain is its own origin on purpose; keep it that way.
 _ALLOWED_ORIGINS = [
@@ -760,7 +760,7 @@ def root_gateway():
 
 @app.get("/api/stats", include_in_schema=False)
 def usage_stats(request: Request):
-    """User counts for the owner's MTRX Horizon console, and nothing else.
+    """User counts for the owner's MTRX Horizyn console, and nothing else.
 
     Off unless STATS_KEY is set (the same value as the console's
     MTRX_STATS_KEY), and answered only to that key.

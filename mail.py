@@ -281,7 +281,7 @@ def _footer(address: str, klass: str) -> str:
             "marketing preferences."
         )
     # Who is writing. The product's name is on the From line; the company
-    # behind it is MTRX Horizon, the same one the agreements are with.
+    # behind it is MTRX Horizyn, the same one the agreements are with.
     parts.append(f"CyberLogix is a product of {COMPANY}.")
     return "\n".join(parts)
 

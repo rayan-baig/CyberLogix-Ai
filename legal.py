@@ -69,9 +69,10 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # still being promised here.
 # 2.1 says how long the text of sent mail is kept (400 days) and that a
 # deletion is redone after a backup is restored.
-# 2.2 names who "we" are: CyberLogix is a product of MTRX Horizon, and the
-# agreements are with MTRX Horizon.
-TERMS_VERSION = "2.2"
+# 2.2 names who "we" are: CyberLogix is a product of MTRX Horizyn, and the
+# agreements are with MTRX Horizyn.
+# 2.3 spells the company MTRX Horizyn, as it is now named, in place of the earlier spelling.
+TERMS_VERSION = "2.3"
 EFFECTIVE_DATE = "2026-11-02"
 
 # The cap on what we can owe. Without one, a single claim about a lost

@@ -420,7 +420,7 @@ def test_an_invoice_names_who_is_asking_to_be_paid(
     """A finance department cannot pay a document with no issuer on it."""
     import invoicing
 
-    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "MTRX Horizon LLC")
+    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "MTRX Horizyn LLC")
     monkeypatch.setitem(invoicing.ISSUER, "address", "1 Harbor Way, Boca Raton FL")
     monkeypatch.setitem(invoicing.ISSUER, "tax_id", "88-1234567")
     monkeypatch.setitem(invoicing.ISSUER, "remit_to", "Chase ****4419")
@@ -429,7 +429,7 @@ def test_an_invoice_names_who_is_asking_to_be_paid(
     invoice = issue(api, headers)
     doc = api.get(f"/api/invoices/{invoice['invoice_id']}", headers=headers).json()
 
-    assert doc["issued_by"]["legal_name"] == "MTRX Horizon LLC"
+    assert doc["issued_by"]["legal_name"] == "MTRX Horizyn LLC"
     assert doc["issued_by"]["tax_id"] == "88-1234567"
     assert "note" not in doc["issued_by"]
 
