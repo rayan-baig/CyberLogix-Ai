@@ -3226,11 +3226,29 @@ class HubStore:
         with self._lock:
             return (device_sn or "").strip() in self._devices
 
-    def remove_sensor(self, sensor_id: str) -> bool:
+    def remove_sensor(self, sensor_id: str) -> List[str]:
+        """Retire a sensor. Returns the ids of incidents closed with it.
+
+        An incident still unresolved when its sensor goes would otherwise
+        stay live for good: the sweep phones somebody about a freezer that
+        is gone, and, because ids are free again once retired, every breach
+        from whatever sensor takes the id next is folded into it, with no
+        text sent. Closed here rather than left, with no acknowledgement
+        recorded, because nobody answered it.
+        """
         with self._lock:
             if sensor_id not in self._sensors:
-                return False
+                return []
             doomed = self._sensors[sensor_id]
+            closed = []
+            for incident in list(self._incidents.values()):
+                if (incident.sensor_id == sensor_id and incident.unresolved
+                        and incident.tenant_id == doomed.tenant_id):
+                    incident.resolved_at = utc_now()
+                    self._save_incident(incident)
+                    # Before the readings go, so the evidence keeps them.
+                    self.preserve_evidence(incident)
+                    closed.append(incident.incident_id)
             if doomed.external_device_sn:
                 self._devices.pop(doomed.external_device_sn, None)
             # The key dies with the sensor. A decommissioned asset whose
@@ -3243,7 +3261,7 @@ class HubStore:
             self._db.delete("sensor", sensor_id)
             if evicted:
                 self._db.delete_many("reading", [r.reading_id for r in evicted])
-            return True
+            return closed
 
     def all_sensors(self) -> List[Sensor]:
         """Every sensor in the fleet, across every tenant."""
@@ -3374,7 +3392,7 @@ class HubStore:
         acquisition and no other caller can land between them.
         """
         with self._lock:
-            existing = self.latest_unresolved_incident(sensor.sensor_id)
+            existing = self.latest_unresolved_incident(sensor.sensor_id, tenant_id)
             if existing is not None:
                 return existing, False
             return (
@@ -3659,7 +3677,9 @@ class HubStore:
             found = [i for i in found if i.tenant_id == tenant_id]
         return sorted(found, key=lambda i: i.opened_at)
 
-    def latest_unresolved_incident(self, sensor_id: str) -> Optional[Incident]:
+    def latest_unresolved_incident(
+        self, sensor_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[Incident]:
         """The incident a fresh breach on this sensor belongs to.
 
         `unresolved`, not `open`. One fault is one incident until somebody
@@ -3668,10 +3688,13 @@ class HubStore:
         quieter, which is the opposite of what the button says.
         """
         with self._lock:
+            # And the same business: sensor ids are free again once retired,
+            # so the id alone can name another company's old incident.
             candidates = [
                 i
                 for i in self._incidents.values()
                 if i.sensor_id == sensor_id and i.unresolved
+                and (tenant_id is None or i.tenant_id == tenant_id)
             ]
         if not candidates:
             return None

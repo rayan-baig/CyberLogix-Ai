@@ -19,10 +19,12 @@ from models import Finite
 
 from accounts import require_role
 from auth import (
+    optional_operator,
     require_entitlement,
     require_role_or_machine,
     require_tenant,
     require_tenant_any_state,
+    write_audit,
 )
 
 # Re-exported: several routers import these from here rather than reaching
@@ -597,6 +599,7 @@ def rotate_business_key(owner: User = Depends(require_role("owner"))):
 def decommission_sensor(
     sensor_id: str,
     tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
     _: object = Depends(require_role_or_machine("operator")),
 ):
     """Release a seat by decommissioning a sensor."""
@@ -613,8 +616,13 @@ def decommission_sensor(
     # registration: taking one thermometer out of a shop that keeps others
     # does not take the shop's price off the bill.
     monthly_before = build_subscription(tenant)["monthly_total_usd"]
-    STORE.remove_sensor(sensor_id)
+    closed = STORE.remove_sensor(sensor_id)
     monthly_after = build_subscription(tenant)["monthly_total_usd"]
+    if closed:
+        write_audit(
+            tenant, operator, "incident.closed",
+            f"{', '.join(closed)} closed because {sensor_id} was retired.",
+        )
     return {
         "message": f"Sensor '{sensor_id}' decommissioned.",
         "seats_used": STORE.seat_count(tenant.tenant_id),

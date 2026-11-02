@@ -265,7 +265,7 @@ def process_reading(
     # gap between these two calls is where a genuinely failing freezer,
     # reporting every few seconds, opened up to eight incidents for one
     # fault and rang the on-call phone eight times.
-    existing = STORE.latest_unresolved_incident(sensor.sensor_id)
+    existing = STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id)
 
     if existing is None:
         sms_text, sms_source = build_emergency_sms(
