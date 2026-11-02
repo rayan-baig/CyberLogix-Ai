@@ -1631,7 +1631,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-813 tests across 53 files. Gemini, Twilio and SMTP are all stubbed and the
+About 1,750 tests across 110 files. Gemini, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
