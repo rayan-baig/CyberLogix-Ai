@@ -256,3 +256,58 @@ def test_the_digest_reports_a_stopped_sweep(monkeypatch):
 
     warnings = operator_digest()["warnings"]
     assert any("escalation has stopped" in w for w in warnings)
+
+
+def test_a_sweep_that_hangs_is_noticed_within_the_window(api, monkeypatch):
+    """Not dead, stuck: the loop is alive and awaiting a pass that never ends.
+
+    A telephony call with no timeout, a lock never released. The process
+    answers every request and the task is still "running", so nothing
+    restarts it. It must still go 503, and within the stated window of
+    the last pass that finished, not whenever somebody looks.
+    """
+    import asyncio
+    import threading
+
+    from store import _parse
+
+    release = threading.Event()
+    passes = []
+
+    def one_pass():
+        passes.append(1)
+        if len(passes) == 1:
+            watchdog.record_sweep({"tenants_swept": 0, "failed_tenants": []})
+            return {}
+        release.wait(10)          # the stall
+        return {}
+
+    monkeypatch.setattr(scheduler, "run_one_pass", one_pass)
+    monkeypatch.setattr(watchdog, "ping", lambda: None)
+
+    async def drive():
+        task = asyncio.create_task(scheduler._loop(0.01))
+        while len(passes) < 2:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
+        try:
+            last = _parse(STORE._db.get("meta", "heartbeat")["last_sweep_at"])
+            limit = watchdog.stale_after_seconds()
+            inside = watchdog.state(now=last + timedelta(seconds=limit - 5))
+            past = watchdog.state(now=last + timedelta(seconds=limit + 5))
+        finally:
+            release.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        return inside, past, task
+
+    inside, past, task = asyncio.run(drive())
+
+    assert len(passes) >= 2, "the stall never started"
+    assert inside["healthy"] is True
+    assert past["healthy"] is False
+    assert "escalation has stopped" in past["reasons"][0]
+    assert watchdog.stale_after_seconds() == 240   # three sixty-second sweeps, floored
