@@ -1078,7 +1078,7 @@ fatal: nothing here is really watching anything.
 
 ## Digests
 
-The person who owns this company is at school for six hours of every
+The person who owns this company is away from a screen for most of every
 working day, which makes "open the dashboard" a plan that fails five days
 a week.
 

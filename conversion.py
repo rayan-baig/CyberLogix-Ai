@@ -3,7 +3,7 @@
 The book at `/book` was already able to say *"this trial ends on
 Thursday, call them"*. That is worth having, and it assumes a person who
 opens it on Thursday. A trial that ends over a weekend, or while the one
-person who reads the book is at school, is a customer who evaluated the
+person who reads the book is busy elsewhere, is a customer who evaluated the
 product, found it worked, and then heard nothing at all.
 
 This module is the other half: the trial talks to the customer itself.

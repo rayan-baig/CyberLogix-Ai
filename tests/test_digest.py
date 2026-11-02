@@ -1,6 +1,6 @@
 """The two summaries that arrive without anybody opening a browser.
 
-The person who owns this company is at school for six hours of every
+The person who owns this company is away from a screen for most of every
 working day, which makes "check the dashboard" a plan that fails five
 days a week. The operator digest is the book in an email; the customer
 report is the evidence that the invoice was worth paying.

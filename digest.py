@@ -2,7 +2,7 @@
 
 The book at `/book` and the console both answer the right questions and
 both require somebody to open a browser. The person who owns this company
-is at school for six hours of every working day, which makes "open the
+is away from a screen for most of every working day, which makes "open the
 dashboard" a plan that fails five days a week.
 
 **The operator digest** is the book, once a day, in an email: what was
@@ -168,7 +168,7 @@ def _system_warnings() -> List[str]:
 
 
 def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Everything the person who owns this company needs before school."""
+    """Everything the person who owns this company needs first thing."""
     from contracts import attention_rows
 
     now = now or utc_now()
