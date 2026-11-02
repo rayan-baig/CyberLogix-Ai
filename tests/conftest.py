@@ -35,6 +35,49 @@ import gemini  # noqa: E402
 from main import app  # noqa: E402
 from store import STORE  # noqa: E402
 
+# Every (method, route) a test reaches, for test_every_route_is_tested.
+# Recorded at the edge of the app so it sees exactly what the router
+# matched, whichever client or helper sent the request.
+ROUTES_HIT = set()
+
+
+class _RecordRoutes:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await self.inner(scope, receive, send)
+        finally:
+            route = scope.get("route") if scope.get("type") == "http" else None
+            if route is not None and getattr(route, "path", None):
+                ROUTES_HIT.add((scope["method"], route.path))
+
+
+app.add_middleware(_RecordRoutes)
+
+ROUTE_AUDIT = "test_every_route_is_tested.py"
+WHOLE_SUITE = pytest.StashKey[bool]()
+
+
+def pytest_collection_modifyitems(session, config, items):
+    """The route audit runs last, and only knows anything after a whole run.
+
+    It reads what every other test reached, so it is moved to the end, and
+    it is told whether this run is the whole suite: a run of one file
+    reaches a handful of routes and says nothing about the rest.
+    """
+    audit = [i for i in items if i.path.name == ROUTE_AUDIT]
+    rest = [i for i in items if i.path.name != ROUTE_AUDIT]
+    items[:] = rest + audit
+    on_disk = {p.name for p in Path(__file__).parent.glob("test_*.py")}
+    collected = {i.path.name for i in items}
+    narrowed = bool(config.option.keyword or config.option.markexpr
+                    or getattr(config.option, "deselect", None)
+                    or getattr(config.option, "lf", False))
+    config.stash[WHOLE_SUITE] = collected == on_disk and not narrowed
+
+
 
 @pytest.fixture(autouse=True)
 def clean_store():

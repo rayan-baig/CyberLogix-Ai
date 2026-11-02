@@ -362,6 +362,13 @@ async def security_headers(request: Request, call_next):
         "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
     )
     response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    # A page is checked with the server every time it is opened. Without
+    # this the browser kept /console fresh for a while on its own guess,
+    # so an installed app with no network opened yesterday's console --
+    # a sign-in form and a raw fetch error -- instead of the offline page
+    # the service worker falls back to.
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers.setdefault("Cache-Control", "no-cache")
 
     # HSTS only over HTTPS. Sent on a plain-http response it is either
     # ignored or, worse, honoured by a browser that then cannot reach a

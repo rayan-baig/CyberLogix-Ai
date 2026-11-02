@@ -157,3 +157,65 @@ def test_stale_figures_go_quiet_and_the_banner_does_not():
     assert "opacity: .45" in stale
     # ...and the thing saying they are stale does not.
     assert "#offline-banner" in stale
+
+
+# --- offline means the offline page -----------------------------------
+#
+# Found by driving the installed app in a browser (tools/console_smoke.js):
+# with the network gone, /console came back as a copy of the console --
+# a sign-in form with a fetch error under it -- not the offline page.
+# Two things served it: the worker kept a copy of every page it opened,
+# and the browser kept /console fresh on its own guess.
+
+
+def _navigate_block():
+    start = SW.index('if (request.mode === "navigate")')
+    return SW[start:SW.index("return;", start)]
+
+
+def test_a_page_with_no_network_gets_the_offline_page_not_a_copy():
+    block = _navigate_block()
+
+    assert 'caches.match("/offline")' in block
+    assert "caches.match(request)" not in block, "a stale page as fallback"
+    assert "cache.put" not in block, "pages kept on the device"
+    shell = SW[SW.index("const SHELL = ["):SW.index("];", SW.index("const SHELL = ["))]
+    assert '"/console"' not in shell
+    assert '"/offline"' in shell
+
+
+@pytest.mark.parametrize("path", ["/console", "/today", "/offline", "/", "/signup",
+                                  "/proof/anything"])
+def test_pages_are_checked_with_the_server_every_time(api, path):
+    resp = api.get(path)
+
+    assert resp.status_code == 200
+    assert "no-cache" in resp.headers.get("cache-control", "")
+
+
+def test_a_stylesheet_is_not_made_uncacheable_too(api):
+    """The rule is for pages. The shell's own files stay cacheable."""
+    resp = api.get("/static/theme.css")
+
+    assert "no-cache" not in resp.headers.get("cache-control", "")
+
+
+# --- a server that is down is not hammered ----------------------------
+
+
+def test_the_poll_backs_off_while_the_server_is_down():
+    """Every open console polled a dead server every twenty seconds for as
+    long as it was down. It now doubles the wait after each miss, up to a
+    ceiling, and drops back as soon as one answers."""
+    js = CONSOLE[CONSOLE.index("<script>"):CONSOLE.rindex("</script>")]
+    polling = js[js.index("function startPolling("):]
+    polling = polling[:polling.index("\n}\n")]
+
+    assert "setInterval" not in polling
+    assert "setTimeout(tick, nextPollDelay())" in polling
+    delay = js[js.index("function nextPollDelay("):]
+    delay = delay[:delay.index("\n}\n")]
+    assert "2 ** misses" in delay and "POLL_MAX_MS" in delay
+    # markFresh is what resets the count the delay is worked out from.
+    fresh = js[js.index("function markFresh("):]
+    assert "state.pollFailures = 0" in fresh[:fresh.index("\n}\n")]

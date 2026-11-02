@@ -1631,7 +1631,7 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-813 tests across 53 files. Gemini, Twilio and SMTP are all stubbed and the
+About 1,750 tests across 110 files. Gemini, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
@@ -1666,6 +1666,26 @@ Two money bugs were found this way that no hand-written test reached — a
 voided month disappearing when the contract was renewed, and a failed re-bill
 rewinding a counter it had never advanced, which left the same month queued
 from both ends.
+
+### The console in a real browser
+
+`tools/console_smoke.js` drives the console in headless Chromium at phone
+(390×844) and desktop size: signs a business up through the form, walks every
+tab empty and again with a breach, opens the sensor drawer, and checks that
+nothing shows `undefined`/`NaN`/`null`, the page never scrolls sideways, the
+poll backs off while the server is down, wall mode shows the whole estate and
+none of the account's private details, and an installed app with no network
+gets the offline page. It starts its own server on a throwaway database:
+
+```bash
+npm i playwright && npx playwright install chromium   # once
+PYTHON=.venv/bin/python node tools/console_smoke.js
+# or against a running server, with a screenshot of every step:
+BASE_URL=http://127.0.0.1:8080 SMOKE_SHOTS=/tmp/shots node tools/console_smoke.js
+```
+
+`tests/test_every_route_is_tested.py` fails a whole-suite run if any route
+the app serves is not reached by at least one test.
 
 ### Mutation testing
 

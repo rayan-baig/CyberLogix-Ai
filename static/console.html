@@ -966,7 +966,18 @@ async function api(path, options = {}) {
   }
   const text = await res.text();
   let body = null;
-  try { body = text ? JSON.parse(text) : null; } catch (_) { body = { detail: text }; }
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (_) {
+    // Not ours: a proxy or load balancer answering for a server that is
+    // down or restarting sends a page of HTML, and that page went into
+    // a toast word for word. Short plain text is kept; markup is not.
+    body = { detail: /</.test(text) || text.length > 200
+      ? (res.status >= 500
+          ? `The service did not answer properly (${res.status}). Try again in a minute.`
+          : `Request failed (${res.status}).`)
+      : text };
+  }
 
   if (!res.ok) {
     const err = new Error(readableError(body, res.status));
@@ -1037,9 +1048,14 @@ $("onboard-form").addEventListener("submit", async (event) => {
       }),
     });
 
-    toast("Trial started. Keep your API key for sensors and webhooks.", "ok");
-    console.info("Tenant API key (for hardware and webhooks):", made.api_key);
     await enter(made.token, made.user);
+    // The business key is shown once. It used to go to the browser's
+    // developer console, with a toast telling the owner to keep a key
+    // they had no way to see -- and a key in the console log stays in
+    // the log. It goes where every other new key goes.
+    showIssuedKey("this business (master key)", made.api_key);
+    toast("Trial started. Copy your business key from \"Add a fridge or "
+          + "freezer\" now: it is shown once.", "ok");
   } catch (err) {
     toast(err.message, "err");
   } finally {
@@ -1075,7 +1091,8 @@ async function enter(token, user) {
    the token is already dead and a logout call would only 401 again. */
 function signOutLocally() {
   try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
-  clearInterval(state.timer);
+  clearTimeout(state.timer);
+  state.pollChain = (state.pollChain || 0) + 1;
   state.token = null;
   state.user = null;
   state.data = null;
@@ -1178,11 +1195,30 @@ function markStale(err) {
     + "What is on screen is the last good reading, not the current one.";
 }
 
+/* A server that is down is polled less and less often, not every twenty
+   seconds by every open console at once: twenty, forty, eighty seconds
+   and so on up to five minutes, back to twenty the moment one answers.
+   A chain of timeouts rather than an interval, so one slow answer never
+   has a second request queued up behind it. */
+const POLL_MAX_MS = 5 * 60 * 1000;
+
+function nextPollDelay() {
+  const misses = state.pollFailures || 0;
+  return misses ? Math.min(POLL_MS * 2 ** misses, POLL_MAX_MS) : POLL_MS;
+}
+
 function startPolling() {
-  clearInterval(state.timer);
-  state.timer = setInterval(() => {
-    refresh().then(markFresh).catch(markStale);
-  }, POLL_MS);
+  clearTimeout(state.timer);
+  // A new chain retires the old one, even if the old one has a request
+  // in flight: switching business must not leave two chains polling.
+  const chain = (state.pollChain = (state.pollChain || 0) + 1);
+  const tick = () => {
+    refresh().then(markFresh).catch(markStale).finally(() => {
+      if (chain !== state.pollChain || !state.token) return;
+      state.timer = setTimeout(tick, nextPollDelay());
+    });
+  };
+  state.timer = setTimeout(tick, POLL_MS);
 }
 
 $("pricing-btn").addEventListener("click", async () => {
@@ -1679,6 +1715,8 @@ function animateFigures(root) {
 /* An estate of two hundred freezers is a list nobody can read. Search,
    filter and grouping are what turn it back into something answerable. */
 function visibleSensors(sensors) {
+  // A wall shows every unit: its filters are behind controls it hides.
+  if (state.wall) return sensors;
   const needle = state.search.trim().toLowerCase();
   return sensors.filter((s) => {
     if (needle) {
@@ -1957,9 +1995,24 @@ $("unit-toggle").addEventListener("click", async () => {
 /* A screen in the back office nobody is sitting at. Big numbers, no
    controls, and nothing that can be clicked by a passing elbow. */
 function setWall(on) {
+  if (on === state.wall) return;
   state.wall = on;
   document.body.classList.toggle("wall", on);
-  if (on) closeDrawer();
+  if (on) {
+    closeDrawer();
+    // The whole estate, whatever this browser had narrowed the page to.
+    // Entered from the Money tab, or with "bar" in the fleet search, the
+    // wall showed a bill, or one freezer, and nothing said it was a part.
+    state.beforeWall = { tab: finder.tab, query: finder.query };
+    finder.tab = "all";
+    finder.query = "";
+  } else if (state.beforeWall) {
+    finder.tab = state.beforeWall.tab;
+    finder.query = state.beforeWall.query;
+    state.beforeWall = null;
+  }
+  applyFinder();
+  reapplyFleet();
 }
 $("wall-mode").addEventListener("click", () => setWall(true));
 $("wall-exit").addEventListener("click", () => setWall(false));
@@ -1974,6 +2027,7 @@ $("scrim").addEventListener("click", closeDrawer);
 /* A sensor id is a button for keyboard users too. */
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
+  if (state.wall) return;
   const target = event.target.closest("[data-detail]");
   if (!target || target.tagName === "BUTTON") return;
   event.preventDefault();
@@ -3285,7 +3339,12 @@ function showConnection(live, detail) {
 }
 
 addEventListener("offline", () => showConnection(false, "this device is offline"));
-addEventListener("online", () => { refresh().catch(() => {}); });
+// Back online: look now, and poll from the short interval again rather
+// than waiting out whatever back-off the outage had built up.
+addEventListener("online", () => {
+  if (!state.token) return;
+  refresh().then(() => { markFresh(); startPolling(); }).catch(() => {});
+});
 
 /* A date a person reads, not an instant a machine wrote. */
 function shortDate(value) {
@@ -4323,6 +4382,8 @@ async function act(fn, okMessage) {
 }
 
 document.addEventListener("click", (event) => {
+  // A wall display has nothing to press. The way out has its own handler.
+  if (state.wall) return;
   // The sensor id itself opens the drawer, and it is a span, not a button.
   const opener = event.target.closest("[data-detail]");
   if (opener) {

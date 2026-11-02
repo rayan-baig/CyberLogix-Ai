@@ -691,6 +691,14 @@ body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !impor
 body.wall main { padding: 22px; max-width: none; }
 body.wall .layout { grid-template-columns: minmax(0, 1fr); }
 body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
+/* A shared screen: no search bar or tabs to press, no buttons on an
+   incident, and none of what an incident carries about people -- who
+   was called and on what number, who acknowledged it, the text that
+   went out. What is warm, since when, and whether the texts landed. */
+body.wall .finder, body.wall #find-none, body.wall #find-knocking,
+body.wall .incident-actions, body.wall .food-out,
+body.wall .incident .quote, body.wall .incident .timeline,
+body.wall .incident .row { display: none !important; }
 /* Read from across a room: the figure grows, the label stays a quiet
    mono eyebrow rather than growing with it. */
 body.wall .tile-value { font-size: 68px; }

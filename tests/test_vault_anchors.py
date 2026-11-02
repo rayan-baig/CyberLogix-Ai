@@ -156,3 +156,25 @@ def test_deleting_the_newest_attested_reading_is_caught(api, operator_factory, s
     STORE._readings["FRZ-1"].pop()                                      # someone deletes the breach
     body = api.get("/api/vault/verify/FRZ-1", headers=headers).json()
     assert body["intact"] is False
+
+
+def test_the_owner_reads_whether_the_proof_link_is_live_and_nobody_else_does(
+    api, operator_factory, sensor_factory
+):
+    """Off until turned on, and the link is only ever this estate's own."""
+    assert api.get("/api/certificate").status_code == 401
+
+    headers = _estate(api, operator_factory, sensor_factory)
+    off = api.get("/api/certificate", headers=headers).json()
+    assert off["live"] is False and off["url"] is None
+
+    token = _publish(api, headers)
+    on = api.get("/api/certificate", headers=headers).json()
+    assert on["live"] is True and on["url"] == f"/proof/{token}"
+    # The page behind it is the proof page, served without a sign-in.
+    page = api.get(on["url"])
+    assert page.status_code == 200 and "text/html" in page.headers["content-type"]
+
+    other, _, _ = operator_factory(company_name="Someone Else", email="eve@example.com")
+    theirs = api.get("/api/certificate", headers=other).json()
+    assert theirs["live"] is False and theirs["url"] is None

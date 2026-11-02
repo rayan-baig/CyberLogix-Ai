@@ -5,8 +5,6 @@ loudly. The store quietly fell back to the number given at sign-up, and
 the first anybody learned of it was a breach texted to a desk phone.
 """
 
-import pytest
-
 
 def _add(api, headers, name, phone, **extra):
     resp = api.post("/api/contacts", headers=headers,

@@ -179,6 +179,45 @@ def test_the_console_does_not_throw_away_an_issued_credential(api):
     assert "user-select: all" in api.get("/static/theme.css").text
 
 
+def test_the_business_key_from_sign_up_is_shown_on_the_page(api):
+    """Same rule, for the key a new business gets at sign-up. It went to
+    the browser's developer console, with a toast telling the owner to
+    keep a key they had no way to see, and a key written to the console
+    log stays in that log."""
+    page = api.get("/console").text
+
+    assert 'showIssuedKey("this business (master key)", made.api_key)' in page
+    assert "console.info" not in page and "console.log" not in page
+
+
+def test_a_proxy_error_page_never_lands_in_a_toast(api):
+    """A load balancer answering for a restarting server sends HTML, and
+    the whole page went into the toast word for word."""
+    page = api.get("/console").text
+    handler = page[page.index("async function api("):]
+    handler = handler[:handler.index("\n}\n")]
+
+    assert "body = { detail: text }" not in handler
+    assert "/</.test(text)" in handler
+
+
+def test_the_wall_shows_the_whole_estate_and_nothing_to_press(api):
+    """A shared screen. Found in a browser: entered from another tab, or
+    with a fleet search typed, the wall showed only part of the estate
+    and said nothing; and it carried every incident button, the search
+    bar, and who was called on what number."""
+    page = api.get("/console").text
+    css = api.get("/static/theme.css").text
+    wall = page[page.index("function setWall("):]
+    wall = wall[:wall.index("\n}\n")]
+
+    assert 'finder.tab = "all"' in wall and "reapplyFleet()" in wall
+    assert "if (state.wall) return sensors;" in page
+    for hidden in ("body.wall .finder", "body.wall .incident-actions",
+                   "body.wall .incident .timeline"):
+        assert hidden in css, hidden
+
+
 def test_every_surface_wears_the_same_mark(api):
     """One mark, one file, referenced — not three inline copies.
 

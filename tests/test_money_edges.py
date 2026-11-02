@@ -16,7 +16,7 @@ import books
 import payments
 from contracts import run_billing, run_dunning
 from store import STORE, add_months, utc_now
-from tests.test_payments import post, sign  # noqa: F401  (sign used by post)
+from tests.test_payments import post
 
 ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
 
