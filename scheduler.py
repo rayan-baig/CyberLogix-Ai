@@ -227,6 +227,7 @@ async def _loop(interval: int) -> None:
     # Counted in seconds slept rather than in passes, so changing the sweep
     # interval does not silently change how often the company invoices.
     since_billing = 0.0
+    money: Optional[asyncio.Task] = None
     while True:
         try:
             await asyncio.sleep(interval)
@@ -237,12 +238,31 @@ async def _loop(interval: int) -> None:
             since_billing += interval
             if since_billing >= BILLING_EVERY_SECONDS:
                 since_billing = 0.0
-                await asyncio.to_thread(run_money_pass)
+                # Alongside the sweep, never in its way. The money pass sends
+                # mail, and this loop used to wait for it: with the mail host
+                # not answering, two hundred queued messages at a 20-second
+                # timeout each was over an hour with no breach escalated.
+                # One at a time, so a slow one is not stacked on.
+                if money is None or money.done():
+                    money = asyncio.create_task(asyncio.to_thread(run_money_pass))
+                    money.add_done_callback(_money_pass_ended)
+                else:
+                    logger.warning("The last money pass is still running; "
+                                   "skipping this one.")
         except asyncio.CancelledError:
             logger.info("Autopilot scheduler stopping.")
             raise
         except Exception as exc:  # noqa: BLE001 - the watchdog must not die
             logger.exception("Autopilot sweep pass failed (%s).", exc)
+
+
+def _money_pass_ended(task: "asyncio.Task") -> None:
+    """Write down a money pass that died, since nothing awaits it."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Money pass failed (%s: %s).", type(exc).__name__, exc)
 
 
 _task: Optional[asyncio.Task] = None

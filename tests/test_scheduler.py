@@ -112,3 +112,46 @@ def test_health_reports_the_scheduler(api):
     body = api.get("/api/health").json()
     assert body["autopilot_scheduler"]["enabled"] is False
     assert "external scheduler" in body["autopilot_scheduler"]["note"]
+
+
+def test_a_slow_money_pass_does_not_hold_up_the_sweep(monkeypatch):
+    """The hourly money pass sends mail, and the sweep loop used to wait
+    for it. With the mail host not answering, 200 queued messages at a
+    20-second timeout each is over an hour in which no breach was
+    escalated to a phone call."""
+    import threading
+
+    sweeps = []
+    release = threading.Event()
+    money_started = threading.Event()
+    money_runs = []
+
+    def slow_money_pass():
+        money_runs.append(1)
+        money_started.set()
+        release.wait(5)
+        return {}
+
+    monkeypatch.setattr(scheduler, "run_one_pass", lambda: sweeps.append(1) or {})
+    monkeypatch.setattr(scheduler, "run_money_pass", slow_money_pass)
+    monkeypatch.setattr(scheduler, "BILLING_EVERY_SECONDS", 0.05)
+
+    async def _run():
+        task = asyncio.create_task(scheduler._loop(0.05))
+        await asyncio.sleep(0.2)
+        assert money_started.is_set()
+        before = len(sweeps)
+        await asyncio.sleep(0.5)
+        during = len(sweeps) - before
+        release.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return during
+
+    during = asyncio.run(_run())
+    assert during >= 3, f"only {during} sweep(s) ran while the money pass was busy"
+    # And a second money pass is not started on top of one still running.
+    assert len(money_runs) == 1
