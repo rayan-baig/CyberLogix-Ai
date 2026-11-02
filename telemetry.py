@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -208,6 +209,21 @@ def build_emergency_sms(
     )
 
 
+def _routine_defrost(sensor, temperature: float):
+    """The routine defrost this reading is part of, or None to page."""
+    import patterns
+    from forecaster import PATTERN_WINDOW_HOURS
+
+    above, _ = sensor.bounds()
+    if above is None or temperature <= above:
+        return None
+    history = STORE.readings_for(
+        sensor.sensor_id,
+        since=utc_now() - timedelta(hours=PATTERN_WINDOW_HOURS),
+    )
+    return patterns.defrost_in_progress(history, above)
+
+
 def process_reading(
     tenant: Tenant,
     sensor,
@@ -266,6 +282,28 @@ def process_reading(
     # reporting every few seconds, opened up to eight incidents for one
     # fault and rang the on-call phone eight times.
     existing = STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id)
+
+    # A freezer's own defrost, on its own schedule, is not a reason to wake
+    # anybody: two or three of those a day and the alerts get ignored,
+    # which is how the real one is missed. Held only when this unit has a
+    # learned, recovering rhythm and this spell fits it (patterns.py says
+    # exactly when); the reading is still recorded as over the line, and
+    # the moment the spell overruns or runs hot the next reading pages.
+    defrost = _routine_defrost(sensor, temperature) if existing is None else None
+    if defrost is not None:
+        logger.info("Defrost cycle held, not paged: sensor=%s temp=%s°F",
+                    sensor.sensor_id, temperature)
+        return {
+            "status": "DEFROST_CYCLE",
+            "industry": profile["name"],
+            "sensor_id": sensor.sensor_id,
+            "location": sensor.location_name,
+            "current_temperature": display_temperature(temperature, unit),
+            "temperature_unit": unit,
+            "breach_details": breach_reason,
+            "pattern": defrost,
+            "message": defrost["because"],
+        }
 
     if existing is None:
         sms_text, sms_source = build_emergency_sms(

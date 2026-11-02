@@ -578,6 +578,14 @@ curl -X POST localhost:8080/api/licenses/tenants \
 
 ## The escalation ladder
 
+A freezer's own defrost is not a breach anyone is paged for. When a unit
+has a learned rhythm (at least three earlier warm spells, each back down,
+on a regular 4 to 18 hour timer) and a new spell starts on time, no hotter
+than its cycles get, the reading is recorded as over the line and answered
+`DEFROST_CYCLE` instead of opening an incident. If it is still warm past
+twice its usual length, or runs hotter, the next reading pages as normal.
+With no learned rhythm every breach pages.
+
 1. A breach opens an incident and sends the SMS.
 2. A sustained breach **updates that incident** rather than opening another,
    so a failing freezer produces one alert instead of a pager storm. Follow-up

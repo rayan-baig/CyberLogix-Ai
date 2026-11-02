@@ -290,3 +290,60 @@ def _on_schedule(events: List[Dict[str, Any]], rhythm: Dict[str, float]) -> bool
         events[-1]["started_at"] - events[-2]["started_at"]
     ).total_seconds() / 3600.0
     return abs(gap - rhythm["interval_hours"]) <= INTERVAL_TOLERANCE_HOURS
+
+
+def defrost_in_progress(
+    readings: List[Reading],
+    above: float,
+) -> Optional[Dict[str, Any]]:
+    """Whether the warm spell going on right now is this unit's defrost.
+
+    The question the breach path asks before it wakes anybody, and asked
+    strictly, because a wrong yes swallows a real failure. Every one of
+    these has to hold, or the answer is no and the breach pages as it
+    always did:
+
+    * the latest reading is above the line, in a spell still going on;
+    * the unit has a learned rhythm from at least three earlier spells,
+      every one of which came back down;
+    * this spell started when that rhythm said it would;
+    * it has not run past twice its usual length (a unit that fails to
+      come out of defrost started on time, and is a real failure);
+    * it is no warmer than the earlier cycles got.
+
+    `classify` cannot be used for this: it ignores a spell until it has
+    lasted MIN_EVENT_MINUTES, so at the first warm reading it answers
+    about the previous cycle, which recovered, and would excuse anything.
+    """
+    events = _warm_events(readings, above)
+    if not events or not events[-1]["ongoing"]:
+        return None
+    current = events[-1]
+    past = [e for e in events[:-1] if e["minutes"] >= MIN_EVENT_MINUTES]
+    rhythm = _rhythm(past)
+    if rhythm is None:
+        return None
+    finished = [e for e in past if not e["ongoing"]]
+    recent = finished[-MIN_EVENTS_FOR_RHYTHM:]
+    if not all(e["recovered"] for e in recent):
+        return None
+    if not _on_schedule(past + [current], rhythm):
+        return None
+    allowed = rhythm["typical_minutes"] * OVERRUN_FACTOR + OVERRUN_GRACE_MINUTES
+    if current["minutes"] > allowed:
+        return None
+    hottest = max(e["peak_f"] for e in recent)
+    if current["peak_f"] > hottest + RECOVERY_TOLERANCE_F:
+        return None
+    return {
+        "rhythm": rhythm,
+        "event": current,
+        "allowed_minutes": round(allowed, 1),
+        "because": (
+            f"This unit warms up every {rhythm['interval_hours']:.1f} hours "
+            f"for about {rhythm['typical_minutes']:.0f} minutes and comes "
+            "back down, and this started on time. Nobody is paged unless it "
+            f"is still warm after {allowed:.0f} minutes or gets warmer than "
+            "its cycles do."
+        ),
+    }
