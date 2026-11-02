@@ -82,7 +82,8 @@ def existing() -> List[Path]:
     return sorted(directory.glob(f"{PREFIX}*{SUFFIX}"))
 
 
-def take(now: Optional[datetime] = None, label: str = "") -> Dict[str, Any]:
+def take(now: Optional[datetime] = None, label: str = "",
+         prune_after: bool = True) -> Dict[str, Any]:
     """Write, verify and prune. Returns what happened, never raises.
 
     Never raises because the daily one runs inside the unattended pass,
@@ -118,7 +119,7 @@ def take(now: Optional[datetime] = None, label: str = "") -> Dict[str, Any]:
             "detail": f"Could not write a snapshot to {target}: {exc}",
         }
 
-    pruned = prune()
+    pruned = prune() if prune_after else []
     size = target.stat().st_size
     logger.info(
         "Backup: %s, %d records, %.1f KiB, %d pruned.",
@@ -216,7 +217,11 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
         return {"restored": False, "status": "unusable",
                 "detail": checked["detail"]}
 
-    safety = take(now=now, label="pre-restore")
+    # Not pruned. With the folder full, pruning here deleted the oldest
+    # snapshot -- and the oldest is the one somebody restores when it took
+    # two weeks to notice the damage. The restore then failed for want of
+    # the file it had just deleted. The next daily snapshot prunes.
+    safety = take(now=now, label="pre-restore", prune_after=False)
     if not safety.get("taken"):
         return {
             "restored": False, "status": "no_safety_copy",
@@ -225,6 +230,12 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
                 f"snapshotting it: {safety.get('detail')}"
             ),
         }
+
+    # Read from the database being replaced, before it is: which
+    # businesses deleted themselves, and how far the id counter has got.
+    # A snapshot from before either knows nothing of them.
+    erased = STORE.erasures()
+    counter = STORE.id_counter()
 
     live = Path(STORE._db.path)
     try:
@@ -257,10 +268,20 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
             ),
         }
 
+    # Ids handed out after the snapshot went into emails and pay links;
+    # winding the counter back would give them to new records.
+    STORE.raise_id_counter(counter)
+    # The privacy statement says a backup is never restored to bring back
+    # something a business deleted. The snapshot predates the deletion, so
+    # it is done again here, and the record of it carried forward so the
+    # next restore does the same.
+    deleted_again = STORE.apply_erasures(erased)
+
     logger.warning(
         "Restored %s over the live database (%d records). The database it "
-        "replaced is in %s.",
+        "replaced is in %s.%s",
         target.name, checked["records"], safety.get("path"),
+        f" Deleted again: {', '.join(deleted_again)}." if deleted_again else "",
     )
     return {
         "restored": True,
@@ -268,10 +289,17 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
         "from": target.name,
         "records": checked["records"],
         "previous_database_saved_to": safety.get("path"),
+        "deleted_again": deleted_again,
         "detail": (
             "Restored and reloaded in place -- no restart needed. The "
             "database that was replaced was snapshotted first, so "
             "restoring the wrong one is survivable."
+            + (
+                f" {len(deleted_again)} business(es) in that snapshot had "
+                "deleted themselves since it was taken; they were deleted "
+                "again and are not back."
+                if deleted_again else ""
+            )
         ),
     }
 

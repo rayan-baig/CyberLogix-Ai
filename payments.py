@@ -178,22 +178,60 @@ def _invoice_reference(obj: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def record_unmatched(event_id: str, detail: Dict[str, Any]) -> None:
+def record_unmatched(key: str, detail: Dict[str, Any]) -> None:
     """Write down money we have taken and cannot account for.
 
     Never dropped, and never guessed at. Guessing which invoice an
     unlabelled payment belongs to is how a customer ends up chased for
     something they paid and credited for something they did not.
+
+    Keyed on the payment, not the event. One card payment arrives as
+    three events with three ids, and keyed on those it was written down
+    three times: the list said three times the money had arrived, and a
+    person settling each row by hand would have credited it three times.
+    `reference` is what to record the payment under once it is matched.
     """
-    row = STORE._db.get(_UNMATCHED_KIND, event_id)
+    row = STORE._db.get(_UNMATCHED_KIND, key)
     if row is not None:
         return
-    STORE._db.put(_UNMATCHED_KIND, event_id, {**detail, "seen_at": iso(utc_now())})
+    STORE._db.put(_UNMATCHED_KIND, key, {
+        **detail, "key": key, "reference": detail.get("reference") or key,
+        "seen_at": iso(utc_now()),
+    })
     logger.error(
         "Payment %s for $%s could not be matched to an invoice. It is on "
         "the unmatched list and needs a person.",
-        event_id, detail.get("amount_usd"),
+        key, detail.get("amount_usd"),
     )
+
+
+def record_overpayment(invoice, reference: str, received: Optional[float],
+                       owed_before: float) -> Optional[float]:
+    """Put money received beyond what an invoice owed on the list.
+
+    It was absorbed: the invoice closed, the receipt said nothing more was
+    owed, and the excess sat inside `amount_paid_usd` where no person
+    would ever look. It is the customer's money -- to refund, or to put
+    against their next bill -- so it goes where every other sum nobody
+    can account for goes. Returns the excess, or None.
+    """
+    if received is None:
+        return None
+    excess = round(received - owed_before, 2)
+    if excess < 0.01:
+        return None
+    record_unmatched(f"overpaid:{reference}", {
+        "event_id": reference,
+        "reference": f"{reference}-excess",
+        "amount_usd": excess,
+        "currency": "usd",
+        "invoice_reference": invoice.invoice_id,
+        "why": (
+            f"paid ${excess:,.2f} more than {invoice.number} owed "
+            f"(${owed_before:,.2f}); refund it or apply it to their next bill"
+        ),
+    })
+    return excess
 
 
 def unmatched() -> List[Dict[str, Any]]:
@@ -204,10 +242,15 @@ def unmatched() -> List[Dict[str, Any]]:
     )
 
 
-def clear_unmatched(event_id: str) -> bool:
-    if STORE._db.get(_UNMATCHED_KIND, event_id) is None:
-        return False
-    STORE._db.delete(_UNMATCHED_KIND, event_id)
+def clear_unmatched(key: str) -> bool:
+    """Take a row off, by its key or by the id of the event that put it on."""
+    if STORE._db.get(_UNMATCHED_KIND, key) is None:
+        found = [k for k, row in STORE._db.rows(_UNMATCHED_KIND)
+                 if row.get("event_id") == key]
+        if not found:
+            return False
+        key = found[0]
+    STORE._db.delete(_UNMATCHED_KIND, key)
     return True
 
 
@@ -251,9 +294,19 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
     currency = (obj.get("currency") or "usd").lower()
     reference = _invoice_reference(obj)
 
+    # One payment, one reference, so the ledger's own duplicate check does
+    # the idempotency. The event id is not enough: a single card payment
+    # arrives as checkout.session.completed, payment_intent.succeeded and
+    # charge.succeeded -- three events, three ids -- and was recorded
+    # three times. All three name the same payment intent, so that is the
+    # reference whenever the event carries one. A storm of retries of any
+    # of them still settles it once -- or, unmatched, is listed once.
+    reference_used = _payment_reference(kind, obj) or event_id
+
     detail = {
         "event_id": event_id, "type": kind, "amount_usd": amount,
         "currency": currency, "invoice_reference": reference,
+        "reference": reference_used,
     }
 
     if amount is None or amount <= 0:
@@ -263,12 +316,12 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         # Converting here would invent an exchange rate and put it on a
         # customer's ledger. The invoice is in USD; this is a person's
         # problem, not a rounding decision.
-        record_unmatched(event_id, {**detail, "why": "not a USD payment"})
+        record_unmatched(reference_used, {**detail, "why": "not a USD payment"})
         return {"handled": False, "reason": "currency is not USD", **detail}
 
     invoice = STORE.get_invoice(reference) if reference else None
     if invoice is None:
-        record_unmatched(event_id, {
+        record_unmatched(reference_used, {
             **detail,
             "why": (
                 "no invoice id on the payment"
@@ -278,19 +331,14 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"handled": False, "reason": "unmatched", **detail}
 
     if invoice.state == "void":
-        record_unmatched(event_id, {**detail, "why": f"{invoice.number} was voided"})
+        record_unmatched(reference_used, {**detail, "why": f"{invoice.number} was voided"})
         return {"handled": False, "reason": "invoice is void", **detail}
 
     tenant = STORE.get_tenant(invoice.tenant_id)
-    # One payment, one reference, so the ledger's own duplicate check does
-    # the idempotency. The event id is not enough: a single card payment
-    # arrives as checkout.session.completed, payment_intent.succeeded and
-    # charge.succeeded -- three events, three ids -- and was recorded
-    # three times. All three name the same payment intent, so that is the
-    # reference whenever the event carries one. A storm of retries of any
-    # of them still settles it once.
-    reference_used = _payment_reference(kind, obj) or event_id
+    owed_before = invoice.balance_usd if invoice.state != "paid" else 0.0
     invoice, applied = STORE.settle_invoice(invoice, reference_used, amount)
+    if applied:
+        record_overpayment(invoice, reference_used, amount, owed_before)
 
     if applied and tenant is not None:
         from invoicing import send_receipt

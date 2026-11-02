@@ -23,6 +23,9 @@ from fastapi.responses import StreamingResponse
 from gemini import safe_generate
 from auth import require_platform_admin, require_role_or_machine
 from licenses import require_tenant
+# Reports pause for an account far behind on its bills; the sweep, the
+# texts and the calls below never do.
+from contracts import require_current
 from store import (
     INDUSTRY_PROFILES,
     SENSOR_OFFLINE_AFTER_MINUTES,
@@ -143,7 +146,7 @@ def compliance_report(
     narrate: bool = Query(
         False, description="Have Gemini write the executive summary paragraph."
     ),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("The compliance report")),
 ):
     """Assemble the inspector-ready temperature log for the period."""
     since = utc_now() - timedelta(days=days)
@@ -301,7 +304,7 @@ def csv_safe(value: Any) -> Any:
 @router.get("/compliance.csv")
 def compliance_csv(
     days: int = Query(7, ge=1, le=90),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("The compliance spreadsheet")),
 ):
     """The same report as a spreadsheet, because inspectors want a file.
 

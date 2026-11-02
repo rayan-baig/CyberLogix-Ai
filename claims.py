@@ -41,6 +41,7 @@ from store import (
     display_temperature,
     format_temperature,
     iso,
+    restate_temperatures,
     utc_now,
 )
 
@@ -164,7 +165,7 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
             "event": "Breach detected",
             "detail": (
                 f"{format_temperature(incident.temperature_fahrenheit, unit)} — "
-                f"{incident.breach_details}"
+                f"{restate_temperatures(incident.breach_details, unit)}"
             ),
         }
     ]
@@ -266,7 +267,7 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
                 incident.temperature_fahrenheit, unit
             ),
             "temperature_unit": unit,
-            "breach_details": incident.breach_details,
+            "breach_details": restate_temperatures(incident.breach_details, unit),
             "probable_cause": incident.catastrophe,
             "state": (
                 "resolved"
@@ -333,7 +334,7 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
                 "incident_id": i.incident_id,
                 "opened_at": iso(i.opened_at),
                 "state": "resolved" if i.resolved_at else "open",
-                "detail": i.breach_details,
+                "detail": restate_temperatures(i.breach_details, unit),
             }
             for i in prior
         ],

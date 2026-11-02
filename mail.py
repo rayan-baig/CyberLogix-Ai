@@ -510,6 +510,7 @@ def flush_queue(limit: int = 200) -> Dict[str, Any]:
     attempted = 0
     sent = 0
     STORE.scrub_stale_sensitive_mail()
+    STORE.trim_old_mail()
     for message in STORE.pending_mail()[:limit]:
         attempted += 1
         if deliver(message).get("sent"):
