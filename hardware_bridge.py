@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from models import Finite
 
@@ -573,8 +574,6 @@ async def ingest_any_payload(
     per-sensor ingest key rather than the tenant key, so a leak is worth
     one asset instead of the estate.
     """
-    import byod
-
     try:
         payload = await request.json()
     except HTTPException:
@@ -584,6 +583,21 @@ async def ingest_any_payload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The body was not JSON. Nothing was recorded.",
         )
+
+    # Everything from here blocks: the key lookup, SQLite, and on a breach
+    # the whole alert path with its Twilio fan-out and webhook posts. This
+    # route is a coroutine only so it can read the raw body, so the rest
+    # goes to a worker thread, as a plain `def` route's would. Run inline it
+    # held the one event-loop thread for the whole alert, and every other
+    # request in the process -- other businesses' sensors, the console,
+    # /api/health -- waited behind it.
+    return await run_in_threadpool(
+        _ingest_any, payload, k, authorization, x_cyberlogix_key, x_signature)
+
+
+def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):
+    """The blocking half of /any, on a worker thread."""
+    import byod
 
     # Three ways in, worst last. A header is the right place for a
     # credential; the query string is here only because a great many
