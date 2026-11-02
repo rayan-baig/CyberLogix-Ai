@@ -4384,7 +4384,10 @@ class HubStore:
                 _mirror_payment(invoice, live)
                 return live, False
 
-            paid = live.total_usd if amount_usd is None else round(amount_usd, 2)
+            # No amount means "the rest has arrived": what is still owed,
+            # not the face value again, which after a part payment recorded
+            # more money than was ever received.
+            paid = live.balance_usd if amount_usd is None else round(amount_usd, 2)
             now = utc_now()
             payments = list(live.payments) + [{
                 "reference": reference,

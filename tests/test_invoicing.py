@@ -193,6 +193,25 @@ def test_a_short_payment_leaves_the_invoice_open(
     assert ledger["part_paid_count"] == 1
 
 
+def test_paid_in_full_after_a_part_payment_records_the_balance(
+    api, operator_factory, sensor_factory
+):
+    """No amount means "the rest arrived". It used to mean the whole face
+    value again, so $1,000 then "paid" on a $1,798 invoice recorded $2,798
+    received: the receipt told the customer so, and cash in the books was
+    overstated by the part already paid."""
+    headers = estate(api, operator_factory, sensor_factory, units=2)
+    invoice = issue(api, headers)
+    iid = invoice["invoice_id"]
+
+    settle(api, headers, iid, **{"reference": "WIRE-1", "amount_usd": 1000.0})
+    out = settle(api, headers, iid, **{"reference": "WIRE-2"}).json()
+
+    assert out["invoice"]["state"] == "paid"
+    assert out["invoice"]["amount_paid_usd"] == 2 * RATE
+    assert [p["amount_usd"] for p in out["invoice"]["payments"]] == [1000.0, 2 * RATE - 1000.0]
+
+
 def test_the_balance_settles_on_the_second_payment(
     api, operator_factory, sensor_factory
 ):
