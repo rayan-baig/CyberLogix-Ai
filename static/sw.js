@@ -12,9 +12,8 @@
  * loudly, that what it is showing is not live.
  */
 
-const VERSION = "clx-shell-v6";
+const VERSION = "clx-shell-v7";
 const SHELL = [
-  "/console",
   "/static/theme.css",
   "/static/logo.svg",
   "/static/icons/icon-192.png",
@@ -54,24 +53,20 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   // Opening the app is a navigation, and a navigation goes to the
-  // network first. Cache-first was the first version and it was wrong:
-  // it serves the shell that was cached at install, so a deploy would
-  // not be picked up until the second launch after it -- including a
-  // deploy that fixed something. The cache is the fallback, and the
-  // offline page is the fallback to that.
+  // network, every time. With no network it gets the offline page --
+  // never a copy of a page from earlier. The earlier version kept a copy
+  // of every page opened and fell back to it: offline, the console came
+  // back as a sign-in form with a raw fetch error under it, a proof link
+  // came back with its token, and none of it said "you are offline".
+  // Pages are not cached at all, so a page's address (a reset link, a
+  // proof token) is never kept on the device either.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(VERSION).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request).then(
-          (hit) => hit || caches.match("/offline")
-        ))
+      fetch(request).catch(() => caches.match("/offline").then(
+        (hit) => hit || new Response(
+          "No connection. Nothing on this device is current.",
+          { status: 503, headers: { "Content-Type": "text/plain" } })
+      ))
     );
     return;
   }
@@ -86,7 +81,9 @@ self.addEventListener("fetch", (event) => {
             if (response && response.ok) cache.put(request, response.clone());
             return response;
           })
-          .catch(() => hit);
+          // Offline and never cached: a plain network error, rather
+          // than handing respondWith nothing and throwing in the worker.
+          .catch(() => hit || Response.error());
         return hit || live;
       })
     )
