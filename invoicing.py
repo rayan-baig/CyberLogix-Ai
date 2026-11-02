@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -37,7 +38,7 @@ from auth import (
     require_tenant_any_state,
     write_audit,
 )
-from store import STORE, Tenant, iso
+from store import STORE, Invoice, Tenant, iso
 
 logger = logging.getLogger("cyberlogix.invoicing")
 
@@ -85,7 +86,7 @@ INVOICE_STATES = ("issued", "paid", "void")
 _AMOUNT_COLUMN = 62
 
 
-def invoice_date(moment) -> str:
+def invoice_date(moment: Optional[datetime]) -> str:
     """A date a person reads, not a timestamp a machine emits.
 
     `2026-10-12T19:55:50Z` on a document whose only job is to be paid
@@ -97,7 +98,7 @@ def invoice_date(moment) -> str:
     return f"{moment.day} {moment.strftime('%B %Y')}"
 
 
-def render_invoice(invoice, tenant) -> str:
+def render_invoice(invoice: Invoice, tenant: Tenant) -> str:
     """The invoice as a customer reads it, in plain text.
 
     An email is where most of these will actually be looked at, and a
@@ -118,8 +119,11 @@ def render_invoice(invoice, tenant) -> str:
             out.append(f"        {line.strip()}")
     if issuer.get("tax_id"):
         out.append(f"        Tax ID {issuer['tax_id']}")
+    # The name the invoice was issued to, frozen on it like the figures.
+    # Read from the live account, a business renamed after issue was sent
+    # a copy addressed to someone the original was not.
     out += [
-        f"To:     {tenant.company_name}",
+        f"To:     {invoice.company_name or tenant.company_name}",
         f"        {tenant.contact_name}",
         "",
         f"Issued: {invoice_date(invoice.issued_at)}",
@@ -500,7 +504,7 @@ def mark_paid(
     }
 
 
-def send_receipt(tenant, invoice, reference: str, settled: bool) -> None:
+def send_receipt(tenant: Tenant, invoice: Invoice, reference: str, settled: bool) -> None:
     """Confirm that the money arrived.
 
     Cheap, and it removes an entire category of email: the customer who

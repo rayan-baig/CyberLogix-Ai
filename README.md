@@ -1637,6 +1637,21 @@ calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
 on the message that would actually have left the building.
 
+CI runs the suite on Python 3.11, which the image ships, and again on 3.13.
+Password hashing runs at a fraction of its real cost under the suite (see
+`tests/conftest.py`); a test holds the production setting where it is.
+
+### Types in the money code
+
+The seven modules that price, invoice, take payment and keep the books are
+type-checked in CI. Only those: `mypy.ini` lists them, so the check stays
+small enough that every finding gets read.
+
+```bash
+.venv/bin/pip install mypy==2.4.1
+.venv/bin/python -m mypy
+```
+
 ### The fuzzer
 
 `tests/test_invariants_fuzz.py` drives the real application through seeded

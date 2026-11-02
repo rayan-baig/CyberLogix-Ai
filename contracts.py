@@ -43,7 +43,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -229,7 +229,7 @@ def arrears_lines(
 
     from pricing import branches, per_site
 
-    def owed(joined) -> float:
+    def owed(joined: Optional[datetime]) -> float:
         # A thing registered before the window opened was on the invoice
         # that opened it; one registered after it closed belongs to this
         # period, which this invoice already charges in full.
@@ -253,6 +253,7 @@ def arrears_lines(
     # shop runs the add-on for half a month and nothing charges for it.
     late_sensors: Dict[str, List[float]] = {}
     for vertical, group in by_vertical.items():
+        joins: Iterable[Optional[datetime]]
         if per_site(vertical):
             for sensor in group:
                 unbilled = owed(sensor.registered_at)
@@ -357,7 +358,9 @@ def arrears_lines(
     return lines
 
 
-def unsold_add_ons(tenant, sub, priced) -> List[Dict[str, Any]]:
+def unsold_add_ons(
+    tenant: Tenant, sub: Optional[Subscription], priced: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     """Add-ons on the rate card that this estate is not carrying.
 
     One definition, used by the customer's own pipeline and by the
@@ -1251,7 +1254,7 @@ def attention_rows(now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     return rows
 
 
-def _rows_for(tenant, now) -> List[Dict[str, Any]]:
+def _rows_for(tenant: Tenant, now: datetime) -> List[Dict[str, Any]]:
     """Everything worth a person's time about one account."""
     from auth import grace_days_left, licence_state
     from pricing import build_subscription
@@ -1263,7 +1266,8 @@ def _rows_for(tenant, now) -> List[Dict[str, Any]]:
     money = delinquency(tenant.tenant_id, now)
     sub = STORE.active_subscription(tenant.tenant_id)
 
-    def row(kind, urgency, headline, at_stake, action):
+    def row(kind: str, urgency: str, headline: str, at_stake: float,
+            action: str) -> None:
         rows.append({
             "tenant_id": tenant.tenant_id,
             "company_name": tenant.company_name,
