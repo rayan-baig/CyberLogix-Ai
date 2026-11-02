@@ -352,6 +352,20 @@ def join_business(
     from auth import licence_state
 
     _own_password_first(user)
+    # The refusals that are about the person, not the code, come before the
+    # code is spent: spent on a refusal, it was dead for the person it was
+    # meant for, who was then told it was "not valid".
+    if len(STORE.logins_of(user)) >= MAX_BUSINESSES_PER_PERSON:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"You already have {MAX_BUSINESSES_PER_PERSON} businesses.",
+        )
+    pending = STORE.peek_join_code(payload.code)
+    if pending is not None and STORE.login_in(user, pending.tenant_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have access to that business.",
+        )
     code = STORE.redeem_join_code(payload.code)
     tenant = STORE.get_tenant(code.tenant_id) if code else None
     if code is None or tenant is None or licence_state(tenant) == "suspended":

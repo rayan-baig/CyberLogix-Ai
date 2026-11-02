@@ -14,10 +14,12 @@ ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
-COPY requirements.txt ./
+# constraints.txt pins every package, including the ones requirements.txt
+# pulls in, so the image installs exactly what CI tested.
+COPY requirements.txt constraints.txt ./
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install -r requirements.txt
+    && /opt/venv/bin/pip install -r requirements.txt -c constraints.txt
 
 # ---------- runtime ----------
 FROM python:3.11-slim

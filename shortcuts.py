@@ -22,7 +22,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from auth import require_tenant, write_audit
 from auth import optional_operator
 from gemini import safe_generate
-from store import INDUSTRY_PROFILES, STORE, Tenant, User, iso, resolve_vertical, utc_now
+from store import (
+    INDUSTRY_PROFILES, STORE, Tenant, User, display_temperature, iso,
+    resolve_vertical, utc_now,
+)
 
 logger = logging.getLogger("cyberlogix.shortcuts")
 
@@ -38,6 +41,7 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
         if s.industry_vertical == vertical
     ]
 
+    unit = tenant.temperature_unit
     rows: List[Dict[str, Any]] = []
     total_readings = 0
     total_breached = 0
@@ -61,6 +65,17 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
                 "mean_f": round(sum(temps) / len(temps), 2) if temps else None,
                 "limit_above_f": above,
                 "limit_below_f": below,
+                # The same figures in the account's own unit, which is what
+                # the document is written in. The console, the texts and the
+                # compliance report already speak it; a document for an
+                # inspector in the other scale says the same walk-in was at
+                # 28 when the screen said -2.2.
+                "min": display_temperature(min(temps), unit) if temps else None,
+                "max": display_temperature(max(temps), unit) if temps else None,
+                "mean": (display_temperature(sum(temps) / len(temps), unit)
+                         if temps else None),
+                "limit_above": display_temperature(above, unit),
+                "limit_below": display_temperature(below, unit),
                 "last_seen": iso(sensor.last_seen),
             }
         )
@@ -72,6 +87,7 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
     ]
 
     return {
+        "temperature_unit": unit,
         "sensors": rows,
         "sensor_count": len(sensors),
         "total_readings": total_readings,
@@ -97,6 +113,18 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
     }
 
 
+def _rows_for_prompt(evidence: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The per-sensor rows, with only the account's unit in them.
+
+    Handed both scales, the model can cite either, and a Celsius account's
+    document came back quoting Fahrenheit.
+    """
+    if evidence["temperature_unit"] == "F":
+        return evidence["sensors"]
+    return [{k: v for k, v in row.items() if not k.endswith("_f")}
+            for row in evidence["sensors"]]
+
+
 def _fallback(profile: Dict[str, Any], evidence: Dict[str, Any], days: int) -> str:
     """A plain document when the model is unavailable, still from real data."""
     lines = [
@@ -113,8 +141,9 @@ def _fallback(profile: Dict[str, Any], evidence: Dict[str, Any], days: int) -> s
 
     lines.append("")
     for row in evidence["sensors"]:
+        unit = evidence["temperature_unit"]
         span = (
-            f"{row['min_f']}–{row['max_f']}°F, mean {row['mean_f']}°F"
+            f"{row['min']}–{row['max']}°{unit}, mean {row['mean']}°{unit}"
             if row["readings"]
             else "no readings in period"
         )
@@ -203,8 +232,10 @@ def run_shortcut(
     Excursions outside the safe band: {evidence['total_excursions']}
     Time within band: {evidence['compliance_percent']}%
 
+    Temperatures are in °{evidence['temperature_unit']}. Write every one
+    in °{evidence['temperature_unit']}.
     Per-sensor detail (the only figures you may cite):
-    {evidence['sensors']}
+    {_rows_for_prompt(evidence)}
 
     Incidents in the period:
     {evidence['incidents']}

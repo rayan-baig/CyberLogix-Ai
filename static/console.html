@@ -3321,8 +3321,13 @@ function renderForecast(fleet) {
       : f.hours_until_breach < 1
         ? `in under an hour`
         : `in about ${Math.round(f.hours_until_breach)}h`;
-    const trend = f.trend_f_per_hour === null ? "" :
-      `${f.trend_f_per_hour > 0 ? "+" : ""}${f.trend_f_per_hour}°/h`;
+    // The forecast measures drift in Fahrenheit; a Celsius account reads
+    // it in Celsius, or "+1.8°/h" is a degree an hour it is not.
+    const perHour = f.trend_f_per_hour === null ? null
+      : state.unit === "C" ? Math.round(f.trend_f_per_hour * 5 / 9 * 1000) / 1000
+      : f.trend_f_per_hour;
+    const trend = perHour === null ? "" :
+      `${perHour > 0 ? "+" : ""}${perHour}°${state.unit || "F"}/h`;
     const shape = f.pattern || {};
     return `<div class="fc-row" data-forecast-sensor="${esc(f.sensor_id)}"${
         muted ? ' style="opacity:.62"' : ""}>
@@ -4453,9 +4458,14 @@ document.addEventListener("click", (event) => {
   if (btn.dataset.tune) {
     const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.tune);
     if (!sensor) return;
-    const current = sensor.danger_above === null ? "" : String(sensor.danger_above);
+    // Asked in the account's own unit, the one the card shows. Asking in
+    // Fahrenheit on a Celsius account meant somebody reading "5°C" on the
+    // card typed 5 and set the limit to 5°F, so every reading alarmed.
+    const unit = sensor.temperature_unit || state.unit || "F";
+    const shown = sensor.danger_above_display;
+    const current = shown === null || shown === undefined ? "" : String(shown);
     const answer = prompt(
-      `Upper limit for ${sensor.sensor_id} in °F.\n`
+      `Upper limit for ${sensor.sensor_id} in °${unit}.\n`
       + `Blank restores the ${sensor.industry_name} default.`,
       current
     );
@@ -4465,11 +4475,14 @@ document.addEventListener("click", (event) => {
       toast("That is not a number.", "err");
       return;
     }
+    // The API holds limits in Fahrenheit, whatever the account reads in.
+    const fahrenheit = value === null || unit !== "C"
+      ? value : Math.round((value * 9 / 5 + 32) * 100) / 100;
     act(() => api(
       `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/thresholds`,
       { method: "POST", body: JSON.stringify({
-          danger_above: value, danger_below: sensor.override_below ?? null }) }
-    ), value === null ? "Restored the industry default." : `Limit set to ${value}°F.`);
+          danger_above: fahrenheit, danger_below: sensor.override_below ?? null }) }
+    ), value === null ? "Restored the industry default." : `Limit set to ${value}°${unit}.`);
   }
 
   if (btn.dataset.shortcut) {

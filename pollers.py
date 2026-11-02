@@ -33,6 +33,7 @@ import http.client
 import ipaddress
 import json
 import logging
+import re
 import socket
 import threading
 import time
@@ -93,6 +94,10 @@ MAX_RESPONSE_BYTES = 2_000_000
 # Consecutive failures before the console calls a source broken rather
 # than merely quiet. Two is a blip; five is a Tuesday that is not ending.
 FAILURES_BEFORE_BROKEN = 5
+
+# Outcomes that are the source working. "unchanged" is a vendor answering
+# with readings already taken: the device is quiet, not the source broken.
+OK_STATUSES = frozenset({"ok", "unchanged"})
 
 
 def sources_for(tenant_id: str) -> List[Dict[str, Any]]:
@@ -465,7 +470,8 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
             logger.exception("Poll of %s failed.", row["source_id"])
             outcome["detail"] = "Something unexpected went wrong reading this vendor. It has been logged."
 
-    failed = outcome["status"] != "ok"
+    observed = outcome.pop("observed", None) or {}
+    failed = outcome["status"] not in OK_STATUSES
     with STORE._lock:
         # The row as it is now, not as it was when the fetch began: writing
         # the old copy back brought a source the owner had just removed back
@@ -481,12 +487,61 @@ def poll_once(row: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, 
                                      + outcome["ingested"],
                 "consecutive_failures": (current.get("consecutive_failures", 0) + 1
                                          if failed else 0),
+                "last_observed": {**(current.get("last_observed") or {}), **observed},
             })
     return outcome
 
 
+_MS_DATE = re.compile(r"/Date\((-?\d+)")
+
+
+def observed_time(value: Any) -> Optional[datetime]:
+    """When the vendor says a reading was taken, or None if it cannot say.
+
+    Vendors write it every way there is: ISO text with or without a zone,
+    Unix seconds, Unix milliseconds, and Microsoft's "/Date(ms)/". A time
+    with no zone is taken as UTC, which is what every API in this market
+    means by one.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    number: Optional[float] = None
+    found = _MS_DATE.search(text)
+    if found:
+        number = int(found.group(1)) / 1000.0
+    else:
+        try:
+            number = float(text)
+        except ValueError:
+            number = None
+        else:
+            # Milliseconds since 1970 run to thirteen digits; seconds to ten.
+            if abs(number) > 1e11:
+                number /= 1000.0
+    try:
+        if number is not None:
+            return datetime.fromtimestamp(number, tz=timezone.utc)
+        when = datetime.fromisoformat(text.replace("Z", "+00:00").replace("z", "+00:00"))
+    except (ValueError, OverflowError, OSError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
+
+
 def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]:
-    """Hand each row to the translator the webhook path already uses."""
+    """Hand each row to the translator the webhook path already uses.
+
+    A reading the vendor timestamps is taken once. A vendor's "latest"
+    endpoint keeps answering with the last reading it holds, however old:
+    taken again on every poll, a sensor whose battery had died looked alive
+    for ever, so nobody was told it had gone quiet, and one old warm reading
+    re-opened its incident every time somebody resolved it. So the newest
+    time taken for each device is remembered on the source, anything not
+    newer is passed over, and what is new is taken oldest first, so the
+    newest reading is the one left showing.
+    """
     import byod
     from hardware_bridge import GenericWebhookPayload, ingest_for_tenant
 
@@ -496,6 +551,10 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
                 "detail": "The vendor answered, with no readings in it."}
 
     taken, skipped = 0, []
+    already = 0
+    seen_before = row.get("last_observed") or {}
+    newest: Dict[str, str] = {}
+    usable = []
     for entry in rows:
         verdict = byod.detect(entry)
         if not verdict["understood"] or verdict["unit"] is None:
@@ -506,6 +565,18 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
                           else "unit_unknown")
             skipped.append(verdict.get("missing") or ["unit"])
             continue
+        when = observed_time(verdict.get("observed_at"))
+        if when is not None:
+            last = observed_time(seen_before.get(verdict["serial"]))
+            if last is not None and when <= last:
+                already += 1
+                continue
+        usable.append((when, entry, verdict))
+    # Oldest first; a row with no time keeps its place after the timed ones.
+    usable.sort(key=lambda item: (item[0] is None,
+                                  item[0] or datetime.min.replace(tzinfo=timezone.utc)))
+
+    for when, entry, verdict in usable:
         try:
             # Exactly the checks a pushed reading gets, including the
             # serial having to be a registered device on this account
@@ -521,15 +592,27 @@ def _ingest(tenant: Tenant, row: Dict[str, Any], payload: Any) -> Dict[str, Any]
             )
             byod.remember(tenant.tenant_id, entry, verdict, "ingested")
             taken += 1
+            if when is not None:
+                # Full precision: a vendor timestamping in milliseconds
+                # would otherwise look newer than itself next time.
+                newest[verdict["serial"]] = when.isoformat()
         except HTTPException as exc:
             # An unregistered serial or an implausible reading. Both are
             # the customer's to fix and neither is this poll failing.
             skipped.append(str(exc.detail)[:80])
 
     if taken:
-        return {"status": "ok", "ingested": taken,
+        return {"status": "ok", "ingested": taken, "observed": newest,
                 "detail": (f"{taken} reading(s) taken"
                            + (f", {len(skipped)} skipped" if skipped else ""))}
+    if already:
+        # The vendor is answering; the device has not sent anything since.
+        # Not a failure of the source, so it is not counted towards broken,
+        # and the sensor is left to go offline the way a quiet one should.
+        return {"status": "unchanged", "ingested": 0,
+                "detail": (f"Nothing new since the last fetch: the vendor sent "
+                           f"{already} reading(s) already taken"
+                           + (f", {len(skipped)} skipped" if skipped else "") + ".")}
     return {"status": "nothing_usable", "ingested": 0,
             "detail": (f"{len(rows)} row(s) came back and none could be "
                        f"used. First reason: {skipped[0] if skipped else '?'}")}
@@ -587,7 +670,7 @@ def run_poll_pass(now: Optional[datetime] = None) -> Dict[str, Any]:
             continue
         polled += 1
         ingested += outcome["ingested"]
-        if outcome["status"] != "ok":
+        if outcome["status"] not in OK_STATUSES:
             failed += 1
     if waiting:
         logger.warning("%d vendor poll(s) still running after %ss; the sweep goes ahead without them.",

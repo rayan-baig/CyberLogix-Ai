@@ -45,6 +45,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from auth import require_platform_admin
 from store import STORE, iso, utc_now
@@ -337,7 +338,10 @@ async def stripe_webhook(
     if not isinstance(event, dict):
         raise HTTPException(status_code=400, detail="That is not a Stripe event.")
 
-    return apply_event(event)
+    # On a worker thread: settling writes to SQLite and sends the receipt
+    # over SMTP, and in a coroutine either would hold the event loop, and
+    # with it every other request in the process, for as long as it took.
+    return await run_in_threadpool(apply_event, event)
 
 
 @router.get("/unmatched")

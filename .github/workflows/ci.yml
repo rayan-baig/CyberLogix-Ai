@@ -9,6 +9,12 @@ on:
     branches: ['**']
   pull_request:
 
+# A newer push to the same branch cancels the run it replaces, so CI time
+# goes on the code that is actually there now.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,10 +26,11 @@ jobs:
           python-version: '3.11'   # what the Dockerfile ships
           cache: pip
       # Pillow is for the one test that checks the app icons are real images.
-      - run: pip install -r requirements.txt pytest httpx pillow pip-audit
+      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow pip-audit
       - name: Tests
         run: python -m pytest -q
       - name: Known security holes in dependencies
-        run: pip-audit -r requirements.txt
+        # The whole locked set, not just the five direct packages.
+        run: pip-audit -r constraints.txt
       - name: The production image builds
         run: docker build -t cyberlogix:ci .

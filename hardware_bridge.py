@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from models import Finite
 
@@ -151,21 +152,17 @@ def _authenticate_webhook(
 
 
 def _reject_lapsed(tenant: Tenant) -> Tenant:
-    """A billing lapse is a 402, never a credential error."""
-    if tenant.suspended:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"License for {tenant.company_name} is suspended.",
-        )
-    if tenant.expired:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"License for {tenant.company_name} expired on "
-                f"{tenant.expires_at.date()}."
-            ),
-        )
-    return tenant
+    """A billing lapse is a 402, never a credential error.
+
+    The same rule as the native sensor route, grace included. This used to
+    refuse the moment a licence expired, so an estate on third-party
+    hardware (webhook, "send anything" or a vendor poller) stopped being
+    watched on the first day of the grace the console was promising it,
+    against terms that say monitoring is never withheld for non-payment.
+    """
+    from auth import _reject_inactive
+
+    return _reject_inactive(tenant)
 
 
 @router.post("/sensor-webhook-ingest", status_code=status.HTTP_200_OK)
@@ -573,15 +570,30 @@ async def ingest_any_payload(
     per-sensor ingest key rather than the tenant key, so a leak is worth
     one asset instead of the estate.
     """
-    import byod
-
     try:
         payload = await request.json()
+    except HTTPException:
+        raise  # too large: said as such, not as "not JSON"
     except Exception:  # noqa: BLE001 - a device sending junk is the case here
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The body was not JSON. Nothing was recorded.",
         )
+
+    # Everything from here blocks: the key lookup, SQLite, and on a breach
+    # the whole alert path with its Twilio fan-out and webhook posts. This
+    # route is a coroutine only so it can read the raw body, so the rest
+    # goes to a worker thread, as a plain `def` route's would. Run inline it
+    # held the one event-loop thread for the whole alert, and every other
+    # request in the process -- other businesses' sensors, the console,
+    # /api/health -- waited behind it.
+    return await run_in_threadpool(
+        _ingest_any, payload, k, authorization, x_cyberlogix_key, x_signature)
+
+
+def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):
+    """The blocking half of /any, on a worker thread."""
+    import byod
 
     # Three ways in, worst last. A header is the right place for a
     # credential; the query string is here only because a great many

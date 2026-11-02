@@ -786,6 +786,10 @@ class Sensor:
     last_seen: Optional[datetime] = None
     last_temperature: Optional[float] = None
     last_humidity: Optional[float] = None
+    # The `last_seen` of the silence somebody was last texted about, so one
+    # silence is one text. A new reading moves `last_seen` on, which is what
+    # lets the next silence be told about too.
+    quiet_alert_for: Optional[str] = None
 
     def bounds(self) -> tuple:
         """The thresholds actually applied to this sensor.
@@ -855,6 +859,7 @@ class Sensor:
             "last_seen": iso(self.last_seen),
             "last_temperature": self.last_temperature,
             "last_humidity": self.last_humidity,
+            "quiet_alert_for": self.quiet_alert_for,
         }
 
     @classmethod
@@ -876,6 +881,7 @@ class Sensor:
             last_seen=_parse(row.get("last_seen")),
             last_temperature=row.get("last_temperature"),
             last_humidity=row.get("last_humidity"),
+            quiet_alert_for=row.get("quiet_alert_for"),
         )
 
     # How far ahead of us a device's last contact may sit before we treat
@@ -3220,11 +3226,29 @@ class HubStore:
         with self._lock:
             return (device_sn or "").strip() in self._devices
 
-    def remove_sensor(self, sensor_id: str) -> bool:
+    def remove_sensor(self, sensor_id: str) -> List[str]:
+        """Retire a sensor. Returns the ids of incidents closed with it.
+
+        An incident still unresolved when its sensor goes would otherwise
+        stay live for good: the sweep phones somebody about a freezer that
+        is gone, and, because ids are free again once retired, every breach
+        from whatever sensor takes the id next is folded into it, with no
+        text sent. Closed here rather than left, with no acknowledgement
+        recorded, because nobody answered it.
+        """
         with self._lock:
             if sensor_id not in self._sensors:
-                return False
+                return []
             doomed = self._sensors[sensor_id]
+            closed = []
+            for incident in list(self._incidents.values()):
+                if (incident.sensor_id == sensor_id and incident.unresolved
+                        and incident.tenant_id == doomed.tenant_id):
+                    incident.resolved_at = utc_now()
+                    self._save_incident(incident)
+                    # Before the readings go, so the evidence keeps them.
+                    self.preserve_evidence(incident)
+                    closed.append(incident.incident_id)
             if doomed.external_device_sn:
                 self._devices.pop(doomed.external_device_sn, None)
             # The key dies with the sensor. A decommissioned asset whose
@@ -3237,7 +3261,7 @@ class HubStore:
             self._db.delete("sensor", sensor_id)
             if evicted:
                 self._db.delete_many("reading", [r.reading_id for r in evicted])
-            return True
+            return closed
 
     def all_sensors(self) -> List[Sensor]:
         """Every sensor in the fleet, across every tenant."""
@@ -3368,7 +3392,7 @@ class HubStore:
         acquisition and no other caller can land between them.
         """
         with self._lock:
-            existing = self.latest_unresolved_incident(sensor.sensor_id)
+            existing = self.latest_unresolved_incident(sensor.sensor_id, tenant_id)
             if existing is not None:
                 return existing, False
             return (
@@ -3653,7 +3677,9 @@ class HubStore:
             found = [i for i in found if i.tenant_id == tenant_id]
         return sorted(found, key=lambda i: i.opened_at)
 
-    def latest_unresolved_incident(self, sensor_id: str) -> Optional[Incident]:
+    def latest_unresolved_incident(
+        self, sensor_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[Incident]:
         """The incident a fresh breach on this sensor belongs to.
 
         `unresolved`, not `open`. One fault is one incident until somebody
@@ -3662,10 +3688,13 @@ class HubStore:
         quieter, which is the opposite of what the button says.
         """
         with self._lock:
+            # And the same business: sensor ids are free again once retired,
+            # so the id alone can name another company's old incident.
             candidates = [
                 i
                 for i in self._incidents.values()
                 if i.sensor_id == sensor_id and i.unresolved
+                and (tenant_id is None or i.tenant_id == tenant_id)
             ]
         if not candidates:
             return None
@@ -4064,6 +4093,23 @@ class HubStore:
 
     # ---- sensor health ---------------------------------------------------
 
+    def claim_quiet_alert(self, sensor: Sensor) -> bool:
+        """Take the right to text about this sensor's current silence.
+
+        Under the lock, so the timed sweep and somebody pressing the sweep
+        button at the same moment send one text between them, not two.
+        """
+        with self._lock:
+            live = self._sensors.get(sensor.sensor_id)
+            if live is None or live.last_seen is None:
+                return False
+            silence = iso(live.last_seen)
+            if live.quiet_alert_for == silence:
+                return False
+            live.quiet_alert_for = silence
+            self._db.put("sensor", live.sensor_id, live.to_row())
+            return True
+
     def record_sensor_health(
         self,
         sensor: Sensor,
@@ -4338,7 +4384,10 @@ class HubStore:
                 _mirror_payment(invoice, live)
                 return live, False
 
-            paid = live.total_usd if amount_usd is None else round(amount_usd, 2)
+            # No amount means "the rest has arrived": what is still owed,
+            # not the face value again, which after a part payment recorded
+            # more money than was ever received.
+            paid = live.balance_usd if amount_usd is None else round(amount_usd, 2)
             now = utc_now()
             payments = list(live.payments) + [{
                 "reference": reference,
@@ -4374,8 +4423,11 @@ class HubStore:
             live.state = state
             _mirror_payment(invoice, live)
             # The licence runs on from money that has arrived: an invoice paid
-            # in full buys its period. Nothing else lengthens a paid term.
-            if state == "paid" and not was_paid:
+            # in full buys its period. Nothing else lengthens a paid term,
+            # and a late charge buys nothing: it carries a period like any
+            # invoice, so paying a $25 fee used to buy thirty days.
+            buys_service = not (live.source or "").startswith("late_fee:")
+            if state == "paid" and not was_paid and buys_service:
                 self.extend_licence(live.tenant_id, live.period_days)
             return live, True
 
@@ -4670,6 +4722,13 @@ class HubStore:
             self._join_codes[code.token_hash] = code
             self._db.put("join_code", code.token_hash, code.to_row())
             return token
+
+    def peek_join_code(self, token: str) -> Optional[JoinCode]:
+        """The join code this token names, if usable, without spending it."""
+        with self._lock:
+            digest = hashlib.sha256((token or "").strip().encode("utf-8")).hexdigest()
+            code = self._join_codes.get(digest)
+            return None if code is None or code.spent else code
 
     def redeem_join_code(self, token: str) -> Optional[JoinCode]:
         """Spend a join code. None if it is unknown, used or expired."""

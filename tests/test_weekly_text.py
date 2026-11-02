@@ -110,3 +110,35 @@ def test_only_an_owner_can_turn_it_on(api, paying, tenant_factory):
                        json={"enabled": True, "phone": "+15550100"})
 
     assert refused.status_code in (401, 403)
+
+
+def test_another_business_s_licences_never_ride_along(
+        api, paying, tenant_factory, owner_headers):
+    """The counts were taken across every business on the service, so one
+    customer's weekly text reported another customer's expired staff
+    licences as its own."""
+    from datetime import timedelta
+
+    from store import utc_now
+
+    mine, _ = paying
+    other_key, _ = tenant_factory(plan="enterprise", company_name="Other Deli")
+    other = {**other_key, **owner_headers(other_key, email="o@deli.example")}
+    made = api.post("/api/people", headers=other,
+                    json={"full_name": "Pat Lee", "role": "Cook"})
+    api.post("/api/people/credentials", headers=other, json={
+        "staff_id": made.json()["person"]["staff_id"],
+        "name": "Food handler card",
+        "expires_on": (utc_now() + timedelta(days=-2)).strftime("%Y-%m-%d"),
+        "required_to_work": True})
+    api.post("/api/people/credentials", headers=other, json={
+        "staff_id": made.json()["person"]["staff_id"],
+        "name": "Allergen course",
+        "expires_on": (utc_now() + timedelta(days=10)).strftime("%Y-%m-%d"),
+        "required_to_work": False})
+
+    body = api.get("/api/digest/weekly-text", headers=mine).json()["preview"]
+    theirs = api.get("/api/digest/weekly-text", headers=other).json()["preview"]
+
+    assert "licence" not in body
+    assert "1 staff licence(s) expired" in theirs

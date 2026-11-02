@@ -1078,7 +1078,7 @@ fatal: nothing here is really watching anything.
 
 ## Digests
 
-The person who owns this company is at school for six hours of every
+The person who owns this company is away from a screen for most of every
 working day, which makes "open the dashboard" a plan that fails five days
 a week.
 
@@ -1599,7 +1599,7 @@ mirrored into the database, so the table cannot grow without bound.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt -c constraints.txt
 export GEMINI_API_KEY=your-key
 .venv/bin/python main.py
 ```

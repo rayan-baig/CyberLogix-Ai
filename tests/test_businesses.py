@@ -584,3 +584,24 @@ def test_alerts_are_never_sent_to_premium_or_satellite_numbers():
         result = notifications._precheck("sms", number)
         assert result is not None and result.get("detail", "").startswith("That number")
     assert not notifications.premium_destination("+1 555 0100")
+
+
+def test_a_join_code_used_by_mistake_still_works_for_the_right_person(api):
+    """Entering a code for a business you are already in was refused, and
+    spent the code doing it, so the person it was meant for got "not valid"
+    and the owner had to make another without knowing why."""
+    dana = _signup(api, DANA)
+    sam = _signup(api, SAM)
+    _join(api, sam["token"], dana["token"])
+    code = api.post("/api/accounts/businesses/join-codes", headers=_bearer(sam["token"]),
+                    json={"role": "operator"}).json()["code"]
+
+    mistake = api.post("/api/accounts/businesses/join", headers=_bearer(dana["token"]),
+                       json={"code": code})
+    assert mistake.status_code == 409
+
+    lee = _signup(api, {**DANA, "company_name": "Lee Deli", "full_name": "Lee Park",
+                        "email": "lee@deli.example"})
+    meant = api.post("/api/accounts/businesses/join", headers=_bearer(lee["token"]),
+                     json={"code": code})
+    assert meant.status_code == 200, meant.text

@@ -2,7 +2,7 @@
 
 The book at `/book` and the console both answer the right questions and
 both require somebody to open a browser. The person who owns this company
-is at school for six hours of every working day, which makes "open the
+is away from a screen for most of every working day, which makes "open the
 dashboard" a plan that fails five days a week.
 
 **The operator digest** is the book, once a day, in an email: what was
@@ -168,7 +168,7 @@ def _system_warnings() -> List[str]:
 
 
 def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Everything the person who owns this company needs before school."""
+    """Everything the person who owns this company needs first thing."""
     from contracts import attention_rows
 
     now = now or utc_now()
@@ -661,12 +661,15 @@ def weekly_text_body(tenant: Tenant, now: Optional[datetime] = None) -> str:
     try:
         import people
 
-        lapsing = people.fleet_summary()
+        # This business's own staff. The fleet-wide summary is the
+        # operator's; read here, it told one customer about another
+        # customer's expired licences as if they were its own.
+        lapsing = people.calendar(tenant.tenant_id, days=30, today=now.date())
         if lapsing["expired_and_blocking"]:
             bits.append(f"{lapsing['expired_and_blocking']} staff licence(s) "
                         "expired")
-        elif lapsing["expiring_soon"]:
-            bits.append(f"{lapsing['expiring_soon']} licence(s) due soon")
+        elif lapsing["expiring_within_30_days"]:
+            bits.append(f"{lapsing['expiring_within_30_days']} licence(s) due soon")
     except Exception:  # noqa: BLE001 - a summary must not stop the text
         logger.exception("Could not read licences for the weekly text.")
 

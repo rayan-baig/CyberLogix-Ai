@@ -150,6 +150,27 @@ def test_annual_prepay_bills_twelve_months_with_the_discount(
     assert sub.period_start(1) == add_months(sub.period_start(0), 12)
 
 
+def test_a_paid_period_buys_its_real_length(
+    api, tenant_factory, sensor_factory, owner_headers
+):
+    """A flat 30 days a month made a year's prepayment buy 360 days."""
+    from datetime import datetime, timezone
+
+    headers, tenant = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    _sign(api, headers, owner, term_years=3, annual_prepay=True)
+    sub = STORE.active_subscription(tenant["tenant_id"])
+    sub.started_at = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    invoice = bill_period(STORE.get_tenant(tenant["tenant_id"]), sub, 0)
+    assert invoice.period_days == 365
+
+    sub.annual_prepay = False
+    sub.started_at = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    january = bill_period(STORE.get_tenant(tenant["tenant_id"]), sub, 1)  # Feb 2027
+    assert january.period_days == 28
+
+
 def test_add_ons_ride_the_escalator_too(api, tenant_factory, sensor_factory,
                                         owner_headers):
     headers, tenant = tenant_factory(plan="enterprise")
@@ -509,6 +530,32 @@ def test_the_late_fee_is_a_separate_invoice_issued_once(
     ]
     assert len(fees) == 1
     assert fees[0].total_usd == pytest.approx(round(original_total * 0.015, 2))
+
+
+def test_paying_a_late_fee_does_not_buy_a_month_of_service(
+    api, admin_headers, tenant_factory, sensor_factory, owner_headers
+):
+    """An invoice paid in full extends the licence by its period, and the
+    late charge was issued with a thirty-day period like any other: paying
+    a $25 late fee bought thirty days of monitoring."""
+    _, _, tenant, invoice = _billed_tenant(
+        api, tenant_factory, sensor_factory, owner_headers
+    )
+    _age_invoice(invoice.invoice_id, LATE_FEE_DAYS + 1)
+    run_dunning()
+    fee = next(i for i in STORE.invoices_for(tenant["tenant_id"])
+               if i.source.startswith("late_fee:"))
+    before = STORE.get_tenant(tenant["tenant_id"]).expires_at
+
+    paid = api.post(
+        f"/api/invoices/{fee.invoice_id}/paid",
+        params={"tenant_id": tenant["tenant_id"]},
+        headers=admin_headers, json={"reference": "WIRE-FEE"},
+    )
+
+    assert paid.status_code == 200, paid.text
+    assert STORE.get_invoice(fee.invoice_id).state == "paid"
+    assert STORE.get_tenant(tenant["tenant_id"]).expires_at == before
 
 
 def test_no_late_fee_before_the_grace_period(

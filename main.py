@@ -6,6 +6,7 @@ compliance clerk, AI outbound voice escalation, and predictive breakdown
 forecasting.
 """
 
+import json
 import logging
 import math
 import os
@@ -14,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -123,6 +124,83 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# The most any request body may be. The largest legitimate one is the
+# public vault check at its 20,000-reading limit, about 3 MB; nothing else
+# comes near. Without a ceiling, sign-up, sign-in and the sensor webhook,
+# all open to anybody, read whatever arrived into memory before looking at
+# a field of it.
+MAX_REQUEST_BYTES = 6_000_000
+
+
+class _BodyTooLarge(HTTPException):
+    """An HTTPException, so a route reading its body answers 413, not 400."""
+
+    def __init__(self, limit: int):
+        super().__init__(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(f"That request is too large. The most this service "
+                    f"accepts is {limit // 1_000_000} MB."))
+
+
+class RequestSizeLimit:
+    """Refuse a body over MAX_REQUEST_BYTES, whether or not it says its size.
+
+    A declared Content-Length over the limit is refused before a byte is
+    read. A body sent in chunks with no length is counted as it arrives and
+    cut off at the limit.
+    """
+
+    def __init__(self, app, limit: int):
+        self.app = app
+        self.limit = limit
+
+    async def _refuse(self, send) -> None:
+        body = json.dumps({"detail": _BodyTooLarge(self.limit).detail}).encode()
+        await send({"type": "http.response.start", "status": 413,
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope.get("headers") or ():
+            if name == b"content-length":
+                try:
+                    declared = int(value)
+                except ValueError:
+                    declared = 0
+                if declared > self.limit:
+                    await self._refuse(send)
+                    return
+        seen = 0
+        started = False
+
+        async def counted_receive():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body") or b"")
+                if seen > self.limit:
+                    raise _BodyTooLarge(self.limit)
+            return message
+
+        async def watched_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counted_receive, watched_send)
+        except _BodyTooLarge:
+            if not started:
+                await self._refuse(send)
+
+
+app.add_middleware(RequestSizeLimit, limit=MAX_REQUEST_BYTES)
 
 # Mount all microservice routers under the central app
 app.include_router(license_router)
