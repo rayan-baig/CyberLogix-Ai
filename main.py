@@ -107,11 +107,18 @@ app = FastAPI(
     version="3.0.0",
 )
 
-# CYBERLOGIX_ALLOWED_ORIGINS accepts a comma-separated origin list in
-# production; the permissive default keeps local development frictionless.
+# CYBERLOGIX_ALLOWED_ORIGINS names, comma-separated and exactly, the other
+# sites whose pages may call this API from a visitor's browser. Unset means
+# none. The console, the sign-up, proof and legal pages are all served from
+# this same origin, which needs no CORS at all, so nothing is lost.
+#
+# CyberLogix runs on a subdomain of MTRX Horizon's domain, beside the other
+# MTRX Horizon products on their own subdomains. A wildcard default would
+# let any of those siblings -- and every other site -- read what this API
+# answers. Each subdomain is its own origin on purpose; keep it that way.
 _ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.environ.get("CYBERLOGIX_ALLOWED_ORIGINS", "*").split(",")
+    for origin in os.environ.get("CYBERLOGIX_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
 
@@ -119,8 +126,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     # Browsers reject credentialed requests against a wildcard origin, so
-    # credentials switch on only once real origins are configured.
-    allow_credentials=_ALLOWED_ORIGINS != ["*"],
+    # credentials switch on only once real origins are configured -- and
+    # not at all while there are none, so no response advertises them.
+    allow_credentials=bool(_ALLOWED_ORIGINS) and "*" not in _ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

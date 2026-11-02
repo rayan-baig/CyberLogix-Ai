@@ -228,9 +228,11 @@ def checks() -> List[Dict[str, Any]]:
     origins = os_allowed_origins()
     found.append(_check(
         "origins", "The browser origin policy is not wide open", MONITOR,
-        WARNS if origins == ["*"] else OK,
-        ", ".join(origins),
-        "Name your own domain once it exists." if origins == ["*"] else "",
+        WARNS if "*" in origins else OK,
+        ", ".join(origins) or "this site only",
+        "A wildcard lets every site, including the other apps on the "
+        "parent domain, read this API from a visitor's browser. Name exact "
+        "origins, or leave it unset." if "*" in origins else "",
     ))
 
     return found
@@ -242,11 +244,11 @@ def os_allowed_origins() -> List[str]:
 
     main = sys.modules.get("main")
     configured = getattr(main, "_ALLOWED_ORIGINS", None) if main else None
-    if configured:
+    if configured is not None:
         return list(configured)
     return [
         origin.strip()
-        for origin in os.environ.get("CYBERLOGIX_ALLOWED_ORIGINS", "*").split(",")
+        for origin in os.environ.get("CYBERLOGIX_ALLOWED_ORIGINS", "").split(",")
         if origin.strip()
     ]
 

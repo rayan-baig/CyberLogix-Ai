@@ -51,10 +51,14 @@ PAYMENT_TERMS_DAYS = 30
 # Who is issuing the invoice. An invoice without the issuer's legal name,
 # address and remittance details is not a document a finance department
 # can pay against, and in most jurisdictions is not a valid tax invoice
-# either. Configured rather than hard-coded, because the entity behind the
-# product is a business decision and will change once it is incorporated.
+# either. CyberLogix is a product of MTRX Horizon, so MTRX Horizon is the
+# issuer: set CYBERLOGIX_LEGAL_NAME to its registered name once it is
+# incorporated. Configured rather than hard-coded, because that exact name
+# (and its suffix) is a business fact the code cannot know.
+COMPANY = "MTRX Horizon"
+
 ISSUER = {
-    "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", "CyberLogix AI"),
+    "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", COMPANY),
     "address": os.environ.get("CYBERLOGIX_ADDRESS", ""),
     "tax_id": os.environ.get("CYBERLOGIX_TAX_ID", ""),
     "remit_to": os.environ.get("CYBERLOGIX_REMIT_TO", ""),
@@ -69,7 +73,7 @@ def issuer_block() -> Dict[str, Any]:
     a document whose whole job is to look correct.
     """
     block = {k: v for k, v in ISSUER.items() if v}
-    block.setdefault("legal_name", "CyberLogix AI")
+    block.setdefault("legal_name", COMPANY)
     if len(block) == 1:
         block["note"] = (
             "Issuer details are not configured. Set CYBERLOGIX_LEGAL_NAME, "
@@ -112,7 +116,7 @@ def render_invoice(invoice: Invoice, tenant: Tenant) -> str:
     out = [
         f"INVOICE {invoice.number}",
         "",
-        f"From:   {issuer.get('legal_name', 'CyberLogix AI')}",
+        f"From:   {issuer.get('legal_name', COMPANY)}",
     ]
     for line in (issuer.get("address") or "").splitlines():
         if line.strip():

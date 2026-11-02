@@ -52,6 +52,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from auth import require_platform_admin
+from invoicing import COMPANY
 from store import (
     MAIL_MAX_AGE_HOURS,
     MAIL_MAX_ATTEMPTS,
@@ -279,6 +280,9 @@ def _footer(address: str, klass: str) -> str:
             "This message concerns your account and is sent regardless of "
             "marketing preferences."
         )
+    # Who is writing. The product's name is on the From line; the company
+    # behind it is MTRX Horizon, the same one the agreements are with.
+    parts.append(f"CyberLogix is a product of {COMPANY}.")
     return "\n".join(parts)
 
 
