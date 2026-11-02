@@ -152,3 +152,64 @@ def test_foreign_sensor_is_invisible(api, tenant_factory, sensor_factory):
 
     resp = api.get("/api/forecast/sensor/ALICE-1", headers=bob)
     assert resp.status_code == 404
+
+
+def test_a_celsius_account_gets_its_brief_written_in_celsius(
+    api, tenant_factory, sensor_factory, seed_readings, stub_gemini
+):
+    """The model repeats the numbers it is handed, so hand it the right ones."""
+    headers, _ = tenant_factory()
+    resp = api.post("/api/licenses/me/temperature-unit", headers=headers,
+                    json={"temperature_unit": "C"})
+    assert resp.status_code == 200, resp.text
+    sensor_factory(headers)
+    # 68 -> 74°F over 30 minutes: 12°F an hour, which is 6.667°C an hour.
+    seed_readings("RACK-01", [68.0, 70.0, 72.0, 74.0])
+    STORE.get_sensor("RACK-01").last_temperature = 74.0
+
+    body = api.get(
+        "/api/forecast/sensor/RACK-01?narrate=true", headers=headers
+    ).json()
+
+    assert body["brief_source"] == "gemini"
+    prompt = stub_gemini.prompts[-1]
+    assert "°F" not in prompt
+    assert "Fahrenheit" not in prompt
+    assert "23.33°C" in prompt          # 74°F, now
+    assert "25.56°C" in prompt          # the 78°F data-hall limit
+    assert "6.667°C per hour" in prompt
+    assert "degrees Celsius" in prompt
+
+
+def test_a_celsius_account_gets_a_celsius_fallback_brief(
+    api, tenant_factory, sensor_factory, seed_readings, break_gemini
+):
+    headers, _ = tenant_factory()
+    api.post("/api/licenses/me/temperature-unit", headers=headers,
+             json={"temperature_unit": "C"})
+    sensor_factory(headers)
+    seed_readings("RACK-01", [68.0, 70.0, 72.0, 74.0])
+    break_gemini()
+
+    body = api.get(
+        "/api/forecast/sensor/RACK-01?narrate=true", headers=headers
+    ).json()
+
+    assert body["brief_source"] == "fallback_template"
+    assert "6.667°C per hour" in body["maintenance_brief"]
+    assert "°F" not in body["maintenance_brief"]
+
+
+def test_a_fahrenheit_account_still_gets_fahrenheit(
+    api, tenant_factory, sensor_factory, seed_readings, stub_gemini
+):
+    headers, _ = tenant_factory()
+    sensor_factory(headers)
+    seed_readings("RACK-01", [68.0, 70.0, 72.0, 74.0])
+    STORE.get_sensor("RACK-01").last_temperature = 74.0
+
+    api.get("/api/forecast/sensor/RACK-01?narrate=true", headers=headers)
+
+    prompt = stub_gemini.prompts[-1]
+    assert "74.0°F" in prompt and "12.0°F per hour" in prompt
+    assert "°C" not in prompt

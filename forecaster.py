@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 import patterns
 from gemini import safe_generate
 from licenses import require_entitlement
-from store import INDUSTRY_PROFILES, STORE, Reading, Tenant, utc_now
+from store import INDUSTRY_PROFILES, STORE, Reading, Tenant, format_temperature, utc_now
 
 logger = logging.getLogger("cyberlogix.forecaster")
 
@@ -223,10 +223,24 @@ def sensor_forecast(
     result = forecast_sensor(sensor_id, window_hours)
 
     if narrate and result["risk_level"] in {"critical", "high", "elevated"}:
+        # In the account's own unit, prompt and fallback alike. The model
+        # repeats the numbers it is given, so a Celsius kitchen handed
+        # Fahrenheit inputs got a brief about a walk-in "at 45°F" that its
+        # console, its texts and its records all call 7.22°C.
+        unit = tenant.temperature_unit
+        unit_name = "Celsius" if unit == "C" else "Fahrenheit"
+        drift = result["trend_f_per_hour"]
+        if drift is not None and unit == "C":
+            drift = round(drift * 5.0 / 9.0, 3)
+        current = format_temperature(result["current_temperature"], unit)
+        heading_down = (result["trend_f_per_hour"] or 0) < 0
+        limit = format_temperature(
+            result["danger_below"] if heading_down else result["danger_above"], unit
+        )
         fallback = (
             f"{result['industry_name']} sensor {sensor_id} at "
             f"{result['location_name']} is drifting "
-            f"{result['trend_f_per_hour']}°F per hour and is projected to breach "
+            f"{drift}°{unit} per hour and is projected to breach "
             f"in {result['hours_until_breach']} hours. Likely cause: "
             f"{result['likely_catastrophe']}. Schedule preventive maintenance."
         )
@@ -235,8 +249,9 @@ def sensor_forecast(
 
         Sector: {result['industry_name']}
         Sensor: {sensor_id} at {result['location_name']}
-        Current temperature: {result['current_temperature']}°F
-        Measured drift: {result['trend_f_per_hour']}°F per hour
+        Current temperature: {current}
+        Limit it is heading for: {limit}
+        Measured drift: {drift}°{unit} per hour
         Trend confidence (r-squared): {result['confidence']}
         Projected hours until threshold breach: {result['hours_until_breach']}
         Most likely underlying catastrophe: {result['likely_catastrophe']}
@@ -244,8 +259,9 @@ def sensor_forecast(
         Write a 2-to-3 sentence preventive maintenance brief for the facility
         manager. Say what the equipment is probably doing mechanically to
         produce this drift, and give one specific thing to physically check
-        before the threshold is crossed. No markdown, no bullet points. Return
-        only the brief.
+        before the threshold is crossed. This site reads temperatures in
+        degrees {unit_name}: write any temperature in °{unit} only. No
+        markdown, no bullet points. Return only the brief.
         """
         narrative, source = safe_generate(
             prompt, fallback, purpose="maintenance brief",
