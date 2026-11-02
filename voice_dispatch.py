@@ -124,25 +124,31 @@ def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
 
 
 def _notify_hooks(
-    tenant: Tenant, incident: Incident, state: str, note: str = ""
+    tenant: Tenant, incident: Incident, state: str, note: str = "",
+    background: bool = False,
 ) -> None:
     """Tell the chat channels and the rotation what changed.
+
+    `background` posts from a worker and returns at once: what the sweep
+    asks for, so a slow channel never holds up the next escalation.
 
     Imported inside the call: webhooks imports the store and auth helpers,
     and a module-level import would close the cycle.
     """
-    from webhooks import dispatch_event
+    from webhooks import dispatch_event, dispatch_event_later
 
-    dispatch_event(
-        tenant, incident, STORE.get_sensor(incident.sensor_id), state, note
-    )
+    send = dispatch_event_later if background else dispatch_event
+    send(tenant, incident, STORE.get_sensor(incident.sensor_id), state, note)
 
 
-def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
+def dispatch_voice_call(incident: Incident, tenant: Tenant,
+                        hooks_in_background: bool = False) -> dict:
     """Draft the script, place the call and stamp the incident.
 
     Shared by the manual escalate endpoint and the autopilot sweep so both
-    routes record delivery identically.
+    routes record delivery identically. The sweep passes
+    `hooks_in_background`, so the copy into Slack, Teams or PagerDuty goes
+    out without the sweep waiting on it.
     """
     script, source = build_voice_script(incident, tenant)
 
@@ -175,6 +181,7 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant) -> dict:
         "escalated",
         f"No acknowledgement after {int(incident.minutes_open())} minutes; "
         "a voice call has been placed.",
+        background=hooks_in_background,
     )
 
     logger.critical(

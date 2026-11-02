@@ -42,7 +42,7 @@ COPY . .
 
 # SQLite lives here. Mount a volume at /app/data to outlive the container;
 # leave it unmounted for a stateless deployment that rebuilds from
-# telemetry. Note the scheduler assumption below before scaling out.
+# telemetry. Note the one-process assumption below.
 ENV CYBERLOGIX_DB_PATH=/app/data/cyberlogix.db
 
 RUN mkdir -p /app/data \
@@ -58,8 +58,9 @@ EXPOSE 8080
 # user with setpriv, before the application starts. Nothing else runs as root.
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
-# One worker on purpose. The unattended sweep runs in-process, so a second
-# worker would escalate the same incident twice; scale out by setting
-# CYBERLOGIX_SWEEP_SECONDS=0 and driving POST /api/autopilot/sweep-all from an
-# external scheduler instead.
+# One worker on purpose. Records are held in memory and the unattended sweep
+# runs in-process, so a second worker would keep its own copy of everything
+# and escalate the same incident twice. CYBERLOGIX_SWEEP_SECONDS=0 with an
+# external scheduler driving POST /api/autopilot/sweep-all changes who starts
+# the sweep, not how many processes are safe. See DEPLOY.md, section 2.
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

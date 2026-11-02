@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -67,6 +68,22 @@ WEBHOOK_FANOUT_WORKERS = 8
 # So the fan-out also carries a wall-clock budget it will not exceed,
 # whatever the hooks underneath it are doing.
 WEBHOOK_FANOUT_BUDGET_SECONDS = 12
+
+# One more try for a failure that a second try can fix: the receiver
+# unreachable, overloaded (5xx) or asking us to slow down (429, 408). Not
+# for a 4xx that means the URL or key is wrong, and not for a refusal of
+# ours. After a short pause, and only if the try still fits inside the
+# fan-out budget, so a retry can never make the breach handler wait longer.
+WEBHOOK_RETRY_PAUSE_SECONDS = 1.0
+RETRYABLE_STATUSES = frozenset({"unreachable", "http_408", "http_429"})
+
+# Copies posted from the escalation sweep go to these workers, not the
+# sweep's own thread: a channel that is slow to answer must not hold up
+# the next business's escalation behind it.
+_background = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="webhook-later")
+_pending: List[concurrent.futures.Future] = []
+_pending_lock = threading.Lock()
 
 PAGERDUTY_ENQUEUE_URL = "https://events.pagerduty.com/v2/enqueue"
 
@@ -295,6 +312,27 @@ class _NoRedirects(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirects)
 
 
+def masked_url(url: str) -> str:
+    """A hook URL as it may appear in a log line: the host and a tail.
+
+    The whole URL of a Slack or Teams hook is the credential; anybody
+    holding it can post into the channel. Logs are read by more people
+    than the console is, and are kept for longer.
+    """
+    try:
+        host = urllib.parse.urlsplit(url).hostname or "?"
+    except ValueError:
+        host = "?"
+    tail = url[-6:] if len(url) > 12 else "******"
+    return f"{host}/...{tail}"
+
+
+def _worth_retrying(http_status: str) -> bool:
+    return http_status in RETRYABLE_STATUSES or (
+        http_status.startswith("http_5") and len(http_status) == 8
+    )
+
+
 def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
     """POST JSON, returning (delivered, status).
 
@@ -315,7 +353,8 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
         if "%" in parts.netloc:
             return False, "refused_private_address"
         if not ALLOW_PRIVATE_WEBHOOK_TARGETS and _resolves_privately(parts.hostname):
-            logger.warning("Refused a webhook post to a private address (%s).", url)
+            logger.warning("Refused a webhook post to a private address (%s).",
+                           masked_url(url))
             return False, "refused_private_address"
 
         request = urllib.request.Request(
@@ -332,7 +371,10 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
     except urllib.error.HTTPError as exc:
         return False, f"http_{exc.code}"
     except Exception as exc:  # noqa: BLE001 - a hook outage must not kill the alert
-        logger.warning("Webhook post failed (%s).", exc)
+        # The exception's own text can quote the URL back (http.client
+        # does, for a bad port), so only its kind is logged.
+        logger.warning("Webhook post to %s failed (%s).", masked_url(url),
+                       type(exc).__name__)
         return False, "unreachable"
 
 
@@ -361,6 +403,8 @@ def dispatch_event(
         logger.exception("Could not describe the event for webhooks (%s).", exc)
         return []
 
+    deadline = time.monotonic() + WEBHOOK_FANOUT_BUDGET_SECONDS
+
     def _attempt(hook: AlertWebhook) -> tuple[bool, str]:
         # Per hook, so one broken configuration cannot stop the others —
         # and so none of them can stop the breach handler, which has
@@ -369,14 +413,21 @@ def dispatch_event(
         # collector below, on one thread, under the store's own lock.
         try:
             url, body = build_payload(hook, event)
-            return _post(url, body)
+            delivered, http_status = _post(url, body)
+            room = deadline - time.monotonic()
+            if (not delivered and _worth_retrying(http_status)
+                    and room > WEBHOOK_RETRY_PAUSE_SECONDS + WEBHOOK_TIMEOUT_SECONDS):
+                time.sleep(WEBHOOK_RETRY_PAUSE_SECONDS)
+                delivered, http_status = _post(url, body)
+                if not delivered:
+                    http_status = f"{http_status}_after_retry"
+            return delivered, http_status
         except Exception as exc:  # noqa: BLE001 - the alert is the SMS and the call
             logger.exception(
                 "Webhook %s failed unexpectedly (%s).", hook.webhook_id, exc
             )
             return False, "dispatch_error"
 
-    deadline = time.monotonic() + WEBHOOK_FANOUT_BUDGET_SECONDS
     pool = concurrent.futures.ThreadPoolExecutor(
         max_workers=min(len(hooks), WEBHOOK_FANOUT_WORKERS),
         thread_name_prefix="webhook-fanout",
@@ -426,6 +477,29 @@ def dispatch_event(
             }
         )
     return results
+
+
+def dispatch_event_later(
+    tenant: Tenant, incident, sensor, state: str, note: str = ""
+) -> concurrent.futures.Future:
+    """The same as dispatch_event, on a worker, without waiting for it.
+
+    For the escalation sweep: a chat channel taking its full budget to
+    answer must not delay the next incident's phone call.
+    """
+    future = _background.submit(dispatch_event, tenant, incident, sensor, state, note)
+    with _pending_lock:
+        _pending[:] = [f for f in _pending if not f.done()]
+        _pending.append(future)
+    return future
+
+
+def wait_for_background(timeout: float = 30.0) -> bool:
+    """Wait for copies still being posted. For tests and shutdown."""
+    with _pending_lock:
+        waiting = list(_pending)
+    done, not_done = concurrent.futures.wait(waiting, timeout=timeout)
+    return not not_done
 
 
 # ==============================================================================

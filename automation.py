@@ -235,11 +235,23 @@ def compliance_report(
     }
 
     if narrate:
+        def _count(n: int, noun: str) -> str:
+            return f"{n} {noun}" + ("" if n == 1 else "s")
+
+        # Written for the inspector, not the code: with no readings there is
+        # no compliance figure to give, and the summary says that rather
+        # than "n/a%".
+        posture = (
+            f"logging {_count(total_readings, 'reading')} at {overall}% compliance"
+            if overall is not None
+            else "with no readings logged in the period, so no compliance "
+                 "figure can be given"
+        )
         fallback = (
-            f"{tenant.company_name} monitored {len(sensors)} sensors over "
-            f"{days} days, logging {total_readings} readings at "
-            f"{overall if overall is not None else 'n/a'}% compliance with "
-            f"{len(incidents)} incidents opened and {len(resolved)} resolved."
+            f"{tenant.company_name} monitored {_count(len(sensors), 'sensor')} "
+            f"over {_count(days, 'day')}, {posture}. "
+            f"{_count(len(incidents), 'incident')} opened and "
+            f"{len(resolved)} resolved."
         )
         prompt = f"""
         You are the CyberLogix AI Autonomous Compliance Clerk writing the
@@ -635,7 +647,7 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
         if not STORE.claim_voice_escalation(incident):
             continue
 
-        outcome = dispatch_voice_call(incident, tenant)
+        outcome = dispatch_voice_call(incident, tenant, hooks_in_background=True)
         escalated += 1
 
         actions.append(
@@ -689,14 +701,19 @@ def autopilot_sweep(
 def autopilot_sweep_all():
     """Sweep every business once: the route an external scheduler drives.
 
-    With CYBERLOGIX_SWEEP_SECONDS=0 (to run more than one server), the
-    built-in loop is off and something outside has to run the sweep.
+    With CYBERLOGIX_SWEEP_SECONDS=0, the built-in loop is off and
+    something outside has to run the sweep.
     POST /api/autopilot/sweep only sweeps the business that calls it, so
     pointing a scheduler at it left every other business unwatched. This
-    runs the same pass as the built-in loop, for the whole fleet, and
-    records the heartbeat the watchdog reads. Platform admin key only.
+    runs the same pass as the built-in loop, for the whole fleet, records
+    the heartbeat the watchdog reads, and starts the hourly money pass in
+    the background when one is due. Platform admin key only.
     """
     import scheduler
 
-    return scheduler.run_one_pass()
+    result = scheduler.run_one_pass()
+    # The built-in loop also ran billing, chasing, backups, digests and the
+    # mail queue every hour; with it off, this is what starts them.
+    result["money_pass_started"] = scheduler.start_money_pass_if_due()
+    return result
 

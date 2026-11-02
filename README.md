@@ -626,8 +626,10 @@ loop, no broker, no second service to pay for. A failure on one estate
 cannot stop the others.
 
 Set `CYBERLOGIX_SWEEP_SECONDS=0` when an external scheduler drives
-`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped) instead, **or when running more than one
-replica** — otherwise each replica escalates the same incident.
+`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped) instead; that route then also starts the hourly money pass (billing,
+collections, backups, digests, the mail queue). Either way, run **one
+process**: records are held in memory, so a second replica escalates the
+same incident again.
 `GET /api/health` reports which it is.
 
 `POST /api/autopilot/sweep` runs one pass for the calling business on demand. One pass flags
@@ -667,8 +669,15 @@ network — a customer-supplied URL this server posts to is a request-forgery
 primitive. Self-hosted deployments with a receiver on their own LAN can opt
 back in with `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS=1`.
 
-Delivery follows the same rule as SMS and voice: it never raises. Three
-failures in a row flag a hook as failing, and the breach handler carries on.
+Delivery follows the same rule as SMS and voice: it never raises. Each post
+has a five-second timeout and the whole fan-out a twelve-second budget; a
+receiver that is unreachable, overloaded (5xx) or asks us to slow down
+(408, 429) gets one more try after a second, if it still fits in the budget,
+and a wrong URL or key (any other 4xx) does not. Copies sent by the
+escalation sweep go out from a worker, so a slow channel never delays the
+next business's phone call. Three failures in a row flag a hook as failing,
+and the breach handler carries on. Targets are masked in every response,
+audit entry, log line and data export.
 
 `GET /api/autopilot/compliance?days=7` assembles the inspector-ready
 temperature log: readings logged, excursions, per-sensor min/max/mean,
@@ -1751,11 +1760,13 @@ admin key that gates minting resellers.
 
 **`--max-instances 1` is not incidental.** Two things assume a single
 process: SQLite is single-writer, and the unattended sweep runs in-process,
-so a second replica escalates every incident twice. To scale out, set
-`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep-all` from Cloud
-Scheduler, and replace the `Database` class with a Postgres adapter —
-`db.py` is the only file that has to change, since nothing above it writes
-SQL. The adapter needs `put`, `get`, `delete`, `all`, `count` and `clear`.
+so a second replica escalates every incident twice. To scale out, replace
+the `Database` class with a Postgres adapter (and move the in-memory working
+set behind it), then set `CYBERLOGIX_SWEEP_SECONDS=0` and drive
+`POST /api/autopilot/sweep-all` from Cloud Scheduler. Nothing above `db.py`
+writes SQL, but `store.py` holds every record in memory and treats that copy
+as the truth, so it has to read through the shared database too. The adapter
+needs `put`, `get`, `delete`, `all`, `count` and `clear`.
 
 `--min-instances 0` means an idle deployment costs nothing but storage.
 
