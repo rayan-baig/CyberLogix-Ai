@@ -7,7 +7,7 @@ they own has to stay at a temperature.
 A restaurant owner and an IVF clinic director both need exactly this
 product and neither will read the other's page. "Walk-in" means nothing
 in a hangar. "Straw" means nothing in a kitchen. So the profile in
-store.py -- which already knows each vertical's name, its likely
+domain.py -- which already knows each vertical's name, its likely
 catastrophe and what it calls its own equipment -- is joined here to the
 part it does not know: what is lost when it goes wrong, who turns up
 afterwards asking questions, and what paperwork the people working there

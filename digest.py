@@ -1,9 +1,9 @@
 """Two summaries that go out on their own: one to us, one to the customer.
 
 The book at `/book` and the console both answer the right questions and
-both require somebody to open a browser. The person who owns this company
-is away from a screen for most of every working day, which makes "open the
-dashboard" a plan that fails five days a week.
+both require somebody to open a browser. Nobody running a business sits
+in front of a dashboard all day, which makes "open the dashboard" a plan
+that fails most days.
 
 **The operator digest** is the book, once a day, in an email: what was
 billed, what arrived, who needs a call, and anything about the system
