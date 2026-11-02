@@ -23,10 +23,12 @@
 # container", and a stalled sweep becomes a restart loop that hides the
 # stall it was built to expose.
 #
-# **One instance.** The sweep runs in-process, so a second instance
-# escalates the same incident twice: two calls, two texts, one freezer.
-# To scale out, set CYBERLOGIX_SWEEP_SECONDS=0 and drive
-# POST /api/autopilot/sweep-all from an external scheduler instead.
+# **One instance.** The app keeps its records in memory and writes them
+# through to SQLite on this disk, and the sweep runs in-process. A second
+# instance would have its own copy of everything and escalate the same
+# incident again: two calls, two texts, one freezer. Render will not
+# attach one disk to two instances anyway. More than one instance needs a
+# shared database first (db.py), not a setting.
 
 services:
   - type: web

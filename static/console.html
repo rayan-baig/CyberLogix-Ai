@@ -2965,9 +2965,9 @@ function renderPollers(seen) {
 
   $("poller-body").innerHTML = seen.sources.map((row) => `
     <div class="fc-row">
-      <span class="fc-when ${esc(row.broken ? "high"
+      <span class="fc-when ${esc(row.broken || row.stopped ? "high"
           : row.last_status === "ok" ? "" : "medium")}">${
-        esc(row.broken ? "broken"
+        esc(row.stopped ? "stopped" : row.broken ? "broken"
             : row.last_status === "ok" ? "ok"
             : row.last_status || "never asked")}</span>
       <span class="grow">

@@ -9,11 +9,14 @@ This is a plain asyncio task inside the API process: one loop, no broker,
 no extra service to pay for. It sweeps every tenant on an interval and
 logs what it did. If the deployment already has an external scheduler
 (Cloud Scheduler hitting POST /api/autopilot/sweep-all), set
-CYBERLOGIX_SWEEP_SECONDS=0 to switch this off and avoid double-calling.
+CYBERLOGIX_SWEEP_SECONDS=0 to switch this off and avoid double-calling;
+that route then also starts the hourly money pass (see
+start_money_pass_if_due).
 
-One process is assumed. Running several replicas with the loop enabled in
-each would escalate the same incident more than once, so a multi-replica
-deployment should disable it here and drive the endpoint externally.
+One process is assumed, either way. The store keeps its working set in
+memory, so a second process or replica would hold its own copy of every
+record and escalate the same incident again. An external scheduler moves
+who triggers the sweep; it does not make a second replica safe.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from typing import Optional
 
 from automation import sweep_tenant
@@ -142,6 +146,46 @@ def run_money_pass() -> dict:
         "backup": backed_up,
         "mail_queue": flushed,
     }
+
+
+_money_thread: Optional[threading.Thread] = None
+_money_lock = threading.Lock()
+
+
+def _money_pass_in_background() -> None:
+    try:
+        run_money_pass()
+    except Exception as exc:  # noqa: BLE001 - nothing awaits this thread
+        logger.exception("Money pass failed (%s).", exc)
+
+
+def start_money_pass_if_due() -> bool:
+    """Start the hourly money pass for an external scheduler, if it is due.
+
+    With the built-in loop off (CYBERLOGIX_SWEEP_SECONDS=0) the only thing
+    that ran the money pass was that loop, so a deployment driven by an
+    external scheduler swept every business and never invoiced, chased,
+    backed up, sent a digest, or flushed the mail queue -- the queued
+    password-reset links included. /api/autopilot/sweep-all now starts it
+    here when an hour has passed since the last one. On a thread of its
+    own, never in the sweep's way, and one at a time.
+    """
+    global _money_thread
+    if _interval() > 0:
+        return False  # the built-in loop runs it; two would race
+    from store import utc_now
+
+    last = watchdog._read().get("last_money_pass_at")
+    age = watchdog._age_seconds(last, utc_now())
+    if age is not None and age < BILLING_EVERY_SECONDS:
+        return False
+    with _money_lock:
+        if _money_thread is not None and _money_thread.is_alive():
+            return False
+        _money_thread = threading.Thread(
+            target=_money_pass_in_background, name="money-pass", daemon=True)
+        _money_thread.start()
+    return True
 
 
 def run_vendor_polls() -> dict:
@@ -379,11 +423,13 @@ def status() -> dict:
         "billing_interval_seconds": BILLING_EVERY_SECONDS,
         "note": (
             "Sweeps run in-process, and so does billing. Turning this off "
-            "stops both: drive POST /api/autopilot/sweep-all for escalation "
-            "*and* POST /api/contracts/run for billing and collections, or "
-            "the company quietly stops invoicing. Set "
-            "CYBERLOGIX_SWEEP_SECONDS=0 when an external scheduler does "
-            "that, or when running more than one replica."
+            "stops both unless an external scheduler calls POST "
+            "/api/autopilot/sweep-all every few minutes: that sweeps every "
+            "business and, once an hour, starts the money pass (billing, "
+            "collections, backups, digests, the mail queue). POST "
+            "/api/contracts/run bills and chases on its own, if wanted. "
+            "Still one process either way: a second one keeps its own copy "
+            "of every record and escalates the same incident again."
         ),
     }
 

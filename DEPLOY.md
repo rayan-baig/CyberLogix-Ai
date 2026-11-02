@@ -102,11 +102,29 @@ Three things matter here:
   beside the thing it is backing up survives a bad migration and not a
   lost disk.
 
-**One worker, on purpose.** The sweep runs in-process, so a second
-worker escalates the same incident twice. To scale out, set
-`CYBERLOGIX_SWEEP_SECONDS=0` and have an external scheduler call
-`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped). Not `/api/autopilot/sweep`: that one only sweeps the business
-that calls it.
+Point the host's health check at `GET /api/health`, never at
+`/api/watchdog`. The watchdog answers 503 on purpose when the sweep has
+gone quiet; read as "unhealthy" by a platform, that becomes a restart
+loop which hides the very stall it reports. Use the watchdog for an
+uptime monitor that tells a person (section 4).
+
+**One process, on purpose.** The application keeps its working set in
+memory and writes through to SQLite, and the sweep runs in-process. A
+second worker or a second instance would hold its own copy of every
+record and escalate the same incident again, so neither the sweep setting
+below nor anything else makes more than one safe. Growing past one
+process means replacing `db.py` with a shared database first.
+
+**Driving the sweep from outside instead** (a platform that sleeps idle
+containers, or a scheduler you already run): set
+`CYBERLOGIX_SWEEP_SECONDS=0` and have the scheduler call
+`POST /api/autopilot/sweep-all` with the `X-CyberLogix-Admin` header every
+few minutes, and set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so
+the watchdog knows when it has stopped. That route sweeps every business
+and, once an hour, starts the money pass in the background (invoices,
+chasing, backups, digests, the mail queue), which the built-in loop
+otherwise runs. Not `/api/autopilot/sweep`: that one only sweeps the
+business that calls it.
 
 ---
 
@@ -131,6 +149,7 @@ CYBERLOGIX_BACKUP_DIR=/srv/backups
 # as themselves for sign-in limits, not all as the proxy. Render: already set.
 CYBERLOGIX_TRUST_PROXY_HEADER=1
 CYBERLOGIX_ADMIN_KEY=<generated above>
+CYBERLOGIX_MAIL_SECRET=<generated above>
 CYBERLOGIX_ALLOWED_ORIGINS=https://your.domain
 PUBLIC_BASE_URL=https://your.domain
 
@@ -139,7 +158,18 @@ TWILIO_AUTH_TOKEN=
 TWILIO_FROM_NUMBER=
 
 CYBERLOGIX_HEARTBEAT_URL=
+
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+MAIL_FROM=
 ```
+
+Mail is what a locked-out owner's password-reset link travels by, as
+well as every invoice. Without `SMTP_HOST` and `MAIL_FROM` those are
+written down and queued, not sent; set them within 72 hours and the queue
+goes out, after that it is dropped.
 
 `.env` holds the credential that reads every customer's contact details.
 It is not a file to commit, paste into a chat, or email to yourself.
@@ -165,7 +195,8 @@ and all of them take a plain `GET`. Put the URL in
 successful sweep; the service alarms when the pings stop.
 
 `GET /api/watchdog` answers 503 when the sweep has gone quiet, which is
-enough for a load balancer, but only while there is a process left to
+enough for an uptime monitor that pages a person (not for the platform's
+health check: see section 2), but only while there is a process left to
 answer at all. That is the case the heartbeat exists for.
 
 ---

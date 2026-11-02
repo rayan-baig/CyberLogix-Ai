@@ -237,12 +237,24 @@ def sensor_forecast(
         limit = format_temperature(
             result["danger_below"] if heading_down else result["danger_above"], unit
         )
+        hours = result["hours_until_breach"]
+        where = f" at {result['location_name']}" if result.get("location_name") else ""
+        moving = f"is drifting {drift}°{unit} per hour and " if drift is not None else ""
+        if result.get("already_breached") or hours == 0:
+            # "Projected to breach in 0.0 hours" was this sentence for a
+            # sensor that is over its limit now.
+            outlook = f"{moving}is already past its limit of {limit}"
+            advice = "Check it now."
+        elif hours is None:
+            outlook = f"{moving}is heading for its limit of {limit}"
+            advice = "Schedule preventive maintenance."
+        else:
+            outlook = (f"{moving}is projected to reach its limit of {limit} "
+                       f"in about {hours} hours")
+            advice = "Schedule preventive maintenance."
         fallback = (
-            f"{result['industry_name']} sensor {sensor_id} at "
-            f"{result['location_name']} is drifting "
-            f"{drift}°{unit} per hour and is projected to breach "
-            f"in {result['hours_until_breach']} hours. Likely cause: "
-            f"{result['likely_catastrophe']}. Schedule preventive maintenance."
+            f"{result['industry_name']} sensor {sensor_id}{where} {outlook}. "
+            f"Likely cause: {result['likely_catastrophe']}. {advice}"
         )
         prompt = f"""
         You are the CyberLogix AI predictive maintenance analyst.

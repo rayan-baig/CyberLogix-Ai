@@ -195,6 +195,17 @@ def ingest_for_tenant(tenant: Tenant, payload: "GenericWebhookPayload") -> Dict[
     return ingest_reading(_reject_lapsed(tenant), None, payload)
 
 
+def _refuse_out_of_scope(scoped, sensor) -> None:
+    """A per-sensor key may name its own sensor, and nothing else."""
+    if scoped is not None and (sensor is None or scoped.sensor_id != sensor.sensor_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"This sensor key may only report for '{scoped.sensor_id}'."
+            ),
+        )
+
+
 def ingest_reading(tenant: Tenant, scoped, payload: "GenericWebhookPayload", signed: bool = False) -> Dict[str, Any]:
     """Score and store one reading for an authenticated caller."""
     metric = payload.metric_type.strip().lower()
@@ -205,6 +216,12 @@ def ingest_reading(tenant: Tenant, scoped, payload: "GenericWebhookPayload", sig
         )
 
     sensor = STORE.sensor_by_device(payload.device_sn, tenant.tenant_id)
+    # A per-sensor key reports for its own asset and no other. Without
+    # this, one leaked device token could write readings for every sensor
+    # in the estate -- including a nominal one over a freezer that is
+    # actually failing. Checked before the doorstep: a sensor key is not a
+    # way to leave readings waiting under somebody else's serial either.
+    _refuse_out_of_scope(scoped, sensor)
     if sensor is None or sensor.tenant_id != tenant.tenant_id:
         # Not an error worth throwing the reading away over. A device
         # that is sending us readings has already done the hard part;
@@ -224,18 +241,6 @@ def ingest_reading(tenant: Tenant, scoped, payload: "GenericWebhookPayload", sig
                 "is being held rather than watched. It is now waiting in "
                 "the console under Devices knocking; adding it there takes "
                 "one tap and keeps what it has already sent."
-            ),
-        )
-
-    # A per-sensor key reports for its own asset and no other. Without
-    # this, one leaked device token could write readings for every sensor
-    # in the estate — including a nominal one over a freezer that is
-    # actually failing.
-    if scoped is not None and scoped.sensor_id != sensor.sensor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"This sensor key may only report for '{scoped.sensor_id}'."
             ),
         )
 
@@ -621,6 +626,10 @@ def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):
                 ),
             },
         )
+
+    if scoped is not None:
+        _refuse_out_of_scope(
+            scoped, STORE.sensor_by_device(verdict["serial"] or "", tenant.tenant_id))
 
     unit = verdict["unit"]
     if unit is None:
