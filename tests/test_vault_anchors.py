@@ -119,14 +119,19 @@ def test_retention_turnover_is_not_called_tampering(api, operator_factory, senso
     assert body["attestations_broken"] == 0, "eviction reported as tampering"
 
 
-def test_many_later_attestations_do_not_hide_a_tamper(api, operator_factory, sensor_factory):
+def test_many_later_attestations_do_not_hide_a_tamper(
+    api, operator_factory, sensor_factory, monkeypatch
+):
+    # A daily ceiling of 8 is flooded the same way as one of 48, in a sixth
+    # of the requests.
+    monkeypatch.setattr(store, "MAX_ANCHORS_PER_SENSOR_PER_DAY", 8)
     headers = _spaced_estate(api, operator_factory, sensor_factory, 10)
     api.get("/api/vault/attestation/FRZ-1", headers=headers)      # honest anchor
     STORE.readings_for("FRZ-1")[1].temperature_fahrenheit = 99.0  # the edit
     assert api.get("/api/vault/verify/FRZ-1", headers=headers).json()["intact"] is False
-    # The tamperer asks for 200 attestations with different windows; the
-    # newest-only dedupe does not stop them and /verify only looks at 200.
-    for d in range(1, 201):
+    # The tamperer asks for many more attestations than the ceiling, each
+    # with a different window, so the newest-only dedupe does not stop them.
+    for d in range(1, 4 * store.MAX_ANCHORS_PER_SENSOR_PER_DAY):
         api.get(f"/api/vault/attestation/FRZ-1?days={d}", headers=headers)
         api.post("/api/sensor-pulse", headers=headers,
                  json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 30.0})

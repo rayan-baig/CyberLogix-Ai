@@ -32,8 +32,17 @@ os.environ["CYBERLOGIX_PROVISIONING_KEY"] = "test-provisioning-key"
 os.environ["CYBERLOGIX_ADMIN_KEY"] = "test-admin-key"
 
 import gemini  # noqa: E402
+import store as _store_module  # noqa: E402
 from main import app  # noqa: E402
 from store import STORE  # noqa: E402
+
+# Password hashing at a fraction of its real cost. The suite hashes and
+# checks some two thousand passwords; at the production cost of about
+# 50 ms each that was half of the whole run, spent proving nothing about
+# the code under test. Hashing and checking both read this one value, so
+# every test still signs in through the real scrypt path.
+# test_accounts.py checks the production value has not been lowered.
+_store_module.SCRYPT_N = 2**4
 
 # Every (method, route) a test reaches, for test_every_route_is_tested.
 # Recorded at the edge of the app so it sees exactly what the router

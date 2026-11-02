@@ -138,7 +138,7 @@ class _BodyTooLarge(HTTPException):
 
     def __init__(self, limit: int):
         super().__init__(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=(f"That request is too large. The most this service "
                     f"accepts is {limit // 1_000_000} MB."))
 
@@ -441,7 +441,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     # attaches into strings; then scrub, because the encoder passes floats
     # through untouched and NaN is what json.dumps refuses.
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": scrub(jsonable_encoder(exc.errors()))},
     )
 

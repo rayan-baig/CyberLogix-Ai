@@ -21,7 +21,16 @@ import io
 
 import pytest
 
+import store
 from store import STORE
+
+
+@pytest.fixture()
+def short_buffer(monkeypatch):
+    """A ring buffer of 30, so filling one takes 50 requests and not 520.
+    It rolls over the same way at any length."""
+    monkeypatch.setattr(store, "MAX_READINGS_PER_SENSOR", 30)
+    return 30
 
 
 @pytest.fixture()
@@ -203,7 +212,7 @@ def test_the_per_sensor_attestation_verifies_for_this_customer(api, cellar):
 
 
 def test_the_report_declares_the_window_it_can_answer_for(
-    api, tenant_factory, sensor_factory
+    api, tenant_factory, sensor_factory, short_buffer
 ):
     """Readings roll off. A 30-day report answered from 41 hours of data
     is not wrong to exist — it is wrong to say nothing about it.
@@ -212,7 +221,7 @@ def test_the_report_declares_the_window_it_can_answer_for(
     reasonably believes that is the whole period, and nobody looking at
     it could tell the first 28 days had been deleted.
     """
-    from store import MAX_READINGS_PER_SENSOR
+    MAX_READINGS_PER_SENSOR = short_buffer
 
     headers, _ = tenant_factory(plan="enterprise")
     sensor_factory(headers, "FRZ-1", "cryostorage")
@@ -244,10 +253,10 @@ def test_a_period_within_the_window_is_reported_as_complete(
 
 
 def test_the_csv_carries_the_warning_on_its_face(
-    api, tenant_factory, sensor_factory
+    api, tenant_factory, sensor_factory, short_buffer
 ):
     """Somebody opening this in Excel must see it without going to ask."""
-    from store import MAX_READINGS_PER_SENSOR
+    MAX_READINGS_PER_SENSOR = short_buffer
 
     headers, _ = tenant_factory(plan="enterprise")
     sensor_factory(headers, "FRZ-1", "cryostorage")

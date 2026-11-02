@@ -15,7 +15,16 @@ complete-looking one, arguing against the claim it was attached to.
 
 import pytest
 
-from store import MAX_READINGS_PER_SENSOR, STORE
+import store
+from store import STORE
+
+
+@pytest.fixture(autouse=True)
+def short_buffer(monkeypatch):
+    """A buffer of 100 rolls over exactly as one of 500 does, in a fifth of
+    the requests. Set before any sensor exists, because each sensor's
+    buffer takes its length when it is registered."""
+    monkeypatch.setattr(store, "MAX_READINGS_PER_SENSOR", 100)
 
 
 def _pulse(api, headers, temp, sensor="VAX-1"):
@@ -38,7 +47,7 @@ def failed_freezer(api, tenant_factory, sensor_factory):
 
 def _bury(api, headers, count=None):
     """Enough normal operation to roll the failure out of the buffer."""
-    for _ in range(count or MAX_READINGS_PER_SENSOR + 50):
+    for _ in range(count or store.MAX_READINGS_PER_SENSOR + 50):
         _pulse(api, headers, 38.0)
 
 
@@ -198,6 +207,6 @@ def test_preservation_is_bounded_and_does_not_disable_the_ring_buffer(
     preserved = STORE.get_incident(incident_id).evidence_readings
 
     # The buffer still rolls.
-    assert len(live) == MAX_READINGS_PER_SENSOR
+    assert len(live) == store.MAX_READINGS_PER_SENSOR
     # And the incident holds only its own window, not the whole history.
-    assert len(preserved) < MAX_READINGS_PER_SENSOR
+    assert len(preserved) < store.MAX_READINGS_PER_SENSOR

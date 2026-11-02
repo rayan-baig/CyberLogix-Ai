@@ -152,6 +152,7 @@ def test_a_redirect_is_not_followed(estate, monkeypatch):
                 {"Authorization": "secret-token"})
     finally:
         server.shutdown()
+        server.server_close()
 
 
 def test_a_real_vendor_url_still_works(api, estate):
@@ -510,8 +511,10 @@ def test_a_vendor_trickling_its_headers_is_cut_off(monkeypatch):
     import time as _time
 
     monkeypatch.setattr(pollers, "_resolve_to_public", lambda host: None)
-    monkeypatch.setattr(pollers, "TIMEOUT_SECONDS", 1)
-    monkeypatch.setattr(pollers, "FETCH_DEADLINE_SECONDS", 1.5)
+    # Each byte comes well inside the per-read timeout, so only the overall
+    # deadline can end it.
+    monkeypatch.setattr(pollers, "TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(pollers, "FETCH_DEADLINE_SECONDS", 0.6)
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
@@ -522,8 +525,8 @@ def test_a_vendor_trickling_its_headers_is_cut_off(monkeypatch):
         c.recv(4096)
         c.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: ")
         try:
-            for _ in range(20):
-                _time.sleep(0.4)
+            for _ in range(40):
+                _time.sleep(0.15)
                 c.sendall(b"a")
         except OSError:
             pass
@@ -533,7 +536,7 @@ def test_a_vendor_trickling_its_headers_is_cut_off(monkeypatch):
     started = _time.monotonic()
     with pytest.raises(TimeoutError):
         pollers._fetch(f"http://127.0.0.1:{port}/x", {})
-    assert _time.monotonic() - started < 4
+    assert _time.monotonic() - started < 3
     srv.close()
 
 
