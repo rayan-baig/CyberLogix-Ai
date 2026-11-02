@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from gemini import safe_generate
-from auth import require_role_or_machine
+from auth import require_platform_admin, require_role_or_machine
 from licenses import require_tenant
 from store import (
     INDUSTRY_PROFILES,
@@ -680,3 +680,20 @@ def autopilot_sweep(
     instead.
     """
     return sweep_tenant(tenant, auto_escalate)
+
+
+@router.post("/sweep-all", dependencies=[Depends(require_platform_admin)])
+def autopilot_sweep_all():
+    """Sweep every business once: the route an external scheduler drives.
+
+    With CYBERLOGIX_SWEEP_SECONDS=0 (to run more than one server), the
+    built-in loop is off and something outside has to run the sweep.
+    POST /api/autopilot/sweep only sweeps the business that calls it, so
+    pointing a scheduler at it left every other business unwatched. This
+    runs the same pass as the built-in loop, for the whole fleet, and
+    records the heartbeat the watchdog reads. Platform admin key only.
+    """
+    import scheduler
+
+    return scheduler.run_one_pass()
+

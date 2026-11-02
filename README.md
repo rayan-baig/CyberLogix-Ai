@@ -619,11 +619,11 @@ loop, no broker, no second service to pay for. A failure on one estate
 cannot stop the others.
 
 Set `CYBERLOGIX_SWEEP_SECONDS=0` when an external scheduler drives
-`POST /api/autopilot/sweep` instead, **or when running more than one
+`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped) instead, **or when running more than one
 replica** — otherwise each replica escalates the same incident.
 `GET /api/health` reports which it is.
 
-`POST /api/autopilot/sweep` still runs one pass on demand. One pass flags
+`POST /api/autopilot/sweep` runs one pass for the calling business on demand. One pass flags
 sensors that have gone silent for over 30 minutes (a sensor that cannot
 report cannot warn you) and places voice calls for incidents past the grace
 window. Pass `auto_escalate=false` to report without calling.
@@ -1706,7 +1706,7 @@ admin key that gates minting resellers.
 **`--max-instances 1` is not incidental.** Two things assume a single
 process: SQLite is single-writer, and the unattended sweep runs in-process,
 so a second replica escalates every incident twice. To scale out, set
-`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep` from Cloud
+`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep-all` from Cloud
 Scheduler, and replace the `Database` class with a Postgres adapter —
 `db.py` is the only file that has to change, since nothing above it writes
 SQL. The adapter needs `put`, `get`, `delete`, `all`, `count` and `clear`.

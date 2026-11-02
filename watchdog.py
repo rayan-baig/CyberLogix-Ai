@@ -129,9 +129,22 @@ def _interval() -> int:
     return scheduler._interval()
 
 
+def _external_interval() -> int:
+    """How often an external scheduler is expected to call /sweep-all.
+
+    Only used when the built-in loop is off. Five minutes unless told."""
+    try:
+        return max(1, int(os.environ.get("CYBERLOGIX_EXTERNAL_SWEEP_SECONDS", "300")))
+    except ValueError:
+        return 300
+
+
 def stale_after_seconds() -> float:
     """How long a silence has to last before it means something."""
-    return max(_interval() * STALE_AFTER_MULTIPLE, STALE_FLOOR_SECONDS)
+    interval = _interval()
+    if interval <= 0:
+        interval = _external_interval()
+    return max(interval * STALE_AFTER_MULTIPLE, STALE_FLOOR_SECONDS)
 
 
 def state(now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -153,8 +166,12 @@ def state(now: Optional[datetime] = None) -> Dict[str, Any]:
 
     enabled = scheduler.status()["enabled"]
     # Never swept and the loop is off is not a fault: an external
-    # scheduler drives it, and it may simply not have fired yet.
-    sweep_stale = enabled and (sweep_age is None or sweep_age > limit)
+    # scheduler drives it, and it may simply not have fired yet. But once
+    # it has fired, it is held to the same limit: an external scheduler
+    # that stops is the same silence as a loop that dies.
+    sweep_stale = (sweep_age is None or sweep_age > limit) if enabled else (
+        sweep_age is not None and sweep_age > limit
+    )
     money_stale = money_age is not None and money_age > MONEY_STALE_AFTER_SECONDS
 
     reasons = []

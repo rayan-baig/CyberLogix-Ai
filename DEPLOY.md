@@ -104,8 +104,9 @@ Three things matter here:
 
 **One worker, on purpose.** The sweep runs in-process, so a second
 worker escalates the same incident twice. To scale out, set
-`CYBERLOGIX_SWEEP_SECONDS=0` and drive `POST /api/autopilot/sweep` from
-an external scheduler instead.
+`CYBERLOGIX_SWEEP_SECONDS=0` and have an external scheduler call
+`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped). Not `/api/autopilot/sweep`: that one only sweeps the business
+that calls it.
 
 ---
 

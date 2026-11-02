@@ -60,6 +60,6 @@ ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # One worker on purpose. The unattended sweep runs in-process, so a second
 # worker would escalate the same incident twice; scale out by setting
-# CYBERLOGIX_SWEEP_SECONDS=0 and driving POST /api/autopilot/sweep from an
+# CYBERLOGIX_SWEEP_SECONDS=0 and driving POST /api/autopilot/sweep-all from an
 # external scheduler instead.
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]
