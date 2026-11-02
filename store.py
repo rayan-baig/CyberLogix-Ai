@@ -67,6 +67,18 @@ SENSOR_OFFLINE_AFTER_MINUTES = 30
 # How long a breach may sit unacknowledged before voice escalation is due.
 VOICE_ESCALATION_GRACE_MINUTES = 10
 
+# When the sweep sends an incident's alert text again, in minutes after the
+# incident opened, if every text so far failed. After the last step the
+# normal escalation (the voice call, where the plan has one) is all there is.
+SMS_RETRY_AFTER_MINUTES = (1, 5, 15)
+
+# Failures that a second try can fix: Twilio down, slow or briefly refusing.
+# Not here, on purpose: dry run (no credentials, so nothing is ever sent),
+# the daily spending cap (a decision, not a fault) and a number we block.
+RETRYABLE_SMS_STATUSES = frozenset(
+    {"send_failed", "client_unavailable", "delivery_error"}
+)
+
 # How long after a voice call an operator may deliberately place another,
 # because nobody picked up. Short enough to be useful; long enough that a
 # double-click, a retried request, or a dozen operators reacting to the
@@ -1037,6 +1049,58 @@ class Incident:
     # Incidents are kept for years; readings are not. So the evidence for
     # an event that mattered is copied onto the thing that survives.
     evidence_readings: List[Dict[str, Any]] = field(default_factory=list)
+    # Re-sends of the alert text after every text failed. `sms_retry_step`
+    # is how many steps of SMS_RETRY_AFTER_MINUTES have been claimed; it is
+    # stored, so a restart or a second sweep does not send a step twice.
+    sms_retry_step: int = 0
+    sms_retries: List[Dict[str, Any]] = field(default_factory=list)
+
+    def _sms_receipts(self) -> List[Dict[str, Any]]:
+        receipts = list(self.sms_fanout) or (
+            [self.sms_delivery] if self.sms_delivery else []
+        )
+        for attempt in self.sms_retries:
+            receipts.extend(attempt.get("deliveries") or [])
+        return receipts
+
+    @property
+    def texts_landed(self) -> bool:
+        """At least one alert text, first try or re-send, reached Twilio."""
+        return any(r.get("delivered") for r in self._sms_receipts())
+
+    @property
+    def alert_texts_failed(self) -> bool:
+        """Texts were tried and not one got through."""
+        return bool(self._sms_receipts()) and not self.texts_landed
+
+    def sms_retry_due(self, now: Optional[datetime] = None) -> int:
+        """The re-send step this incident is due for now, or 0.
+
+        Only while nobody has it, only when nothing has landed, and only
+        when the last attempt failed in a way a second try can fix. Steps
+        are counted from when the incident opened; after a restart that
+        missed some, the latest step due is the one taken, so a late sweep
+        sends once rather than catching up with three texts in a row.
+        """
+        if not self.open or self.texts_landed:
+            return 0
+        last = (self.sms_retries[-1].get("deliveries") if self.sms_retries
+                else self._sms_receipts())
+        if not any(r.get("status") in RETRYABLE_SMS_STATUSES for r in last or []):
+            return 0
+        age = self.minutes_open(now)
+        step = sum(1 for m in SMS_RETRY_AFTER_MINUTES if age >= m)
+        return step if step > self.sms_retry_step else 0
+
+    def next_sms_retry_at(self) -> Optional[datetime]:
+        """When the next re-send is due, if one is still to come."""
+        if not self.open or not self.alert_texts_failed:
+            return None
+        if self.sms_retry_step >= len(SMS_RETRY_AFTER_MINUTES):
+            return None
+        return self.opened_at + timedelta(
+            minutes=SMS_RETRY_AFTER_MINUTES[self.sms_retry_step]
+        )
 
     @property
     def open(self) -> bool:
@@ -1118,6 +1182,8 @@ class Incident:
             "reviewed_by": self.reviewed_by,
             "reviewed_at": iso(self.reviewed_at),
             "evidence_readings": list(self.evidence_readings),
+            "sms_retry_step": self.sms_retry_step,
+            "sms_retries": list(self.sms_retries),
         }
 
     @classmethod
@@ -1156,6 +1222,8 @@ class Incident:
             # preserved still load. Theirs is gone; nothing can bring it
             # back, and the packet says so rather than implying otherwise.
             evidence_readings=list(row.get("evidence_readings", [])),
+            sms_retry_step=int(row.get("sms_retry_step") or 0),
+            sms_retries=list(row.get("sms_retries") or []),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1176,6 +1244,10 @@ class Incident:
             "sms_fanout": self.sms_fanout,
             "voice_fanout": self.voice_fanout,
             "notified_count": len(self.sms_fanout) or (1 if self.sms_delivery else 0),
+            "texts_landed": self.texts_landed,
+            "alert_texts_failed": self.alert_texts_failed,
+            "sms_retries": list(self.sms_retries),
+            "next_sms_retry_at": iso(self.next_sms_retry_at()),
             "opened_at": iso(self.opened_at),
             "acknowledged_at": iso(self.acknowledged_at),
             "acknowledged_by": self.acknowledged_by,
@@ -3464,6 +3536,38 @@ class HubStore:
                 [delivery] if delivery else []
             )
             return self._save_incident(incident)
+
+    def claim_sms_retry(self, incident: Incident, step: int) -> bool:
+        """Take the right to send re-send `step` of this incident's alert.
+
+        Under the lock and stored before anything is sent, the way the
+        voice call and the quiet-sensor text are claimed: the timed sweep
+        and the sweep button at the same moment send one re-send between
+        them, and a restart does not send a step that was already sent.
+        """
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            if not live.open or live.sms_retry_step >= step:
+                return False
+            live.sms_retry_step = step
+            self._save_incident(live)
+            return True
+
+    def record_sms_retry(
+        self,
+        incident: Incident,
+        step: int,
+        deliveries: List[Dict[str, Any]],
+        at: Optional[datetime] = None,
+    ) -> Incident:
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            live.sms_retries.append({
+                "step": step,
+                "at": iso(at or utc_now()),
+                "deliveries": deliveries,
+            })
+            return self._save_incident(live)
 
     def issue_ack_token(self, incident: Incident) -> str:
         """A one-incident secret for the keypress callback.

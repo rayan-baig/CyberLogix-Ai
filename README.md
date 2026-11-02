@@ -751,6 +751,15 @@ see that an alert was written but not sent. Both `sms_delivery` and
 `voice_delivery` carry `delivered`, `status`, `provider_sid` and a detail
 string.
 
+A text that failed is sent again. When every alert text for an open,
+unacknowledged incident failed in a way a retry can fix (Twilio down or
+refusing, not dry run or the daily cap), the sweep re-sends it 1, 5 and 15
+minutes after the incident opened, to the roster as it is now, until one
+lands. Each step is claimed and stored before sending, so a restart or two
+sweeps at once never send a step twice; a sweep that comes back after
+missing steps sends once. After the last step the normal escalation is all
+that is left, and the console card says plainly that no text reached anyone.
+
 The spoken script is model-authored, so it is XML-escaped before it reaches
 TwiML — an ampersand in a generated sentence would otherwise fail the call.
 

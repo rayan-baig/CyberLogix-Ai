@@ -1998,6 +1998,19 @@ function deliveryLine(record, channel) {
        + `${channel} not sent · ${esc(record.status)}</span>`;
 }
 
+/* Every alert text failed. Said at the top of the card, because the card
+   otherwise reads as if the roster has been told. */
+function textsFailedNote(i) {
+  if (!i.alert_texts_failed || i.state === "resolved") return "";
+  const next = i.next_sms_retry_at && i.state === "open"
+    ? ` Sending again at ${new Date(i.next_sms_retry_at).toLocaleTimeString([],
+        { hour: "2-digit", minute: "2-digit" })}.`
+    : " Phone the roster yourself.";
+  return `<div class="card-note" role="alert"><span class="badge s-critical">`
+       + `<span class="dot"></span>Alert texts failed</span> `
+       + `No text has reached anyone.${esc(next)}</div>`;
+}
+
 /* What happened, in order. A stack of timestamps buried in JSON is not an
    answer to "why did nobody pick this up", and that is the question asked
    after every incident that goes wrong. */
@@ -2018,6 +2031,12 @@ function incidentTimeline(i) {
       || (i.sms_delivery && i.sms_delivery.delivered ? 1 : 0);
     steps.push({ cls: "hit", when: i.opened_at,
       text: `Texted ${texted} on the roster · ${landed} delivered` });
+  }
+  for (const r of (i.sms_retries || [])) {
+    const sent = (r.deliveries || []).length;
+    const got = (r.deliveries || []).filter((f) => f.delivered).length;
+    steps.push({ cls: got ? "hit" : "", when: r.at,
+      text: `Text sent again · ${got} of ${sent} delivered` });
   }
 
   if (i.voice_escalated_at) {
@@ -2069,6 +2088,7 @@ function renderIncidents(incidents, entitlements) {
         <span class="card-note">${esc(i.sensor_id)} · ${esc(i.minutes_open)} min</span>
       </div>
       <div class="card-note">${esc(i.breach_details)}</div>
+      ${textsFailedNote(i)}
       ${incidentTimeline(i)}
 
       <div class="quote">
@@ -2080,7 +2100,8 @@ function renderIncidents(incidents, entitlements) {
         <div class="quote-label">Voice call script</div>${esc(i.voice_script)}</div>` : ""}
 
       <div class="row" style="gap:6px">
-        ${deliveryLine(i.sms_delivery, "SMS")}
+        ${deliveryLine(i.texts_landed && !(i.sms_delivery && i.sms_delivery.delivered)
+          ? { delivered: true, provider_sid: "on a re-send" } : i.sms_delivery, "SMS")}
         ${i.voice_escalated_at ? deliveryLine(i.voice_delivery, "Call") : ""}
       </div>
 
