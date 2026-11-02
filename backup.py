@@ -236,6 +236,7 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
     # A snapshot from before either knows nothing of them.
     erased = STORE.erasures()
     counter = STORE.id_counter()
+    invoice_floors = STORE.invoice_number_floors()
 
     live = Path(STORE._db.path)
     try:
@@ -271,6 +272,9 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
     # Ids handed out after the snapshot went into emails and pay links;
     # winding the counter back would give them to new records.
     STORE.raise_id_counter(counter)
+    # The same for invoice numbers: ones issued after the snapshot are on
+    # customers' paperwork already.
+    STORE.raise_invoice_number_floors(invoice_floors)
     # The privacy statement says a backup is never restored to bring back
     # something a business deleted. The snapshot predates the deletion, so
     # it is done again here, and the record of it carried forward so the

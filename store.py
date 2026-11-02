@@ -4474,7 +4474,29 @@ class HubStore:
             if inv.number.startswith(prefix)
             and inv.number[len(prefix):].isdigit()
         ]
-        return f"{prefix}{max(issued, default=0) + 1:04d}"
+        # The highest number ever issued, kept apart from the invoices so a
+        # restore from an older backup cannot hand a number out twice.
+        floor = self.invoice_number_floors().get(str(year), 0)
+        number = max(max(issued, default=0), floor) + 1
+        self.raise_invoice_number_floors({str(year): number})
+        return f"{prefix}{number:04d}"
+
+    def invoice_number_floors(self) -> Dict[str, int]:
+        """The highest invoice number issued, per year."""
+        row = self._db.get("meta", "invoice_numbers") or {}
+        return {k: int(v) for k, v in row.items() if str(v).isdigit()}
+
+    def raise_invoice_number_floors(self, floors: Dict[str, int]) -> None:
+        """Never issue an invoice number at or below these again."""
+        with self._lock:
+            current = self.invoice_number_floors()
+            changed = False
+            for year, value in floors.items():
+                if int(value) > current.get(year, 0):
+                    current[year] = int(value)
+                    changed = True
+            if changed:
+                self._db.put("meta", "invoice_numbers", current)
 
     def create_invoice(
         self,

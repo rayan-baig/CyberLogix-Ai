@@ -67,7 +67,9 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # everything" and "Download everything" buttons, and took out the Loss
 # Assurance add-on, which had been withdrawn from the product but was
 # still being promised here.
-TERMS_VERSION = "2.0"
+# 2.1 says how long the text of sent mail is kept (400 days) and that a
+# deletion is redone after a backup is restored.
+TERMS_VERSION = "2.1"
 EFFECTIVE_DATE = "2026-11-01"
 
 # The cap on what we can owe. Without one, a single claim about a lost

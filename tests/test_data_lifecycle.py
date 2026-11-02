@@ -404,3 +404,23 @@ def test_an_audit_entry_is_never_overwritten_by_a_new_one(api, operator_factory)
     for entry_id, row in rows_before.items():
         assert STORE._db.get("audit", entry_id) == row
     assert len({e.entry_id for e in STORE._audit.values()}) == len(first) + 10
+
+
+def test_a_restore_never_reissues_an_invoice_number(durable):
+    """Invoice numbers were worked out from the invoices on disk, so after
+    restoring an older backup the next invoice took a number a customer was
+    already holding. An audit fails on a duplicate invoice number."""
+    disk = durable
+    co = _company(disk, "Billed Co")
+    line = [{"kind": "subscription", "description": "Plan", "quantity": 1,
+             "unit_price_usd": 100.0, "amount_usd": 100.0}]
+    disk.create_invoice(tenant=co, lines=line)
+    taken = backup.take(now=utc_now() - timedelta(hours=1))
+    sent = disk.create_invoice(tenant=co, lines=line)
+
+    backup.restore(Path(taken["path"]).name)
+    co = disk.get_tenant(co.tenant_id)
+    fresh = disk.create_invoice(tenant=co, lines=line)
+
+    assert fresh.number != sent.number
+    assert fresh.number > sent.number
