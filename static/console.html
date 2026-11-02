@@ -3321,8 +3321,13 @@ function renderForecast(fleet) {
       : f.hours_until_breach < 1
         ? `in under an hour`
         : `in about ${Math.round(f.hours_until_breach)}h`;
-    const trend = f.trend_f_per_hour === null ? "" :
-      `${f.trend_f_per_hour > 0 ? "+" : ""}${f.trend_f_per_hour}°/h`;
+    // The forecast measures drift in Fahrenheit; a Celsius account reads
+    // it in Celsius, or "+1.8°/h" is a degree an hour it is not.
+    const perHour = f.trend_f_per_hour === null ? null
+      : state.unit === "C" ? Math.round(f.trend_f_per_hour * 5 / 9 * 1000) / 1000
+      : f.trend_f_per_hour;
+    const trend = perHour === null ? "" :
+      `${perHour > 0 ? "+" : ""}${perHour}°${state.unit || "F"}/h`;
     const shape = f.pattern || {};
     return `<div class="fc-row" data-forecast-sensor="${esc(f.sensor_id)}"${
         muted ? ' style="opacity:.62"' : ""}>

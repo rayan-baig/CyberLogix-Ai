@@ -71,3 +71,29 @@ def test_a_fahrenheit_account_is_unchanged():
     assert "°F" in out["asked"]
     assert out["prefilled"] == "41"
     assert out["body"]["danger_above"] == 38
+
+
+def _trend(trend_f, unit):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    src = PAGE.read_text()
+    start = src.index("    const perHour = f.trend_f_per_hour === null")
+    end = src.index("    const shape = f.pattern", start)
+    harness = f"""
+    const state = {{ unit: {json.dumps(unit)} }};
+    const f = {{ trend_f_per_hour: {json.dumps(trend_f)} }};
+    {src[start:end]}
+    console.log(JSON.stringify(trend));
+    """
+    done = subprocess.run([node, "-e", harness], capture_output=True, text=True, timeout=20)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_the_forecast_drift_is_written_in_the_account_unit():
+    """1.8°F an hour is 1°C an hour; shown as "+1.8°/h" to a Celsius
+    account it read as nearly twice as fast as it is."""
+    assert _trend(1.8, "C") == "+1°C/h"
+    assert _trend(1.8, "F") == "+1.8°F/h"
+    assert _trend(None, "C") == ""
