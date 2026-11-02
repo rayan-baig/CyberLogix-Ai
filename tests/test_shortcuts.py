@@ -141,3 +141,40 @@ def test_generation_is_metered(api, tenant_factory, sensor_factory, stub_gemini)
 
     costs = api.get("/api/costs", headers=headers).json()
     assert costs["totals"]["ai_calls"] >= 1
+
+
+def test_a_celsius_account_gets_its_document_in_celsius(
+    api, tenant_factory, sensor_factory, stub_gemini
+):
+    """The console, the texts and the compliance report all speak the
+    account's unit; the inspector's document was the one thing still in
+    Fahrenheit, so the same walk-in read -2.2 on the screen and 28.0 on the
+    paper handed to the inspector."""
+    headers, _ = tenant_factory()
+    api.post("/api/licenses/me/temperature-unit", headers=headers,
+             json={"temperature_unit": "C"})
+    seed(api, headers, sensor_factory)
+
+    body = api.post("/api/shortcuts/restaurant", headers=headers).json()
+    row = body["evidence"]["sensors"][0]
+    assert body["evidence"]["temperature_unit"] == "C"
+    assert row["min"] == -2.22 and row["max"] == 7.22
+    prompt = stub_gemini.prompts[-1]
+    assert "-2.22" in prompt and "°C" in prompt
+    assert "28.0" not in prompt and "°F" not in prompt
+
+
+def test_the_plain_fallback_document_is_in_the_account_unit_too(
+    api, tenant_factory, sensor_factory, break_gemini
+):
+    break_gemini()
+    headers, _ = tenant_factory()
+    api.post("/api/licenses/me/temperature-unit", headers=headers,
+             json={"temperature_unit": "C"})
+    seed(api, headers, sensor_factory)
+
+    body = api.post("/api/shortcuts/restaurant", headers=headers).json()
+
+    assert body["document_source"] == "fallback_template"
+    assert "-2.22" in body["document"] and "°C" in body["document"]
+    assert "°F" not in body["document"]
