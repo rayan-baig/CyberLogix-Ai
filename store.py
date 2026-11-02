@@ -4717,6 +4717,13 @@ class HubStore:
             self._db.put("join_code", code.token_hash, code.to_row())
             return token
 
+    def peek_join_code(self, token: str) -> Optional[JoinCode]:
+        """The join code this token names, if usable, without spending it."""
+        with self._lock:
+            digest = hashlib.sha256((token or "").strip().encode("utf-8")).hexdigest()
+            code = self._join_codes.get(digest)
+            return None if code is None or code.spent else code
+
     def redeem_join_code(self, token: str) -> Optional[JoinCode]:
         """Spend a join code. None if it is unknown, used or expired."""
         with self._lock:
