@@ -577,6 +577,8 @@ async def ingest_any_payload(
 
     try:
         payload = await request.json()
+    except HTTPException:
+        raise  # too large: said as such, not as "not JSON"
     except Exception:  # noqa: BLE001 - a device sending junk is the case here
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
