@@ -82,7 +82,8 @@ services:
         value: "1"
 
       # Paste the service's own https address here after the first
-      # deploy, then redeploy. Until it is set a voice call still goes
+      # deploy -- https://cyberlogix.<MTRX Horizon's domain> once the
+      # custom domain is added (DEPLOY.md section 1) -- then redeploy. Until it is set a voice call still goes
       # out and pressing 1 reaches nothing, so the alert escalates to the
       # next person as though it had been ignored.
       - key: PUBLIC_BASE_URL
@@ -110,8 +111,10 @@ services:
       - key: CYBERLOGIX_HEARTBEAT_URL
         sync: false
 
-      # Your own address, e.g. https://alerts.yourcompany.com. Left unset,
-      # any website may call the API from a visitor's browser.
+      # Leave unset: every page is served from the app's own origin, and
+      # unset lets no other site call the API from a browser -- not even
+      # MTRX Horizon's other products on sibling subdomains. Name an exact
+      # origin only if a page elsewhere truly needs it. Never *.
       - key: CYBERLOGIX_ALLOWED_ORIGINS
         sync: false
 

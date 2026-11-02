@@ -59,8 +59,47 @@ the only step with a lead time measured in days — DNS propagates slowly
 and mail reputation builds slowly. Done on the last day, invoices land
 in spam for a fortnight.
 
-Buy the domain, point it at the host, then add three records. Your mail
-provider gives you the exact values:
+**CyberLogix has no domain of its own.** It is a product of MTRX Horizon,
+and MTRX Horizon owns the one domain: its own site on the apex (and
+`www`), each product on a subdomain. CyberLogix lives at
+`cyberlogix.<your domain>`, beside `rankup.<your domain>` and
+`omniarmor.<your domain>`. Below, `example.com` stands for that domain.
+
+A subdomain, not a path (`example.com/cyberlogix`), on purpose: each
+subdomain is its own origin, so a sign-in, the browser's storage and the
+installed app's service worker belong to CyberLogix alone and never
+reach a sibling. Keep it that way — the app sets no cookie for the
+parent domain and, unless `CYBERLOGIX_ALLOWED_ORIGINS` says otherwise,
+lets no other site (siblings included) call its API from a browser.
+
+1. **DNS.** At whoever holds the domain's DNS, add one record for the
+   subdomain: a `CNAME` named `cyberlogix` pointing at the address the
+   host gave you (Render: `cyberlogix.onrender.com` or similar), or an
+   `A` record to the server's IP if you run the container yourself.
+2. **The host's custom-domain step.** Tell the host the name it will
+   answer to. Render: the service → Settings → Custom Domains → add
+   `cyberlogix.example.com`, then wait for it to verify. Your own server:
+   name `cyberlogix.example.com` in the proxy (Caddy, nginx) in front of
+   the container.
+3. **HTTPS.** Render issues the certificate itself once DNS resolves;
+   Caddy does the same. Do not go on until `https://cyberlogix.example.com`
+   loads with a padlock — sensors, Twilio's callback and the installed app
+   all need it.
+4. **Point the app at its own address.** `PUBLIC_BASE_URL` is
+   `https://cyberlogix.example.com` (no trailing slash), then redeploy.
+   Leave `CYBERLOGIX_ALLOWED_ORIGINS` unset unless a page on another
+   origin genuinely has to call this API; then name that exact origin.
+   Never `*`, and never the parent domain or a sibling as a convenience.
+5. **MTRX Horizon.** In MTRX Horizon's settings, CyberLogix's address is
+   `https://cyberlogix.example.com` and its stats address is
+   `https://cyberlogix.example.com/api/stats` (MTRX Horizon's README names
+   the two settings; `STATS_KEY` here matches its `MTRX_STATS_KEY`).
+
+### Mail, from the one domain
+
+Every MTRX Horizon product sends mail as the one domain, so the mail
+records are set up once, on the parent domain, by whoever runs it — not
+once per app. Your mail provider gives you the exact values:
 
 | Record | Purpose |
 |---|---|
@@ -68,8 +107,17 @@ provider gives you the exact values:
 | **DKIM** (`TXT`) | signs each message so it cannot be forged |
 | **DMARC** (`TXT`) | says what to do with mail that fails the other two |
 
-Without all three, `MAIL_FROM` is an address the receiving server has no
-reason to trust, and the collections ladder in `mail.py` will run
+CyberLogix then sends from an address of its own on that domain, so a
+customer (and a spam filter) can tell the products apart:
+`MAIL_FROM=no-reply@cyberlogix.example.com`, or an address such as
+`cyberlogix@example.com`. A sending subdomain like `cyberlogix.example.com`
+needs to be verified with the mail provider too (it adds its DKIM record
+there), and is covered by the parent's DMARC policy. Keep
+`MAIL_FROM_NAME=CyberLogix AI`; every message already says in its footer
+that CyberLogix is a product of MTRX Horizon.
+
+Without all three records, `MAIL_FROM` is an address the receiving server
+has no reason to trust, and the collections ladder in `mail.py` will run
 perfectly while nothing arrives.
 
 Check them with any public DMARC checker before you send a real invoice.
@@ -150,8 +198,9 @@ CYBERLOGIX_BACKUP_DIR=/srv/backups
 CYBERLOGIX_TRUST_PROXY_HEADER=1
 CYBERLOGIX_ADMIN_KEY=<generated above>
 CYBERLOGIX_MAIL_SECRET=<generated above>
-CYBERLOGIX_ALLOWED_ORIGINS=https://your.domain
-PUBLIC_BASE_URL=https://your.domain
+# Leave CYBERLOGIX_ALLOWED_ORIGINS unset: every page is served from this
+# same origin. See section 1 before naming one.
+PUBLIC_BASE_URL=https://cyberlogix.example.com
 
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -163,7 +212,7 @@ SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
-MAIL_FROM=
+MAIL_FROM=no-reply@cyberlogix.example.com
 ```
 
 Mail is what a locked-out owner's password-reset link travels by, as
@@ -262,7 +311,7 @@ on purpose, so the first time is not during an incident:
 
 ```
 curl -s -H "X-CyberLogix-Admin: $KEY" \
-  https://your.domain/api/admin/backups
+  https://cyberlogix.example.com/api/admin/backups
 ```
 
 Pick a snapshot, verify it, then restore it from `/book → Health`, or:
@@ -271,7 +320,7 @@ Pick a snapshot, verify it, then restore it from `/book → Health`, or:
 curl -s -X POST -H "X-CyberLogix-Admin: $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"snapshot":"cyberlogix-....sqlite3","confirm":true}' \
-  https://your.domain/api/admin/backups/restore
+  https://cyberlogix.example.com/api/admin/backups/restore
 ```
 
 It verifies the snapshot, snapshots the database it is about to replace,
@@ -312,13 +361,16 @@ traceback and a count, instead of as a customer asking why.
   until someone qualified has read it.
 - **The invoice says who is asking.** `CYBERLOGIX_LEGAL_NAME`,
   `CYBERLOGIX_ADDRESS`, `CYBERLOGIX_TAX_ID`, `CYBERLOGIX_REMIT_TO`.
-  These are the entity's details, not the software's.
+  These are the entity's details, not the software's. CyberLogix is a
+  product of MTRX Horizon, so they are MTRX Horizon's: set
+  `CYBERLOGIX_LEGAL_NAME` to its registered name exactly as registered
+  (unset, invoices and the agreements say "MTRX Horizon").
 - **`STRIPE_WEBHOOK_SECRET`**, if you take cards. Unset, the webhook
   refuses everything — which is correct, because an unsigned payment
   webhook that trusts its body is a button for marking every invoice in
   the system paid.
   In Stripe: Developers → Webhooks → add endpoint
-  `https://your.domain/api/payments/stripe`, subscribe it to
+  `https://cyberlogix.example.com/api/payments/stripe`, subscribe it to
   **`checkout.session.completed`** (what a payment link produces), and copy
   its signing secret here. Make the payment link pass the invoice number as
   `?client_reference_id={invoice}` (that is what `CYBERLOGIX_PAY_URL` is for)

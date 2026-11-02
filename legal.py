@@ -45,7 +45,7 @@ from contracts import (
     REMINDER_DAYS,
 )
 from backup import BACKUP_KEEP
-from invoicing import PAYMENT_TERMS_DAYS, issuer_block
+from invoicing import COMPANY, PAYMENT_TERMS_DAYS, issuer_block
 from store import (
     DISPATCH_SLA_SECONDS,
     MAIL_BODY_KEEP_DAYS,
@@ -69,8 +69,10 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # still being promised here.
 # 2.1 says how long the text of sent mail is kept (400 days) and that a
 # deletion is redone after a backup is restored.
-TERMS_VERSION = "2.1"
-EFFECTIVE_DATE = "2026-11-01"
+# 2.2 names who "we" are: CyberLogix is a product of MTRX Horizon, and the
+# agreements are with MTRX Horizon.
+TERMS_VERSION = "2.2"
+EFFECTIVE_DATE = "2026-11-02"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -108,8 +110,9 @@ def terms_of_service() -> str:
 
 > {DISCLAIMER}
 
-This is the deal between {issuer_block().get('legal_name')} ("we") and the
-business that signs up ("you").
+CyberLogix is a product of {COMPANY}. This is the deal between
+{issuer_block().get('legal_name')} ("we") and the business that signs up
+("you").
 
 ## 1. What we do
 
@@ -262,6 +265,12 @@ def privacy_statement() -> str:
 **Version {TERMS_VERSION} · Effective {EFFECTIVE_DATE}**
 
 > {DISCLAIMER}
+
+## Who we are
+
+CyberLogix is a product of {COMPANY}. "We" in this statement means
+{issuer_block().get('legal_name')}, which decides what happens to the data
+described here and answers for it.
 
 ## What we keep
 

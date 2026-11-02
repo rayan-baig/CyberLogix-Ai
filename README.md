@@ -3,6 +3,10 @@
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
 
+CyberLogix is a product of MTRX Horizon. In production it runs on its own
+subdomain of MTRX Horizon's domain, `cyberlogix.<your domain>`, beside the
+company's other products; [DEPLOY.md](DEPLOY.md) section 1 sets that up.
+
 Wireless thermal sensors report to the hub. Each reading is scored against
 the threshold profile for its industry. A breach opens an incident and sends
 a Gemini-drafted SMS; if nobody acknowledges it, the hub escalates to a
@@ -1588,7 +1592,7 @@ roster or audit trail.
 | `TWILIO_AUTH_TOKEN` | — | Twilio auth token |
 | `TWILIO_FROM_NUMBER` | — | Sending number in E.164, e.g. `+15550100` |
 | `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Model for all generated copy |
-| `CYBERLOGIX_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
+| `CYBERLOGIX_ALLOWED_ORIGINS` | none | Exact origins whose pages may call the API from a browser; unset allows only this site's own pages. Never `*` or a sibling subdomain |
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
 | `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
@@ -1602,7 +1606,7 @@ roster or audit trail.
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
-| `CYBERLOGIX_LEGAL_NAME` | `CyberLogix AI` | Issuer name on invoices |
+| `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizon` | Issuer name on invoices and in the agreements: MTRX Horizon's registered name |
 | `CYBERLOGIX_ADDRESS` | — | Issuer address on invoices |
 | `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
 | `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |
@@ -1784,9 +1788,11 @@ Things this repository does not do for you, in the order they will bite:
 - **Backups stay on the server.** A verified snapshot is taken daily, but
   on the same disk; copying them somewhere else is yours to arrange
   (DEPLOY.md section 7).
-- **The LLC does not exist yet.** `CYBERLOGIX_LEGAL_NAME` and the other
-  issuer fields go on every invoice; an invoice from an entity that cannot
-  receive money is not a document anyone can pay.
+- **The company is not incorporated yet.** CyberLogix is a product of MTRX
+  Horizon, so `CYBERLOGIX_LEGAL_NAME` and the other issuer fields are MTRX
+  Horizon's registered details; they go on every invoice, and an invoice
+  from an entity that cannot receive money is not a document anyone can
+  pay.
 - **The agreements have not been read by a lawyer.** They are generated
   from the running system so the figures cannot drift, and every one of
   them says "draft" on its first line. The limitation of liability is the

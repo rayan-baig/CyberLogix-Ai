@@ -58,6 +58,7 @@ from auth import (
     write_audit,
 )
 from invoicing import (
+    COMPANY,
     PAYMENT_TERMS_DAYS,
     build_lines,
     invoice_date,
@@ -516,7 +517,7 @@ def send_invoice(tenant: Tenant, invoice: Invoice) -> Dict[str, Any]:
         # that costs something.
         subject=(
             f"Invoice {invoice.number} from "
-            f"{issuer_block().get('legal_name', 'CyberLogix AI')}: "
+            f"{issuer_block().get('legal_name', COMPANY)}: "
             f"${invoice.total_usd:,.2f}"
         ),
         body=(
