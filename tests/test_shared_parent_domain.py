@@ -1,6 +1,6 @@
-"""CyberLogix on a subdomain of MTRX Horizon's domain, beside its siblings.
+"""CyberLogix on a subdomain of MTRX Horizyn's domain, beside its siblings.
 
-MTRX Horizon owns the one domain. CyberLogix, OmniArmor and RankUp are its
+MTRX Horizyn owns the one domain. CyberLogix, OmniArmor and RankUp are its
 products, each on a subdomain of it, and the company's own site is on the
 apex. Separate subdomains are separate origins, and that is the point: one
 app's sign-in, storage and service worker never reach another.
@@ -11,7 +11,7 @@ them. A CORS policy that trusts the siblings (or everybody) lets a page on
 one subdomain read what this API answers. Neither may happen by default.
 
 And the company: the agreements, invoices and mail say who is behind the
-product, which is MTRX Horizon.
+product, which is MTRX Horizyn.
 """
 
 import re
@@ -138,20 +138,20 @@ def test_pages_still_refuse_to_be_framed_by_a_sibling(api):
 # ---- who is behind it --------------------------------------------------------
 
 
-def test_the_issuer_defaults_to_mtrx_horizon(monkeypatch):
+def test_the_issuer_defaults_to_mtrx_horizyn(monkeypatch):
     monkeypatch.delitem(invoicing.ISSUER, "legal_name", raising=False)
-    assert invoicing.issuer_block()["legal_name"] == "MTRX Horizon"
+    assert invoicing.issuer_block()["legal_name"] == "MTRX Horizyn"
 
 
-def test_the_agreements_name_mtrx_horizon():
+def test_the_agreements_name_mtrx_horizyn():
     for text in (legal.terms_of_service(), legal.privacy_statement()):
-        assert "CyberLogix is a product of MTRX Horizon" in " ".join(text.split())
+        assert "CyberLogix is a product of MTRX Horizyn" in " ".join(text.split())
 
 
 def test_the_registered_name_still_reaches_the_agreements(monkeypatch):
-    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "MTRX Horizon Ltd")
-    assert "MTRX Horizon Ltd" in legal.terms_of_service()
-    assert "MTRX Horizon Ltd" in legal.privacy_statement()
+    monkeypatch.setitem(invoicing.ISSUER, "legal_name", "MTRX Horizyn Ltd")
+    assert "MTRX Horizyn Ltd" in legal.terms_of_service()
+    assert "MTRX Horizyn Ltd" in legal.privacy_statement()
 
 
 @pytest.mark.parametrize("klass", ["transactional", "commercial"])
@@ -159,11 +159,56 @@ def test_every_mail_says_whose_product_it_is(mailbox, klass):
     message = mail.compose(
         to_address="ops@example.com", subject="Hello", body="Body.", klass=klass
     )
-    assert "CyberLogix is a product of MTRX Horizon." in message.get_content()
+    assert "CyberLogix is a product of MTRX Horizyn." in message.get_content()
 
 
 def test_the_public_pages_name_the_parent_company():
     for page in ("index.html", "signup.html", "legal.html"):
         text = (ROOT / "static" / page).read_text()
-        assert "MTRX Horizon" in text, page
+        assert "MTRX Horizyn" in text, page
         assert "Cybersalus" not in text, page
+
+
+# The company was renamed: MTRX Horizyn, so it is not confused with other
+# companies of the earlier name. Spelled out of pieces so this file does
+# not itself carry the old spelling it is looking for.
+OLD_NAME = re.compile("MTRX" + r"\s+(?:#\s*)?" + "Horiz" + "on", re.IGNORECASE)
+
+
+def test_the_old_spelling_is_gone_from_everything_a_person_reads(api, mailbox):
+    import subprocess
+
+    seen = {}
+    for path in ("/", "/signup", "/legal", "/console", "/partners", "/for",
+                 "/for/restaurant", "/today", "/reset", "/book", "/offline"):
+        seen[path] = api.get(path).text
+    for slug in ("terms", "sla", "privacy", "aup"):
+        resp = api.get(f"/api/legal/{slug}")
+        if resp.status_code == 200:
+            seen[f"/api/legal/{slug}"] = resp.text
+    for name, text in (("terms", legal.terms_of_service()),
+                       ("sla", legal.service_level()),
+                       ("privacy", legal.privacy_statement()),
+                       ("aup", legal.acceptable_use())):
+        seen[f"legal.{name}"] = text
+    seen["issuer"] = str(invoicing.issuer_block())
+    seen["mail"] = mail.compose(to_address="ops@example.com", subject="Hi",
+                                body="Body.", klass="commercial").get_content()
+    # And every file in the repository a person might read.
+    for name in subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).split():
+        if name.endswith((".py", ".md", ".html", ".yaml", ".yml", ".example", ".txt", ".js", ".css")):
+            try:
+                seen[name] = (ROOT / name).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+    stale = sorted(where for where, text in seen.items() if OLD_NAME.search(text))
+    assert not stale, f"the old spelling of the company is still in: {stale}"
+    assert "MTRX Horizyn" in seen["/"] and "MTRX Horizyn" in seen["legal.terms"]
+
+
+def test_the_rename_moved_the_agreements_to_a_new_version():
+    """A changed name in the agreements is a changed agreement: everybody
+    who accepted the old text is asked again."""
+    major, minor = (int(x) for x in legal.TERMS_VERSION.split("."))
+    assert (major, minor) >= (2, 3)

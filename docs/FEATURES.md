@@ -27,7 +27,13 @@ The landing page is at `/`, the console at `/console`, the reseller portal
 at `/partners`, the machine-readable gateway at `/api`, and interactive API
 docs at `/docs`.
 
-The landing page quotes no prices of its own: the sector rate card and the
+The first screen of the landing page says who it is for, the lowest rate
+and the trial; those figures are substituted when the page is served, from
+`pricing.headline()` (the rate card and the plan tiers). Each industry page
+at `/for/<sector>` leads with the problem and then the fix, the fix quoting
+the limit that sector alarms on.
+
+Beyond that the landing page quotes no prices of its own: the sector rate card and the
 plan list are fetched from `/api/industries` and `/api/licenses/plans`, the
 same endpoints the console uses, so a marketing page can never advertise a
 number the product does not charge. A test asserts it.
@@ -41,10 +47,26 @@ sensor, headline counts, the incident feed with the exact SMS and voice text
 that went out and whether each was delivered, and controls to acknowledge,
 resolve or escalate. It polls every 20 seconds.
 
-Sensor cards carry **Send safe pulse** and **Simulate failure** buttons, which
-post a real reading through the real pipeline — the fastest way to watch a
-breach open an incident end to end. A table view of the fleet is one click
-away for screen readers and for copying figures out.
+A table view of the fleet is one click away for screen readers and for
+copying figures out.
+
+A new business sees a **first-day checklist** at the top: add a site, a
+sensor, someone to call, and send a test alert. Each box is ticked by the
+server from what the account holds (`first_day` in the overview), and the
+card is gone once all four are true. Every empty card ends with a button
+for the next step. Sign-up at `/signup` lands straight in the console,
+signed in, with the business key shown once in the same box as every
+other new key. A unit needs only its location: the sensor ID is made from
+it when left blank, and its first reading appears within seconds rather
+than on the next 20-second poll.
+
+**The simulator** (`/api/simulator`, owner only) puts up to three pretend
+units on the console for a demo with no hardware. They read, can be made to
+fail, and show the text a real breach would send — marked SIMULATED on every
+card and never sent. They live in the server's memory only: never a
+reading, an incident, a seat, a compliance line or a vault entry, and a
+restart clears them. The old **Send safe pulse** and **Simulate failure**
+buttons, which wrote invented readings into the real record, are gone.
 
 To see it with something on it:
 

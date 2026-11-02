@@ -101,16 +101,27 @@ def test_the_landing_page_quotes_no_prices_of_its_own(api):
     from the same endpoints the console uses.
     """
     import re
+    from pathlib import Path
 
-    from pricing import PRICE_BOOK
+    from pricing import PRICE_BOOK, headline
 
-    page = api.get("/").text
+    # The file itself carries no price at all. The one figure in the first
+    # screen -- the lowest rate -- is substituted from the rate card when
+    # the page is served (see test_first_day.py), so it cannot drift.
+    source = (Path(__file__).resolve().parent.parent / "static" / "index.html").read_text()
     for entry in PRICE_BOOK.values():
         price = f"{entry['monthly_usd']:.0f}"
-        assert f"${price}" not in page, (
+        assert f"${price}" not in source, (
             f"${price} is hard-coded into the landing page instead of "
-            "being read from /api/industries"
+            "being read from the rate card"
         )
+
+    page = api.get("/").text
+    lowest = headline()["from_label"]
+    for entry in PRICE_BOOK.values():
+        price = f"${entry['monthly_usd']:,.0f}"
+        if price != lowest:
+            assert price not in page, f"{price} is on the served page"
     assert "/api/industries" in page
     assert "/api/licenses/plans" in page
 

@@ -51,11 +51,11 @@ PAYMENT_TERMS_DAYS = 30
 # Who is issuing the invoice. An invoice without the issuer's legal name,
 # address and remittance details is not a document a finance department
 # can pay against, and in most jurisdictions is not a valid tax invoice
-# either. CyberLogix is a product of MTRX Horizon, so MTRX Horizon is the
+# either. CyberLogix is a product of MTRX Horizyn, so MTRX Horizyn is the
 # issuer: set CYBERLOGIX_LEGAL_NAME to its registered name once it is
 # incorporated. Configured rather than hard-coded, because that exact name
 # (and its suffix) is a business fact the code cannot know.
-COMPANY = "MTRX Horizon"
+COMPANY = "MTRX Horizyn"
 
 ISSUER = {
     "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", COMPANY),

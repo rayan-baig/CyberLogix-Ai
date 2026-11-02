@@ -241,7 +241,7 @@ footer a:hover, footer a:focus-visible { color: var(--ink); }
 <footer>
   <div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;width:100%">
     <span>CyberLogix AI</span>
-    <span class="lineage">A product of MTRX Horizon</span>
+    <span class="lineage">A product of MTRX Horizyn</span>
     <nav aria-label="Elsewhere">
       <a href="/">Home</a>
       <a href="/legal">Agreements</a>
@@ -309,6 +309,9 @@ function stepsHtml(next) {
 // drift here would bring the original bug back without an error anywhere.
 const SESSION_KEY = "cyberlogix.session";
 const EMAIL_KEY = "cyberlogix.email";
+// Where the console looks, once, for the business key it should show.
+// sessionStorage, so it dies with the tab; the console deletes it on read.
+const NEW_KEY = "cyberlogix.newkey";
 
 function showDone(body) {
   // The response says "You are signed in", and it was not true in the
@@ -317,10 +320,28 @@ function showDone(body) {
   // own. Storage can be refused (a private window, blocked site data); if
   // it is, the console simply asks for the password they just chose, and
   // the email is at least filled in if that part was allowed.
-  try { if (body.token) localStorage.setItem(SESSION_KEY, body.token); } catch (_) {}
+  let kept = false;
+  try {
+    if (body.token) { localStorage.setItem(SESSION_KEY, body.token); kept = true; }
+  } catch (_) {}
   try {
     if (body.user && body.user.email) localStorage.setItem(EMAIL_KEY, body.user.email);
   } catch (_) {}
+
+  // Straight into the console, signed in. This page used to stop here on
+  // a panel of four curl commands and an "Open the console" button: a
+  // page and a click between signing up and the first thing to do, for
+  // instructions a restaurant cannot run. The console shows the business
+  // key, once, in the same box it shows every other new key, and its
+  // checklist says what to do next. Only when the browser refuses
+  // storage -- and so would arrive at a sign-in form, without the key --
+  // does the old panel stay, so the key is never lost.
+  let handed = false;
+  try { sessionStorage.setItem(NEW_KEY, body.api_key); handed = true; } catch (_) {}
+  if (kept && handed) {
+    location.replace("/console");
+    return;
+  }
 
   const next = body.next_steps || {};
   $("panel").classList.add("done");

@@ -51,6 +51,9 @@ h1.lede {
 .slab p:last-child { margin-bottom: 0; }
 .slab.bad { border-color: color-mix(in srgb, var(--critical) 38%, transparent); }
 .slab.bad h2 { color: var(--critical); }
+/* The fix in one paragraph, above the detail: the sentence a reader
+   who stops here still leaves with. */
+.slab .fix-line { color: var(--ink); font-size: 16.5px; margin-bottom: 18px; }
 
 /* The four things, numbered, because it is a sequence. */
 .does { list-style: none; counter-reset: n; margin: 0; padding: 0; }
@@ -146,14 +149,15 @@ function renderIndustry(d) {
       when it goes wrong.</h1>
     <p class="standfirst">${esc(d.slogan)}</p>
 
-    <section class="slab bad">
-      <h2>What goes wrong</h2>
+    <section class="slab bad" id="problem">
+      <h2>The problem</h2>
       <p>${esc(d.loses)}</p>
       <p>The one we see most: <strong>${esc(d.catastrophe)}</strong>.</p>
     </section>
 
-    <section class="slab">
-      <h2>What we do about it</h2>
+    <section class="slab" id="fix">
+      <h2>The fix</h2>
+      <p class="fix-line">${esc(d.fix)}</p>
       <ol class="does">
         <li><b>We watch every ${esc(d.asset_noun)}, all night.</b>
           A small sensor reads the temperature every few minutes and sends

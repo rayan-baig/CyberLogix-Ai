@@ -10,7 +10,7 @@ code, the fuzzer, the browser smoke test, and mutation testing.
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 1,840 tests across 119 files. Gemini, Twilio and SMTP are all stubbed and the
+About 1,890 tests across 120 files. Gemini, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
@@ -76,6 +76,20 @@ npm i playwright && npx playwright install chromium   # once
 PYTHON=.venv/bin/python node tools/console_smoke.js
 # or against a running server, with a screenshot of every step:
 BASE_URL=http://127.0.0.1:8080 SMOKE_SHOTS=/tmp/shots node tools/console_smoke.js
+```
+
+It also walks a new business's first day: the landing page states who it is
+for, the price and the trial in the first screen (phone and laptop), sign-up
+lands in the console, every empty card offers its next step, the checklist
+ticks itself and goes, the test alert opens no incident, and a simulated unit
+is stamped as one and stays out of the real fleet.
+
+`tools/first_day_walk.js` times the path from the landing page to a first
+sensor reading and counts the clicks and fields on the way:
+
+```bash
+PYTHON=.venv/bin/python node tools/first_day_walk.js          # phone
+WIDE=1 PYTHON=.venv/bin/python node tools/first_day_walk.js   # desktop
 ```
 
 `tests/test_every_route_is_tested.py` fails a whole-suite run if any route

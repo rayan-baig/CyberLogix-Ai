@@ -183,15 +183,34 @@ def page(vertical: str) -> Dict[str, Any]:
     profile = INDUSTRY_PROFILES[vertical]
     extra = CONTEXT[vertical]
     above, below = profile.get("danger_above"), profile.get("danger_below")
+    unit = profile.get("unit", "°F")
+
+    def deg(value: float) -> str:
+        # 32.0 reads as "32°F"; the decimal is noise on a front page.
+        return f"{value:g}{unit}"
 
     if above is not None and below is not None:
-        band = f"between {below}° and {above}°"
+        band = f"between {deg(below)} and {deg(above)}"
+        trips = f"leaves {deg(below)} to {deg(above)}"
     elif above is not None:
-        band = f"under {above}°"
+        band = f"under {deg(above)}"
+        trips = f"goes over {deg(above)}"
     elif below is not None:
-        band = f"above {below}°"
+        band = f"above {deg(below)}"
+        trips = f"drops under {deg(below)}"
     else:
         band = "inside the range you set"
+        trips = "leaves the range you set"
+
+    # What we do, in one paragraph, for the reader who reads nothing else.
+    # Built from the profile, so the limit quoted is the limit the product
+    # actually alarms on.
+    fix = (
+        f"A sensor in each {profile['asset_noun']} reports every few minutes. "
+        f"The moment one {trips}, everyone on call gets a text, and the "
+        "phone keeps ringing until somebody answers. Every reading is kept, "
+        f"ready for {extra['asks_after']}."
+    )
 
     return {
         "vertical": vertical,
@@ -201,7 +220,8 @@ def page(vertical: str) -> Dict[str, Any]:
         "asset_noun": profile["asset_noun"],
         "asset_plural": profile["asset_plural"],
         "band": band,
-        "unit": profile.get("unit", "°F"),
+        "fix": fix,
+        "unit": unit,
         "paperwork": profile.get("shortcut_name", ""),
         "paperwork_detail": profile.get("shortcut_description", ""),
         **extra,

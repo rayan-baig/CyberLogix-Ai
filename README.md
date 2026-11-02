@@ -1,13 +1,13 @@
 # CyberLogix AI — Master Enterprise Hub
 
-CyberLogix is a product of MTRX Horizon. It watches the temperature of
+CyberLogix is a product of MTRX Horizyn. It watches the temperature of
 things that must not get warm — walk-in freezers, server racks, vaccine
 fridges, wine cellars, engine bays — and makes sure a person finds out
 in minutes, not hours.
 
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
-In production it runs on its own subdomain of MTRX Horizon's domain,
+In production it runs on its own subdomain of MTRX Horizyn's domain,
 `cyberlogix.<your domain>`, beside the company's other products;
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
 
@@ -67,6 +67,8 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
 | Compliance Vault | `/api/vault` | Hash-chained readings and verifiable attestations |
 | Insurance Claim Packets | `/api/claims` | Everything an adjuster asks for, assembled |
 | Leaving | `/api/accounts/business` | Download everything, or delete everything |
+| First Day | `/api/contacts/test-alert` | A checklist that ticks itself, and a test text to the roster |
+| Simulator | `/api/simulator` | Pretend units for a demo, never recorded |
 | Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
 | Reseller Channel | `/api/partners` | A servicer's book of managed accounts |
@@ -185,7 +187,7 @@ The short version:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 1,840 tests. Gemini, Twilio and SMTP are stubbed and the database is
+About 1,890 tests. Gemini, Twilio and SMTP are stubbed and the database is
 in memory, so the suite needs no credentials, makes no network calls and
 touches no file on disk. CI runs the suite on Python 3.11 (what the image
 ships) and again on 3.13, and also runs pyflakes, a type check on the money

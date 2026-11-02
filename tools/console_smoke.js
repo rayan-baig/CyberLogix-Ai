@@ -18,6 +18,12 @@
  * loses its network must show the offline page rather than a copy of
  * the console.
  *
+ * And a new business's first day: the front page says who it is for,
+ * the price and the trial in the first screen; sign-up lands in the
+ * console; every empty card offers the next step; the checklist ticks
+ * itself and goes; the test alert opens no incident; and a simulated
+ * unit is stamped as one and never reaches the real fleet.
+ *
  * Exit code 0 when everything holds; 1 with a list of failures.
  */
 "use strict";
@@ -129,7 +135,7 @@ async function junkOnScreen(page) {
     const out = [];
     const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     const blocks = Array.from(document.querySelectorAll(
-      "#app [data-find], #app .tiles, #app .banner, #app nav, #drawer"));
+      "#app [data-find], #app .tiles, #app .banner, #app nav, #drawer, #first-day"));
     for (const el of blocks) {
       if (!visible(el)) continue;
       const text = el.innerText || "";
@@ -424,6 +430,117 @@ async function checkOffline(browser, base, token) {
   await context.close();
 }
 
+/* ---------------- the first day ---------------- */
+
+/* Who it is for, the price and the trial, without scrolling. */
+async function checkLanding(browser, base) {
+  for (const [label, viewport] of [["phone", PHONE], ["laptop", { width: 1366, height: 768 }]]) {
+    const context = await browser.newContext({ viewport, serviceWorkers: "block",
+                                               reducedMotion: "reduce" });
+    const page = await context.newPage();
+    await page.goto(`${base}/`);
+    await page.waitForTimeout(300);
+    const got = await page.evaluate(() => {
+      const facts = document.getElementById("facts");
+      const cta = document.querySelector(".hero .btn-primary");
+      return {
+        text: facts ? facts.innerText : "",
+        factsBottom: facts ? facts.getBoundingClientRect().bottom : 1e9,
+        ctaBottom: cta ? cta.getBoundingClientRect().bottom : 1e9,
+        height: window.innerHeight,
+        raw: document.body.innerHTML.includes("%%"),
+      };
+    });
+    await shoot(page, `landing ${label}`);
+    const where = `landing ${label}`;
+    if (got.raw) fail(where, "a %%TOKEN%% was left on the page");
+    for (const want of [/Who it is for/i, /From \$\d[\d,]* a month per/, /\d+ days on up to \d+ sensors\. No card\./]) {
+      if (!want.test(got.text)) fail(where, `the first screen does not say ${want}`);
+    }
+    if (got.factsBottom > got.height) fail(where, `who/price/trial end at ${Math.round(got.factsBottom)}px, below the ${got.height}px screen`);
+    else if (got.ctaBottom > got.height) fail(where, "the free-trial button is below the first screen");
+    else ok(`${where}: who it is for, the price and the trial in the first screen`);
+    await context.close();
+  }
+}
+
+async function checkFirstDay(browser, base) {
+  const label = "first day";
+  const context = await browser.newContext({ viewport: PHONE, serviceWorkers: "block" });
+  const page = await context.newPage();
+  const flush = watchErrors(page, label);
+  await page.goto(`${base}/signup`);
+  await page.waitForFunction(() => document.querySelector("#industry_vertical").options.length > 1);
+  await page.fill("#company_name", "First Day Diner");
+  await page.fill("#full_name", "Fran Day");
+  await page.fill("#email", `first-${Date.now()}@smoke.example`);
+  await page.fill("#contact_phone", "+15550177");
+  await page.fill("#password", "smoke-test-password-1");
+  await page.selectOption("#industry_vertical", "restaurant");
+  await page.click("#go");
+  await page.waitForURL(`${base}/console`, { timeout: 15000 });
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  ok(`${label}: sign-up lands in the console, signed in`);
+  await page.waitForTimeout(600);
+  if (!(await page.isVisible("#first-day"))) fail(label, "no checklist on a new account");
+  const key = await page.textContent("#issued-value");
+  if (!/^clx_/.test(key || "")) fail(label, "the business key from sign-up is not shown");
+
+  // Every empty card that a new business meets offers the next step.
+  for (const card of ["#fleet", "#incidents", "#roster-body", "#site-body"]) {
+    if (!(await page.$(`${card} .empty [data-go]`))) fail(label, `${card} is empty and offers nothing to do`);
+  }
+  for (const bad of await junkOnScreen(page)) fail(label, bad);
+  await shoot(page, "first day empty");
+
+  // The simulator, from the empty fleet: stamped, apart, and not a sensor.
+  await page.click('#fleet [data-go="simulate"]');
+  await page.waitForSelector("#sim-fleet .sensor.is-simulated", { timeout: 10000 });
+  const stamp = await page.textContent("#sim-fleet .sim-stamp");
+  if (!/SIMULATED/.test(stamp)) fail(label, "a simulated card is not stamped SIMULATED");
+  await page.click("#sim-fleet [data-sim-break]");
+  try {
+    await page.waitForSelector("#sim-fleet .sensor.is-breaching", { timeout: 30000 });
+    const would = await page.textContent("#sim-fleet .sim-would");
+    if (!/Not sent/.test(would)) fail(label, "a simulated breach does not say nothing was sent");
+    else ok(`${label}: a simulated unit fails on screen and nothing is sent`);
+  } catch (_) { fail(label, "a broken simulated unit never breached"); }
+  await shoot(page, "first day simulated");
+  const real = await page.$$eval("#fleet .sensor", (els) => els.length);
+  if (real) fail(label, "a simulated unit landed in the real fleet");
+  await page.click("#sim-stop");
+  await page.waitForSelector("#sim-zone", { state: "hidden" });
+
+  // The checklist, one step at a time, through its own buttons.
+  const steps = [
+    ["site", async () => { await page.fill("#site-name", "Main Street"); await page.click("#site-form button[type=submit]"); }],
+    ["sensor", async () => { await page.fill("#add-loc", "Kitchen walk-in"); await page.click("#add-form button[type=submit]"); }],
+    ["oncall", async () => { await page.fill("#ct-name", "Fran"); await page.fill("#ct-phone", "+15550177"); await page.click("#contact-form button[type=submit]"); }],
+    ["test", async () => { page.once("dialog", (d) => d.accept()); await page.click("#test-alert"); }],
+  ];
+  for (const [step, doIt] of steps) {
+    const button = `#first-day [data-go="${step}"]`;
+    if (!(await page.isVisible(button))) { fail(label, `no checklist button for ${step}`); continue; }
+    await page.click(button);
+    await page.waitForTimeout(500);
+    await doIt();
+    await page.waitForTimeout(1200);
+    if (step !== "test" && (await page.isVisible(`#first-day [data-go="${step}"]`))) {
+      fail(label, `the ${step} box did not tick itself`);
+    }
+  }
+  await page.waitForTimeout(800);
+  if (await page.isVisible("#first-day")) fail(label, "the checklist is still there with everything done");
+  else ok(`${label}: the checklist ticks itself and goes when it is done`);
+  const result = await page.textContent("#test-alert-out");
+  if (!/dry run|written|sent/i.test(result || "")) fail(label, `the test alert said: ${result}`);
+  const incidents = await page.$$eval("#incidents .incident", (els) => els.length);
+  if (incidents) fail(label, "the test alert opened an incident");
+  await shoot(page, "first day done");
+  flush();
+  await context.close();
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch();
@@ -456,6 +573,9 @@ async function main() {
       sceneToken = token;
       await context.close();
     }
+    console.log("\nfirst day");
+    await checkLanding(browser, server.base);
+    await checkFirstDay(browser, server.base);
     console.log("\nresilience");
     await checkBackoff(browser, server.base, sceneToken, DESKTOP);
     await checkOffline(browser, server.base, sceneToken);
