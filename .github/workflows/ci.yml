@@ -26,7 +26,11 @@ jobs:
           python-version: '3.11'   # what the Dockerfile ships
           cache: pip
       # Pillow is for the one test that checks the app icons are real images.
-      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow pip-audit
+      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow pip-audit pyflakes==4.1.0
+      # Unused imports, undefined names, a variable assigned and never
+      # read: the cheap mistakes, caught before the suite runs.
+      - name: Pyflakes
+        run: python -m pyflakes $(git ls-files '*.py')
       - name: Tests
         run: python -m pytest -q
       - name: Known security holes in dependencies

@@ -55,6 +55,11 @@ except ValueError:
 # entry costs one model call, and keeping every entry ever costs a
 # database that never stops growing.
 MAX_CACHE_ENTRIES = 5000
+# And how long any one of them may be. The count alone bounded the rows
+# but not the bytes: the model's answer has no length limit, so 5000
+# entries could each be a page long. An alert or a summary is a few
+# hundred characters; anything past this is answered and not kept.
+MAX_CACHE_TEXT_CHARS = 8000
 
 # How quickly a breach must turn into a dispatched alert. This is the
 # service commitment the agreement states, and it lives here with the
@@ -4197,6 +4202,8 @@ class HubStore:
             return text
 
     def cache_put(self, key: str, text: str) -> None:
+        if len(text) > MAX_CACHE_TEXT_CHARS:
+            return
         with self._lock:
             self._ai_cache[key] = text
             self._ai_cache.move_to_end(key)

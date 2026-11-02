@@ -227,3 +227,34 @@ def test_the_operator_can_list_them(api, admin_headers, durable):
 
     assert body["count"] == 1
     assert body["snapshots"][0]["size_bytes"] > 0
+
+
+def test_the_operator_can_open_a_snapshot_to_check_it(api, admin_headers, durable):
+    """A backup nobody has opened is a file, not a backup."""
+    store, _ = durable
+    _populate(store)
+    backup.take()
+    name = api.get("/api/admin/backups", headers=admin_headers).json()["snapshots"][0]["name"]
+
+    assert api.get(f"/api/admin/backups/{name}/verify").status_code == 401
+    body = api.get(f"/api/admin/backups/{name}/verify", headers=admin_headers).json()
+    assert body["ok"] is True and body["records"] > 0
+
+    missing = api.get("/api/admin/backups/nope.sqlite3/verify", headers=admin_headers).json()
+    assert missing["ok"] is False
+
+
+def test_checking_a_snapshot_cannot_reach_outside_the_snapshot_folder(
+    api, admin_headers, durable
+):
+    """The name is one path component. The live database sits one level
+    up from the snapshots, and no spelling of a name may open it."""
+    store, _ = durable
+    _populate(store)
+    backup.take()
+    for name in ("..", "..%2Flive.sqlite3", "%2E%2E", "live.sqlite3"):
+        resp = api.get(f"/api/admin/backups/{name}/verify", headers=admin_headers)
+        if resp.status_code == 200:
+            assert resp.json()["ok"] is False, name
+        else:
+            assert resp.status_code == 404, name

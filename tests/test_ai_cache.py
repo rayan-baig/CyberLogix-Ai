@@ -106,3 +106,16 @@ def test_a_restart_does_not_reload_more_than_the_cap(monkeypatch, tmp_path):
     assert fresh.cache_size() <= 12
     assert len(list(fat.all("aicache"))) <= 12, (
         "trimmed in memory but not on disk, so the next restart reloads them")
+
+
+def test_an_answer_too_long_to_keep_is_not_kept(monkeypatch):
+    """The count bounded the rows, not the bytes. A model answer has no
+    length limit, so one entry could be any size; past the cap it is
+    answered and not stored."""
+    monkeypatch.setattr(store, "MAX_CACHE_TEXT_CHARS", 100)
+    STORE.cache_put("short", "x" * 100)
+    STORE.cache_put("long", "x" * 101)
+
+    assert STORE.cache_get("short") == "x" * 100
+    assert STORE.cache_get("long") is None
+    assert len(list(STORE._db.all("aicache"))) == 1

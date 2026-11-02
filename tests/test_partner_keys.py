@@ -10,10 +10,14 @@ import sqlite3
 
 from db import Database
 from store import HubStore, hash_secret
-from test_partners import admin, make_partner  # noqa: F401  (fixture)
+import test_partners
+from test_partners import make_partner
+
+# The platform-admin fixture, shared with test_partners rather than copied.
+admin = test_partners.admin
 
 
-def test_suspending_a_partner_closes_the_portal(api, admin):  # noqa: F811
+def test_suspending_a_partner_closes_the_portal(api, admin):
     body, key = make_partner(api, admin)
     assert api.get("/api/partners/me", headers=key).status_code == 200
     resp = api.post(f"/api/partners/{body['partner_id']}/status", headers=admin, json={"active": False})
@@ -23,7 +27,7 @@ def test_suspending_a_partner_closes_the_portal(api, admin):  # noqa: F811
     assert api.get("/api/partners/me", headers=key).status_code == 200
 
 
-def test_rotating_a_key_retires_the_old_one(api, admin):  # noqa: F811
+def test_rotating_a_key_retires_the_old_one(api, admin):
     body, old = make_partner(api, admin)
     resp = api.post(f"/api/partners/{body['partner_id']}/rotate-key", headers=admin)
     assert resp.status_code == 200
@@ -34,7 +38,7 @@ def test_rotating_a_key_retires_the_old_one(api, admin):  # noqa: F811
     assert new_key not in api.get("/api/partners", headers=admin).text
 
 
-def test_only_the_platform_can_suspend_or_rotate(api, admin):  # noqa: F811
+def test_only_the_platform_can_suspend_or_rotate(api, admin):
     body, key = make_partner(api, admin)
     for path, payload in ((f"/api/partners/{body['partner_id']}/status", {"active": False}),
                           (f"/api/partners/{body['partner_id']}/rotate-key", None)):

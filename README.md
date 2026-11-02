@@ -1667,6 +1667,26 @@ voided month disappearing when the contract was renewed, and a failed re-bill
 rewinding a counter it had never advanced, which left the same month queued
 from both ends.
 
+### The console in a real browser
+
+`tools/console_smoke.js` drives the console in headless Chromium at phone
+(390×844) and desktop size: signs a business up through the form, walks every
+tab empty and again with a breach, opens the sensor drawer, and checks that
+nothing shows `undefined`/`NaN`/`null`, the page never scrolls sideways, the
+poll backs off while the server is down, wall mode shows the whole estate and
+none of the account's private details, and an installed app with no network
+gets the offline page. It starts its own server on a throwaway database:
+
+```bash
+npm i playwright && npx playwright install chromium   # once
+PYTHON=.venv/bin/python node tools/console_smoke.js
+# or against a running server, with a screenshot of every step:
+BASE_URL=http://127.0.0.1:8080 SMOKE_SHOTS=/tmp/shots node tools/console_smoke.js
+```
+
+`tests/test_every_route_is_tested.py` fails a whole-suite run if any route
+the app serves is not reached by at least one test.
+
 ### Mutation testing
 
 Every fix in this repository was re-broken on purpose to confirm a test
