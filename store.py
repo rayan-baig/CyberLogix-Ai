@@ -4423,8 +4423,11 @@ class HubStore:
             live.state = state
             _mirror_payment(invoice, live)
             # The licence runs on from money that has arrived: an invoice paid
-            # in full buys its period. Nothing else lengthens a paid term.
-            if state == "paid" and not was_paid:
+            # in full buys its period. Nothing else lengthens a paid term,
+            # and a late charge buys nothing: it carries a period like any
+            # invoice, so paying a $25 fee used to buy thirty days.
+            buys_service = not (live.source or "").startswith("late_fee:")
+            if state == "paid" and not was_paid and buys_service:
                 self.extend_licence(live.tenant_id, live.period_days)
             return live, True
 
