@@ -150,6 +150,27 @@ def test_annual_prepay_bills_twelve_months_with_the_discount(
     assert sub.period_start(1) == add_months(sub.period_start(0), 12)
 
 
+def test_a_paid_period_buys_its_real_length(
+    api, tenant_factory, sensor_factory, owner_headers
+):
+    """A flat 30 days a month made a year's prepayment buy 360 days."""
+    from datetime import datetime, timezone
+
+    headers, tenant = tenant_factory(plan="enterprise")
+    owner = owner_headers(headers)
+    sensor_factory(headers, "RACK-01", "cybersecurity")
+    _sign(api, headers, owner, term_years=3, annual_prepay=True)
+    sub = STORE.active_subscription(tenant["tenant_id"])
+    sub.started_at = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    invoice = bill_period(STORE.get_tenant(tenant["tenant_id"]), sub, 0)
+    assert invoice.period_days == 365
+
+    sub.annual_prepay = False
+    sub.started_at = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    january = bill_period(STORE.get_tenant(tenant["tenant_id"]), sub, 1)  # Feb 2027
+    assert january.period_days == 28
+
+
 def test_add_ons_ride_the_escalator_too(api, tenant_factory, sensor_factory,
                                         owner_headers):
     headers, tenant = tenant_factory(plan="enterprise")

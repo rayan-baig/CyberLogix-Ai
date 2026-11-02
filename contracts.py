@@ -453,7 +453,10 @@ def bill_period(
             invoice = STORE.create_invoice(
                 tenant=tenant,
                 lines=lines,
-                period_days=30 * months,
+                # The real length of this period. A flat 30 a month made a
+                # year's prepayment buy 360 days, and a 31-day month bought
+                # 30, so a paid-up customer could lapse before the next bill.
+                period_days=(sub.period_start(index + 1) - sub.period_start(index)).days,
                 terms_days=PAYMENT_TERMS_DAYS,
                 purchase_order=sub.purchase_order,
                 source=sub.subscription_id,
