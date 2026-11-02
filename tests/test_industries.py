@@ -2,7 +2,7 @@
 
 A restaurant owner and an IVF clinic director both need exactly this
 product and neither will read the other's page. The failure mode is
-quiet: somebody adds a vertical to store.py, nothing breaks, and that
+quiet: somebody adds a vertical to domain.py, nothing breaks, and that
 industry silently has no page while the sales pitch says twelve.
 """
 

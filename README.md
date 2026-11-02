@@ -192,3 +192,13 @@ ships) and again on 3.13, and also runs pyflakes, a type check on the money
 code (`python -m mypy`), a dependency audit and a build of the image. The
 fuzzer, the browser smoke test and the rest are in
 [docs/TESTING.md](docs/TESTING.md).
+
+## How the code is laid out
+
+`main.py` mounts every router. `store.py` holds the live state behind one
+lock and writes every change through to SQLite (`db.py`); the records it
+keeps are defined in `records.py`, and the fixed rules (industry profiles,
+plans, the breach check, volume pricing, temperature units) in
+`domain.py`. Each feature area has its own module, named for what it does
+(`invoicing.py`, `contracts.py`, `vault.py`, `mail.py` and so on). More in
+[docs/OPERATIONS.md](docs/OPERATIONS.md#state).

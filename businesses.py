@@ -6,7 +6,7 @@ for each: a different email address per business, and signing out and in
 again to look from one to the other. Here they sign in once and switch.
 
 How it stays safe. Each business still has its own record for the person
-(see `User.linked_to` in store.py), with its own role, so being an owner
+(see `User.linked_to` in records.py), with its own role, so being an owner
 at one business makes nobody an owner at another, and every existing
 permission check keeps asking the same question it always did. Switching
 does not widen a session: it ends the session for one business and starts

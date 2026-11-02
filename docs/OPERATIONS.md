@@ -50,6 +50,12 @@ usage all survive a restart. Because the queries are small per-tenant scans
 rather than SQL, entities are stored as JSON documents keyed by `(kind, id)`
 — durability without a migration burden.
 
+The shape of each record (`Tenant`, `Sensor`, `Invoice` and the rest) and
+its `to_row`/`from_row` are in `records.py`; the fixed rules it applies
+(industry profiles, plans, the breach check, volume pricing, temperature
+units) are in `domain.py`. `store.py` re-exports both, so code imports
+everything from `store`.
+
 Set `CYBERLOGIX_DB_PATH` to a mounted volume to outlive the container. The
 container image defaults it to `/app/data/cyberlogix.db`.
 
@@ -160,7 +166,7 @@ because terms nobody can read before signing up are a surprise rather than
 terms.
 
 They are written in plain words and generated from the code they
-describe: the alert times from `store.py`, the payment terms and late
+describe: the alert times from `domain.py`, the payment terms and late
 charge from the billing code, the delinquency threshold from
 `contracts.py`, and the backup window from `backup.py`. Change a constant and the
 agreement says the new figure the same day, and the SHA-256 of the text
