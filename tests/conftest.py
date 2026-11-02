@@ -104,11 +104,17 @@ def clean_rate_limits():
     traffic — and the failure surfaces as a KeyError on the response body,
     miles from the cause.
     """
+    import firstday
     import signup
+    import simulator
 
     signup.reset_rate_limits()
+    firstday.forget()
+    simulator.forget()
     yield
     signup.reset_rate_limits()
+    firstday.forget()
+    simulator.forget()
 
 
 @pytest.fixture()

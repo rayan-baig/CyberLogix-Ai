@@ -6,6 +6,7 @@ compliance clerk, AI outbound voice escalation, and predictive breakdown
 forecasting.
 """
 
+import html
 import json
 import logging
 import math
@@ -13,7 +14,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -53,6 +54,7 @@ from pollers import router as pollers_router
 from people import router as people_router
 from tasks import router as tasks_router
 from faults import router as faults_router
+from firstday import router as firstday_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
 from digest import router as digest_router
@@ -70,6 +72,7 @@ from licenses import router as license_router
 from pricing import router as billing_router
 from shortcuts import router as shortcuts_router
 from signup import router as signup_router
+from simulator import router as simulator_router
 from sites import router as sites_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
@@ -222,6 +225,7 @@ app.include_router(accounts_router)
 app.include_router(businesses_router)
 app.include_router(erase_router)
 app.include_router(costs_router)
+app.include_router(firstday_router)
 app.include_router(contacts_router)
 app.include_router(billing_router)
 app.include_router(shortcuts_router)
@@ -253,6 +257,7 @@ app.include_router(watchdog_router)
 app.include_router(payments_router)
 app.include_router(margin_router)
 app.include_router(books_router)
+app.include_router(simulator_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -491,17 +496,41 @@ def _background_colour() -> str:
     return found.group(1)
 
 
-def _serve_page(path: Path, request: Request) -> HTMLResponse:
+def _serve_page(
+    path: Path, request: Request, extra: Optional[Dict[str, str]] = None
+) -> HTMLResponse:
     """Read a public page, substitute the deployment's own URL, serve it."""
     source = _page_cache.get(str(path))
     if source is None:
         source = path.read_text(encoding="utf-8")
         _page_cache[str(path)] = source
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
-    return HTMLResponse(
-        source.replace(_BASE_TOKEN, base)
-              .replace(_THEME_TOKEN, _background_colour())
-    )
+    page = (source.replace(_BASE_TOKEN, base)
+                  .replace(_THEME_TOKEN, _background_colour()))
+    for token, value in (extra or {}).items():
+        page = page.replace(token, html.escape(value))
+    return HTMLResponse(page)
+
+
+def _landing_facts() -> Dict[str, str]:
+    """Who it is for, what it costs and the trial, for the first screen.
+
+    Substituted rather than written into the page, for the same reason the
+    sector cards are fetched: a front page with its own copy of a price is
+    a front page that will one day quote one the product does not charge.
+    These come off the rate card and the plan tiers as they are now.
+    """
+    from pricing import headline
+
+    facts = headline()
+    named = 4  # restaurants, pharmacies, labs and data centres, by name
+    return {
+        "%%FROM_PRICE%%": facts["from_label"],
+        "%%FROM_UNIT%%": facts["from_unit"],
+        "%%TRIAL_DAYS%%": str(facts["trial_days"]),
+        "%%TRIAL_UNITS%%": str(facts["trial_units"]),
+        "%%INDUSTRIES_MORE%%": str(max(0, facts["industries"] - named)),
+    }
 
 
 @app.get("/robots.txt", include_in_schema=False)
@@ -571,7 +600,7 @@ def landing_page(request: Request):
     password was for. The console has moved to /console, where the people
     who have one will look for it.
     """
-    return _serve_page(LANDING_HTML, request)
+    return _serve_page(LANDING_HTML, request, _landing_facts())
 
 
 @app.get("/console", include_in_schema=False)

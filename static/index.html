@@ -63,7 +63,11 @@
 
 /* --- hero ---------------------------------------------------------- */
 .hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
-@media (max-width: 720px) { .hero { padding: 60px 0 52px; } section.band { padding: 56px 0; } }
+@media (max-width: 720px) {
+  .hero { padding: 34px 0 52px; } section.band { padding: 56px 0; }
+  .kicker { margin-bottom: 14px; } h1 { margin-bottom: 16px; }
+  .lede { margin-bottom: 22px; } .facts { margin-bottom: 24px; }
+}
 /* No decorative glow here: the board underneath already carries the
    light, and a second source fighting it just makes the page murky. */
 .hero-inner { position: relative; max-width: 940px; }
@@ -85,7 +89,19 @@ h1 em { font-style: normal; color: var(--accent-cyan); }
 /* .btn-primary is full-width because it lives at the bottom of the sign-in
    form, where that is right. Loose on a page it is a bar, not a button. */
 .cta-row .btn-primary, .closer .btn-primary { width: auto; }
-.cta-note { font-size: 13px; color: var(--muted); }
+/* Who, how much, and the trial: three short rows under the lede, so all
+   of it fits the first screen of a phone. */
+.facts {
+  display: grid; gap: 10px 26px; margin: 0 0 30px; max-width: 880px;
+}
+@media (min-width: 860px) { .facts { grid-template-columns: 1.4fr 1fr 1fr; } }
+.facts > div { border-left: 2px solid var(--accent-deep); padding-left: 14px; }
+.facts dt {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 4px;
+}
+.facts dd { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.facts a { color: var(--ink); }
 
 /* --- generic section ------------------------------------------------ */
 section.band { padding: 76px 0; border-top: 1px solid var(--border); }
@@ -211,19 +227,31 @@ footer a:hover, footer a:focus-visible { color: var(--ink); }
 <!-- ============================== HERO ============================== -->
 <section class="hero">
   <div class="wrap hero-inner">
-    <p class="kicker">Thermal monitoring &amp; escalation</p>
+    <p class="kicker">Temperature alarms that wake somebody up</p>
     <h1>A freezer fails at two.<br>
         Nobody finds out until <em>seven</em>.</h1>
     <p class="lede">
-      By then the stock is gone, the insurer wants evidence nobody kept, and
-      the argument about who was supposed to be watching has already started.
-      CyberLogix watches the temperature of the things a business cannot
-      afford to lose, and keeps waking people until one of them answers.
+      By then the stock is gone. CyberLogix watches the temperature of what
+      your business cannot afford to lose, and keeps texting and calling
+      your staff until one of them answers.
     </p>
+    <!-- The three things a visitor decides on, in the first screen. The
+         figures are substituted at serve time from the rate card and the
+         plan tiers (pricing.headline), never typed here. -->
+    <dl class="facts" id="facts">
+      <div><dt>Who it is for</dt>
+        <dd>Any business with something that must hold a temperature:
+          restaurants, pharmacies, labs, data centres and
+          %%INDUSTRIES_MORE%% more. <a href="/for">Find yours</a></dd></div>
+      <div><dt>What it costs</dt>
+        <dd>From %%FROM_PRICE%% a month per %%FROM_UNIT%%. Each trade has its
+          own rate, <a href="#sectors">listed below</a>.</dd></div>
+      <div><dt>Free trial</dt>
+        <dd>%%TRIAL_DAYS%% days on up to %%TRIAL_UNITS%% sensors. No card.</dd></div>
+    </dl>
     <div class="cta-row">
       <a class="btn btn-primary" href="/signup">Start a free trial</a>
       <a class="btn" href="#how">See how it works</a>
-      <span class="cta-note">Fourteen-day trial. No card.</span>
     </div>
   </div>
 </section>

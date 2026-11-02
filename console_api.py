@@ -226,6 +226,7 @@ def console_overview(
         if s["risk_level"] in {"critical", "high", "elevated"}
     )
 
+    from firstday import checklist
     from pricing import build_roi, build_subscription
 
     subscription = build_subscription(tenant)
@@ -276,6 +277,8 @@ def console_overview(
         "sensors": sensors,
         "incidents": incidents,
         "grace_window_minutes": VOICE_ESCALATION_GRACE_MINUTES,
+        # The first-day checklist, ticked from what the account holds.
+        "first_day": checklist(tenant),
     }
 
 

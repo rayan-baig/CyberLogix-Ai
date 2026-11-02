@@ -1200,3 +1200,54 @@ body[data-stale] #offline-banner {
   border-color: var(--critical);
   background: color-mix(in srgb, var(--critical) 16%, transparent);
 }
+
+
+/* ---------- the first day ----------
+   The checklist, the next step at the foot of an empty card, the test
+   alert and the simulated units. Built from the same tokens as every
+   other card; nothing here has a colour of its own. */
+.first-day { border-color: var(--accent-deep); }
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.checklist li {
+  display: flex; align-items: center; gap: 12px; padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.checklist li:last-child { border-bottom: 0; }
+.checklist b { font-weight: 500; font-size: 14px; color: var(--ink); }
+.checklist .sub { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.checklist .tick {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px;
+  border: 1px solid var(--border-lit); color: var(--good);
+}
+.checklist li.is-done b { color: var(--muted); text-decoration: line-through; }
+.checklist li.is-done .tick { border-color: var(--good); }
+.checklist .btn { flex: none; }
+.empty-acts {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin-top: 14px; font-family: var(--sans);
+}
+.btn-go { border-color: var(--accent-deep); color: var(--accent); }
+.test-alert { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.test-call { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.test-result { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.test-result p { margin: 0 0 6px; }
+.test-result ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.test-result .sub { color: var(--muted); }
+.sim-zone { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--border-lit); }
+.sim-head { margin-bottom: 6px; }
+.sim-notice { margin: 0 0 12px; }
+/* A pretend unit is dashed, stamped, and never mistaken for a real one,
+   even cropped out of a screenshot. */
+.sensor.is-simulated { border-style: dashed; border-color: var(--warning); }
+.sim-stamp {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--warning); margin: 0 0 8px;
+}
+.sim-would {
+  margin-top: 10px; padding: 9px 11px; border-radius: 9px; font-size: 12.5px;
+  background: var(--sunken); color: var(--ink-2); line-height: 1.5;
+}
+.sim-would .sub { display: block; color: var(--muted); margin-top: 4px; }
+body.wall #first-day, body.wall .sim-zone, body.wall #sim-start,
+body.wall .empty-acts { display: none !important; }

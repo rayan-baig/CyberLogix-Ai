@@ -269,6 +269,30 @@ def unit_price(vertical: str) -> float:
     return PRICE_BOOK[vertical]["monthly_usd"]
 
 
+def headline() -> Dict[str, Any]:
+    """The three facts the front page has to state in one screen.
+
+    The lowest rate on the card and what it is per, and the trial's length
+    and size. Read from the rate card and the plan tiers at serve time, so
+    the front page cannot quote a number the product does not charge.
+    """
+    vertical, entry = min(PRICE_BOOK.items(), key=lambda kv: kv[1]["monthly_usd"])
+    trial = PLAN_TIERS["trial"]
+    return {
+        "from_usd": entry["monthly_usd"],
+        "from_label": f"${entry['monthly_usd']:,.0f}",
+        "from_unit": entry["unit"],
+        "from_vertical": vertical,
+        "trial_days": trial["term_days"],
+        "trial_units": trial["max_sensors"],
+        "industries": len(PRICE_BOOK),
+        # Signing up takes no payment details: SignupRequest has no field
+        # for one. Stated here so the page says it from the code that
+        # makes it true.
+        "card_required": False,
+    }
+
+
 def per_site(vertical: str) -> bool:
     """Billed per location rather than per sensor.
 

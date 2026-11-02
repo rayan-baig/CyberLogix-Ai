@@ -30,6 +30,20 @@ A tenant with no roster is still alerted: the store falls back to the contact
 captured at onboarding, so alerting never depends on setup that hasn't
 happened yet.
 
+### A test alert
+
+`POST /api/contacts/test-alert` (the **Send a test alert** button under "Who
+gets called") texts everyone on the roster — each number once, across every
+site — a message that starts `TEST from CyberLogix: nothing is wrong`. With
+`{"call": true}`, on a plan with calls, it also rings the first person on the
+ladder with a spoken test. Owners and operators only. It opens no incident,
+posts to no Slack/Teams/PagerDuty channel and writes nothing to the
+compliance record; it goes through the same send functions as a real alert,
+so it counts against the day's spend caps and is refused the same premium
+numbers. One every ten minutes and five a day, counted from the audit trail
+so a restart does not reset it. A sent test is what ticks the last box of
+the console's first-day checklist.
+
 ## The escalation ladder
 
 A freezer's own defrost is not a breach anyone is paged for. When a unit

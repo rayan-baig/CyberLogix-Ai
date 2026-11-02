@@ -173,6 +173,19 @@
       <button type="button" id="terms-accept">Read and accept</button>
     </div>
 
+    <!-- The first day: four things to have done before the night a
+         freezer fails. The server ticks each one from what the account
+         actually holds; once all four are true the card is gone. -->
+    <section class="card first-day" id="first-day" hidden>
+      <div class="card-head">
+        <span class="card-title">Your first day</span>
+        <span class="card-note" id="first-day-note"></span>
+      </div>
+      <p class="card-plain">Four things to do before the night something
+         fails. Each one ticks itself when it is done.</p>
+      <ol class="checklist" id="first-day-list"></ol>
+    </section>
+
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
 
     <!-- Two ways through twenty-two cards: type what you want, or press
@@ -219,6 +232,8 @@
             <span class="card-title" id="fleet-title">Your fridges and freezers</span>
             <span class="card-note" id="fleet-note"></span>
             <span class="nav-spacer"></span>
+            <button class="btn btn-sm" id="sim-start" type="button" hidden
+                    title="Pretend units for a demo. Nothing they do is recorded.">Simulate</button>
             <button class="btn btn-sm" id="toggle-table" aria-pressed="false">Table view</button>
           </div>
           <p class="card-plain">Every unit we are watching, and how cold it is right now.</p>
@@ -243,6 +258,19 @@
             <div class="loading">Reading the estate…</div>
           </div>
           <div id="fleet-table" hidden></div>
+          <!-- Simulated units: the owner's, for a demo with no hardware.
+               Kept apart from the fleet above and never recorded -- the
+               server holds them in memory and nowhere else. -->
+          <div class="sim-zone" id="sim-zone" hidden>
+            <div class="row sim-head">
+              <span class="badge s-warning"><span class="dot" aria-hidden="true"></span>SIMULATED</span>
+              <span class="card-note grow" id="sim-note"></span>
+              <button class="btn btn-sm" id="sim-add" type="button">Add a simulated unit</button>
+              <button class="btn btn-sm" id="sim-stop" type="button">Stop the simulation</button>
+            </div>
+            <p class="card-plain sim-notice" id="sim-notice"></p>
+            <div id="sim-fleet" class="fleet"></div>
+          </div>
         </section>
 
         <section class="card" id="find-incidents" data-group="alerts" data-find="problems incidents breach alarm too warm problem open resolved" data-label="Problems">
@@ -451,7 +479,7 @@
               <button class="btn btn-sm" type="button" id="issued-copy">Copy</button>
               <button class="btn btn-sm" type="button" id="issued-done">Done</button>
             </div>
-            <div class="issued-note">
+            <div class="issued-note" id="issued-note">
               Put this on the device and keep it nowhere else. It is shown
               once and never again — if it is lost, rotate the sensor for a
               new one. It can report readings for this asset and nothing
@@ -462,16 +490,20 @@
 
           <form id="add-form">
             <div class="field">
-              <label for="add-id">Sensor ID</label>
-              <input id="add-id" required placeholder="STORE118-WALKIN">
+              <label for="add-loc">Where is it?</label>
+              <input id="add-loc" required placeholder="Store 118 / Walk-In">
             </div>
             <div class="field">
               <label for="add-vertical">Industry</label>
               <select id="add-vertical"></select>
             </div>
+            <!-- Optional: a name is made from the location when this is
+                 left blank. Asking a restaurant to invent an identifier
+                 before it can watch a freezer was the slowest field on
+                 the way to a first reading. -->
             <div class="field">
-              <label for="add-loc">Location</label>
-              <input id="add-loc" required placeholder="Store 118 / Walk-In">
+              <label for="add-id">Sensor ID <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <input id="add-id" placeholder="Made from the location if left blank">
             </div>
             <div class="field">
               <label for="add-sn">Third-party device serial <span style="color:var(--muted);font-weight:400">(optional)</span></label>
@@ -518,6 +550,20 @@
               Add to roster
             </button>
           </form>
+          <!-- A wrong digit reads perfectly well on screen and reaches
+               nobody. This is how to find out before a night it matters. -->
+          <div class="test-alert" id="test-alert-box">
+            <p class="card-plain">Check the texts really arrive. Everyone
+               above gets one that starts <b>TEST</b> and says nothing is
+               wrong. No problem is opened and nobody is chased.</p>
+            <div class="row">
+              <button class="btn btn-sm" type="button" id="test-alert">Send a test alert</button>
+              <label class="test-call" id="test-call-wrap" hidden>
+                <input type="checkbox" id="test-call"> and ring the first person
+              </label>
+            </div>
+            <div id="test-alert-out"></div>
+          </div>
         </section>
 
         <section class="card" id="find-team" data-group="people" data-find="your crew people who can sign in team users staff logins roles operator owner" data-label="People who can sign in">
@@ -784,6 +830,8 @@
 "use strict";
 
 const TOKEN_STORAGE = "cyberlogix.session";
+// The sign-up page leaves the new business key here for exactly one load.
+const NEW_KEY_STORAGE = "cyberlogix.newkey";
 // A longer interval than a live dashboard strictly wants, because every poll
 // is a request that keeps a Cloud Run instance warm and billing.
 const POLL_MS = 20000;
@@ -1085,6 +1133,21 @@ async function enter(token, user) {
   await loadIndustries();
   markFresh();
   startPolling();
+  loadSims();
+  watchForFirstReading();
+  // The business key from the sign-up page, handed over for this one
+  // page load and deleted as it is read: shown once, here, where every
+  // other new key is shown.
+  let handed = null;
+  try {
+    handed = sessionStorage.getItem(NEW_KEY_STORAGE);
+    sessionStorage.removeItem(NEW_KEY_STORAGE);
+  } catch (_) { /* storage refused: there is nothing to show */ }
+  if (handed) {
+    showIssuedKey("this business (master key)", handed, { scroll: false });
+    toast("Your business key is shown once, under \"Add a fridge or "
+          + "freezer\". Copy it if you will use the API.", "ok");
+  }
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -1092,6 +1155,9 @@ async function enter(token, user) {
 function signOutLocally() {
   try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
   clearTimeout(state.timer);
+  clearInterval(state.firstWatch);
+  clearInterval(state.simTimer);
+  state.simTimer = null;
   state.pollChain = (state.pollChain || 0) + 1;
   state.token = null;
   state.user = null;
@@ -1645,6 +1711,13 @@ function render(d, health) {
   renderFleet(shown);
   renderTable(shown);
 
+  renderFirstDay(d.first_day);
+  const owner = Boolean(state.user && state.user.role === "owner");
+  $("sim-start").hidden = !owner;
+  const canTest = Boolean(state.user && state.user.role !== "viewer");
+  $("test-alert-box").hidden = !canTest;
+  $("test-call-wrap").hidden = !(d.entitlements && d.entitlements.voice_escalation);
+
   const open = d.incidents.filter((i) => i.state !== "resolved").length;
   $("incident-note").textContent =
     d.incidents.length ? `${open} active, ${d.incidents.length} total` : "";
@@ -1745,8 +1818,11 @@ function renderFleet(sensors) {
       filtered
         ? `Nothing matches that.<span class="sub">Clear the search or the filter
              to see the whole estate.</span>`
-        : `Nothing is being watched yet.<span class="sub">Claim a seat on the
-             right and the first reading will appear here.</span>`
+        : `Nothing is being watched yet.<span class="sub">Add your first
+             ${esc(noun(1))} and its readings appear here as they arrive.</span>`
+          + nextSteps([["sensor", `Add a ${noun(1)}`, true]].concat(
+              state.user && state.user.role === "owner"
+                ? [["simulate", "No hardware yet? Try a simulated one"]] : []))
     }</div>`;
     return;
   }
@@ -1848,10 +1924,6 @@ function sensorCard(s) {
       </div>
       <div class="sensor-actions">
         <button class="btn btn-sm" data-detail="${esc(s.sensor_id)}">History</button>
-        <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
-                data-safe="1">Send safe pulse</button>
-        <button class="btn btn-sm" data-pulse="${esc(s.sensor_id)}"
-                data-safe="0">Simulate failure</button>
         <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Retune</button>
         <button class="btn btn-sm" data-rekey="${esc(s.sensor_id)}">New key</button>
         <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
@@ -2124,7 +2196,9 @@ function renderIncidents(incidents, entitlements) {
     $("incidents").innerHTML = `<div class="empty">${
       total
         ? `All ${total} ${noun(total)} are within tolerance.`
-        : "Nothing to report."
+        : `Nothing to report yet.<span class="sub">Anything that goes out of
+             its safe range shows up here, once something is being
+             watched.</span>` + nextSteps([["sensor", `Add a ${noun(1)}`]])
     }</div>`;
     return;
   }
@@ -2337,6 +2411,7 @@ function renderBilling(subscription, roi, tenant) {
     $("bill-body").innerHTML =
       `<div class="empty" style="padding:14px">
          No units registered, so nothing to bill.
+         ${nextSteps([["sensor", `Add a ${noun(1)}`]])}
        </div>` + upgradeBlock(tenant);
     return;
   }
@@ -2393,6 +2468,8 @@ function renderRoster(roster) {
       `<div class="empty" style="padding:14px">
          No roster yet, so alerts go to ${esc(roster.fallback.full_name)}
          (${esc(roster.fallback.phone)}).
+         <span class="sub">Add whoever should be woken at 3am, in the order
+         to try them.</span>${nextSteps([["oncall", "Add someone to call"]])}
        </div>`;
     return;
   }
@@ -3375,6 +3452,16 @@ function renderForecast(fleet) {
        } in the next ${fleet.window_hours}h`
     : `${fleet.sensors_analysed} analysed`;
 
+  if (!risky.length && !fleet.sensors_analysed) {
+    $("forecast-body").innerHTML =
+      `<div class="empty" style="padding:14px">
+         Nothing to forecast yet.
+         <span class="sub">Once a ${esc(noun(1))} has a few hours of readings,
+         anything drifting the wrong way shows up here first.</span>
+         ${nextSteps([["sensor", `Add a ${noun(1)}`]])}
+       </div>`;
+    return;
+  }
   if (!risky.length) {
     $("forecast-body").innerHTML =
       `<div class="empty" style="padding:14px">
@@ -3818,6 +3905,7 @@ function renderSites(d) {
       `<div class="empty" style="padding:14px">
          No sites yet. Group sensors by location and alerts reach the manager
          who can actually walk to the freezer.
+         ${nextSteps([["site", "Add your first site"]])}
        </div>`;
     return;
   }
@@ -4337,6 +4425,7 @@ function renderShortcuts(sensors, catalogue) {
     $("shortcut-list").innerHTML =
       `<div class="empty" style="padding:14px">
          Register a sensor and its sector's document appears here.
+         ${nextSteps([["sensor", `Add a ${noun(1)}`]])}
        </div>`;
     return;
   }
@@ -4368,6 +4457,243 @@ Content-Type: application/json
   "metric_type": "temperature_c"
 }`;
 }
+
+/* ---------------- the first day ----------------
+   An empty console used to say what was missing and stop there. Every
+   empty card now ends with the button for the next thing to do, and the
+   checklist at the top says which of the four first things are done --
+   as the server counts them, never as this page guesses. */
+
+/* Where each next step lives: the card, and the field to put the cursor in. */
+const GO = {
+  site:   { card: "find-sites", field: "site-name" },
+  sensor: { card: "find-add-to-the-estate", field: "add-loc" },
+  oncall: { card: "find-on-call-roster", field: "ct-name" },
+  test:   { card: "find-on-call-roster", field: "test-alert" },
+};
+const GO_LABEL = {
+  site: "Add a site", sensor: "Add one", oncall: "Add someone", test: "Send one",
+};
+
+/* One or more next-step buttons, for the bottom of an empty card. Each is
+   [where, label, primary?]. */
+function nextSteps(steps) {
+  if (state.user && state.user.role === "viewer") {
+    return `<span class="sub">An owner or operator can set this up.</span>`;
+  }
+  return `<span class="empty-acts">${steps.map(([key, label, primary]) =>
+    `<button class="btn btn-sm${primary ? " btn-go" : ""}" type="button"
+             data-go="${esc(key)}">${esc(label)}</button>`).join("")}</span>`;
+}
+
+function goTo(key) {
+  if (key === "simulate") { simAdd(); return; }
+  const where = GO[key];
+  const card = where && $(where.card);
+  if (!card) return;
+  if (card.hidden) {
+    // On another tab, or behind a search: bring the whole page back first.
+    finder.tab = "all";
+    finder.query = "";
+    $("find-q").value = "";
+    applyFinder();
+  }
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  const field = $(where.field);
+  if (field) setTimeout(() => field.focus({ preventScroll: true }), 350);
+}
+
+function renderFirstDay(fd) {
+  const card = $("first-day");
+  const canAct = Boolean(state.user && state.user.role !== "viewer");
+  // Gone once all four are done, and never shown to somebody who could
+  // not do any of them, or on a wall.
+  if (!fd || fd.complete || !canAct || state.wall) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  $("first-day-note").textContent = `${fd.done} of ${fd.total} done`;
+  $("first-day-list").innerHTML = fd.steps.map((step) => `
+    <li class="${step.done ? "is-done" : ""}">
+      <span class="tick" aria-hidden="true">${step.done ? "&#10003;" : ""}</span>
+      <span class="grow"><b>${esc(step.label)}</b>
+        <span class="sub">${esc(step.detail)}</span></span>
+      ${step.done
+        ? `<span class="sr">done</span>`
+        : `<button class="btn btn-sm" type="button" data-go="${esc(step.key)}">${
+            esc(GO_LABEL[step.key] || "Do it")}</button>`}
+    </li>`).join("");
+}
+
+/* A new sensor's first reading, shown when it lands rather than on the
+   next twenty-second poll. Only the overview is asked for, only while a
+   registered unit has never reported, and for ten minutes at most. */
+function watchForFirstReading() {
+  clearInterval(state.firstWatch);
+  const until = Date.now() + 10 * 60 * 1000;
+  const waiting = () => ((state.data && state.data.sensors) || [])
+    .filter((s) => s.last_temperature_display === null
+                || s.last_temperature_display === undefined)
+    .map((s) => s.sensor_id);
+  if (!waiting().length) return;
+  state.firstWatch = setInterval(async () => {
+    const before = waiting();
+    if (!before.length || Date.now() > until || !state.token) {
+      clearInterval(state.firstWatch);
+      return;
+    }
+    try {
+      const fresh = await api("/api/console/overview");
+      const landed = fresh.sensors.some((s) => before.includes(s.sensor_id)
+        && s.last_temperature_display !== null
+        && s.last_temperature_display !== undefined);
+      if (landed) {
+        await refresh();
+        toast("First reading in.", "ok");
+      }
+    } catch (_) { /* the ordinary poll reports trouble */ }
+  }, 2500);
+}
+
+/* A name for a unit nobody named: the location, made into an id, with a
+   short random tail so two kitchens' walk-ins cannot collide. */
+function sensorIdFrom(location) {
+  const stem = location.toUpperCase().replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 28) || "UNIT";
+  const bytes = new Uint8Array(2);
+  crypto.getRandomValues(bytes);
+  return `${stem}-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0"))
+    .join("").toUpperCase()}`;
+}
+
+/* ---------------- the test alert ---------------- */
+
+$("test-alert").addEventListener("click", async () => {
+  const button = $("test-alert");
+  const call = $("test-call").checked && !$("test-call-wrap").hidden;
+  if (!confirm("Text everyone on the roster now"
+      + (call ? ", and ring the first person" : "") + "?\n\n"
+      + "The message starts with TEST and says nothing is wrong. No problem "
+      + "is opened, nothing escalates, and it counts towards today's text "
+      + "allowance.")) return;
+  button.disabled = true;
+  try {
+    const out = await api("/api/contacts/test-alert", {
+      method: "POST", body: JSON.stringify({ call }),
+    });
+    $("test-alert-out").innerHTML = `<div class="test-result">
+        <p>${esc(out.message)}</p>
+        <ul>${out.results.map((r) => `<li>
+          ${badge(r.delivered ? "low" : (r.status === "not_configured" ? "unknown" : "critical"),
+                  r.channel === "voice" ? "call" : "text")}
+          ${esc(r.name)} <span class="sub">${esc(r.phone)} &middot; ${esc(
+            r.delivered ? "handed to the network" : r.status === "not_configured"
+              ? "written, not sent (dry run)" : r.detail || r.status)}</span></li>`).join("")}
+        </ul></div>`;
+    toast("Test alert done. No problem was opened.", "ok");
+    await refresh();
+  } catch (err) {
+    $("test-alert-out").innerHTML =
+      `<div class="test-result"><p class="s-warning">${esc(err.message)}</p></div>`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+/* ---------------- the simulator ----------------
+   Pretend units for a demo, the owner's only. The server keeps them in
+   memory and nowhere else: never a reading, an incident, a seat or a
+   line in the vault. Every card says so on its face. */
+
+function simCard(u) {
+  const temp = (u.last_temperature_display === null
+                || u.last_temperature_display === undefined)
+    ? "—" : u.last_temperature_display.toFixed(1);
+  const above = u.danger_above_display, below = u.danger_below_display;
+  const would = u.would_alert;
+  return `<article class="sensor is-simulated ${u.breaching ? "is-breaching" : ""}">
+      <div class="sim-stamp">SIMULATED &middot; not a real reading, not recorded</div>
+      <div class="sensor-top">
+        <span class="sensor-id grow">${esc(u.sensor_id)}</span>
+        ${badge(u.breaching ? "critical" : "low", u.breaching ? "would alert" : "simulated")}
+      </div>
+      <div class="sensor-loc">${esc(u.location_name)} &middot; ${esc(u.industry_name)}</div>
+      <div class="sensor-read">
+        <span class="sensor-temp">${esc(temp)}</span>
+        <span class="sensor-unit">°${esc(u.temperature_unit)}</span>
+      </div>
+      <div class="spark-wrap">${sparkline(u)}</div>
+      <div class="sensor-meta">
+        <span>Simulated</span>
+        <span>limit ${below !== null && below !== undefined
+          ? esc(below) + "–" : "&lt; "}${esc(above)}°${esc(u.temperature_unit)}</span>
+      </div>
+      ${would ? `<div class="sim-would">${esc(would.text)}
+        <span class="sub">Not sent. A real breach would text ${
+          esc(would.recipients.join(", ") || "the contact on the account")}.</span></div>` : ""}
+      <div class="sensor-actions">
+        ${u.broken
+          ? `<button class="btn btn-sm" type="button" data-sim-fix="${esc(u.sensor_id)}">Fix it</button>`
+          : `<button class="btn btn-sm" type="button" data-sim-break="${esc(u.sensor_id)}">Make it fail</button>`}
+        <button class="btn btn-sm" type="button" data-sim-remove="${esc(u.sensor_id)}">Remove</button>
+      </div>
+    </article>`;
+}
+
+function renderSims(body) {
+  const units = (body && body.units) || [];
+  state.sims = units;
+  const zone = $("sim-zone");
+  zone.hidden = !units.length;
+  if (!units.length) {
+    clearInterval(state.simTimer);
+    state.simTimer = null;
+    return;
+  }
+  $("sim-note").textContent = `${units.length} of ${body.max_units}`;
+  $("sim-notice").textContent = body.notice;
+  $("sim-add").hidden = units.length >= body.max_units;
+  $("sim-fleet").innerHTML = units.map(simCard).join("");
+  if (!state.simTimer) {
+    state.simTimer = setInterval(loadSims,
+      Math.max(2000, (body.tick_seconds || 4) * 1000));
+  }
+}
+
+async function loadSims() {
+  if (!state.token || !state.user || state.user.role !== "owner") {
+    renderSims(null);
+    return;
+  }
+  try { renderSims(await api("/api/simulator")); }
+  catch (_) { /* a demo that cannot load is not worth a toast */ }
+}
+
+async function simAdd() {
+  try {
+    await api("/api/simulator/units", { method: "POST", body: "{}" });
+    await loadSims();
+    $("sim-zone").scrollIntoView({ behavior: "smooth", block: "start" });
+    toast("Simulated unit added. Nothing it does is recorded or sent.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+async function simAct(path, method, okMessage) {
+  try {
+    await api("/api/simulator" + path, { method });
+    await loadSims();
+    if (okMessage) toast(okMessage, "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+$("sim-start").addEventListener("click", simAdd);
+$("sim-stop").addEventListener("click", () => simAct("", "DELETE",
+  "Simulation stopped. There was nothing to clean up."));
 
 /* ---------------- actions ---------------- */
 
@@ -4595,37 +4921,35 @@ document.addEventListener("click", (event) => {
     }).finally(() => { btn.disabled = false; });
   }
 
-  if (btn.dataset.pulse) {
-    const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.pulse);
-    if (!sensor) return;
-    const safe = btn.dataset.safe === "1";
-    const high = sensor.danger_above;
-    const low = sensor.danger_below;
-    let temp;
-    if (safe) {
-      temp = low !== null ? (low + high) / 2 : high - 8;
-    } else {
-      temp = high !== null ? high + 14 : low - 6;
-    }
-    act(() => api("/api/sensor-pulse", {
-      method: "POST",
-      body: JSON.stringify({
-        sensor_id: sensor.sensor_id,
-        temperature_fahrenheit: Math.round(temp * 10) / 10,
-      }),
-    }), `Pulse sent at ${Math.round(temp * 10) / 10}°F.`);
-  }
+  if (btn.dataset.go) goTo(btn.dataset.go);
+  if (btn.id === "sim-add") simAdd();
+  if (btn.dataset.simBreak) simAct(`/units/${encodeURIComponent(btn.dataset.simBreak)}/break`, "POST",
+    "It is warming. Nothing is sent to anybody.");
+  if (btn.dataset.simFix) simAct(`/units/${encodeURIComponent(btn.dataset.simFix)}/fix`, "POST");
+  if (btn.dataset.simRemove) simAct(`/units/${encodeURIComponent(btn.dataset.simRemove)}`, "DELETE");
 });
 
 /* Show an issued ingest key, once, somewhere it will stay put until it
    has been dealt with. The response is otherwise thrown away and the key
    is unrecoverable — rotation would be the only way back to one. */
-function showIssuedKey(sensorId, key) {
+const DEVICE_KEY_NOTE = "Put this on the device and keep it nowhere else. It is "
+  + "shown once and never again — if it is lost, rotate the sensor for a new "
+  + "one. It can report readings for this asset and nothing more, which is "
+  + "why it, and not your account key, belongs on hardware.";
+const MASTER_KEY_NOTE = "This key speaks for the whole business: it is for "
+  + "scripts and integrations, never for a device. It is shown once — if it "
+  + "is lost, replace it from Setup. Sensors get keys of their own.";
+
+function showIssuedKey(sensorId, key, options = {}) {
   if (!key) return;
+  const master = /master key/.test(sensorId);
   $("issued-for").textContent = sensorId;
   $("issued-value").textContent = key;
+  $("issued-note").textContent = master ? MASTER_KEY_NOTE : DEVICE_KEY_NOTE;
   $("issued-key").hidden = false;
-  $("issued-value").focus();
+  // Arriving from sign-up, the first screen is the checklist, not a key
+  // box half way down the page: the key waits where "Add a sensor" leads.
+  $("issued-value").focus({ preventScroll: options.scroll === false });
 }
 
 $("issued-copy").addEventListener("click", async () => {
@@ -4653,7 +4977,7 @@ $("issued-done").addEventListener("click", () => {
 $("add-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const serial = $("add-sn").value.trim();
-  const sensorId = $("add-id").value.trim();
+  const sensorId = $("add-id").value.trim() || sensorIdFrom($("add-loc").value.trim());
   act(async () => {
     const made = await api("/api/licenses/me/sensors", {
       method: "POST",
@@ -4665,8 +4989,11 @@ $("add-form").addEventListener("submit", (event) => {
       }),
     });
     event.target.reset();
+    // reset() puts the picker back on the first sector in the list; the
+    // next unit is far likelier to be in the same one as this.
+    $("add-vertical").value = made.sensor.industry_vertical;
     showIssuedKey(made.sensor.sensor_id, made.ingest_key);
-  }, "Sensor registered.");
+  }, "Sensor registered.").then(watchForFirstReading);
 });
 
 /* Posts through the real BYOD ingest route, so what the console shows is
