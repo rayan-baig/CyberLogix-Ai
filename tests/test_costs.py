@@ -41,6 +41,31 @@ def test_identical_prompt_is_served_from_cache(
     assert report["estimated_saved_usd"] > 0
 
 
+def test_the_same_failure_a_minute_later_is_still_served_from_cache(
+    monkeypatch, tenant_factory, sensor_factory, stub_gemini
+):
+    """The alert prompt carried the time to the second, so no two prompts
+    were ever the same and the cache above never hit outside a test fast
+    enough to stay inside one second. That test failed whenever it was not."""
+    from datetime import timedelta
+
+    import telemetry
+    from store import utc_now
+
+    headers, _ = tenant_factory()
+    sensor_factory(headers, sensor_id="RACK-01")
+    sensor = STORE.get_sensor("RACK-01")
+    start = utc_now()
+
+    monkeypatch.setattr(telemetry, "utc_now", lambda: start)
+    _, first = telemetry.build_emergency_sms(sensor, 94.0, None, sensor.tenant_id)
+    monkeypatch.setattr(telemetry, "utc_now", lambda: start + timedelta(seconds=61))
+    _, second = telemetry.build_emergency_sms(sensor, 94.0, None, sensor.tenant_id)
+
+    assert (first, second) == ("gemini", "cache")
+    assert len(stub_gemini.prompts) == 1
+
+
 def test_cache_survives_a_store_reload(tmp_path, monkeypatch):
     """A redeploy must not throw away paid-for generations."""
     from db import Database
