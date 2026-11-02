@@ -298,3 +298,66 @@ def test_only_two_calls_are_essential_to_the_console(api, trial):
         "This test is only meaningful while some panels do refuse a lapsed "
         "account; if none do, the console no longer needs to degrade."
     )
+
+
+# ---- every way a reading arrives gets the same grace --------------------
+
+
+def _bind(api, key, serial="SP-0001"):
+    resp = api.post("/api/licenses/me/sensors", headers=key, json={
+        "sensor_id": "FRIDGE-2", "industry_vertical": "pharmacy",
+        "location_name": "Back room", "external_device_sn": serial})
+    assert resp.status_code == 201, resp.text
+
+
+def test_a_third_party_sensor_is_still_watched_in_grace(api, trial):
+    """The native pulse kept grace; the webhook door, the "send anything"
+    door and the vendor poller refused the moment the licence expired. An
+    estate on third-party hardware stopped being watched on day one of
+    the grace the console was promising it."""
+    key, _, tenant = trial
+    _bind(api, key)
+    _shift_expiry(tenant["tenant_id"], -1)
+
+    pushed = api.post("/api/v1/bridge/sensor-webhook-ingest", json={
+        "device_sn": "SP-0001", "api_key_token": key["X-CyberLogix-Key"],
+        "reading_value": 75.0, "metric_type": "temperature_f"})
+    assert pushed.status_code == 200, pushed.text
+
+    anything = api.post("/api/v1/bridge/any", headers=key,
+                        json={"sensor": "SP-0001", "temperature": 76.0})
+    assert anything.status_code == 200, anything.text
+
+    import pollers
+    out = pollers._ingest(STORE.get_tenant(tenant["tenant_id"]), {},
+                          {"samples": [{"sensor": "SP-0001", "temperature": 77.0}]})
+    assert out["ingested"] == 1, out
+
+
+def test_a_third_party_sensor_stops_once_grace_is_spent(api, trial):
+    key, _, tenant = trial
+    _bind(api, key)
+    _shift_expiry(tenant["tenant_id"], -(LICENCE_GRACE_DAYS + 1))
+
+    pushed = api.post("/api/v1/bridge/sensor-webhook-ingest", json={
+        "device_sn": "SP-0001", "api_key_token": key["X-CyberLogix-Key"],
+        "reading_value": 75.0, "metric_type": "temperature_f"})
+    assert pushed.status_code == 402
+
+
+def test_a_quiet_sensor_is_still_texted_about_in_grace(api, trial, monkeypatch):
+    import automation
+
+    key, _, tenant = trial
+    api.post("/api/sensor-pulse", headers=key, json={
+        "sensor_id": "FRIDGE-1", "temperature_fahrenheit": 40.0})
+    sensor = STORE.get_sensor("FRIDGE-1")
+    sensor.last_seen = utc_now() - timedelta(hours=2)
+    _shift_expiry(tenant["tenant_id"], -1)
+    sent = []
+    monkeypatch.setattr(automation, "send_sms",
+                        lambda to, body, tenant_id=None: sent.append(body) or {"delivered": True})
+
+    automation.sweep_tenant(STORE.get_tenant(tenant["tenant_id"]))
+
+    assert len(sent) == 1

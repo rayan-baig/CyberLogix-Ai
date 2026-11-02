@@ -418,11 +418,14 @@ def _tell_about_quiet_sensors(tenant: Tenant, offline: list, now) -> List[Dict[s
     cut is when a freezer fails, and also when its sensor or gateway goes
     dark, so a silent sensor is exactly the one that cannot raise its own
     alarm. A sensor that has never reported is waiting to be installed, not
-    quiet, and an account whose licence is off has its readings refused, so
-    neither is texted about. Sensors going quiet together at one site are
+    quiet, and an account that is suspended or past its grace has its
+    readings refused, so neither is texted about. Sensors going quiet together at one site are
     one text, because a gateway losing power takes them all at once.
     """
-    if not tenant.active:
+    from auth import licence_state
+
+    # Grace counts as watched: its readings are still taken.
+    if licence_state(tenant, now) not in ("active", "grace"):
         return []
     newly = [s for s in offline
              if s.last_seen is not None and not s.clock_skewed(now)

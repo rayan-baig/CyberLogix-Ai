@@ -152,21 +152,17 @@ def _authenticate_webhook(
 
 
 def _reject_lapsed(tenant: Tenant) -> Tenant:
-    """A billing lapse is a 402, never a credential error."""
-    if tenant.suspended:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"License for {tenant.company_name} is suspended.",
-        )
-    if tenant.expired:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"License for {tenant.company_name} expired on "
-                f"{tenant.expires_at.date()}."
-            ),
-        )
-    return tenant
+    """A billing lapse is a 402, never a credential error.
+
+    The same rule as the native sensor route, grace included. This used to
+    refuse the moment a licence expired, so an estate on third-party
+    hardware (webhook, "send anything" or a vendor poller) stopped being
+    watched on the first day of the grace the console was promising it,
+    against terms that say monitoring is never withheld for non-payment.
+    """
+    from auth import _reject_inactive
+
+    return _reject_inactive(tenant)
 
 
 @router.post("/sensor-webhook-ingest", status_code=status.HTTP_200_OK)
