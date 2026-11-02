@@ -786,6 +786,10 @@ class Sensor:
     last_seen: Optional[datetime] = None
     last_temperature: Optional[float] = None
     last_humidity: Optional[float] = None
+    # The `last_seen` of the silence somebody was last texted about, so one
+    # silence is one text. A new reading moves `last_seen` on, which is what
+    # lets the next silence be told about too.
+    quiet_alert_for: Optional[str] = None
 
     def bounds(self) -> tuple:
         """The thresholds actually applied to this sensor.
@@ -855,6 +859,7 @@ class Sensor:
             "last_seen": iso(self.last_seen),
             "last_temperature": self.last_temperature,
             "last_humidity": self.last_humidity,
+            "quiet_alert_for": self.quiet_alert_for,
         }
 
     @classmethod
@@ -876,6 +881,7 @@ class Sensor:
             last_seen=_parse(row.get("last_seen")),
             last_temperature=row.get("last_temperature"),
             last_humidity=row.get("last_humidity"),
+            quiet_alert_for=row.get("quiet_alert_for"),
         )
 
     # How far ahead of us a device's last contact may sit before we treat
@@ -4063,6 +4069,23 @@ class HubStore:
             return sensor
 
     # ---- sensor health ---------------------------------------------------
+
+    def claim_quiet_alert(self, sensor: Sensor) -> bool:
+        """Take the right to text about this sensor's current silence.
+
+        Under the lock, so the timed sweep and somebody pressing the sweep
+        button at the same moment send one text between them, not two.
+        """
+        with self._lock:
+            live = self._sensors.get(sensor.sensor_id)
+            if live is None or live.last_seen is None:
+                return False
+            silence = iso(live.last_seen)
+            if live.quiet_alert_for == silence:
+                return False
+            live.quiet_alert_for = silence
+            self._db.put("sensor", live.sensor_id, live.to_row())
+            return True
 
     def record_sensor_health(
         self,

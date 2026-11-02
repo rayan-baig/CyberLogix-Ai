@@ -32,6 +32,7 @@ from store import (
     iso,
     utc_now,
 )
+from notifications import send_sms
 from voice_dispatch import dispatch_voice_call
 
 logger = logging.getLogger("cyberlogix.autopilot")
@@ -386,6 +387,71 @@ def compliance_csv(
     )
 
 
+def _quiet_text(tenant: Tenant, group: list, site_name: str, now) -> str:
+    """One text for sensors that went quiet together, under one segment."""
+    if len(group) == 1:
+        sensor = group[0]
+        noun = INDUSTRY_PROFILES[sensor.industry_vertical]["asset_noun"]
+        minutes = int((now - sensor.last_seen).total_seconds() // 60)
+        body = (
+            f"CyberLogix: {noun} {sensor.sensor_id} at {sensor.location_name} "
+            f"has sent nothing for {minutes} min, so it cannot warn you. "
+            "Check its power and gateway."
+        )
+    else:
+        verticals = {s.industry_vertical for s in group}
+        plural = (INDUSTRY_PROFILES[verticals.pop()]["asset_plural"]
+                  if len(verticals) == 1 else "sensors")
+        body = (
+            f"CyberLogix: {len(group)} {plural} at {site_name} have sent "
+            f"nothing for {SENSOR_OFFLINE_AFTER_MINUTES}+ min, so they cannot "
+            "warn you. Check power and the gateway: "
+            + ", ".join(s.sensor_id for s in group)
+        )
+    return body if len(body) <= 160 else body[:157] + "..."
+
+
+def _tell_about_quiet_sensors(tenant: Tenant, offline: list, now) -> List[Dict[str, Any]]:
+    """Text the roster once when a sensor that was reporting goes quiet.
+
+    The agreement promises it, and it matters more than it looks: a power
+    cut is when a freezer fails, and also when its sensor or gateway goes
+    dark, so a silent sensor is exactly the one that cannot raise its own
+    alarm. A sensor that has never reported is waiting to be installed, not
+    quiet, and an account whose licence is off has its readings refused, so
+    neither is texted about. Sensors going quiet together at one site are
+    one text, because a gateway losing power takes them all at once.
+    """
+    if not tenant.active:
+        return []
+    newly = [s for s in offline
+             if s.last_seen is not None and not s.clock_skewed(now)
+             and STORE.claim_quiet_alert(s)]
+    by_site: Dict[Any, list] = {}
+    for sensor in newly:
+        by_site.setdefault(sensor.site_id, []).append(sensor)
+
+    actions = []
+    for site_id, group in by_site.items():
+        site = STORE.get_site(site_id) if site_id else None
+        body = _quiet_text(tenant, group, site.name if site else tenant.company_name, now)
+        deliveries = [
+            dict(send_sms(contact.phone, body, tenant.tenant_id),
+                 contact_id=contact.contact_id, contact_name=contact.full_name)
+            for contact in STORE.sms_recipients(tenant, site_id)
+        ]
+        logger.warning("Quiet-sensor text for tenant %s: %s",
+                       tenant.tenant_id, ", ".join(s.sensor_id for s in group))
+        actions.append({
+            "action": "sensor_offline_alerted",
+            "sensor_ids": [s.sensor_id for s in group],
+            "site_id": site_id,
+            "text": body,
+            "deliveries": deliveries,
+        })
+    return actions
+
+
 def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
     """One unattended operations pass over a tenant's estate.
 
@@ -411,6 +477,8 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
                 ),
             }
         )
+
+    actions.extend(_tell_about_quiet_sensors(tenant, offline, now))
 
     # A clock in the future makes every age about this sensor meaningless,
     # including whether it has gone quiet. Surfaced as its own action so
