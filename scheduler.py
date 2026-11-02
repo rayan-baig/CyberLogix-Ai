@@ -8,7 +8,7 @@ an unacknowledged 3am breach sat open until somebody opened a browser.
 This is a plain asyncio task inside the API process: one loop, no broker,
 no extra service to pay for. It sweeps every tenant on an interval and
 logs what it did. If the deployment already has an external scheduler
-(Cloud Scheduler hitting POST /api/autopilot/sweep), set
+(Cloud Scheduler hitting POST /api/autopilot/sweep-all), set
 CYBERLOGIX_SWEEP_SECONDS=0 to switch this off and avoid double-calling.
 
 One process is assumed. Running several replicas with the loop enabled in
@@ -344,7 +344,7 @@ def start() -> Optional[asyncio.Task]:
         logger.info(
             "Autopilot scheduler disabled (CYBERLOGIX_SWEEP_SECONDS=%s). "
             "Escalation will only run when something calls "
-            "POST /api/autopilot/sweep.",
+            "POST /api/autopilot/sweep-all.",
             os.environ.get("CYBERLOGIX_SWEEP_SECONDS"),
         )
         return None
@@ -379,7 +379,7 @@ def status() -> dict:
         "billing_interval_seconds": BILLING_EVERY_SECONDS,
         "note": (
             "Sweeps run in-process, and so does billing. Turning this off "
-            "stops both: drive POST /api/autopilot/sweep for escalation "
+            "stops both: drive POST /api/autopilot/sweep-all for escalation "
             "*and* POST /api/contracts/run for billing and collections, or "
             "the company quietly stops invoicing. Set "
             "CYBERLOGIX_SWEEP_SECONDS=0 when an external scheduler does "

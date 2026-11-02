@@ -26,7 +26,7 @@
 # **One instance.** The sweep runs in-process, so a second instance
 # escalates the same incident twice: two calls, two texts, one freezer.
 # To scale out, set CYBERLOGIX_SWEEP_SECONDS=0 and drive
-# POST /api/autopilot/sweep from an external scheduler instead.
+# POST /api/autopilot/sweep-all from an external scheduler instead.
 
 services:
   - type: web

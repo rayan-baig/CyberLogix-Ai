@@ -238,8 +238,11 @@ curl -X POST localhost:8080/api/contacts -H "Authorization: Bearer $TOKEN" \
 ```
 
 Each entry can opt out of either channel and be muted while someone is on
-leave. `GET /api/contacts/preview` shows exactly who would be alerted right
-now without sending anything — worth checking after editing a rota, since an
+leave. A change that leaves nobody on the roster to text or call (for a
+channel, or for a site that has sensors) is answered with `warnings`, and
+the account's contact email is told once, so a gap is found before an
+alert needs it. `GET /api/contacts/preview` shows exactly who would be alerted right
+now without sending anything, with the same warnings — worth checking after editing a rota, since an
 unverified rota is how an alert reaches an empty desk.
 
 A tenant with no roster is still alerted: the store falls back to the contact
@@ -575,6 +578,14 @@ curl -X POST localhost:8080/api/licenses/tenants \
 
 ## The escalation ladder
 
+A freezer's own defrost is not a breach anyone is paged for. When a unit
+has a learned rhythm (at least three earlier warm spells, each back down,
+on a regular 4 to 18 hour timer) and a new spell starts on time, no hotter
+than its cycles get, the reading is recorded as over the line and answered
+`DEFROST_CYCLE` instead of opening an incident. If it is still warm past
+twice its usual length, or runs hotter, the next reading pages as normal.
+With no learned rhythm every breach pages.
+
 1. A breach opens an incident and sends the SMS.
 2. A sustained breach **updates that incident** rather than opening another,
    so a failing freezer produces one alert instead of a pager storm. Follow-up
@@ -608,11 +619,11 @@ loop, no broker, no second service to pay for. A failure on one estate
 cannot stop the others.
 
 Set `CYBERLOGIX_SWEEP_SECONDS=0` when an external scheduler drives
-`POST /api/autopilot/sweep` instead, **or when running more than one
+`POST /api/autopilot/sweep-all` (with the platform admin key, every few minutes; set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so the watchdog knows when it has stopped) instead, **or when running more than one
 replica** — otherwise each replica escalates the same incident.
 `GET /api/health` reports which it is.
 
-`POST /api/autopilot/sweep` still runs one pass on demand. One pass flags
+`POST /api/autopilot/sweep` runs one pass for the calling business on demand. One pass flags
 sensors that have gone silent for over 30 minutes (a sensor that cannot
 report cannot warn you) and places voice calls for incidents past the grace
 window. Pass `auto_escalate=false` to report without calling.
@@ -750,6 +761,15 @@ undelivered attempt rather than killing the breach handler, so an operator can
 see that an alert was written but not sent. Both `sms_delivery` and
 `voice_delivery` carry `delivered`, `status`, `provider_sid` and a detail
 string.
+
+A text that failed is sent again. When every alert text for an open,
+unacknowledged incident failed in a way a retry can fix (Twilio down or
+refusing, not dry run or the daily cap), the sweep re-sends it 1, 5 and 15
+minutes after the incident opened, to the roster as it is now, until one
+lands. Each step is claimed and stored before sending, so a restart or two
+sweeps at once never send a step twice; a sweep that comes back after
+missing steps sends once. After the last step the normal escalation is all
+that is left, and the console card says plainly that no text reached anyone.
 
 The spoken script is model-authored, so it is XML-escaped before it reaches
 TwiML — an ampersand in a generated sentence would otherwise fail the call.
@@ -1686,7 +1706,7 @@ admin key that gates minting resellers.
 **`--max-instances 1` is not incidental.** Two things assume a single
 process: SQLite is single-writer, and the unattended sweep runs in-process,
 so a second replica escalates every incident twice. To scale out, set
-`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep` from Cloud
+`CYBERLOGIX_SWEEP_SECONDS=0`, drive `POST /api/autopilot/sweep-all` from Cloud
 Scheduler, and replace the `Database` class with a Postgres adapter —
 `db.py` is the only file that has to change, since nothing above it writes
 SQL. The adapter needs `put`, `get`, `delete`, `all`, `count` and `clear`.

@@ -15,16 +15,18 @@ from typing import Any, Dict, List
 
 import csv
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from gemini import safe_generate
-from auth import require_role_or_machine
+from auth import require_platform_admin, require_role_or_machine
 from licenses import require_tenant
 from store import (
     INDUSTRY_PROFILES,
     SENSOR_OFFLINE_AFTER_MINUTES,
+    SMS_RETRY_AFTER_MINUTES,
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
@@ -455,6 +457,90 @@ def _tell_about_quiet_sensors(tenant: Tenant, offline: list, now) -> List[Dict[s
     return actions
 
 
+# Same ceiling as the first send, for the same reason: a roster texted one
+# after another during a Twilio slowdown costs every timeout end to end.
+RETRY_FANOUT_WORKERS = 6
+
+
+def _resend(tenant: Tenant, incident, recipients) -> List[Dict[str, Any]]:
+    if not recipients:
+        return []
+    with ThreadPoolExecutor(
+        max_workers=min(len(recipients), RETRY_FANOUT_WORKERS),
+        thread_name_prefix="sms-retry",
+    ) as pool:
+        receipts = pool.map(
+            lambda c: send_sms(c.phone, incident.sms_text, tenant.tenant_id),
+            recipients,
+        )
+        return [
+            dict(receipt, contact_id=c.contact_id, contact_name=c.full_name)
+            for c, receipt in zip(recipients, receipts)
+        ]
+
+
+def _retry_failed_alert_texts(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[str, Any]]:
+    """Send an incident's alert text again when every text failed.
+
+    The text goes out once, when the incident opens. If Twilio was down
+    at that moment, nothing tried again, and a plan without voice calls
+    has nothing after the text, so nobody was ever told. Re-sent at 1, 5
+    and 15 minutes after opening while nobody has it and nothing has got
+    through; each step is claimed and stored before sending, so a restart
+    or two sweeps at once never send a step twice. After the last step
+    the normal escalation is all that is left, and the sweep says so.
+
+    The roster is read afresh, so a number corrected after the first
+    failure is the one tried.
+    """
+    actions: List[Dict[str, Any]] = []
+    for incident in STORE.open_incidents(tenant.tenant_id):
+        step = incident.sms_retry_due(now)
+        if not step:
+            if (incident.alert_texts_failed
+                    and incident.sms_retry_step >= len(SMS_RETRY_AFTER_MINUTES)):
+                actions.append({
+                    "action": "alert_texts_undelivered",
+                    "incident_id": incident.incident_id,
+                    "sensor_id": incident.sensor_id,
+                    "detail": (
+                        "No alert text has reached anyone, after "
+                        f"{len(SMS_RETRY_AFTER_MINUTES)} re-sends. Nobody "
+                        "may know about this breach."
+                    ),
+                })
+            continue
+        if not auto_escalate:
+            actions.append({
+                "action": "alert_text_retry_due",
+                "incident_id": incident.incident_id,
+                "sensor_id": incident.sensor_id,
+                "step": step,
+                "detail": "Re-send withheld: auto_escalate is disabled.",
+            })
+            continue
+        if not STORE.claim_sms_retry(incident, step):
+            continue
+        sensor = STORE.get_sensor(incident.sensor_id)
+        recipients = STORE.sms_recipients(tenant, sensor.site_id if sensor else None)
+        deliveries = _resend(tenant, incident, recipients)
+        STORE.record_sms_retry(incident, step, deliveries, now)
+        landed = sum(1 for d in deliveries if d.get("delivered"))
+        logger.warning(
+            "Alert text re-send %d for incident %s: %d of %d delivered.",
+            step, incident.incident_id, landed, len(deliveries),
+        )
+        actions.append({
+            "action": "alert_text_retried",
+            "incident_id": incident.incident_id,
+            "sensor_id": incident.sensor_id,
+            "step": step,
+            "delivered": landed,
+            "deliveries": deliveries,
+        })
+    return actions
+
+
 def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
     """One unattended operations pass over a tenant's estate.
 
@@ -501,6 +587,8 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
                     ),
                 }
             )
+
+    actions.extend(_retry_failed_alert_texts(tenant, now, auto_escalate))
 
     voice_allowed = tenant.entitlements()["voice_escalation"]
     escalated = 0
@@ -592,3 +680,20 @@ def autopilot_sweep(
     instead.
     """
     return sweep_tenant(tenant, auto_escalate)
+
+
+@router.post("/sweep-all", dependencies=[Depends(require_platform_admin)])
+def autopilot_sweep_all():
+    """Sweep every business once: the route an external scheduler drives.
+
+    With CYBERLOGIX_SWEEP_SECONDS=0 (to run more than one server), the
+    built-in loop is off and something outside has to run the sweep.
+    POST /api/autopilot/sweep only sweeps the business that calls it, so
+    pointing a scheduler at it left every other business unwatched. This
+    runs the same pass as the built-in loop, for the whole fleet, and
+    records the heartbeat the watchdog reads. Platform admin key only.
+    """
+    import scheduler
+
+    return scheduler.run_one_pass()
+

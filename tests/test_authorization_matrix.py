@@ -363,3 +363,41 @@ def test_the_tenant_api_key_cannot_switch_the_company_off(api, tenant_factory,
     # The licence is untouched, and a named owner can still do both.
     owner = owner_headers(key_headers)
     assert api.post("/api/licenses/me/suspend", headers=owner).status_code == 200
+
+
+def test_a_viewer_is_refused_by_every_state_changing_route(api, three_roles,
+                                                           sensor_factory):
+    """The runtime half of the structural test above, over every route.
+
+    The structural test checks each route *has* a role gate; it cannot
+    tell `require_role("viewer")` from `require_role("operator")`. This
+    calls every state-changing route as a viewer and checks each one
+    refuses, so a gate set one rung too low fails here by name. The
+    platform operator's routes answer 401 (a tenant role is not the right
+    kind of credential at all); every tenant route answers 403.
+
+    Placeholder ids are used on purpose: a refusal has to come from the
+    role, before anything is looked up, so a 404 here would mean a route
+    reads the record before it checks who is asking.
+    """
+    import re
+
+    viewer = three_roles["viewer"]
+    sensor_factory(three_roles["owner"], sensor_id="FRZ-1", vertical="restaurant")
+    allowed = []
+    called = 0
+    for route in _mutating_routes():
+        if route.path in UNGATED_BY_DESIGN:
+            continue
+        path = re.sub(r"\{[^}]+\}", "FRZ-1", route.path)
+        for method in sorted(route.methods & MUTATING):
+            called += 1
+            resp = api.request(method, path, headers=viewer, json={})
+            if resp.status_code not in (401, 403):
+                allowed.append(f"{method} {route.path} -> {resp.status_code}")
+
+    assert called > 50, "the route walk found almost nothing; it is broken"
+    assert not allowed, f"a viewer was not refused by: {allowed}"
+    # And nothing moved.
+    from store import STORE
+    assert STORE.get_sensor("FRZ-1") is not None

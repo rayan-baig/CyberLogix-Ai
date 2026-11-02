@@ -178,6 +178,19 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
                 "detail": f"{len(sms_rows)} on the roster texted, {landed} delivered.",
             }
         )
+    # Re-sends after every text failed are part of what was done to tell
+    # people; leaving them out would make the record read as if nobody
+    # tried again.
+    for attempt in incident.sms_retries:
+        rows = _delivery_rows(attempt.get("deliveries") or [], None)
+        landed = sum(1 for r in rows if r["delivered"])
+        timeline.append(
+            {
+                "at": attempt.get("at"),
+                "event": "Alert text sent again",
+                "detail": f"{len(rows)} on the roster texted, {landed} delivered.",
+            }
+        )
     if incident.voice_escalated_at:
         voice_rows = _delivery_rows(incident.voice_fanout, incident.voice_delivery)
         reached = next((r for r in voice_rows if r["delivered"]), None)
@@ -204,6 +217,9 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         timeline.append(
             {"at": iso(incident.resolved_at), "event": "Resolved", "detail": ""}
         )
+    # In the order it happened: a re-send at 15 minutes comes after the
+    # call at 10. Stable, so events at one moment keep their order.
+    timeline.sort(key=lambda event: event["at"] or "")
 
     # Clamped for the same reason minutes_open is: "acknowledged -120
     # minutes after detection" does not read to a loss adjuster as a clock

@@ -12,7 +12,7 @@ hasn't happened yet.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -68,6 +68,77 @@ def _own_site(site_id: Optional[str], tenant: Tenant) -> Optional[str]:
             detail=f"Site '{site_id}' not found for this tenant.",
         )
     return site_id
+
+
+def roster_gaps(tenant: Tenant) -> List[str]:
+    """Where an alert would reach nobody from the roster, said in advance.
+
+    A roster where everyone has been muted for leave, or taken off texts,
+    does not fail loudly: the store quietly falls back to the number given
+    at sign-up, which may be a desk phone or somebody who left. That is
+    found out at 3am, when it is too late to fix. So the gap is named while
+    it can still be fixed. An empty roster is not a gap: it is the
+    documented fallback, and nobody built it to cover more.
+    """
+    roster = STORE.contacts_for(tenant.tenant_id)
+    if not roster:
+        return []
+    fallback = f"{tenant.contact_name} on {tenant.contact_phone}"
+    channels = [("sms", "alert text")]
+    if tenant.entitlements()["voice_escalation"]:
+        channels.append(("voice", "escalation call"))
+    gaps = []
+    for channel, label in channels:
+        if not any(c.active and getattr(c, f"receives_{channel}") for c in roster):
+            gaps.append(
+                f"Nobody on the roster gets the {label}: everyone is muted or "
+                f"opted out. It would go only to the sign-up contact, {fallback}."
+            )
+            continue
+        # Every place that has a sensor, including sensors on no site.
+        watched = sorted({s.site_id or "" for s in STORE.sensors_for(tenant.tenant_id)})
+        for site_id in watched:
+            if STORE._roster_for_site(tenant, site_id or None, channel):
+                continue
+            site = STORE.get_site(site_id) if site_id else None
+            place = site.name if site else "sensors on no site"
+            gaps.append(
+                f"Nobody on the roster covers {place} for the {label}: "
+                "nobody of its own and nobody covering the whole estate is "
+                f"on. It would go only to the sign-up contact, {fallback}."
+            )
+    return gaps
+
+
+def _warn_owner_of_new_gaps(tenant: Tenant, before: List[str], operator: User) -> List[str]:
+    """Email the account owner when a roster change opens a gap.
+
+    The person who mutes the last colleague is often not the owner, and
+    the owner is the one who answers for a freezer nobody was told about.
+    Once per distinct gap: the dedupe key is the gap itself.
+    """
+    import hashlib
+
+    import mail
+
+    after = roster_gaps(tenant)
+    new = [g for g in after if g not in before]
+    if new:
+        write_audit(tenant, operator, "contact.gap", " ".join(new))
+        key = hashlib.sha256("\n".join(sorted(after)).encode()).hexdigest()[:16]
+        mail.send(
+            to_address=tenant.contact_email,
+            subject=f"{tenant.company_name}: an alert would reach nobody on your roster",
+            body=(
+                f"{operator.full_name} changed the on-call roster, and now:\n\n"
+                + "\n".join(f"- {g}" for g in new)
+                + "\n\nCheck who is on call before you need them: "
+                "Console, then Who gets alerted."
+            ),
+            dedupe_key=f"roster-gap:{tenant.tenant_id}:{key}",
+            tenant_id=tenant.tenant_id,
+        )
+    return after
 
 
 def _load(contact_id: str, tenant: Tenant) -> Contact:
@@ -145,6 +216,7 @@ def update_contact(
     if "site_id" in changes:
         changes["site_id"] = _own_site(changes["site_id"], tenant)
 
+    before = roster_gaps(tenant)
     for field, value in changes.items():
         setattr(contact, field, value)
     STORE.save_contact(contact)
@@ -153,7 +225,8 @@ def update_contact(
         tenant, operator, "contact.updated",
         f"{contact.full_name}: {', '.join(sorted(changes))}.",
     )
-    return contact.public()
+    return dict(contact.public(),
+                warnings=_warn_owner_of_new_gaps(tenant, before, operator))
 
 
 @router.delete("/{contact_id}")
@@ -164,11 +237,13 @@ def remove_contact(
 ):
     """Take someone off the roster."""
     contact = _load(contact_id, tenant)
+    before = roster_gaps(tenant)
     STORE.remove_contact(contact_id)
     write_audit(tenant, operator, "contact.removed", f"{contact.full_name} removed.")
     return {
         "message": f"{contact.full_name} removed from the roster.",
         "remaining": len(STORE.contacts_for(tenant.tenant_id)),
+        "warnings": _warn_owner_of_new_gaps(tenant, before, operator),
     }
 
 
@@ -192,4 +267,5 @@ def preview_routing(tenant: Tenant = Depends(require_tenant)):
             "The text goes to everyone listed. The call walks the ladder and "
             "stops at the first person actually reached."
         ),
+        "warnings": roster_gaps(tenant),
     }

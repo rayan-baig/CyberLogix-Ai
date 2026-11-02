@@ -94,7 +94,7 @@ def checks() -> List[Dict[str, Any]]:
         else "the in-process loop is off",
         "" if live["sweep_enabled"] else
         "Correct only if an external scheduler calls "
-        "POST /api/autopilot/sweep. Otherwise nothing escalates.",
+        "POST /api/autopilot/sweep-all. Otherwise nothing escalates.",
     ))
 
     can_send = bool(
