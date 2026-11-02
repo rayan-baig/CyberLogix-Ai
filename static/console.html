@@ -3460,7 +3460,11 @@ function renderEscalation(preview) {
       ${ladder.length
         ? "Then it calls " + names(ladder) + ", stopping at whoever answers."
         : "No call ladder, so an unanswered text is the end of it."}
-    </div>`;
+    </div>
+    ${(preview.warnings || []).map((w) =>
+      `<div class="card-note" role="alert" style="margin-top:8px">`
+      + `<span class="badge s-warning"><span class="dot"></span>Gap</span> `
+      + `${esc(w)}</div>`).join("")}`;
 }
 
 /* ---------------- claim packet ---------------- */

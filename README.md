@@ -238,8 +238,11 @@ curl -X POST localhost:8080/api/contacts -H "Authorization: Bearer $TOKEN" \
 ```
 
 Each entry can opt out of either channel and be muted while someone is on
-leave. `GET /api/contacts/preview` shows exactly who would be alerted right
-now without sending anything — worth checking after editing a rota, since an
+leave. A change that leaves nobody on the roster to text or call (for a
+channel, or for a site that has sensors) is answered with `warnings`, and
+the account's contact email is told once, so a gap is found before an
+alert needs it. `GET /api/contacts/preview` shows exactly who would be alerted right
+now without sending anything, with the same warnings — worth checking after editing a rota, since an
 unverified rota is how an alert reaches an empty desk.
 
 A tenant with no roster is still alerted: the store falls back to the contact
