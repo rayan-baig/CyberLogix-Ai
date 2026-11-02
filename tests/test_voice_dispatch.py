@@ -129,3 +129,32 @@ def test_incident_from_another_tenant_is_invisible(
 
     resp = api.post(f"/api/voice/escalate/{incident_id}?force=true", headers=bob)
     assert resp.status_code == 404
+
+
+def test_resolving_twice_tells_the_channels_once(
+    api, tenant_factory, sensor_factory, monkeypatch
+):
+    """Two people closing the same incident, or one double-click, posted
+    "resolved" into Slack twice and wrote two closings into the audit
+    trail that goes into a claim packet, the second naming somebody who
+    closed nothing."""
+    import voice_dispatch
+
+    told = []
+    monkeypatch.setattr(voice_dispatch, "_notify_hooks",
+                        lambda tenant, incident, state, note="": told.append(state))
+    headers, _ = tenant_factory()
+    incident_id = open_incident(api, headers, sensor_factory)
+
+    first = api.post(f"/api/voice/resolve/{incident_id}", headers=headers,
+                     json={"resolved_by": "Facilities"}).json()
+    second = api.post(f"/api/voice/resolve/{incident_id}", headers=headers,
+                      json={"resolved_by": "Someone Else"}).json()
+
+    assert first["status"] == "RESOLVED"
+    assert second["status"] == "ALREADY_RESOLVED"
+    assert told == ["resolved"]
+    from store import STORE
+    closings = [e for e in STORE.audit_for(STORE.get_incident(incident_id).tenant_id, limit=50)
+                if e.action == "incident.resolved"]
+    assert len(closings) == 1

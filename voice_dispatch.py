@@ -485,6 +485,16 @@ def resolve_incident(
     """
     incident = _load_incident(incident_id, tenant)
 
+    if incident.resolved_at is not None:
+        # Closed already. Telling the channels and the audit trail again
+        # posts a second "resolved" into Slack and records a second closer
+        # in the trail a claim packet is built from.
+        return {
+            "status": "ALREADY_RESOLVED",
+            "message": "This incident was already closed. Nothing was changed.",
+            "incident": incident.public(),
+        }
+
     actor = actor_label(operator, payload.resolved_by or "API key")
     STORE.resolve_incident(incident, actor)
     _notify_hooks(tenant, incident, "resolved", f"Closed out by {actor}.")
