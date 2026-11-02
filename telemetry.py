@@ -33,7 +33,6 @@ from store import (
     require_plausible,
     format_temperature,
     to_fahrenheit,
-    iso,
     utc_now,
 )
 
@@ -179,6 +178,10 @@ def build_emergency_sms(
     humidity_text = f"{humidity}%" if humidity is not None else "not reported"
     reading = format_temperature(temperature, unit)
 
+    # No timestamp in the prompt. It made every prompt unique to the
+    # second, so the answer cache (keyed on the prompt) could never serve
+    # the same failure twice and every repeat paid for a fresh model call.
+    # The text is sent the moment it is drafted; the time adds nothing.
     fallback = (
         f"EMERGENCY ALERT: {profile['name']} sensor {sensor.sensor_id} at "
         f"{sensor.location_name} reported critical temperature {reading}. "
@@ -195,7 +198,6 @@ def build_emergency_sms(
     Facility Location Tag: {sensor.location_name}
     Telemetry Reading: {reading}
     Relative Humidity: {humidity_text}
-    Event Timestamp: {iso(utc_now())}
 
     Draft an ultra-urgent, 2-sentence emergency SMS alert message to be blasted
     immediately to the on-call facility director's mobile phone. State the

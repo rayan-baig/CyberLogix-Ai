@@ -610,7 +610,7 @@ def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):
         # my sensor not show up" is then the payload itself.
         byod.remember(tenant.tenant_id, payload, verdict, "not_understood")
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "This payload was kept but not understood.",
                 "missing": verdict["missing"],

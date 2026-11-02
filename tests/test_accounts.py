@@ -278,3 +278,34 @@ def test_suspended_license_blocks_login(api, tenant_factory, owner_headers):
         json={"email": "dana@example.com", "password": "correct-horse-battery"},
     )
     assert resp.status_code == 402
+
+
+def test_passwords_are_hashed_at_full_cost_outside_the_suite(monkeypatch):
+    """The suite hashes cheaply (conftest.py). Production must not.
+
+    Read from the source rather than the module, because the module's
+    value is the one the suite lowered. Then one password is hashed at
+    that value, to show the constant is what the hashing actually uses.
+    """
+    import ast
+    import hashlib
+    from pathlib import Path
+
+    import store
+
+    tree = ast.parse((Path(store.__file__)).read_text())
+    (shipped,) = [
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(getattr(t, "id", None) == "SCRYPT_N" for t in node.targets)
+    ]
+    assert shipped >= 2**14, "password hashing was weakened in production"
+
+    monkeypatch.setattr(store, "SCRYPT_N", shipped)
+    stored = store.hash_password("correct-horse-battery")
+    _, salt, digest = stored.split("$")
+    assert hashlib.scrypt(b"correct-horse-battery", salt=bytes.fromhex(salt),
+                          n=shipped, r=8, p=1, dklen=32).hex() == digest
+    assert store.verify_password("correct-horse-battery", stored)
+    assert not store.verify_password("wrong", stored)

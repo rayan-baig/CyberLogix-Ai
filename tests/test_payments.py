@@ -309,3 +309,31 @@ def test_a_plain_pay_url_still_works(api, invoice, monkeypatch):
     monkeypatch.setattr(mail, "PAY_URL", "https://pay.example/checkout")
 
     assert mail.pay_link(invoice) == "https://pay.example/checkout"
+
+
+# ---- what counts as an amount ---------------------------------------------
+
+
+@pytest.mark.parametrize("value", [True, float("inf"), float("nan"), "10000"])
+def test_only_a_finite_number_is_an_amount(value):
+    """`true` is an int to Python and `Infinity` parses as JSON. Neither
+    is money, and neither may reach the ledger as if it were."""
+    assert payments._amount_usd({"amount_total": value}) is None
+
+
+def test_a_bad_field_does_not_hide_a_good_one():
+    assert payments._amount_usd(
+        {"amount_received": True, "amount_total": 12345}) == 123.45
+
+
+def test_the_invoice_is_addressed_to_the_name_it_was_issued_to(api, invoice):
+    """A copy sent after the business is renamed still reads as issued."""
+    from dataclasses import replace
+
+    from invoicing import render_invoice
+
+    renamed = replace(STORE.get_tenant(invoice.tenant_id),
+                      company_name="Renamed Later Ltd")
+    text = render_invoice(invoice, renamed)
+    assert f"To:     {invoice.company_name}" in text
+    assert "Renamed Later Ltd" not in text

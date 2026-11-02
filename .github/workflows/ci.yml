@@ -1,6 +1,6 @@
 # Every push runs the whole suite and builds the production image.
 #
-# Fifteen hundred tests guard billing, escalation and who can see which
+# Seventeen hundred tests guard billing, escalation and who can see which
 # business. They only guard anything if something runs them.
 name: CI
 
@@ -26,11 +26,16 @@ jobs:
           python-version: '3.11'   # what the Dockerfile ships
           cache: pip
       # Pillow is for the one test that checks the app icons are real images.
-      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow pip-audit pyflakes==4.1.0
+      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow pip-audit pyflakes==4.1.0 mypy==2.4.1
       # Unused imports, undefined names, a variable assigned and never
       # read: the cheap mistakes, caught before the suite runs.
       - name: Pyflakes
         run: python -m pyflakes $(git ls-files '*.py')
+      # Only the modules that price, invoice, take payment and keep the
+      # books (mypy.ini lists them). A None where a figure was expected is
+      # a wrong bill, and it is cheaper to find here than on one.
+      - name: Types in the money code
+        run: python -m mypy
       - name: Tests
         run: python -m pytest -q
       - name: Known security holes in dependencies
@@ -38,3 +43,24 @@ jobs:
         run: pip-audit -r constraints.txt
       - name: The production image builds
         run: docker build -t cyberlogix:ci .
+
+  # The same suite on the newest Python, so an upgrade of the image is a
+  # one-line change rather than an afternoon of surprises. Tests only: the
+  # job above already lints, audits and builds what actually ships.
+  #
+  # The same constraints.txt as above. It was compiled for 3.11, but every
+  # package it pins publishes 3.13 wheels, so both jobs test the very same
+  # versions. If a future pin has no 3.13 wheel, this job fails at install,
+  # which is the warning it exists to give.
+  test-newest-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt -c constraints.txt pytest httpx pillow
+      - name: Tests
+        run: python -m pytest -q

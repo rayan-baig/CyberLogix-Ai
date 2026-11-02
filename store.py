@@ -261,11 +261,19 @@ def spoken_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
     return f"{value} degrees {'Celsius' if unit == 'C' else 'Fahrenheit'}"
 
 
+# scrypt's cost factor. 2**14 with r=8 is the standard figure for an
+# interactive sign-in: about 50 ms and 16 MB for every guess. The test
+# suite lowers it in tests/conftest.py, because it hashes two thousand
+# passwords and at full cost that was half of its running time; a test
+# there holds this default where it is.
+SCRYPT_N = 16384  # 2**14
+
+
 def hash_password(password: str) -> str:
     """Hash a password with scrypt and a fresh random salt."""
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=32
+        password.encode("utf-8"), salt=salt, n=SCRYPT_N, r=8, p=1, dklen=32
     )
     return f"scrypt${salt.hex()}${digest.hex()}"
 
@@ -279,7 +287,7 @@ def verify_password(password: str, stored: str) -> bool:
         digest = hashlib.scrypt(
             password.encode("utf-8"),
             salt=bytes.fromhex(salt_hex),
-            n=16384,
+            n=SCRYPT_N,
             r=8,
             p=1,
             dklen=32,

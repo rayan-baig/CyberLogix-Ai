@@ -10,6 +10,13 @@ spoken phone call. In the background the forecaster projects which sensors
 will fail next, and the compliance clerk assembles the paperwork inspectors
 ask for.
 
+**For customers**, in plain words:
+
+* [Your data](docs/YOUR-DATA.md): how to download everything, or delete
+  everything, what is kept afterwards and why, and what happens to backups.
+* [The vault](docs/THE-VAULT.md): what the tamper-evident record is, what
+  an attestation proves and what it does not, and how anyone can check one.
+
 ## Modules
 
 | Module | Prefix | Responsibility |
@@ -857,6 +864,9 @@ What this is not: a blockchain, a notary, or a legal guarantee. It is a
 hash chain plus an attestation, and overselling it is the one thing that
 would make it worthless.
 
+The customer's version, with how to check an attestation by hand:
+[docs/THE-VAULT.md](docs/THE-VAULT.md).
+
 ## Claim packets
 
 The money in a loss event is not lost in the failure. It is lost in the six
@@ -890,7 +900,8 @@ refuses while a bill is unpaid, so it is never a way to make a debt vanish.
 The bills already sent are kept, because a seller has to keep its bills.
 A person who also works at another business keeps that one: their sign-in
 moves to it. Daily backups hold a copy until they age out, and the privacy
-statement says how long.
+statement says how long. The customer's version of all this:
+[docs/YOUR-DATA.md](docs/YOUR-DATA.md).
 
 (There used to be a "Loss Assurance" guarantee here. It was withdrawn; the
 claim packet still helps a customer claim on their own insurer.)
@@ -1631,11 +1642,26 @@ export GEMINI_API_KEY=your-key
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 1,750 tests across 110 files. Gemini, Twilio and SMTP are all stubbed and the
+About 1,760 tests across 111 files. Gemini, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
 on the message that would actually have left the building.
+
+CI runs the suite on Python 3.11, which the image ships, and again on 3.13.
+Password hashing runs at a fraction of its real cost under the suite (see
+`tests/conftest.py`); a test holds the production setting where it is.
+
+### Types in the money code
+
+The seven modules that price, invoice, take payment and keep the books are
+type-checked in CI. Only those: `mypy.ini` lists them, so the check stays
+small enough that every finding gets read.
+
+```bash
+.venv/bin/pip install mypy==2.4.1
+.venv/bin/python -m mypy
+```
 
 ### The fuzzer
 

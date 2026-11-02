@@ -556,7 +556,7 @@ def verify_supplied_chain(payload: Dict[str, Any]):
         )
     if len(readings) > 20000:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Verify at most 20,000 readings in one request.",
         )
 

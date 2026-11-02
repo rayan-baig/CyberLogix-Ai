@@ -38,14 +38,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from models import Finite
 
 from auth import require_platform_admin
-from store import EXPENSE_CATEGORIES, STORE, iso, utc_now
+from store import EXPENSE_CATEGORIES, STORE, Invoice, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.books")
 
 router = APIRouter(prefix="/api/books", tags=["Books"])
 
 
-def _window(year: Optional[int], since: Optional[str], until: Optional[str]):
+def _window(
+    year: Optional[int], since: Optional[str], until: Optional[str]
+) -> "tuple[datetime, datetime, str]":
     """The period being reported, as (start, end, label)."""
     if year is not None:
         start = datetime(year, 1, 1, tzinfo=timezone.utc)
@@ -68,7 +70,7 @@ def _parse_or(value: Optional[str], fallback: datetime) -> datetime:
     return parsed or fallback
 
 
-def _company(invoice) -> str:
+def _company(invoice: Invoice) -> str:
     """The customer as the invoice names them.
 
     Read from the invoice, not the live account: the bills are what tax

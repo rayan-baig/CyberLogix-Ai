@@ -40,6 +40,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -48,7 +49,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from auth import require_platform_admin
-from store import STORE, iso, utc_now
+from store import STORE, Invoice, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.payments")
 
@@ -156,8 +157,14 @@ def _amount_usd(obj: Dict[str, Any]) -> Optional[float]:
     """Stripe counts in the currency's smallest unit. USD means cents."""
     for key in ("amount_received", "amount_total", "amount_paid", "amount"):
         value = obj.get(key)
-        if isinstance(value, (int, float)):
-            return round(value / 100.0, 2)
+        # `True` is an int to Python and `Infinity` is valid to its JSON
+        # reader; neither is a sum of money. Read as one, `true` paid a
+        # cent and `Infinity` reached the ledger, which refuses to store it.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if not math.isfinite(value):
+            continue
+        return round(value / 100.0, 2)
     return None
 
 
@@ -205,7 +212,7 @@ def record_unmatched(key: str, detail: Dict[str, Any]) -> None:
     )
 
 
-def record_overpayment(invoice, reference: str, received: Optional[float],
+def record_overpayment(invoice: Invoice, reference: str, received: Optional[float],
                        owed_before: float) -> Optional[float]:
     """Put money received beyond what an invoice owed on the list.
 

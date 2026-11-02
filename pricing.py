@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -37,6 +37,11 @@ from store import (
     iso,
     utc_now,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from store import Sensor
 
 router = APIRouter(prefix="/api/billing", tags=["Pricing & Billing"])
 
@@ -274,7 +279,7 @@ def per_site(vertical: str) -> bool:
     return bool(PRICE_BOOK.get(vertical, {}).get("per_site"))
 
 
-def branches(sensors) -> Dict[str, Any]:
+def branches(sensors: Iterable["Sensor"]) -> Dict[str, Optional["datetime"]]:
     """The locations one sector's sensors cover, and when each first appeared.
 
     A location is a site. Sensors not assigned to one are counted as a
@@ -288,8 +293,8 @@ def branches(sensors) -> Dict[str, Any]:
     Returned as {location key: earliest registration}, so the part-period
     billing can tell a new shop from a new thermometer in an old one.
     """
-    sited: Dict[str, List[Any]] = {}
-    unsited: List[Any] = []
+    sited: Dict[str, List[Optional[datetime]]] = {}
+    unsited: List[Optional[datetime]] = []
     for sensor in sensors:
         if sensor.site_id:
             sited.setdefault(sensor.site_id, []).append(sensor.registered_at)
@@ -302,7 +307,7 @@ def branches(sensors) -> Dict[str, Any]:
     }
 
 
-def unassigned_alongside_sites(sensors, tenant_has_sites: bool = False) -> int:
+def unassigned_alongside_sites(sensors: List["Sensor"], tenant_has_sites: bool = False) -> int:
     """Sensors not filed under a location, where locations exist to file them.
 
     Named on the invoice when the account has sites set up -- whether or

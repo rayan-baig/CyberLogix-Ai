@@ -314,13 +314,12 @@ def provision_enterprise_cluster(
 def list_accounts(tenant: Tenant = Depends(require_tenant)):
     """Every cluster contract this tenant holds, newest first."""
     contracts = STORE.contracts_for(tenant.tenant_id)
+    # Read once. Asked twice, a contract cancelled between the two reads
+    # turned this into an error on `None` instead of an answer.
+    active = STORE.active_contract(tenant.tenant_id)
     return {
         "count": len(contracts),
-        "active_account_id": (
-            STORE.active_contract(tenant.tenant_id).account_id
-            if STORE.active_contract(tenant.tenant_id)
-            else None
-        ),
+        "active_account_id": active.account_id if active else None,
         "accounts": [c.public() for c in contracts],
     }
 
