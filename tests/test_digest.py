@@ -1,8 +1,7 @@
 """The two summaries that arrive without anybody opening a browser.
 
-The person who owns this company is away from a screen for most of every
-working day, which makes "check the dashboard" a plan that fails five
-days a week. The operator digest is the book in an email; the customer
+Nobody running a business sits in front of a dashboard all day, which
+makes "check the dashboard" a plan that fails most days. The operator digest is the book in an email; the customer
 report is the evidence that the invoice was worth paying.
 
 The failure worth guarding hardest is the quiet one. A digest that is
