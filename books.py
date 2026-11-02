@@ -68,8 +68,18 @@ def _parse_or(value: Optional[str], fallback: datetime) -> datetime:
     return parsed or fallback
 
 
-def _company(tenant_id: str) -> str:
-    tenant = STORE.get_tenant(tenant_id)
+def _company(invoice) -> str:
+    """The customer as the invoice names them.
+
+    Read from the invoice, not the live account: the bills are what tax
+    law makes a seller keep after a business deletes itself, and a ledger
+    that then called the customer "(deleted account)" had kept the bill
+    and lost the one thing on it the law cares about. It is also the name
+    the bill was actually issued to, if the account is renamed later.
+    """
+    if invoice.company_name:
+        return invoice.company_name
+    tenant = STORE.get_tenant(invoice.tenant_id)
     return tenant.company_name if tenant else "(deleted account)"
 
 
@@ -82,7 +92,7 @@ def sales_ledger(start: datetime, end: datetime) -> List[Dict[str, Any]]:
         rows.append({
             "date": iso(invoice.issued_at),
             "number": invoice.number,
-            "customer": _company(invoice.tenant_id),
+            "customer": _company(invoice),
             "tenant_id": invoice.tenant_id,
             "total_usd": invoice.total_usd,
             "paid_usd": invoice.amount_paid_usd,
@@ -115,7 +125,7 @@ def cash_book(start: datetime, end: datetime) -> List[Dict[str, Any]]:
                 "reference": payment.get("reference"),
                 "amount_usd": payment.get("amount_usd"),
                 "invoice": invoice.number,
-                "customer": _company(invoice.tenant_id),
+                "customer": _company(invoice),
                 "tenant_id": invoice.tenant_id,
             })
     return sorted(rows, key=lambda r: (r["date"], r["reference"] or ""))
@@ -136,7 +146,7 @@ def write_offs(start: datetime, end: datetime) -> List[Dict[str, Any]]:
         rows.append({
             "date": iso(invoice.voided_at),
             "number": invoice.number,
-            "customer": _company(invoice.tenant_id),
+            "customer": _company(invoice),
             "total_usd": invoice.total_usd,
             "recovered_usd": invoice.amount_paid_usd,
         })

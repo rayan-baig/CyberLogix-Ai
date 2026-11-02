@@ -48,6 +48,7 @@ from backup import BACKUP_KEEP
 from invoicing import PAYMENT_TERMS_DAYS, issuer_block
 from store import (
     DISPATCH_SLA_SECONDS,
+    MAIL_BODY_KEEP_DAYS,
     MAX_READINGS_PER_SENSOR,
     SENSOR_OFFLINE_AFTER_MINUTES,
     STORE,
@@ -66,7 +67,9 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # everything" and "Download everything" buttons, and took out the Loss
 # Assurance add-on, which had been withdrawn from the product but was
 # still being promised here.
-TERMS_VERSION = "2.0"
+# 2.1 says how long the text of sent mail is kept (400 days) and that a
+# deletion is redone after a backup is restored.
+TERMS_VERSION = "2.1"
 EFFECTIVE_DATE = "2026-11-01"
 
 # The cap on what we can owe. Without one, a single claim about a lost
@@ -274,8 +277,10 @@ record of what each one did.
 
 **Mail we send you.** Who it went to, the subject, the message, and
 whether the mail service took it. That way, "we never got that bill" has
-a real answer. If an address bounces or asks us to stop, we keep that
-address on a "do not mail" list, because forgetting it would mean
+a real answer. The message itself is deleted after
+{MAIL_BODY_KEEP_DAYS} days; who it went to, the subject and whether it
+was delivered are kept. If an address bounces or asks us to stop, we keep
+that address on a "do not mail" list, because forgetting it would mean
 writing to it again.
 
 We do not sell any of it, and we do not use it to train anything.
@@ -332,7 +337,8 @@ it waits until no bill is unpaid. Two things stay:
 and keep the last {BACKUP_KEEP}. So after you delete, an old copy sits in
 those backups until they are replaced, and it is gone within
 {BACKUP_KEEP} days. We do not restore a backup to bring back something
-you deleted.
+you deleted: if we ever have to restore one, anything deleted since it was
+taken is deleted again at once.
 
 You can also just ask us for a copy, a fix, or a deletion.
 

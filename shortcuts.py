@@ -19,12 +19,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from auth import require_tenant, write_audit
+from auth import write_audit
 from auth import optional_operator
+from contracts import require_current
 from gemini import safe_generate
 from store import (
     INDUSTRY_PROFILES, STORE, Tenant, User, display_temperature, iso,
-    resolve_vertical, utc_now,
+    resolve_vertical, restate_temperatures, utc_now,
 )
 
 logger = logging.getLogger("cyberlogix.shortcuts")
@@ -102,7 +103,8 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
                 "incident_id": i.incident_id,
                 "sensor_id": i.sensor_id,
                 "opened_at": iso(i.opened_at),
-                "detail": i.breach_details,
+                # Worded on the night, in the unit the account had then.
+                "detail": restate_temperatures(i.breach_details, unit),
                 "answered_by": i.acknowledged_by,
                 "resolved_at": iso(i.resolved_at),
             }
@@ -191,7 +193,7 @@ def list_shortcuts():
 def run_shortcut(
     vertical: str,
     days: int = Query(30, ge=1, le=365),
-    tenant: Tenant = Depends(require_tenant),
+    tenant: Tenant = Depends(require_current("Sector documents")),
     operator: Optional[User] = Depends(optional_operator),
 ):
     """Produce this sector's document from the tenant's own readings."""

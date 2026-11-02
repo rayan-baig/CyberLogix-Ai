@@ -71,19 +71,26 @@ REPORT_DAYS = 7
 
 def _money_yesterday(now: datetime) -> Dict[str, Any]:
     """What was invoiced and what actually arrived in the last day."""
+    from store import _parse
+
     since = now - timedelta(days=1)
     issued = []
-    paid = []
+    arrived = []
     for invoice in STORE.all_invoices():
         if invoice.issued_at and invoice.issued_at >= since:
             issued.append(invoice)
-        if invoice.paid_at and invoice.paid_at >= since:
-            paid.append(invoice)
+        # Each payment on its own date. The invoice's running total, keyed
+        # on its latest payment, counted a part payment from last month as
+        # money that arrived today when the balance followed it.
+        for payment in invoice.payments:
+            at = _parse(payment.get("at"))
+            if at is not None and since <= at <= now:
+                arrived.append(float(payment.get("amount_usd") or 0))
     return {
         "issued_count": len(issued),
         "issued_usd": round(sum(i.total_usd for i in issued), 2),
-        "paid_count": len(paid),
-        "paid_usd": round(sum(i.amount_paid_usd for i in paid), 2),
+        "paid_count": len(arrived),
+        "paid_usd": round(sum(arrived), 2),
     }
 
 

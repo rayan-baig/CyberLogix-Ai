@@ -453,9 +453,15 @@ def mark_paid(
             "invoice": invoice.public(),
         }
 
+    owed_before = invoice.balance_usd
     invoice, applied = STORE.settle_invoice(
         invoice, payload.reference, payload.amount_usd
     )
+    if applied:
+        from payments import record_overpayment
+
+        record_overpayment(invoice, payload.reference, payload.amount_usd,
+                           owed_before)
     if not applied:
         # 200, deliberately. A payment processor that is told its
         # delivery failed will deliver it again, and delivering it again

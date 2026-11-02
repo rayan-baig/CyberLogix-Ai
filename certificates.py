@@ -176,6 +176,12 @@ def set_certificate(
     Owner only. Putting a compliance record in public is a decision about
     the business, not an operational one.
     """
+    if payload.live:
+        # Publishing is a certificate, and certificates pause with reports
+        # for an account far behind. Taking one down never does.
+        from contracts import refuse_if_behind
+
+        refuse_if_behind(tenant, "Publishing a certificate")
     row = _row(tenant.tenant_id) or {}
     token = row.get("token") or secrets.token_urlsafe(24)
     row = {

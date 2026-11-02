@@ -13,6 +13,7 @@ import calendar
 import hashlib
 import logging
 import os
+import re
 import math
 import secrets
 import threading
@@ -216,6 +217,31 @@ def format_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
     if value is None:
         return "not reported"
     return f"{value}°{unit}"
+
+
+_WRITTEN_TEMPERATURE = re.compile(r"(-?\d+(?:\.\d+)?)°([FC])\b")
+
+
+def restate_temperatures(text: Optional[str], unit: str = "F") -> str:
+    """Rewrite every "40.0°F" in a stored sentence into `unit`.
+
+    A breach is worded once, on the night, in the unit the account had
+    then. An account that moves to Celsius afterwards was handed a Celsius
+    document with that one line still in Fahrenheit -- the same walk-in at
+    40 in one sentence and 4.44 in the next. Only figures written the way
+    `format_temperature` writes them are touched.
+    """
+    if not text:
+        return text or ""
+
+    def _swap(match: "re.Match[str]") -> str:
+        value, written_in = float(match.group(1)), match.group(2)
+        if written_in == unit:
+            return match.group(0)
+        fahrenheit = value if written_in == "F" else to_fahrenheit(value)
+        return format_temperature(fahrenheit, unit)
+
+    return _WRITTEN_TEMPERATURE.sub(_swap, text)
 
 
 def spoken_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
@@ -1682,6 +1708,11 @@ class Invoice:
         return round(max(0.0, self.total_usd - self.amount_paid_usd), 2)
 
     @property
+    def overpaid_usd(self) -> float:
+        """Money received beyond the total, which nobody is owed."""
+        return round(max(0.0, self.amount_paid_usd - self.total_usd), 2)
+
+    @property
     def settled(self) -> bool:
         return self.state == "paid"
 
@@ -1773,6 +1804,7 @@ class Invoice:
         row["days_overdue"] = self.days_overdue()
         row["days_until_due"] = self.days_until_due()
         row["balance_usd"] = self.balance_usd
+        row["overpaid_usd"] = self.overpaid_usd
         row["open"] = self.open
         return row
 
@@ -2377,6 +2409,17 @@ MAIL_MAX_ATTEMPTS = 3
 # become a machine that fires a month of stale notices at a customer the
 # afternoon somebody finally configures SMTP.
 MAIL_MAX_AGE_HOURS = 72
+
+# How long the full text of a handled message is kept. After this the row
+# keeps who it went to, the subject, when, and whether the mail host took
+# it -- enough to answer "we never got that bill" -- and the body goes.
+# Without it every invoice, receipt and weekly report ever sent was kept
+# word for word for as long as the account lived, in the fastest-growing
+# table after readings. A year and a month: an annual invoice's whole
+# cycle, plus the thirty days a customer has to query a bill.
+MAIL_BODY_KEEP_DAYS = 400
+
+MAIL_BODY_REMOVED = "[Text removed after {days} days. Recipient, subject and delivery are kept.]"
 
 
 # The categories an expense usually falls into. Not a tax schedule and
@@ -2992,7 +3035,7 @@ class HubStore:
     # address from that list would mean writing to it again.
     _NOT_A_BUSINESS_KIND = frozenset({
         "meta", "aicache", "mailblock", "partner", "expense", "fault",
-        "unmatched_payment",
+        "unmatched_payment", "erasure",
     })
     # Kept after a business deletes itself: the bills it was sent. Tax law
     # makes a seller keep them for years, and each one already carries the
@@ -3088,11 +3131,45 @@ class HubStore:
                     doomed.setdefault(kind, []).append(rec_id)
             for kind, ids in doomed.items():
                 self._db.delete_many(kind, ids)
+            # That it happened, and when, so a backup restored later can be
+            # stopped from bringing it back. Kept as a fingerprint of the id
+            # rather than the id: nothing left on file names the business.
+            self._db.put("erasure", hash_secret(tenant_id),
+                         {"erased_at": iso(utc_now())})
             # Rebuild the working set from what is left on disk, the same
             # way a restore does, so no index anywhere still points at it.
             self._forget_locked()
             self.load()
             return {kind: len(ids) for kind, ids in doomed.items()}
+
+    def erasures(self) -> Dict[str, Dict[str, Any]]:
+        """Every business that deleted itself: fingerprint of its id -> when."""
+        with self._lock:
+            return dict(self._db.rows("erasure"))
+
+    def apply_erasures(self, erased: Dict[str, Dict[str, Any]]) -> List[str]:
+        """Delete again any of these businesses that are present, and keep
+        the record of every one. Returns the ids deleted again."""
+        again: List[str] = []
+        with self._lock:
+            for print_, row in erased.items():
+                self._db.put("erasure", print_, row)
+            for tenant_id in list(self._tenants):
+                if hash_secret(tenant_id) in erased:
+                    self.erase_tenant(tenant_id)
+                    again.append(tenant_id)
+        return again
+
+    def id_counter(self) -> int:
+        with self._lock:
+            return self._counter
+
+    def raise_id_counter(self, floor: int) -> None:
+        """Never hand out an id at or below `floor` again."""
+        with self._lock:
+            if floor > self._counter:
+                self._counter = floor
+                self._db.put("meta", "counter", {"value": self._counter})
 
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         with self._lock:
@@ -3392,6 +3469,7 @@ class HubStore:
             evicted = bucket[0] if len(bucket) == MAX_READINGS_PER_SENSOR else None
             bucket.append(reading)
             if evicted is not None:
+                self._keep_as_evidence_locked(evicted, sensor.tenant_id)
                 self._db.delete("reading", evicted.reading_id)
 
             sensor.last_seen = now
@@ -3658,6 +3736,55 @@ class HubStore:
             self._save_incident(incident)
             return incident, True
 
+    EVIDENCE_HOURS_EACH_SIDE = 12.0
+
+    @staticmethod
+    def _evidence_row(reading: Reading) -> Dict[str, Any]:
+        return {
+            "reading_id": reading.reading_id,
+            "sensor_id": reading.sensor_id,
+            "temperature_fahrenheit": reading.temperature_fahrenheit,
+            "humidity_percent": reading.humidity_percent,
+            "breached": reading.breached,
+            "recorded_at": iso(reading.recorded_at),
+        }
+
+    def _keep_as_evidence_locked(self, reading: Reading, tenant_id: str) -> None:
+        """Copy a reading about to roll off onto any incident it belongs to.
+
+        The evidence was copied when an incident opened and when it closed,
+        and nothing in between. A breach that outlasted the buffer lost its
+        middle -- the peak, usually, and the first thing an adjuster asks
+        about -- and so did the recovery after it closed, which had not
+        happened yet when the closing copy was taken. The moment a reading
+        is about to be deleted is the one moment that catches all of it.
+        """
+        if reading.recorded_at is None:
+            return
+        at = reading.recorded_at
+        margin = timedelta(hours=self.EVIDENCE_HOURS_EACH_SIDE)
+        for incident in self._incidents.values():
+            if incident.sensor_id != reading.sensor_id or incident.tenant_id != tenant_id:
+                continue
+            closed = incident.resolved_at or incident.acknowledged_at
+            # Every excursion while it ran, and everything either side of
+            # its opening and its close. Not every in-band reading of an
+            # incident somebody forgot to close for a month: that would be
+            # a month of readings rewritten onto one row every few minutes.
+            during = incident.opened_at <= at <= (closed or utc_now())
+            near_open = abs(at - incident.opened_at) <= margin
+            near_close = closed is not None and closed <= at <= closed + margin
+            if not (near_open or near_close or (during and reading.breached)):
+                continue
+            if any(r.get("reading_id") == reading.reading_id
+                   for r in incident.evidence_readings):
+                continue
+            incident.evidence_readings = sorted(
+                incident.evidence_readings + [self._evidence_row(reading)],
+                key=lambda r: (r["recorded_at"], r["reading_id"]),
+            )
+            self._save_incident(incident)
+
     def preserve_evidence(
         self, incident: Incident, before_hours: float = 12.0,
         after_hours: float = 12.0,
@@ -3687,14 +3814,7 @@ class HubStore:
                 if reading.recorded_at is None:
                     continue
                 if start <= reading.recorded_at <= end:
-                    kept[reading.reading_id] = {
-                        "reading_id": reading.reading_id,
-                        "sensor_id": reading.sensor_id,
-                        "temperature_fahrenheit": reading.temperature_fahrenheit,
-                        "humidity_percent": reading.humidity_percent,
-                        "breached": reading.breached,
-                        "recorded_at": iso(reading.recorded_at),
-                    }
+                    kept[reading.reading_id] = self._evidence_row(reading)
 
             live.evidence_readings = sorted(
                 kept.values(), key=lambda r: (r["recorded_at"], r["reading_id"])
@@ -4354,7 +4474,29 @@ class HubStore:
             if inv.number.startswith(prefix)
             and inv.number[len(prefix):].isdigit()
         ]
-        return f"{prefix}{max(issued, default=0) + 1:04d}"
+        # The highest number ever issued, kept apart from the invoices so a
+        # restore from an older backup cannot hand a number out twice.
+        floor = self.invoice_number_floors().get(str(year), 0)
+        number = max(max(issued, default=0), floor) + 1
+        self.raise_invoice_number_floors({str(year): number})
+        return f"{prefix}{number:04d}"
+
+    def invoice_number_floors(self) -> Dict[str, int]:
+        """The highest invoice number issued, per year."""
+        row = self._db.get("meta", "invoice_numbers") or {}
+        return {k: int(v) for k, v in row.items() if str(v).isdigit()}
+
+    def raise_invoice_number_floors(self, floors: Dict[str, int]) -> None:
+        """Never issue an invoice number at or below these again."""
+        with self._lock:
+            current = self.invoice_number_floors()
+            changed = False
+            for year, value in floors.items():
+                if int(value) > current.get(year, 0):
+                    current[year] = int(value)
+                    changed = True
+            if changed:
+                self._db.put("meta", "invoice_numbers", current)
 
     def create_invoice(
         self,
@@ -5278,6 +5420,28 @@ class HubStore:
                     self._db.put("mail", m.message_id, m.to_row())
                     scrubbed += 1
         return scrubbed
+
+    def trim_old_mail(self, now: Optional[datetime] = None) -> int:
+        """Drop the text of handled mail older than MAIL_BODY_KEEP_DAYS.
+
+        The row stays, so its dedupe key still stops the same message
+        going out twice, and the log still says it was sent.
+        """
+        now = now or utc_now()
+        removed = MAIL_BODY_REMOVED.format(days=MAIL_BODY_KEEP_DAYS)
+        trimmed = 0
+        with self._lock:
+            for m in self._mail.values():
+                if m.body in (removed, SENSITIVE_BODY_REMOVED):
+                    continue
+                if m.age_hours(now) <= MAIL_BODY_KEEP_DAYS * 24:
+                    continue
+                # A queued message this old is never going to be tried
+                # again (pending_mail stops at MAIL_MAX_AGE_HOURS).
+                m.body = removed
+                self._db.put("mail", m.message_id, m.to_row())
+                trimmed += 1
+        return trimmed
 
     def pending_mail(self, now: Optional[datetime] = None) -> List[MailMessage]:
         """Messages still worth another attempt, oldest first.

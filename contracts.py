@@ -212,6 +212,12 @@ def arrears_lines(
     """
     if index <= 0 or sub.started_at is None:
         return []
+    # A volume contract covers every sensor inside its branches, and is
+    # what the invoice charges (pricing.build_subscription). A sensor added
+    # in the month the contract began was charged again here, at the
+    # per-unit rate card, as "added mid-period".
+    if STORE.active_contract(tenant.tenant_id) is not None:
+        return []
 
     from pricing import PRICE_BOOK, plural
 
@@ -798,7 +804,14 @@ def delinquency(tenant_id: str, now: Optional[datetime] = None) -> Dict[str, Any
             grace_days_left(tenant, now) if tenant is not None else 0
         ),
         "delinquent": behind,
-        "withheld": ["benchmarks", "vault_attestation"] if behind else [],
+        # What the terms say pauses: reports, certificates and downloads.
+        # Only the first two were ever actually withheld; the compliance
+        # report, its spreadsheet, the sector documents and publishing a
+        # certificate carried on for an account months behind.
+        "withheld": [
+            "benchmarks", "vault_attestation", "compliance_report",
+            "sector_documents", "certificate",
+        ] if behind else [],
         "never_withheld": [
             "telemetry ingest",
             "breach detection",
@@ -813,35 +826,43 @@ def require_current(feature: str):
     """Refuse a reporting feature to a delinquent account.
 
     Deliberately narrow. This guards documents, not safety: it is on the
-    benchmark and attestation routes and it will never be on the ingest,
+    reporting routes (benchmarks, attestations, the compliance report and
+    its spreadsheet, sector documents) and it will never be on the ingest,
     alert or escalation path. A monitoring company that stops monitoring
     over an unpaid invoice has sold the wrong product.
     """
 
     def dependency(tenant: Tenant = Depends(require_tenant)) -> Tenant:
-        state = delinquency(tenant.tenant_id)
-        if not state["delinquent"]:
-            return tenant
-        if state["licence_state"] in ("grace", "lapsed"):
-            because = (
-                f"the licence expired on {tenant.expires_at.date()}"
-                if tenant.expires_at
-                else "the licence has lapsed"
-            )
-        else:
-            because = (
-                f"${state['overdue_usd']:,.2f} is "
-                f"{state['days_overdue']} days past due"
-            )
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"{feature} is withheld while {because}. Monitoring, alerting "
-                "and escalation are unaffected and still running."
-            ),
-        )
+        refuse_if_behind(tenant, feature)
+        return tenant
 
     return dependency
+
+
+def refuse_if_behind(tenant: Tenant, feature: str) -> None:
+    """The check behind `require_current`, for a route that withholds only
+    part of what it does (publishing a certificate, not taking one down)."""
+    state = delinquency(tenant.tenant_id)
+    if not state["delinquent"]:
+        return
+    if state["licence_state"] in ("grace", "lapsed"):
+        because = (
+            f"the licence expired on {tenant.expires_at.date()}"
+            if tenant.expires_at
+            else "the licence has lapsed"
+        )
+    else:
+        because = (
+            f"${state['overdue_usd']:,.2f} is "
+            f"{state['days_overdue']} days past due"
+        )
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail=(
+            f"{feature} is withheld while {because}. Monitoring, alerting "
+            "and escalation are unaffected and still running."
+        ),
+    )
 
 
 # ---- routes ------------------------------------------------------------
