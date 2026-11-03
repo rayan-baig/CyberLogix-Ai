@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -100,6 +100,30 @@ def invoice_date(moment: Optional[datetime]) -> str:
     if moment is None:
         return "—"
     return f"{moment.day} {moment.strftime('%B %Y')}"
+
+
+def service_period(invoice: Invoice) -> Dict[str, Any]:
+    """The dates the invoice pays for, for the printed copy.
+
+    A contract's invoice covers one billing period of it, from the day
+    that period starts to the day before the next one does. A one-off
+    invoice covers `period_days` from the day it was issued.
+    """
+    start = end = None
+    if invoice.billing_period is not None and invoice.source != "manual":
+        sub = STORE.get_subscription(invoice.source)
+        if sub is not None:
+            start = sub.period_start(invoice.billing_period)
+            end = sub.period_start(invoice.billing_period + 1) - timedelta(days=1)
+    if start is None and invoice.issued_at is not None:
+        start = invoice.issued_at
+        end = start + timedelta(days=max(invoice.period_days, 1) - 1)
+    return {
+        "start": iso(start),
+        "end": iso(end),
+        "label": (f"{invoice_date(start)} to {invoice_date(end)}"
+                  if start is not None and end is not None else ""),
+    }
 
 
 def render_invoice(invoice: Invoice, tenant: Tenant) -> str:
@@ -416,8 +440,11 @@ def read_invoice(invoice_id: str, tenant: Tenant = Depends(require_tenant_any_st
     return {
         **invoice.public(),
         "issued_by": issuer_block(),
+        "service_period": service_period(invoice),
         "billed_to": {
-            "company_name": tenant.company_name,
+            # The name it was issued to, frozen on it like the figures, as
+            # the emailed copy has it.
+            "company_name": invoice.company_name or tenant.company_name,
             "contact_name": tenant.contact_name,
             "contact_email": tenant.contact_email,
         },

@@ -1939,7 +1939,7 @@ async function openInvoice(invoiceId) {
   $("drawer").innerHTML = `
     <div class="drawer-head">
       <div class="grow">
-        <div class="doc-kicker">Invoice</div>
+        <div class="doc-kicker" data-doc="invoice">Invoice</div>
         <div class="drawer-title" id="drawer-title">${esc(inv.number)}</div>
         <div class="drawer-sub">${esc(status)}</div>
       </div>
@@ -1969,6 +1969,9 @@ async function openInvoice(invoiceId) {
         esc(inv.billed_to.contact_email)}</span></div>
       ${inv.purchase_order ? `<div><span class="k">Purchase order</span>
         <span class="v">${esc(inv.purchase_order)}</span></div>` : ""}
+      ${inv.service_period && inv.service_period.label
+        ? `<div><span class="k">Period</span><span class="v">${
+            esc(inv.service_period.label)}</span></div>` : ""}
       <div><span class="k">Issued</span><span class="v">${
         esc(stamp(inv.issued_at))}</span></div>
       <div><span class="k">Due</span><span class="v">${
@@ -1980,17 +1983,31 @@ async function openInvoice(invoiceId) {
       <thead><tr><th>Description</th><th class="num">Qty</th>
         <th class="num">Rate</th><th class="num">Amount</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr>
-        <td colspan="3" class="u-ta-right u-c-muted">Total due</td>
+      <tfoot>
+      ${inv.subtotal_usd !== inv.total_usd ? `<tr>
+        <td colspan="3" class="u-ta-right u-c-muted">Subtotal</td>
+        <td class="num">${money(inv.subtotal_usd)}</td></tr>` : ""}
+      <tr class="doc-total">
+        <td colspan="3" class="u-ta-right u-c-muted">Total${
+          inv.amount_paid_usd ? "" : " due"}</td>
         <td class="num u-ff-display u-fs-19">${
           money(inv.total_usd)}</td>
-      </tr></tfoot>
+      </tr>
+      ${inv.amount_paid_usd ? `<tr>
+        <td colspan="3" class="u-ta-right u-c-muted">Received</td>
+        <td class="num">-${money(inv.amount_paid_usd)}</td></tr>
+      <tr>
+        <td colspan="3" class="u-ta-right u-c-muted">Balance due</td>
+        <td class="num">${money(Math.max(0, inv.total_usd - inv.amount_paid_usd))}</td></tr>` : ""}
+      </tfoot>
     </table></div>
 
     <div class="card-note u-mt-16">${esc(inv.terms)}</div>
     ${inv.issued_by.remit_to
       ? `<div class="card-note">Remit to: ${esc(inv.issued_by.remit_to)}</div>`
       : ""}
+    <div class="doc-footer">CyberLogix AI is a product of MTRX Horizyn.
+      ${esc(inv.number)} · issued ${esc(stamp(inv.issued_at))}</div>
 
     ${inv.state === "issued" ? `<div class="row no-print u-mt-18">
       <button class="btn btn-sm" data-settle="${esc(inv.invoice_id)}">
@@ -2939,6 +2956,129 @@ function stamp(iso) {
     year: "numeric", month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+/* ---------------- the inspector's log ----------------
+   One click: the log for the chosen dates opens as a document and the
+   print dialog comes up over it (print or save as PDF). On paper only the
+   document prints -- theme.css re-sets it for ink, one unit to a section,
+   and repeats the table headings on each page. */
+
+function isoDay(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function initInspectorForm() {
+  const to = $("inspector-to");
+  const from = $("inspector-from");
+  if (!to || !from) return;
+  const today = new Date();
+  to.value = isoDay(today);
+  from.value = isoDay(new Date(today.getTime() - 6 * 86400000));
+  $("inspector-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    openInspectorLog(from.value, to.value, true);
+  });
+}
+
+function dayLabel(day, withYear) {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString([], Object.assign(
+    { weekday: "short", day: "numeric", month: "short" },
+    withYear ? { year: "numeric" } : {}));
+}
+
+async function openInspectorLog(from, to, print) {
+  let log;
+  const btn = $("inspector-print");
+  if (btn) btn.disabled = true;
+  try {
+    log = await api(`/api/autopilot/inspector-log?start=${encodeURIComponent(from)}`
+                    + `&end=${encodeURIComponent(to)}`);
+  } catch (err) { toast(err.message, "err"); return; }
+  finally { if (btn) btn.disabled = false; }
+
+  const u = log.temperature_unit;
+  const deg = (v) => (v === null || v === undefined ? "—" : `${esc(v)}°${esc(u)}`);
+  const limits = (unit) => [
+    unit.limit_below !== null ? `not below ${deg(unit.limit_below)}` : "",
+    unit.limit_above !== null ? `not above ${deg(unit.limit_above)}` : "",
+  ].filter(Boolean).join(", ");
+
+  const sections = log.units.map((unit) => {
+    const days = unit.days.length
+      ? unit.days.map((d) => `<tr${d.out_of_range ? ' class="log-out"' : ""}>
+          <td>${esc(dayLabel(d.day))}</td>
+          <td class="num">${deg(d.low)}</td>
+          <td class="num">${deg(d.high)}</td>
+          <td class="num">${esc(d.readings)}</td>
+          <td class="num">${d.out_of_range
+            ? `${esc(d.hours_out_of_range)} h` : "—"}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="5">No readings held for these dates.</td></tr>`;
+    const breaches = unit.breaches.length
+      ? `<div class="scrollx"><table class="log-table">
+          <thead><tr><th>When</th><th class="num">Worst</th>
+            <th>Acknowledged by</th><th>What was done</th><th>Reviewed</th>
+            <th>Closed</th></tr></thead>
+          <tbody>${unit.breaches.map((b) => `<tr>
+            <td>${esc(stamp(b.opened_at))}</td>
+            <td class="num">${deg(b.worst)}</td>
+            <td>${b.acknowledged_by
+              ? `${esc(b.acknowledged_by)}<span class="log-sub">${
+                  esc(stamp(b.acknowledged_at))}${b.minutes_to_acknowledge !== null
+                  ? ` · after ${esc(b.minutes_to_acknowledge)} min` : ""}</span>`
+              : `<strong>Nobody</strong>`}</td>
+            <td>${b.corrective_action
+              ? `${esc(b.corrective_action)}${b.product_disposition
+                  ? `<span class="log-sub">Product: ${esc(b.product_disposition)}</span>` : ""}`
+              : `<strong>Not recorded</strong>`}</td>
+            <td>${esc(b.reviewed_by || "—")}</td>
+            <td>${b.closed_at ? esc(stamp(b.closed_at)) : "still open"}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>`
+      : `<div class="card-note">It stayed in range the whole time.</div>`;
+    return `<section class="log-unit">
+      <h3 class="log-unit-name">${esc(unit.location_name)}${
+        unit.site_name ? ` <span class="log-sub-inline">· ${esc(unit.site_name)}</span>` : ""}</h3>
+      <div class="log-meta">${esc(unit.sensor_id)} · ${esc(unit.industry_name)} · limit ${
+        limits(unit) || "none set"} · ${esc(unit.readings)} readings${
+        unit.in_range_percent !== null ? `, ${esc(unit.in_range_percent)}% in range` : ""}</div>
+      <div class="scrollx"><table class="log-table">
+        <thead><tr><th>Day</th><th class="num">Lowest</th><th class="num">Highest</th>
+          <th class="num">Readings</th><th class="num">Out of range</th></tr></thead>
+        <tbody>${days}</tbody>
+      </table></div>
+      <div class="log-breach-head">Times it went out of range</div>
+      ${breaches}
+    </section>`;
+  }).join("");
+
+  $("drawer").innerHTML = `
+    <div class="drawer-head">
+      <div class="grow">
+        <div class="doc-kicker">Temperature log</div>
+        <div class="drawer-title" id="drawer-title">${esc(log.company_name)}</div>
+        <div class="drawer-sub">${esc(dayLabel(log.period_start, true))} to ${
+          esc(dayLabel(log.period_end, true))} · temperatures in °${esc(u)}</div>
+      </div>
+      <button class="btn btn-sm" id="log-print">Print</button>
+      <button class="btn btn-sm" id="drawer-close">Close</button>
+    </div>
+    <div class="readout">
+      <div><span class="k">Units</span><span class="v">${esc(log.units.length)}</span></div>
+      <div><span class="k">Times out of range</span><span class="v">${esc(log.breaches)}</span></div>
+      <div><span class="k">Not acknowledged</span><span class="v">${esc(log.unanswered)}</span></div>
+    </div>
+    ${log.covers_the_whole_period ? "" : `<div class="read-out no u-mt-10">${esc(log.caveat)}</div>`}
+    ${sections || `<div class="card-note u-mt-10">No units yet.</div>`}
+    <div class="card-note u-mt-16">${esc(log.note)} Made ${esc(stamp(log.generated_at))}
+      by CyberLogix AI, a product of MTRX Horizyn.</div>
+  `;
+  state.drawerSensor = null;
+  showDrawer();
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("log-print").addEventListener("click", () => window.print());
+  if (print) setTimeout(() => window.print(), 50);
 }
 
 /* ---------------- compliance vault ---------------- */
@@ -4721,6 +4861,7 @@ window.addEventListener("resize", measureNav);
 countTheTabs();
 measureNav();
 applyFinder();
+initInspectorForm();
 
 let saved = null;
 try { saved = localStorage.getItem(TOKEN_STORAGE); } catch (_) {}

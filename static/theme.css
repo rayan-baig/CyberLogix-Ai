@@ -817,6 +817,23 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
 }
 .doc-letter .quote-label { margin-bottom: 9px; }
 
+/* ---------- the inspector's log, and a document's footer ---------- */
+.log-unit { margin-top: 24px; }
+.log-unit-name { font-size: 16px; font-weight: 650; margin: 0 0 3px; color: var(--ink); }
+.log-sub-inline { color: var(--muted); font-weight: 400; }
+.log-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; line-height: 1.5; }
+.log-sub { display: block; color: var(--muted); font-size: 11.5px; }
+.log-breach-head {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); margin: 14px 0 6px;
+}
+.log-out td { color: var(--critical); }
+.log-table td { vertical-align: top; }
+.doc-footer {
+  margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 12px;
+}
+
 /* ---------- print ---------- */
 /* An adjuster prints this. On paper the dark theme is unreadable and
    wastes a cartridge, so the packet is re-set for ink: white ground,
@@ -853,6 +870,17 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .timeline { border-left-color: #ccc; }
   .timeline li::before { background: #fff; border-color: #666; }
   .scrollx { overflow: visible !important; max-height: none !important; }
+  @page { margin: 14mm 12mm; }
+  /* Long tables run on, with their headings again on each page. */
+  thead { display: table-header-group; }
+  .log-unit { margin-top: 18px; }
+  .log-unit-name, .log-meta, .log-breach-head { break-after: avoid; }
+  .log-unit-name { color: #111; font-size: 13pt; }
+  .log-meta, .log-sub, .log-sub-inline, .log-breach-head { color: #444; }
+  /* Out of range is bold on paper, which survives a black-and-white printer. */
+  .log-out td { color: #111; font-weight: 700; }
+  .doc-footer { color: #444; border-top-color: #ccc; }
+  .read-out { color: #111; border-color: #999; background: #fff; }
   /* Never split a section across a page break mid-table. */
   .doc-section { break-after: avoid; }
   tr { break-inside: avoid; }

@@ -64,6 +64,7 @@ from digest import router as digest_router
 from payments import router as payments_router
 from books import router as books_router
 from margin import router as margin_router
+from inspector import router as inspector_router
 from watchdog import router as watchdog_router
 from legal import router as legal_router
 from mail import router as mail_router
@@ -264,6 +265,7 @@ app.include_router(pollers_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)
+app.include_router(inspector_router)
 app.include_router(payments_router)
 app.include_router(margin_router)
 app.include_router(books_router)

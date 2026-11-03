@@ -53,6 +53,9 @@ PATHS = [
     "/api/sites", "/api/invoices", "/api/contracts",
     "/api/billing/pricing",
     "/api/autopilot/compliance?days=7",
+    # Asked for with the dates picked on the card; the stub falls back to
+    # the path alone, so this one answer serves whatever dates are chosen.
+    "/api/autopilot/inspector-log",
     "/api/accounts/businesses",
     "/api/simulator",
     "/api/help/sensor-offline",

@@ -147,6 +147,12 @@ The document carries the issuer's legal name, address, tax ID and
 remittance details from configuration, and says so plainly when they are
 unset rather than printing a line reading "Tax ID:" with nothing after it.
 
+In the console an invoice opens as a document and prints on one page:
+issuer, the business it was billed to, the period it covers (from the
+contract's billing period, or the days from issue for a one-off), every
+line, subtotal, total and any amount received, the terms, and a footer
+naming MTRX Horizyn. The print stylesheet hides everything else.
+
 Payment collection is left to a processor. `POST /api/invoices/{id}/paid`
 is where a webhook would land, and the lifecycle is complete without one —
 which is also how a bank transfer, how most contracts at these sizes are
