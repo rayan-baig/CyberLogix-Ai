@@ -785,6 +785,11 @@ function render(d, health) {
 
   $("sys-status").textContent = health.status === "online" ? "online" : health.status;
   $("about-version").textContent = health.version ? `Version ${health.version}` : "Version —";
+  $("about-plan").textContent = t.plan_name ? `${t.plan_name} plan` : "—";
+  const support = d.support_email || "";
+  $("about-support").hidden = !support;
+  $("about-support-link").textContent = support || "—";
+  $("about-support-link").href = support ? `mailto:${support}` : "mailto:";
   $("chip-user").textContent = state.user
     ? `${state.user.full_name} · ${state.user.role}`
     : "—";
