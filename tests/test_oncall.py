@@ -338,3 +338,29 @@ def test_a_reply_after_the_handover_still_acknowledges(
                     headers={"X-Twilio-Signature": signature})
     assert resp.status_code == 200, resp.text
     assert STORE.get_incident(incident_id).acknowledged_by.startswith("Alex")
+
+
+def test_removing_a_site_takes_its_rotation_with_it(api, operator_factory):
+    """A site's rotation outlived the site. Its people had been released to
+    the whole estate, but the rotation still held them to their turns, the
+    warnings called it the estate's rotation, and it could not be stopped
+    (DELETE answered "site not found") nor its people put in another one
+    ("already in another rotation")."""
+    headers, tenant, _ = operator_factory(plan="enterprise")
+    site_id = api.post("/api/sites", headers=headers, json={"name": "Depot"}).json()["site_id"]
+    a = _person(api, headers, "Alex", "+15551101", 1, site_id=site_id)
+    b = _person(api, headers, "Blair", "+15551102", 1, site_id=site_id)
+    assert api.put("/api/contacts/rotations", headers=headers, json={
+        "timezone": NY, "site_id": site_id,
+        "members": [a["contact_id"], b["contact_id"]]}).status_code == 200
+
+    assert api.delete(f"/api/sites/{site_id}", headers=headers).status_code == 200
+
+    assert api.get("/api/contacts/rotations", headers=headers).json()["rotations"] == []
+    assert STORE._db.get(oncall.ROTATION_KIND, f"{tenant['tenant_id']}:{site_id}") is None
+    # Both are on call all the time again, as the release promised...
+    t = STORE.get_tenant(tenant["tenant_id"])
+    assert sorted(c.full_name for c in STORE.sms_recipients(t)) == ["Alex", "Blair"]
+    # ...and can take turns in the estate's rotation.
+    assert api.put("/api/contacts/rotations", headers=headers, json={
+        "timezone": NY, "members": [a["contact_id"], b["contact_id"]]}).status_code == 200

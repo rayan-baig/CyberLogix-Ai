@@ -215,3 +215,22 @@ def test_press_1_acknowledges_and_no_second_call_is_placed(
     sweep_tenant(tenant)
     assert len(twiml) == calls_before, "a call was placed after 1 was pressed"
     assert not STORE.get_incident(incident.incident_id).open
+
+
+@pytest.mark.parametrize("vertical", ["restaurant", "cryostorage", "pharmacy"])
+def test_a_shortened_name_still_bills_as_one_segment(estate, vertical):
+    """A name cut short to fit used to be marked with "~", which GSM-7
+    sends as two characters: a text of 160 characters cost two segments,
+    doubling the largest delivery line for every long-named unit."""
+    _, _, incident = estate(vertical, location="North building basement level two " * 3,
+                            sensor_id="SENSOR-WITH-A-VERY-LONG-HARDWARE-ID-0001",
+                            company="The Very Long Name Hospitality Group International")
+    assert sms_segments(incident.sms_text) == 1, incident.sms_text
+
+
+def test_a_name_with_brackets_still_bills_as_one_segment(estate):
+    """[ ] { } | ^ ~ \\ and the euro sign are two characters each in GSM-7."""
+    _, _, incident = estate("restaurant", location="Walk-in [A] {back} | stores " * 2,
+                            sensor_id="SENSOR-WITH-A-VERY-LONG-HARDWARE-ID-0001")
+    assert sms_segments(incident.sms_text) == 1, incident.sms_text
+    assert incident.sms_text.endswith("Reply 1 if you are on it.")

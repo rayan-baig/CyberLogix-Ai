@@ -44,6 +44,7 @@ DOCS = pathlib.Path(os.environ.get("DEMO_OUT_DIR") or (ROOT / "docs"))
 PATHS = [
     "/api/console/overview", "/api/health", "/api/costs?days=30",
     "/api/accounts/audit?limit=8", "/api/accounts/me", "/api/contacts",
+    "/api/contacts/rotations",
     "/api/accounts/users", "/api/shortcuts", "/api/webhooks",
     "/api/contracts/pipeline", "/api/forecast/fleet", "/api/claims/eligible",
     "/api/contacts/preview", "/api/legal/acceptance/status",
@@ -324,6 +325,20 @@ def capture() -> dict:
         )
         back.raise_for_status()
         head = {"Authorization": f"Bearer {back.json()['token']}"}
+
+        # Taking turns, so the On call now card shows a rotation rather
+        # than its empty state: the two estate-wide managers a week each,
+        # and one of them with quiet hours.
+        people = {c["full_name"]: c["contact_id"] for c in
+                  client.get("/api/contacts", headers=head).json()["contacts"]}
+        client.put("/api/contacts/rotations", headers=head, json={
+            "timezone": "America/New_York", "handover": "08:00", "shift_days": 7,
+            "members": [people["Dana Reyes"], people["Marco Diaz"]],
+        }).raise_for_status()
+        client.patch(f"/api/contacts/{people['Marco Diaz']}", headers=head, json={
+            "quiet_hours": {"start": "23:00", "end": "06:00",
+                            "timezone": "America/New_York"},
+        }).raise_for_status()
 
         for path in PATHS:
             got = client.get(path, headers=head)

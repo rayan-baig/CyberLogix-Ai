@@ -330,10 +330,15 @@ async def _loop(interval: float) -> None:
             await asyncio.sleep(max(0.0, next_due - clock()))
             # Sweeps touch SQLite and the telephony client, both blocking,
             # so they run on a worker thread rather than stalling the API.
-            await asyncio.to_thread(run_one_pass)
-            # A pass that overran its interval is followed straight away,
-            # never by a burst of the passes it missed.
-            next_due = max(next_due + interval, clock())
+            try:
+                await asyncio.to_thread(run_one_pass)
+            finally:
+                # A pass that overran its interval is followed straight
+                # away, never by a burst of the passes it missed. And one
+                # that raised waits its interval like any other: left due
+                # at once, a pass failing every time (the heartbeat write
+                # on a full disk) swept the fleet back to back, flat out.
+                next_due = max(next_due + interval, clock())
 
             now_tick = clock()
             since_billing += now_tick - last_tick

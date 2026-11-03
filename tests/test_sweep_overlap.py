@@ -176,3 +176,34 @@ def test_the_first_sweep_after_a_start_does_not_wait_a_whole_interval(monkeypatc
 
     asyncio.run(drive())
     assert starts == [1]
+
+
+def test_a_pass_that_raises_waits_for_the_next_interval(monkeypatch):
+    """A pass that raised used to leave the next one due at once, so the
+    loop swept again and again with no pause: with the disk full, the
+    heartbeat write fails on every pass, and the process spun a core
+    sweeping the whole fleet back to back and writing a traceback each
+    time. A failed pass waits its interval like any other."""
+    import sqlite3
+
+    tries: list = []
+
+    def failing_pass():
+        tries.append(time.monotonic())
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(scheduler, "run_one_pass", failing_pass)
+    monkeypatch.setattr(scheduler, "FIRST_SWEEP_AFTER_SECONDS", 0.0)
+
+    async def drive():
+        task = asyncio.create_task(scheduler._loop(0.2))
+        await asyncio.sleep(0.5)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(asyncio.wait_for(drive(), timeout=10))
+    # At 0, 0.2 and 0.4 seconds: three, not thousands.
+    assert 2 <= len(tries) <= 4, len(tries)

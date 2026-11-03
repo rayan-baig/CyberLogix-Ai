@@ -1950,6 +1950,15 @@ class HubStore:
                 if hook.site_id == site_id:
                     hook.site_id = None
                     self._db.put("webhook", hook.webhook_id, hook.to_row())
+            # And its rotation, for the same reason: left behind, it kept
+            # its people to their turns after they were released to the
+            # whole estate, and nothing could stop it (the site it was
+            # addressed by was gone). Its people go back to being on call
+            # all the time.
+            import oncall
+
+            tenant_id = self._sites[site_id].tenant_id
+            self._db.delete(oncall.ROTATION_KIND, oncall.rotation_id(tenant_id, site_id))
             del self._sites[site_id]
             self._db.delete("site", site_id)
             return True

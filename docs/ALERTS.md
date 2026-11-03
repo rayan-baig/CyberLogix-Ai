@@ -54,7 +54,19 @@ winter, a handover at midnight is at midnight, on the night the clocks go
 back a handover in the repeated hour happens the first time only, and on
 the night they go forward a handover at a time that does not exist (02:30)
 happens when the clock jumps past it. A person takes turns in one rotation
-at a time; taking somebody off the roster takes them out of its turns.
+at a time; taking somebody off the roster takes them out of its turns, and
+removing a site removes its rotation (its people were released to the
+whole estate, and go back to being on call all the time).
+
+In the console it is the **On call now** card, on the People tab under
+"Who gets called": who is on call now and until when, who is next, the
+next six turns in the rotation's own time, who is in no rotation (and so
+always on call), each person's quiet hours, and the warnings below.
+Owners and operators build a rotation there (where it covers, the time
+zone, the handover time, days per turn, the first day, and who takes
+turns in which order), change or stop one, and set or clear quiet hours.
+A viewer sees the same card with no form and no button on it, and the
+server refuses them anyway.
 
 **Quiet hours** are a contact's own, in their own time zone:
 

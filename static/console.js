@@ -614,6 +614,7 @@ function preferSector(overview) {
  * been rather than taking the page down with it. */
 const OPTIONAL_PANELS = {
   costs: "cost-body", roster: "roster-body", team: "team-body",
+  rotations: "rotation-body",
   hooks: "hook-body", invoices: "invoice-body",
   audit: "audit-body",
   forecast: "forecast-body",
@@ -677,6 +678,7 @@ async function refresh() {
     me: () => (state.user ? Promise.resolve({ user: state.user })
                           : api("/api/accounts/me")),
     roster: () => api("/api/contacts"),
+    rotations: () => api("/api/contacts/rotations"),
     team: () => api("/api/accounts/users"),
     businesses: () => api("/api/accounts/businesses"),
     catalogue: () => (state.shortcutCatalogue
@@ -731,6 +733,7 @@ async function refresh() {
   paint("audit", () => renderAudit(got.audit));
   renderLeave();
   paint("roster", () => renderRoster(got.roster));
+  paint("rotations", () => renderRotations(got.rotations, got.roster));
   paint("forecast", () => renderForecast(got.forecast));
   paint("claims", () => renderClaims(got.claims));
   paint("escalation", () => renderEscalation(got.escalation));
@@ -1672,6 +1675,319 @@ function renderRoster(roster) {
     </div>`;
   }).join("");
 }
+
+/* ---------------- on call now: rotations and quiet hours ----------------
+   The roster says who can be called. This says who is on call at which
+   hour: rotations take turns, handing over at a local time, and quiet
+   hours keep somebody from being texted while anybody else is awake.
+   Everything shown comes from /api/contacts/rotations as the server
+   works it out (oncall.py) -- the page never decides whose turn it is.
+
+   Owners and operators get the forms; a viewer sees the same rotations,
+   handovers and warnings with nothing to press. The forms are in the
+   page rather than rebuilt by the poll, so the twenty-second refresh
+   never wipes something half typed. */
+
+const ROTA = { roster: [], rotations: [], draft: [], ready: false };
+
+function canEditRoster() {
+  return Boolean(state.user && state.user.role !== "viewer") && !state.wall;
+}
+
+function rotaPlace(scope) {
+  if (!scope || scope === "estate") return "Whole estate";
+  const site = ((state.data && state.data.sites) || []).find((s) => s.site_id === scope);
+  return site ? site.name : "A location";
+}
+
+function turnWords(days) {
+  const n = Number(days);
+  if (n === 1) return "Daily turns";
+  if (n === 7) return "Weekly turns";
+  if (n % 7 === 0) return `${n / 7}-week turns`;
+  return `${n}-day turns`;
+}
+
+/* Options for a select, rebuilt only when they change, so a poll never
+   closes a list somebody has open or forgets what they picked. */
+function fillSelect(select, options) {
+  const signature = JSON.stringify(options);
+  if (select.dataset.sig === signature) return;
+  const current = select.value;
+  select.innerHTML = options.map(([value, label]) =>
+    `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+  select.dataset.sig = signature;
+  if (options.some(([value]) => value === current)) select.value = current;
+}
+
+function browserZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
+  catch (_) { return ""; }
+}
+
+function rotaDefaults() {
+  if (ROTA.ready) return;
+  ROTA.ready = true;
+  const zone = browserZone();
+  if (!$("rot-tz").value) $("rot-tz").value = zone;
+  if (!$("qh-tz").value) $("qh-tz").value = zone;
+  let zones = [];
+  try { zones = Intl.supportedValuesOf ? Intl.supportedValuesOf("timeZone") : []; }
+  catch (_) { zones = []; }
+  $("tz-list").innerHTML = zones.map((z) => `<option value="${esc(z)}">`).join("");
+}
+
+function renderRotationDraft() {
+  const byId = new Map(ROTA.roster.map((c) => [c.contact_id, c]));
+  // Somebody taken off the roster since is out of the draft too.
+  ROTA.draft = ROTA.draft.filter((id) => byId.has(id));
+  $("rot-members").innerHTML = ROTA.draft.length
+    ? ROTA.draft.map((id, index) => {
+        const c = byId.get(id);
+        return `<li class="rota-member${c.active ? "" : " is-muted"}">
+          <span class="grow">${esc(c.full_name)}${c.active ? "" : " (muted)"}</span>
+          <button class="btn btn-sm" type="button" data-rot-up="${index}"${
+            index === 0 ? " disabled" : ""}>Up</button>
+          <button class="btn btn-sm" type="button" data-rot-down="${index}"${
+            index === ROTA.draft.length - 1 ? " disabled" : ""}>Down</button>
+          <button class="btn btn-sm" type="button" data-rot-drop="${index}">Remove</button>
+        </li>`;
+      }).join("")
+    : `<li class="rota-member is-none">Nobody yet. Add people in the
+         order they take turns.</li>`;
+  const left = ROTA.roster.filter((c) => !ROTA.draft.includes(c.contact_id));
+  fillSelect($("rot-add"), [["", left.length ? "Choose someone" : "Everyone is in"]]
+    .concat(left.map((c) => [c.contact_id, c.full_name])));
+}
+
+function renderRotations(data, roster) {
+  const people = (roster && roster.contacts) || [];
+  const rotations = data.rotations || [];
+  ROTA.roster = people;
+  ROTA.rotations = rotations;
+  const editor = canEditRoster();
+
+  $("rotation-note").textContent = rotations.length
+    ? `${rotations.length} rotation${rotations.length === 1 ? "" : "s"}`
+    : "no rotation";
+
+  const taking = new Set(rotations.flatMap((r) => r.members.map((m) => m.contact_id)));
+  const always = people.filter((c) => c.active && !taking.has(c.contact_id));
+  const alwaysLine = people.length
+    ? `<div class="rota-line"><span class="rota-label">Always on call</span>${
+        always.length ? esc(always.map((c) => c.full_name).join(", "))
+                      : "nobody outside a rotation"}</div>`
+    : "";
+
+  // A muted person keeps their turns, and on them nobody from the
+  // rotation is on call; the schedule says so next to the name.
+  const muted = new Set(people.filter((c) => !c.active).map((c) => c.contact_id));
+  const named = (row) => esc(row.full_name || "Somebody removed")
+    + (muted.has(row.contact_id) ? " (muted)" : "");
+  const blocks = rotations.map((r) => {
+    const schedule = r.schedule || [];
+    const now = r.on_shift_now;
+    const next = schedule[1];
+    const turns = schedule.map((s, index) => `
+      <li class="${index === 0 ? "is-now" : ""}">
+        <span class="rota-who">${named(s)}</span>
+        <span class="rota-when">${esc(s.starts_local)} to ${esc(s.ends_local)}</span>
+      </li>`).join("");
+    const buttons = editor
+      ? `<button class="btn btn-sm" type="button" data-rota-edit="${esc(r.scope)}">Change</button>
+         <button class="btn btn-sm" type="button" data-rota-stop="${esc(r.scope)}">Stop</button>`
+      : "";
+    const who = now
+      ? `<div class="rota-line is-now"><span class="rota-label">On call now</span><b>${named(now)}</b>${
+           schedule[0] ? ` until ${esc(schedule[0].ends_local)}` : ""}</div>
+         <div class="rota-line"><span class="rota-label">Next</span>${
+           next ? named(next) : "nobody"}</div>`
+      : `<div class="rota-line is-empty">Nobody is in this rotation, so
+           nobody from it is on call.</div>`;
+    return `<div class="rota">
+      <div class="rota-head">
+        <span class="grow"><b>${esc(rotaPlace(r.scope))}</b>
+          <span class="rota-sub">${esc(turnWords(r.shift_days))}, handing over at
+            ${esc(r.handover)} ${esc(r.timezone)} · ${esc(r.members.length)} ${
+            r.members.length === 1 ? "person" : "people"}</span></span>
+        ${buttons}
+      </div>
+      ${who}
+      ${turns ? `<ol class="rota-shifts">${turns}</ol>` : ""}
+    </div>`;
+  }).join("");
+
+  const warnings = (data.warnings || []).map((w) =>
+    `<div class="card-note rota-gap" role="alert"><span class="badge s-warning">`
+    + `<span class="dot"></span>Gap</span> ${esc(w)}</div>`).join("");
+
+  let body;
+  if (!people.length && !rotations.length) {
+    body = `<div class="empty u-p-14">Nobody to take turns yet.
+      <span class="sub">Add people to Who gets called first.</span>${
+      nextSteps([["oncall", "Add someone to call"]])}</div>`;
+  } else if (!rotations.length) {
+    body = `<div class="rota-line">No rotation, so everyone on the roster is
+      on call all the time.</div>${alwaysLine}`;
+  } else {
+    body = blocks + alwaysLine;
+  }
+  $("rotation-body").innerHTML = body + warnings;
+
+  const withQuiet = people.filter((c) => c.quiet_hours);
+  $("quiet-body").innerHTML = !people.length
+    ? `<div class="rota-line">Nobody on the roster yet.</div>`
+    : (withQuiet.length
+      ? withQuiet.map((c) => `<div class="rota-quiet">
+          <span class="grow"><b>${esc(c.full_name)}</b>
+            <span class="rota-sub">Quiet ${esc(c.quiet_hours.start)} to ${
+              esc(c.quiet_hours.end)} ${esc(c.quiet_hours.timezone)}</span></span>
+          ${editor ? `<button class="btn btn-sm" type="button" data-quiet-edit="${
+            esc(c.contact_id)}">Change</button>` : ""}
+        </div>`).join("")
+      : `<div class="rota-line">Nobody has quiet hours.</div>`)
+      + (people.length ? `<div class="card-note u-mt-8">In their quiet hours
+          somebody is texted only if nobody else would be, and called last.
+          An alert always reaches someone.</div>` : "");
+
+  $("rotation-form").hidden = !editor || !people.length;
+  $("quiet-form").hidden = !editor || !people.length;
+  $("rotation-viewer").hidden = editor || state.wall;
+  if (!editor || !people.length) return;
+
+  rotaDefaults();
+  const sites = (state.data && state.data.sites) || [];
+  fillSelect($("rot-scope"), [["estate", "Whole estate"]]
+    .concat(sites.map((s) => [s.site_id, s.name])));
+  fillSelect($("qh-person"), people.map((c) => [c.contact_id, c.full_name]));
+  renderRotationDraft();
+}
+
+function loadRotationIntoForm(scope) {
+  const rotation = ROTA.rotations.find((r) => r.scope === scope);
+  if (!rotation) {
+    $("rot-form-title").textContent = "Make a rotation";
+    return false;
+  }
+  $("rot-scope").value = rotation.scope;
+  $("rot-tz").value = rotation.timezone;
+  $("rot-handover").value = rotation.handover;
+  $("rot-days").value = String(rotation.shift_days);
+  $("rot-start").value = rotation.starts_on || "";
+  ROTA.draft = rotation.members.map((m) => m.contact_id);
+  $("rot-form-title").textContent = `Change the rotation: ${rotaPlace(rotation.scope)}`;
+  renderRotationDraft();
+  return true;
+}
+
+function resetRotationForm() {
+  ROTA.draft = [];
+  $("rot-start").value = "";
+  $("rot-form-title").textContent = "Make a rotation";
+  renderRotationDraft();
+}
+
+function loadQuietHours(contactId) {
+  const person = ROTA.roster.find((c) => c.contact_id === contactId);
+  const quiet = person && person.quiet_hours;
+  $("qh-start").value = quiet ? quiet.start : "22:00";
+  $("qh-end").value = quiet ? quiet.end : "07:00";
+  $("qh-tz").value = quiet ? quiet.timezone : ($("qh-tz").value || browserZone());
+}
+
+$("find-on-call-rotation").addEventListener("click", (event) => {
+  if (state.wall) return;
+  const btn = event.target.closest("button");
+  if (!btn) return;
+  const d = btn.dataset;
+  const move = (from, to) => {
+    const [id] = ROTA.draft.splice(from, 1);
+    ROTA.draft.splice(to, 0, id);
+    renderRotationDraft();
+  };
+  if (d.rotUp !== undefined) move(Number(d.rotUp), Number(d.rotUp) - 1);
+  else if (d.rotDown !== undefined) move(Number(d.rotDown), Number(d.rotDown) + 1);
+  else if (d.rotDrop !== undefined) {
+    ROTA.draft.splice(Number(d.rotDrop), 1);
+    renderRotationDraft();
+  } else if (d.rotaEdit) {
+    loadRotationIntoForm(d.rotaEdit);
+    $("rotation-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (d.rotaStop) {
+    if (!confirm(`Stop the rotation for ${rotaPlace(d.rotaStop)}? Its people `
+                 + "go back to being on call all the time.")) return;
+    act(() => api(`/api/contacts/rotations/${encodeURIComponent(d.rotaStop)}`,
+                  { method: "DELETE" }), "Rotation stopped.");
+  } else if (d.quietEdit) {
+    $("qh-person").value = d.quietEdit;
+    loadQuietHours(d.quietEdit);
+    $("quiet-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+
+$("rot-add-btn").addEventListener("click", () => {
+  const id = $("rot-add").value;
+  if (!id || ROTA.draft.includes(id)) return;
+  ROTA.draft.push(id);
+  renderRotationDraft();
+});
+
+$("rot-scope").addEventListener("change", () => {
+  // A place that already has a rotation opens it to change, rather than
+  // replacing it with whatever was half built for somewhere else.
+  if (!loadRotationIntoForm($("rot-scope").value)) {
+    $("rot-form-title").textContent = "Make a rotation";
+  }
+});
+
+$("rot-reset").addEventListener("click", resetRotationForm);
+
+$("rotation-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!ROTA.draft.length) {
+    toast("Add at least one person to take turns.", "err");
+    return;
+  }
+  const scope = $("rot-scope").value;
+  act(async () => {
+    await api("/api/contacts/rotations", {
+      method: "PUT",
+      body: JSON.stringify({
+        site_id: scope === "estate" ? null : scope,
+        timezone: $("rot-tz").value.trim(),
+        handover: $("rot-handover").value,
+        shift_days: Number($("rot-days").value),
+        starts_on: $("rot-start").value || null,
+        members: ROTA.draft.slice(),
+      }),
+    });
+    resetRotationForm();
+  }, "Rotation saved.");
+});
+
+$("qh-person").addEventListener("change", () => loadQuietHours($("qh-person").value));
+
+$("quiet-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const id = $("qh-person").value;
+  if (!id) return;
+  act(() => api(`/api/contacts/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ quiet_hours: {
+      start: $("qh-start").value,
+      end: $("qh-end").value,
+      timezone: $("qh-tz").value.trim(),
+    } }),
+  }), "Quiet hours saved.");
+});
+
+$("qh-clear").addEventListener("click", () => {
+  const id = $("qh-person").value;
+  if (!id) return;
+  act(() => api(`/api/contacts/${encodeURIComponent(id)}`, {
+    method: "PATCH", body: JSON.stringify({ quiet_hours: null }),
+  }), "Quiet hours removed.");
+});
 
 
 /* ---------------- invoices ---------------- */

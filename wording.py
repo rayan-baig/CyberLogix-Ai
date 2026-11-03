@@ -156,22 +156,47 @@ def alert_sms(tenant, sensor, temperature_f: float, unit: str,
         out_by = "out of range"
     name, place = unit_name(sensor), place_of(sensor, tenant)
     tail = SMS_ACK
+    # Measured in GSM-7 characters, not Python ones: [ ] { } | ^ ~ backslash and
+    # the euro sign are sent as two each, so a 160-character text with one
+    # of them in it is billed as two segments.
     for what in (action or action_for(sensor), action_for(sensor), DEFAULT_ACTION, ""):
         text = to_gsm7(f"ALERT {name} at {place}: {reading}, {out_by}. {what} {tail}")
-        if len(text) <= SMS_LIMIT:
+        if _septets(text) <= SMS_LIMIT:
             return text
     # Still too long: the names are what give. The reading, how far out,
     # and how to answer stay whole.
     fixed = to_gsm7(f"ALERT : {reading}, {out_by}. {tail}")
-    room = max(SMS_LIMIT - len(fixed) - len(" at "), 12)
+    room = max(SMS_LIMIT - _septets(fixed) - len(" at "), 12)
     name = to_gsm7(name)
     place = to_gsm7(place)
-    keep_name = min(len(name), max(room - min(len(place), room // 3), room // 2))
+    keep_name = min(_septets(name), max(room - min(_septets(place), room // 3), room // 2))
     keep_place = max(room - keep_name, 0)
-    short_name = name if len(name) <= keep_name else name[:keep_name - 1] + "~"
-    short_place = place if len(place) <= keep_place else place[:max(keep_place - 1, 0)] + "~"
-    text = to_gsm7(f"ALERT {short_name} at {short_place}: {reading}, {out_by}. {tail}")
-    return text[:SMS_LIMIT]
+    text = to_gsm7(f"ALERT {_cut(name, keep_name)} at {_cut(place, keep_place)}: "
+                   f"{reading}, {out_by}. {tail}")
+    return _cut(text, SMS_LIMIT, mark="")
+
+
+def _septets(text: str) -> int:
+    """Length as GSM-7 sends it: the extension characters count twice."""
+    from notifications import _GSM7_EXT
+
+    return sum(2 if ch in _GSM7_EXT else 1 for ch in text)
+
+
+def _cut(text: str, room: int, mark: str = ".") -> str:
+    """`text` in at most `room` GSM-7 characters, marked where it was cut.
+
+    The mark is a plain full stop: the "~" it replaced is itself one of
+    the characters that count twice.
+    """
+    if _septets(text) <= room:
+        return text
+    kept = ""
+    for ch in text:
+        if _septets(kept + ch) + len(mark) > room:
+            break
+        kept += ch
+    return (kept + mark) if kept else mark[:max(room, 0)]
 
 
 def _spoken(value: float, unit: str) -> str:

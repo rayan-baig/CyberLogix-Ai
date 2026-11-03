@@ -1465,6 +1465,64 @@ body.wall .empty-acts { display: none !important; }
 .about-line { margin-top: 12px; }
 
 
+/* --- on call now: rotations and quiet hours -------------------------
+   Who is on call at this hour and who is next, one block per rotation,
+   then the form that makes or changes one. Everybody in no rotation is
+   on call all the time, and the card says who that is. */
+.rota { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.rota-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rota-head b { color: var(--ink); font-weight: 600; font-size: 14px; }
+.rota-sub { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.rota-line { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.5; }
+.rota-line b { color: var(--ink); font-weight: 600; }
+.rota-line.is-now b { color: var(--good); }
+.rota-line.is-empty { color: var(--warning); }
+.rota-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); margin-right: 6px;
+}
+.rota-shifts {
+  list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px;
+  font-size: 12.5px;
+}
+.rota-shifts li {
+  display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 4px 8px;
+  border-radius: 7px; color: var(--ink-2);
+}
+.rota-shifts li.is-now { background: var(--sunken); color: var(--ink); }
+.rota-who { min-width: 8em; font-weight: 500; }
+.rota-when { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.rota-gap { margin-top: 8px; }
+.rota-form { margin-top: 4px; }
+.rota-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0 10px;
+}
+.rota-members {
+  list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px;
+  counter-reset: rota;
+}
+.rota-member {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--sunken); font-size: 13.5px; color: var(--ink);
+  counter-increment: rota;
+}
+.rota-member::before {
+  content: counter(rota) "."; color: var(--muted); font-family: var(--mono);
+  font-size: 12px; min-width: 1.4em;
+}
+.rota-member.is-muted { color: var(--muted); }
+.rota-member.is-none { color: var(--muted); border-style: dashed; background: transparent; }
+.rota-member.is-none::before { content: none; }
+.rota-quiet {
+  display: flex; align-items: center; gap: 9px; padding: 7px 0;
+  border-bottom: 1px solid var(--border); font-size: 13.5px;
+}
+.rota-quiet b { font-weight: 500; color: var(--ink); }
+.rota-viewer { margin-top: 12px; }
+body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
+
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.
