@@ -257,3 +257,39 @@ def test_everything_down_then_everything_back(
     assert len(subjects) == 2
     assert any(s.startswith("TEXTS FAILED - ALERT:") for s in subjects)
     assert any(s.startswith("NOBODY HAS BEEN TEXTED") for s in subjects)
+
+
+def test_a_refused_number_is_not_kept_in_the_fault_list(monkeypatch):
+    """Twilio names the number it refused ("The 'To' number +1555... is
+    not a valid phone number"), and every failed text and call is now
+    recorded as a fault for the operator. The fault list has no owner
+    business and is kept for good, so somebody's phone number written
+    into it outlived the business deleting everything -- and a mail
+    host's refusal names the address the same way."""
+    import json
+
+    class _Refusing:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                raise RuntimeError(
+                    "HTTP 400 error: Unable to create record: The 'To' number "
+                    f"{kwargs['to']} is not a valid phone number.")
+
+        calls = messages
+
+    monkeypatch.setattr(notifications, "TWILIO_ACCOUNT_SID", "AC-test")
+    monkeypatch.setattr(notifications, "TWILIO_AUTH_TOKEN", "token")
+    monkeypatch.setattr(notifications, "TWILIO_FROM_NUMBER", "+15550000")
+    monkeypatch.setattr(notifications, "_client", _Refusing())
+    monkeypatch.setattr(notifications, "_client_error", None)
+
+    out = notifications.send_sms("+15557654321", "ALERT test")
+    assert out["delivered"] is False
+    faults.record("mail.deliver", RuntimeError(
+        "550 mailbox unavailable for night.manager@harbor.example"))
+
+    kept = json.dumps(faults.recent())
+    assert "notifications.send_sms" in kept
+    assert "7654321" not in kept
+    assert "night.manager@harbor.example" not in kept

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import traceback as tb
 from typing import Any, Dict, List
 
@@ -57,6 +58,20 @@ def fingerprint(source: str, exc: BaseException) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
 
 
+# What a provider's own error names: the number Twilio refused, the address
+# a mail host would not take. The list has no business it belongs to and
+# is kept until somebody clears it, so a person's details written into it
+# outlive that business deleting everything. The message and traceback
+# say what went wrong just as well without them.
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_PHONE = re.compile(r"\+\d[\d ().-]{5,}\d|(?<![\w.])\d{10,15}(?![\w.])")
+
+
+def redact(text: str) -> str:
+    """`text` without phone numbers or email addresses in it."""
+    return _PHONE.sub("<number>", _EMAIL.sub("<address>", text or ""))
+
+
 def record(source: str, exc: BaseException, context: str = "") -> Dict[str, Any]:
     """Write a fault down, or count another occurrence of a known one."""
     try:
@@ -71,9 +86,10 @@ def record(source: str, exc: BaseException, context: str = "") -> Dict[str, Any]
 def _record(source: str, exc: BaseException, context: str) -> Dict[str, Any]:
     ident = fingerprint(source, exc)
     now = utc_now()
-    detail = "".join(
+    detail = redact("".join(
         tb.format_exception(type(exc), exc, exc.__traceback__)
-    )[-4000:]
+    ))[-4000:]
+    message = redact(str(exc))
 
     with STORE._lock:
         row = STORE._db.get(KIND, ident)
@@ -83,8 +99,8 @@ def _record(source: str, exc: BaseException, context: str) -> Dict[str, Any]:
                 "fault_id": ident,
                 "source": source,
                 "exception": type(exc).__name__,
-                "message": str(exc)[:500],
-                "context": context[:500],
+                "message": message[:500],
+                "context": redact(context)[:500],
                 "traceback": detail,
                 "first_seen": iso(now),
                 "last_seen": iso(now),
@@ -98,13 +114,13 @@ def _record(source: str, exc: BaseException, context: str) -> Dict[str, Any]:
                 # Keep the newest traceback: the oldest one is from a
                 # version of the code that may no longer exist.
                 "traceback": detail,
-                "message": str(exc)[:500],
+                "message": message[:500],
             }
         STORE._db.put(KIND, ident, row)
 
     logger.error(
         "Fault %s in %s (%s occurrence(s)): %s: %s",
-        ident, source, row["seen"], type(exc).__name__, exc,
+        ident, source, row["seen"], type(exc).__name__, message,
     )
     return row
 
