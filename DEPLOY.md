@@ -21,6 +21,18 @@ It declines the free instance type on purpose, and the file says why:
 free has no disk and sleeps after fifteen idle minutes, so the database
 dies on each deploy and no sweep runs overnight. Roughly $7 a month.
 
+**The disk is 1 GB to start. Make it 5 GB before 400 sensors.** The
+database plus fourteen daily backups is about fifteen times the database,
+and on 1 GB that runs out at roughly 450 sensors. When a backup would
+leave less than 100 MB free it is skipped and reported (`/book → Health`)
+rather than filling the disk, but by then you are a day from trouble.
+Render: the service → Disks → change the size. A disk can be made bigger,
+not smaller. The measurements are in
+[docs/LOAD-TEST.md](docs/LOAD-TEST.md#disk).
+
+A second copy for trying changes first is in
+[docs/STAGING.md](docs/STAGING.md).
+
 That gets a *monitoring* launch up with no domain and no Twilio — enough
 to point real hardware at and watch a reading arrive. Everything below
 still applies before a customer depends on it, and sections 1, 4 and 5
@@ -213,6 +225,11 @@ SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
 MAIL_FROM=no-reply@cyberlogix.example.com
+# Where /help tells customers to write. Unset, it uses MAIL_REPLY_TO;
+# with neither, it tells them to use the contact on their invoice.
+CYBERLOGIX_SUPPORT_EMAIL=support@cyberlogix.example.com
+# You: the daily digest of what was billed, what arrived and what broke.
+CYBERLOGIX_OPERATOR_EMAIL=
 ```
 
 Mail is what a locked-out owner's password-reset link travels by, as
@@ -229,6 +246,28 @@ own proxy (or Render's) added. If you ever put a second proxy in front, such
 as Cloudflare, that last entry becomes Cloudflare's address, every visitor
 looks like the same few addresses, and one stranger's wrong passwords can
 lock everyone out. Change how the address is read before adding one.
+
+### Twilio: the number, and where it sends replies
+
+Buy a number that can send texts and make calls, and put the account
+SID, the auth token and the number in `TWILIO_ACCOUNT_SID`,
+`TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER`. Without all three nothing
+is sent: every alert is still written and recorded, as a dry run.
+
+Then tell Twilio where a **reply** to an alert text goes. In the Twilio
+console: Phone Numbers → your number → Messaging → "A message comes in"
+→ Webhook, method `POST`:
+
+    https://cyberlogix.example.com/api/voice/sms-reply
+
+That is what makes "Reply 1" work. Without it a reply of 1 goes nowhere
+and the calls carry on as if nobody had answered. It needs two settings
+right: `TWILIO_AUTH_TOKEN`, because a reply is only believed if Twilio
+signed it, and `PUBLIC_BASE_URL`, exactly as the address above starts,
+because the signature covers the address Twilio was given.
+
+The phone call needs no setting in Twilio: each call tells Twilio where
+to send "press 1", built from `PUBLIC_BASE_URL`.
 
 ---
 
@@ -263,9 +302,12 @@ Not "the site loads". One real sensor, one real breach, one real phone.
 4. Confirm the sequence: the reading lands, the incident opens, the SMS
    arrives, and the call escalates when nobody acknowledges it.
 5. Press 1 on the call and confirm the incident acknowledges.
+6. Do it again, and this time reply `1` to the text instead. The calls
+   must not start, and the reply must come back naming who has it.
 
-Step 5 is the one that needs `PUBLIC_BASE_URL` set correctly. Without
-it the call still goes out and pressing 1 reaches nothing.
+Steps 5 and 6 are the ones that need `PUBLIC_BASE_URL` set correctly,
+and step 6 also needs the Twilio webhook above. Without them the call
+still goes out and pressing 1 or replying 1 reaches nothing.
 
 Until you have done this once, with real hardware and a real handset,
 the product is untested where it counts.
@@ -338,6 +380,10 @@ already sent (incidents, mail), so nothing goes out twice. Rehearse on a
 copy, never on production, and never with the production settings: the
 full ten-minute checklist, for Render and Docker and for a lost disk, is
 in [docs/OPERATIONS.md](docs/OPERATIONS.md#restore-checklist-about-ten-minutes).
+In short: find the snapshot, put it where the app can see it, verify it,
+restore it, then check the health page, one sensor's readings and one
+test alert. `python tools/restore_rehearsal.py` does every step on a copy
+and times it.
 
 **Copy the snapshots off the machine on a schedule.** Nothing in this
 application does that for you, and it is the difference between surviving
@@ -359,11 +405,58 @@ curl -fsS -H "X-CyberLogix-Admin: $KEY" -o cyberlogix-....sqlite3 \
   visible at `/book → Health` and `GET /api/admin/faults`.
 - **A daily digest** to `CYBERLOGIX_OPERATOR_EMAIL` says what was
   billed, what arrived, who needs a call, and what broke.
+- **A monthly summary to each business's owners**, in the first week of
+  the month, after the digest hour (`CYBERLOGIX_DIGEST_HOUR_UTC`): their
+  units, every time something went out of range and who answered, and a
+  link to the month's inspector log. Once per business, even across a
+  restart or a restore. It needs mail, and `PUBLIC_BASE_URL` for the
+  link. To send it now: `/book → Health` → "Send last month's summaries
+  to owners".
 - **Daily verified backups**, pruned to `CYBERLOGIX_BACKUP_KEEP`.
+- **Rotations and quiet hours** run on the sweep. There is nothing to set
+  on the server: an owner sets them on the console's People tab, in each
+  rotation's own time zone. The time-zone rules come from the `tzdata`
+  package in `requirements.txt`, so a rebuilt image picks up a country's
+  new clock rules.
 
 None of this fixes a bug in the code. No program repairs its own logic.
 What it does is make sure the next bug arrives as a dated report with a
 traceback and a count, instead of as a customer asking why.
+
+---
+
+## 9. Which version is running
+
+The release number is in the `VERSION` file, and `CHANGELOG.md` says
+what changed in it, in plain words. The image will not build without
+both. After a deploy, check the live copy is the one you meant:
+
+```
+curl -s https://cyberlogix.example.com/api/health
+```
+
+`version` in the answer is the `VERSION` file the image was built from.
+Every change that ships bumps `VERSION` and adds a `CHANGELOG.md` entry
+together; a test fails if they disagree.
+
+---
+
+## 10. A demo account, never on the live database
+
+For a sales laptop or a staging copy, seed a made-up business into a
+**new, empty** database:
+
+```
+python demo_account.py --db /tmp/cyberlogix-demo.db
+CYBERLOGIX_DB_PATH=/tmp/cyberlogix-demo.db python main.py
+```
+
+It makes a restaurant group with three sites, twenty units, a week of
+readings and an open alert, and prints the sign-ins. It refuses a
+database with anything in it, so it cannot be run into the live one by
+mistake. It mails nobody, and its backups go to `demo-backups/` beside
+the database, never to `CYBERLOGIX_BACKUP_DIR`. Running a whole second
+copy on Render is [docs/STAGING.md](docs/STAGING.md).
 
 ---
 

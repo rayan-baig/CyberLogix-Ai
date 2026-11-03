@@ -419,6 +419,13 @@ API_DOCS_POLICY = "; ".join([
 # industry), and a test holds the two together.
 PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal")
 
+# A copy that is not the live product -- staging, a demo box -- asks to be
+# left out of search results entirely: every page noindex, robots.txt
+# closed, the sitemap empty. Otherwise a stranger searching for the
+# product could find staging's sign-up page and start a trial on a copy
+# that texts nobody (docs/STAGING.md).
+NOINDEX = os.environ.get("CYBERLOGIX_NOINDEX", "").strip().lower() in ("1", "true", "yes")
+
 # Paths whose errors are always JSON: the API and its documentation, and
 # the static files a page loads. A browser that mistypes a page address
 # gets the friendly page; a script calling the API gets what it can parse.
@@ -427,6 +434,8 @@ _MACHINE_PREFIXES = ("/api", "/docs", "/redoc", "/openapi.json", "/static")
 
 def _indexable(path: str) -> bool:
     """A public page a search engine may list, or a file such pages use."""
+    if NOINDEX:
+        return False
     if path in PUBLIC_PAGES or path in ("/robots.txt", "/sitemap.xml", "/favicon.ico"):
         return True
     if path.startswith("/static/"):
@@ -711,6 +720,8 @@ def robots(request: Request):
     it is what the front door used to be.
     """
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    if NOINDEX:
+        return PlainTextResponse("User-agent: *\nDisallow: /\n")
     body = "\n".join([
         "User-agent: *",
         "Allow: /$",
@@ -754,6 +765,8 @@ def sitemap(request: Request):
              ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
     pages += [("/help", "0.6"), ("/help/sensors", "0.6"), ("/legal", "0.4")]
+    if NOINDEX:
+        pages = []
     entries = "".join(
         f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
         for path, weight in pages

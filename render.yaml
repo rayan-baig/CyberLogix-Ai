@@ -140,6 +140,10 @@ services:
         sync: false
       - key: CYBERLOGIX_OPERATOR_EMAIL
         sync: false
+      # Where the help page tells customers to write for help. Unset, it
+      # uses MAIL_REPLY_TO, and with neither it points them at their invoice.
+      - key: CYBERLOGIX_SUPPORT_EMAIL
+        sync: false
 
       # Payments and the details every invoice must carry.
       - key: STRIPE_WEBHOOK_SECRET
