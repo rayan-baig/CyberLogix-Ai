@@ -1929,6 +1929,10 @@ class MailMessage:
     # reset link. It is kept only until the message has gone (or never
     # will), then replaced, so the mail log is not a drawer of live links.
     sensitive: bool = False
+    # An HTML version of the same message, sent beside the plain text as
+    # an alternative. Empty for almost everything: the plain text is the
+    # message, and the one a mail client without HTML shows.
+    html: str = ""
 
     def age_hours(self, now: Optional[datetime] = None) -> float:
         now = now or utc_now()
@@ -1949,6 +1953,7 @@ class MailMessage:
             "sent_at": iso(self.sent_at) if self.sent_at else None,
             "tenant_id": self.tenant_id,
             "sensitive": self.sensitive,
+            "html": self.html,
         }
 
     @classmethod
@@ -1967,6 +1972,7 @@ class MailMessage:
             sent_at=_parse(row["sent_at"]) if row.get("sent_at") else None,
             tenant_id=row.get("tenant_id"),
             sensitive=bool(row.get("sensitive", False)),
+            html=row.get("html") or "",
         )
 
     def public(self) -> Dict[str, Any]:

@@ -718,8 +718,9 @@ class HubStore:
     # ---- what has already been sent, kept through a restore ----------------
 
     # Rows that are a record of something done in the world rather than
-    # data a restore should roll back: the weekly text's "sent this week".
-    _LEDGER_KINDS = ("weekly_text",)
+    # data a restore should roll back: the weekly text's "sent this week",
+    # and which months each business has had its monthly report for.
+    _LEDGER_KINDS = ("weekly_text", "monthly_report")
 
     def delivery_ledger(self) -> Dict[str, Any]:
         """What this database knows has been sent, to carry past a restore.
@@ -3066,6 +3067,7 @@ class HubStore:
         klass: str,
         tenant_id: Optional[str] = None,
         sensitive: bool = False,
+        html: str = "",
     ) -> Optional[MailMessage]:
         """Reserve the right to send this exact message, once.
 
@@ -3092,6 +3094,7 @@ class HubStore:
                 created_at=utc_now(),
                 tenant_id=tenant_id,
                 sensitive=sensitive,
+                html=html,
             )
             self._mail[message.message_id] = message
             self._mail_keys[dedupe_key] = message.message_id
@@ -3134,6 +3137,7 @@ class HubStore:
                     or m.age_hours(now) > MAIL_MAX_AGE_HOURS
                 ):
                     m.body = SENSITIVE_BODY_REMOVED
+                    m.html = ""
                     self._db.put("mail", m.message_id, m.to_row())
                     scrubbed += 1
         return scrubbed

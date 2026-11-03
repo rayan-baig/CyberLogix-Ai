@@ -338,6 +338,7 @@ async function enter(token, user) {
     toast("Your business key is shown once, under \"Add a fridge or "
           + "freezer\". Copy it if you will use the API.", "ok");
   }
+  followInspectorLink().catch(() => { /* the estate is the page */ });
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -3298,6 +3299,49 @@ function initInspectorForm() {
     event.preventDefault();
     openInspectorLog(from.value, to.value, true);
   });
+}
+
+/* A link straight to the log for given dates, as the monthly summary
+   email carries: #inspector-log?business=TEN-1&from=2026-10-01&to=2026-10-31.
+   It fills the form and shows the card. When the link is about another of
+   this person's businesses, that business is opened first (the server
+   decides whether it is theirs); the reload keeps the link, so it lands. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function inspectorLink() {
+  const found = /^#inspector-log\?(.*)$/.exec(location.hash || "");
+  if (!found) return null;
+  const params = new URLSearchParams(found[1]);
+  const from = params.get("from") || "";
+  const to = params.get("to") || "";
+  if (!DAY.test(from) || !DAY.test(to)) return null;
+  return { business: params.get("business") || "", from, to };
+}
+
+async function followInspectorLink() {
+  const link = inspectorLink();
+  if (!link || !state.data || !state.data.tenant) return;
+  if (link.business && link.business !== state.data.tenant.tenant_id) {
+    try {
+      const opened = await api(
+        `/api/accounts/businesses/${encodeURIComponent(link.business)}/switch`,
+        { method: "POST" });
+      landIn(opened.token);
+      return;
+    } catch (_) {
+      history.replaceState(null, "", location.pathname + location.search);
+      toast("That log is for a business this sign-in cannot open.", "err");
+      return;
+    }
+  }
+  // Followed once: a reload of the console is a reload, not the link again.
+  history.replaceState(null, "", location.pathname + location.search);
+  $("inspector-from").value = link.from;
+  $("inspector-to").value = link.to;
+  finder.tab = "proof";
+  applyFinder();
+  const card = $("find-inspector-log");
+  if (card) card.scrollIntoView({ block: "start" });
 }
 
 function dayLabel(day, withYear) {

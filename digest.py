@@ -568,6 +568,7 @@ def run_digests(now: Optional[datetime] = None) -> Dict[str, Any]:
     now = now or utc_now()
     operator = {"sent": False, "status": "error"}
     reports = {"sent_count": 0}
+    monthly = {"sent_count": 0}
     try:
         operator = send_operator_digest(now)
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
@@ -576,7 +577,16 @@ def run_digests(now: Optional[datetime] = None) -> Dict[str, Any]:
         reports = send_customer_reports(now)
     except Exception as exc:  # noqa: BLE001 - one summary must not stop the other
         logger.exception("Customer reports failed (%s).", exc)
-    return {"operator": operator, "customer_reports": reports}
+    try:
+        # The month's compliance summary, to each business's owners, in
+        # the first week of the month (monthly.py).
+        from monthly import run_monthly_reports
+
+        monthly = run_monthly_reports(now)
+    except Exception as exc:  # noqa: BLE001 - one summary must not stop the other
+        logger.exception("Monthly reports failed (%s).", exc)
+    return {"operator": operator, "customer_reports": reports,
+            "monthly_reports": monthly}
 
 
 # ---- routes -------------------------------------------------------------

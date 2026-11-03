@@ -61,6 +61,7 @@ from firstday import router as firstday_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
 from digest import router as digest_router
+from monthly import router as monthly_router
 from payments import router as payments_router
 from books import router as books_router
 from margin import router as margin_router
@@ -254,6 +255,7 @@ app.include_router(signup_router)
 app.include_router(mail_router)
 app.include_router(conversion_router)
 app.include_router(digest_router)
+app.include_router(monthly_router)
 app.include_router(backup_router)
 app.include_router(readiness_router)
 app.include_router(faults_router)
