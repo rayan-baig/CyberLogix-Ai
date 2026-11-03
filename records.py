@@ -21,6 +21,8 @@ from domain import (
     SENSOR_OFFLINE_AFTER_MINUTES,
     SMS_RETRY_AFTER_MINUTES,
     RETRYABLE_SMS_STATUSES,
+    RETRYABLE_VOICE_STATUSES,
+    VOICE_RETRY_AFTER_MINUTES,
     utc_now,
     iso,
     hash_secret,
@@ -319,7 +321,10 @@ class Sensor:
         }
 
 
-@dataclass
+# Slots: a deployment holds every sensor's last CYBERLOGIX_READINGS_PER_SENSOR
+# readings in memory, half a million objects at a thousand sensors, and a
+# per-object __dict__ was most of what they cost (docs/LOAD-TEST.md).
+@dataclass(slots=True)
 class Reading:
     """One telemetry sample."""
 
@@ -419,6 +424,8 @@ class Incident:
     # stored, so a restart or a second sweep does not send a step twice.
     sms_retry_step: int = 0
     sms_retries: List[Dict[str, Any]] = field(default_factory=list)
+    # How many steps of VOICE_RETRY_AFTER_MINUTES have been claimed.
+    voice_retry_step: int = 0
 
     def _sms_receipts(self) -> List[Dict[str, Any]]:
         receipts = list(self.sms_fanout) or (
@@ -456,6 +463,31 @@ class Incident:
         age = self.minutes_open(now)
         step = sum(1 for m in SMS_RETRY_AFTER_MINUTES if age >= m)
         return step if step > self.sms_retry_step else 0
+
+    @property
+    def calls_failed(self) -> bool:
+        """The ladder was called and not one call got through to Twilio."""
+        attempts = list(self.voice_fanout) or (
+            [self.voice_delivery] if self.voice_delivery else [])
+        return bool(attempts) and not any(a.get("delivered") for a in attempts)
+
+    def voice_retry_due(self, now: Optional[datetime] = None) -> int:
+        """The call-ladder retry step due now, or 0.
+
+        Only while nobody has it, only when the last walk of the ladder got
+        no call through, and only when that failure was the provider's
+        (down, refusing, timing out), not the plan or the daily cap.
+        Counted from the first call.
+        """
+        if not self.open or self.voice_escalated_at is None or not self.calls_failed:
+            return 0
+        attempts = list(self.voice_fanout) or [self.voice_delivery]
+        if not any((a or {}).get("status") in RETRYABLE_VOICE_STATUSES for a in attempts):
+            return 0
+        now = now or utc_now()
+        age = (now - self.voice_escalated_at).total_seconds() / 60.0
+        step = sum(1 for m in VOICE_RETRY_AFTER_MINUTES if age >= m)
+        return step if step > self.voice_retry_step else 0
 
     def next_sms_retry_at(self) -> Optional[datetime]:
         """When the next re-send is due, if one is still to come."""
@@ -549,6 +581,7 @@ class Incident:
             "evidence_readings": list(self.evidence_readings),
             "sms_retry_step": self.sms_retry_step,
             "sms_retries": list(self.sms_retries),
+            "voice_retry_step": self.voice_retry_step,
         }
 
     @classmethod
@@ -589,6 +622,7 @@ class Incident:
             evidence_readings=list(row.get("evidence_readings", [])),
             sms_retry_step=int(row.get("sms_retry_step") or 0),
             sms_retries=list(row.get("sms_retries") or []),
+            voice_retry_step=int(row.get("voice_retry_step") or 0),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1312,6 +1346,10 @@ class Contact:
     escalation_order: int = 1
     active: bool = True
     site_id: Optional[str] = None
+    # {"start": "22:00", "end": "07:00", "timezone": "Europe/London"}:
+    # not texted then unless nobody else would be, and rung last
+    # (oncall.py).
+    quiet_hours: Optional[Dict[str, str]] = None
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -1324,6 +1362,7 @@ class Contact:
             "receives_voice": self.receives_voice,
             "escalation_order": self.escalation_order,
             "active": self.active,
+            "quiet_hours": self.quiet_hours,
         }
 
     @classmethod

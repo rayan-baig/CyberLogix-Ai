@@ -30,6 +30,51 @@ A tenant with no roster is still alerted: the store falls back to the contact
 captured at onboarding, so alerting never depends on setup that hasn't
 happened yet.
 
+### Rotations and quiet hours
+
+**A rotation** takes turns: its members are on call one at a time, for
+shifts of a whole number of days, handing over at a set local time. Set
+one for the estate, or one per site:
+
+```bash
+curl -X PUT localhost:8080/api/contacts/rotations -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{
+  "timezone": "America/New_York", "handover": "08:00", "shift_days": 7,
+  "starts_on": "2026-11-02", "members": ["CON-000004", "CON-000005"]
+}'
+```
+
+People in a rotation are alerted only on their shift; everybody else on
+the roster is alerted as before. A site whose person on shift is off falls
+back to the estate-wide contacts, then to the sign-up contact.
+`GET /api/contacts/rotations` shows who is on now and the next handovers
+in local time; `DELETE /api/contacts/rotations/{estate|site id}` ends one.
+Handovers follow the local wall clock: "08:00" is 08:00 in summer and in
+winter, a handover at midnight is at midnight, on the night the clocks go
+back a handover in the repeated hour happens the first time only, and on
+the night they go forward a handover at a time that does not exist (02:30)
+happens when the clock jumps past it. A person takes turns in one rotation
+at a time; taking somebody off the roster takes them out of its turns.
+
+**Quiet hours** are a contact's own, in their own time zone:
+
+```bash
+curl -X PATCH localhost:8080/api/contacts/CON-000004 -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"quiet_hours": {"start": "22:00", "end": "07:00", "timezone": "Europe/London"}}'
+```
+
+During them that person is not texted while somebody else on the alert
+would be, and is called last rather than not at all. **Quiet hours never
+silence a breach:** when everyone the text would reach is in quiet hours,
+all of them are texted, and the call ladder still works its way to the
+people asleep if nobody awake answers.
+
+Warned about in advance, by `warnings` on every roster change and in the
+preview: a rotation with nobody in it, a muted person with turns (their
+shifts have nobody from the rotation), a person with turns who does not
+get texts, and the times everyone who would be texted is in quiet hours.
+
 ### A test alert
 
 `POST /api/contacts/test-alert` (the **Send a test alert** button under "Who
@@ -141,6 +186,17 @@ same incident again.
 dead man's switch says so from outside the process: see
 [OPERATIONS.md](OPERATIONS.md#the-dead-mans-switch).
 
+The loop runs on a fixed cadence, not "sleep a minute, then sweep": the
+next pass is due an interval after the last one started, so a slow pass
+does not push every escalation later, and the first pass after a start or
+deploy runs within five seconds rather than a whole interval later. One
+fleet sweep runs at a time: a second one started while the first is still
+going (an outside scheduler firing on top of the loop, or firing again
+while a pass waits out a telephony outage) stands aside and says so, and
+does not write the heartbeat. Every text, call and quiet-sensor text is
+also claimed before it is sent, so even two passes over one business (the
+timer and the console's "run sweep now") send each once.
+
 `POST /api/autopilot/sweep` runs one pass for the calling business on demand. One pass flags
 sensors that have gone silent for over 30 minutes (a sensor that cannot
 report cannot warn you) and places voice calls for incidents past the grace
@@ -211,6 +267,24 @@ undelivered attempt rather than killing the breach handler, so an operator can
 see that an alert was written but not sent. Both `sms_delivery` and
 `voice_delivery` carry `delivered`, `status`, `provider_sid` and a detail
 string.
+
+A call that failed is placed again. When every call on the ladder failed
+at the provider (Twilio down, refusing or not answering), the sweep walks
+the ladder again 5 and 15 minutes after the first call, claimed and stored
+before dialling like the first. A call that got through is never repeated
+by the sweep; an operator can still re-dial by hand.
+
+The alert email is retried on the sweep's timetable, not the hourly mail
+queue's: 1, 5, 15, 30 minutes and on to 8 hours after it was first tried,
+while the alert is open, so it goes out within minutes of the mail host
+coming back. One answered in the meantime is not sent late. When texts
+fail, the owner's copy says so in its subject (`TEXTS FAILED - ALERT:
+...`); when the last re-send has failed too, the owner gets one email,
+`NOBODY HAS BEEN TEXTED: ...`, retried the same way. Each provider
+failure is also recorded as a fault (`/book` -> Health, the daily digest),
+counted, so the operator sees Twilio or the mail host failing without
+reading logs. The drill that checks all of this is in
+[OPERATIONS.md](OPERATIONS.md#outage-drill-twilio-and-mail).
 
 A text that failed is sent again. When every alert text for an open,
 unacknowledged incident failed in a way a retry can fix (Twilio down or

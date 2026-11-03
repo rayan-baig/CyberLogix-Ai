@@ -23,7 +23,7 @@ import os
 import secrets
 import threading
 from collections import OrderedDict, deque
-from itertools import islice
+from itertools import chain, islice
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Deque, Dict, List, Optional, Tuple
@@ -204,6 +204,11 @@ def _mirror_payment(caller: "Invoice", live: "Invoice") -> None:
     caller.state = live.state
 
 
+# Mail that is part of an alert rather than of the business: retried by
+# the sweep, on the minute, while the alert is open.
+ALERT_MAIL_KEYS = ("incident-alert:", "incident-undelivered:")
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -269,7 +274,6 @@ class HubStore:
                 if "ingest_key" in row:
                     self._db.put("sensor", sensor.sensor_id, sensor.to_row())
 
-            readings = [Reading.from_row(row) for row in self._db.all("reading")]
             # Ordered by time, then by id. The id tiebreak is not
             # cosmetic: timestamps are stored to the second, so two
             # readings from the same second are tied, and a tie resolved
@@ -278,12 +282,26 @@ class HubStore:
             # readings in order, so that reordering silently changes the
             # chain head — the attestation stops reproducing and the
             # customer is told their record was tampered with when nothing
-            # touched it. Reading ids are monotonic, so they settle it.
-            readings.sort(key=lambda r: (r.recorded_at, r.reading_id))
-            for reading in readings:
-                bucket = self._readings.get(reading.sensor_id)
-                if bucket is not None:
-                    bucket.append(reading)
+            # touched it. Reading ids are monotonic, so they settle it --
+            # as numbers, which the database compares (db.py).
+            #
+            # Streamed into the buckets rather than built as a list first,
+            # and each reading shares its sensor's id string rather than
+            # holding its own copy: see docs/LOAD-TEST.md for what the
+            # old way cost at start-up.
+            buckets = self._readings
+
+            def _take(row: Dict[str, Any]) -> None:
+                bucket = buckets.get(row["sensor_id"])
+                if bucket is None:
+                    return
+                reading = Reading.from_row(row)
+                sensor = self._sensors.get(reading.sensor_id)
+                if sensor is not None:
+                    reading.sensor_id = sensor.sensor_id
+                bucket.append(reading)
+
+            self._db.each_reading_in_order(_take)
 
             for row in self._db.all("incident"):
                 incident = Incident.from_row(row)
@@ -406,30 +424,24 @@ class HubStore:
             # Readings and audit entries were missing from this list, and
             # they are by far the most numerous — the counter came back
             # near zero and tenants overwrote each other's telemetry.
-            scanned = [
-                int(identifier.rsplit("-", 1)[1])
-                for identifier in (
-                    list(self._tenants)
-                    + list(self._incidents)
-                    + list(self._users)
-                    + list(self._contacts)
-                    + list(self._sites)
-                    + list(self._webhooks)
-                    + list(self._partners)
-                    + list(self._invoices)
-                    + list(self._subscriptions)
-                    + list(self._anchors)
-                    + list(self._audit)
-                    + list(self._mail)
-                    + list(self._expenses)
-                    + [r.reading_id for bucket in self._readings.values()
-                       for r in bucket]
-                )
-                if "-" in identifier and identifier.rsplit("-", 1)[1].isdigit()
-            ]
+            # A generator, not a list: the readings alone are half a
+            # million ids at a thousand sensors.
+            identifiers = chain(
+                self._tenants, self._incidents, self._users, self._contacts,
+                self._sites, self._webhooks, self._partners, self._invoices,
+                self._subscriptions, self._anchors, self._audit, self._mail,
+                self._expenses,
+                (r.reading_id for bucket in self._readings.values() for r in bucket),
+            )
+            issued = False
+            highest = 0
+            for identifier in identifiers:
+                tail = identifier.rsplit("-", 1)[-1]
+                if "-" in identifier and tail.isdigit():
+                    issued = True
+                    highest = max(highest, int(tail))
             persisted = (self._db.get("meta", "counter") or {}).get("value", 0)
-            self._counter = max([persisted] + scanned, default=0)
-            issued = scanned
+            self._counter = max(persisted, highest)
 
             if issued or self._sensors:
                 logger.info(
@@ -702,6 +714,91 @@ class HubStore:
                     self.erase_tenant(tenant_id)
                     again.append(tenant_id)
         return again
+
+    # ---- what has already been sent, kept through a restore ----------------
+
+    # Rows that are a record of something done in the world rather than
+    # data a restore should roll back: the weekly text's "sent this week".
+    _LEDGER_KINDS = ("weekly_text",)
+
+    def delivery_ledger(self) -> Dict[str, Any]:
+        """What this database knows has been sent, to carry past a restore.
+
+        Restoring yesterday's snapshot rolled back the record of today's
+        texts, calls and mail along with everything else, so the sweep and
+        the hourly pass did them again: an incident already acknowledged
+        rang the on-call phone again, the day's digest and the week's
+        reports went out twice, and every sensor whose last reading in the
+        snapshot was hours old was texted about as having gone quiet.
+        """
+        with self._lock:
+            return {
+                "incidents": [i.to_row() for i in self._incidents.values()],
+                "mail": [m.to_row() for m in self._mail.values()],
+                "sensors": {
+                    s.sensor_id: {
+                        "last_seen": s.last_seen,
+                        "last_temperature": s.last_temperature,
+                        "last_humidity": s.last_humidity,
+                        "quiet_alert_for": s.quiet_alert_for,
+                    }
+                    for s in self._sensors.values()
+                },
+                "rows": {kind: self._db.rows(kind) for kind in self._LEDGER_KINDS},
+                "heartbeat": self._db.get("meta", "heartbeat"),
+            }
+
+    def carry_forward(self, ledger: Dict[str, Any]) -> Dict[str, int]:
+        """Put back, over a restored snapshot, the record of what was sent.
+
+        Incidents and mail are kept whole, as the database being replaced
+        had them: an incident is a breach that happened and was alerted on,
+        and a message is one that went out, whatever the snapshot says.
+        Sensors keep their latest contact, so a restore is not read as
+        every sensor going quiet at once. Anything belonging to a business
+        that is not in the snapshot is left out.
+        """
+        counts = {"incidents": 0, "mail": 0, "sensors": 0}
+        with self._lock:
+            for row in ledger.get("incidents", []):
+                if row.get("tenant_id") not in self._tenants:
+                    continue
+                incident = Incident.from_row(row)
+                self._incidents[incident.incident_id] = incident
+                self._db.put("incident", incident.incident_id, incident.to_row())
+                counts["incidents"] += 1
+            for row in ledger.get("mail", []):
+                owner = row.get("tenant_id")
+                if owner is not None and owner not in self._tenants:
+                    continue
+                message = MailMessage.from_row(row)
+                known = self._mail_keys.get(message.dedupe_key)
+                if known is not None and known != message.message_id:
+                    continue
+                self._mail[message.message_id] = message
+                self._mail_keys[message.dedupe_key] = message.message_id
+                self._db.put("mail", message.message_id, message.to_row())
+                counts["mail"] += 1
+            for sensor_id, seen in ledger.get("sensors", {}).items():
+                sensor = self._sensors.get(sensor_id)
+                when = seen.get("last_seen")
+                if sensor is None or when is None:
+                    continue
+                if sensor.last_seen is not None and sensor.last_seen >= when:
+                    continue
+                sensor.last_seen = when
+                sensor.last_temperature = seen.get("last_temperature")
+                sensor.last_humidity = seen.get("last_humidity")
+                sensor.quiet_alert_for = seen.get("quiet_alert_for")
+                self._db.put("sensor", sensor.sensor_id, sensor.to_row())
+                counts["sensors"] += 1
+            for kind, rows in ledger.get("rows", {}).items():
+                for rec_id, data in rows:
+                    if data.get("tenant_id", rec_id) in self._tenants:
+                        self._db.put(kind, rec_id, data)
+            if ledger.get("heartbeat"):
+                self._db.put("meta", "heartbeat", ledger["heartbeat"])
+        return counts
 
     def id_counter(self) -> int:
         with self._lock:
@@ -1173,6 +1270,21 @@ class HubStore:
             live.sms_retry_step = step
             self._save_incident(live)
             return True
+
+    def claim_voice_retry(self, incident: Incident, step: int) -> bool:
+        """Take the right to walk the call ladder again, as claim_sms_retry."""
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            if not live.open or live.voice_retry_step >= step:
+                return False
+            live.voice_retry_step = step
+            self._save_incident(live)
+            return True
+
+    def mail_by_key(self, dedupe_key: str) -> Optional[MailMessage]:
+        with self._lock:
+            message_id = self._mail_keys.get(dedupe_key)
+            return self._mail.get(message_id) if message_id else None
 
     def record_sms_retry(
         self,
@@ -1945,11 +2057,20 @@ class HubStore:
             return contact
 
     def remove_contact(self, contact_id: str) -> bool:
+        import oncall
+
         with self._lock:
             if contact_id not in self._contacts:
                 return False
+            tenant_id = self._contacts[contact_id].tenant_id
             del self._contacts[contact_id]
             self._db.delete("contact", contact_id)
+            # Out of any rotation too. A turn held by somebody who is no
+            # longer on the roster is a shift with nobody on it.
+            for rotation in oncall.rotations_for(self._db, tenant_id):
+                if contact_id in rotation.members:
+                    rotation.members = [m for m in rotation.members if m != contact_id]
+                    self._db.put(oncall.ROTATION_KIND, rotation.rec_id, rotation.to_row())
             return True
 
     # ---- vault anchors --------------------------------------------------
@@ -2409,18 +2530,24 @@ class HubStore:
             return hook
 
     def _roster_for_site(
-        self, tenant: Tenant, site_id: Optional[str], channel: str
+        self, tenant: Tenant, site_id: Optional[str], channel: str,
+        now: Optional[datetime] = None,
     ) -> List[Contact]:
         """Contacts covering a site: its own, else the tenant-wide ones.
 
         A manager in Boca Raton should not be woken for a Boynton Beach
         freezer, so a site's own contacts take precedence when it has any.
+        Somebody in a rotation counts only on their shift (oncall.py), so
+        a site whose person on shift is off falls back to the estate.
         """
-        everyone = [
-            c
-            for c in self.contacts_for(tenant.tenant_id)
-            if c.active and getattr(c, f"receives_{channel}")
-        ]
+        import oncall
+
+        everyone = oncall.on_duty(
+            [c for c in self.contacts_for(tenant.tenant_id)
+             if c.active and getattr(c, f"receives_{channel}")],
+            oncall.rotations_for(self._db, tenant.tenant_id),
+            now or utc_now(),
+        )
         if site_id is not None:
             local = [c for c in everyone if c.site_id == site_id]
             if local:
@@ -2435,9 +2562,15 @@ class HubStore:
         Falls back to the tenant's own contact so a customer who never built
         a roster is still reachable.
         """
-        roster = self._roster_for_site(tenant, site_id, "sms")
+        import oncall
+
+        now = utc_now()
+        roster = self._roster_for_site(tenant, site_id, "sms", now)
         if roster:
-            return roster
+            # Quiet hours narrow the text, never to nobody: with everyone
+            # asleep, everyone is texted.
+            awake, asleep = oncall.awake_first(roster, now)
+            return awake or asleep
         return [
             Contact(
                 contact_id="fallback",
@@ -2450,10 +2583,18 @@ class HubStore:
     def voice_ladder(
         self, tenant: Tenant, site_id: Optional[str] = None
     ) -> List[Contact]:
-        """Who to phone, in the order to try them."""
-        roster = self._roster_for_site(tenant, site_id, "voice")
+        """Who to phone, in the order to try them.
+
+        Anybody in quiet hours is moved to the end rather than left off:
+        an alert nobody awake answers still works its way to them.
+        """
+        import oncall
+
+        now = utc_now()
+        roster = self._roster_for_site(tenant, site_id, "voice", now)
         if roster:
-            return roster
+            awake, asleep = oncall.awake_first(roster, now)
+            return awake + asleep
         return [
             Contact(
                 contact_id="fallback",
@@ -3025,7 +3166,18 @@ class HubStore:
                 if m.status == "queued"
                 and m.attempts < MAIL_MAX_ATTEMPTS
                 and m.age_hours(now) <= MAIL_MAX_AGE_HOURS
+                # Alert mail is the sweep's, on a minutes timetable
+                # (mail.retry_alert_mail); two senders of one message
+                # would be two copies.
+                and not m.dedupe_key.startswith(ALERT_MAIL_KEYS)
             ]
+        return sorted(waiting, key=lambda m: m.created_at)
+
+    def queued_alert_mail(self) -> List[MailMessage]:
+        """Alert mail the mail host has not yet taken, oldest first."""
+        with self._lock:
+            waiting = [m for m in self._mail.values()
+                       if m.status == "queued" and m.dedupe_key.startswith(ALERT_MAIL_KEYS)]
         return sorted(waiting, key=lambda m: m.created_at)
 
     def mail_log(self, limit: int = 100) -> List[MailMessage]:
@@ -3113,6 +3265,7 @@ class HubStore:
 # that used to live here. Listing them also tells pyflakes the
 # re-exports are deliberate.
 __all__ = [
+    "ALERT_MAIL_KEYS",
     "DISPATCH_SLA_SECONDS",
     "SENSOR_OFFLINE_AFTER_MINUTES",
     "VOICE_ESCALATION_GRACE_MINUTES",

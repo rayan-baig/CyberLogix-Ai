@@ -39,7 +39,7 @@ jobs:
       - name: Tests
         run: python -m pytest -q
       - name: Known security holes in dependencies
-        # The whole locked set, not just the five direct packages.
+        # The whole locked set, not just the direct packages.
         run: pip-audit -r constraints.txt
       - name: The production image builds
         run: docker build -t cyberlogix:ci .

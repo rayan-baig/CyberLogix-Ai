@@ -58,6 +58,42 @@ except ValueError:
 PREFIX = "cyberlogix-"
 SUFFIX = ".sqlite3"
 
+# Room the live database must still have after a snapshot is written, on
+# top of the snapshot itself. Measured (docs/LOAD-TEST.md): on the 1 GB
+# disk render.yaml asks for, fourteen daily snapshots of a few hundred
+# sensors' database fill it, and a full disk is not a failed backup -- it
+# is every reading refused with an error and no alert for any of them.
+try:
+    BACKUP_MIN_FREE_BYTES = max(0, int(os.environ.get(
+        "CYBERLOGIX_BACKUP_MIN_FREE_MB", "100")) * 1_000_000)
+except ValueError:
+    BACKUP_MIN_FREE_BYTES = 100_000_000
+
+
+def _live_bytes() -> int:
+    """How big the next snapshot will be, near enough: the live file."""
+    live = STORE._db.path
+    if live == ":memory:":
+        return 0
+    return sum(Path(p).stat().st_size for p in (live, f"{live}-wal")
+               if Path(p).exists())
+
+
+def space_check(directory: Path) -> Dict[str, Any]:
+    """Whether a snapshot fits and still leaves the live database room."""
+    import shutil
+
+    probe = directory if directory.exists() else directory.parent
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    free = shutil.disk_usage(probe).free
+    needed = _live_bytes()
+    return {
+        "free_bytes": free,
+        "snapshot_bytes": needed,
+        "fits": free - needed >= BACKUP_MIN_FREE_BYTES,
+    }
+
 
 def _directory() -> Optional[Path]:
     """Where snapshots belong, or None when there is nowhere to put them.
@@ -107,6 +143,25 @@ def take(now: Optional[datetime] = None, label: str = "",
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
     suffix = f"-{label}" if label else ""
     target = directory / f"{PREFIX}{stamp}{suffix}{SUFFIX}"
+
+    room = space_check(directory)
+    if not room["fits"]:
+        detail = (
+            f"Not taken: a {room['snapshot_bytes'] / 1e6:.0f} MB snapshot would "
+            f"leave {max(0, room['free_bytes'] - room['snapshot_bytes']) / 1e6:.0f} MB "
+            f"free, under the {BACKUP_MIN_FREE_BYTES / 1e6:.0f} MB the live "
+            "database needs to keep taking readings. Copy snapshots off the "
+            "machine and delete old ones, lower CYBERLOGIX_BACKUP_KEEP, or "
+            "give the disk more room."
+        )
+        logger.error("Backup refused: %s", detail)
+        try:
+            import faults
+
+            faults.record("backup.take", RuntimeError(detail), context="disk space")
+        except Exception:  # noqa: BLE001 - reported, never raised
+            pass
+        return {"taken": False, "status": "no_space", "detail": detail, **room}
 
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -237,19 +292,22 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
     erased = STORE.erasures()
     counter = STORE.id_counter()
     invoice_floors = STORE.invoice_number_floors()
+    # And what has already gone out. Restoring the record of the world
+    # does not un-send a text, a call or an email, so nothing restored may
+    # send it again.
+    ledger = STORE.delivery_ledger()
 
-    live = Path(STORE._db.path)
     try:
-        import shutil
-
-        # Swap the file, then reopen and rebuild the working set from what
-        # is now on disk. Closing and stopping there was the first version,
-        # and it left the process holding a closed database: every request
-        # afterwards answered 500 until somebody restarted the container.
-        # A recovery step that needs a human at the end is not one.
-        STORE._db.close()
-        shutil.copyfile(target, live)
-        STORE._db.reopen()
+        # Copied in through SQLite's own backup, page by page, into the
+        # open database -- not by closing it and copying the file over.
+        # The file copy had two ways to go wrong. Closing and stopping
+        # there left the process holding a closed database: every request
+        # answered 500 until somebody restarted it. And a write-ahead log
+        # still beside the file (anything else with the database open
+        # keeps one) is read as part of whatever file is put there, laying
+        # the old database's pages over the restored one. Through SQLite,
+        # the log is SQLite's to handle and the connection never closes.
+        STORE._db.restore_from(str(target))
         STORE.forget()
         STORE.load()
     except Exception as exc:  # noqa: BLE001 - reported, and the copy remains
@@ -275,6 +333,7 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
     # The same for invoice numbers: ones issued after the snapshot are on
     # customers' paperwork already.
     STORE.raise_invoice_number_floors(invoice_floors)
+    carried = STORE.carry_forward(ledger)
     # The privacy statement says a backup is never restored to bring back
     # something a business deleted. The snapshot predates the deletion, so
     # it is done again here, and the record of it carried forward so the
@@ -294,10 +353,13 @@ def restore(name: str, now: Optional[datetime] = None) -> Dict[str, Any]:
         "records": checked["records"],
         "previous_database_saved_to": safety.get("path"),
         "deleted_again": deleted_again,
+        "kept_from_the_replaced_database": carried,
         "detail": (
             "Restored and reloaded in place -- no restart needed. The "
             "database that was replaced was snapshotted first, so "
-            "restoring the wrong one is survivable."
+            "restoring the wrong one is survivable. Incidents, sent mail "
+            "and each sensor's last contact were kept from the database it "
+            "replaced, so nothing already sent is sent again."
             + (
                 f" {len(deleted_again)} business(es) in that snapshot had "
                 "deleted themselves since it was taken; they were deleted "
@@ -344,8 +406,11 @@ def status() -> Dict[str, Any]:
         and live != ":memory:"
         and directory.resolve().parent == Path(live).resolve().parent
     )
+    room = space_check(directory) if directory is not None else {}
     return {
         "directory": str(directory) if directory else None,
+        "free_bytes": room.get("free_bytes"),
+        "space_for_another": room.get("fits"),
         "keep": BACKUP_KEEP,
         "count": len(snapshots),
         "latest": snapshots[-1].name if snapshots else None,
@@ -423,6 +488,28 @@ def do_restore(
     if not result["restored"]:
         raise HTTPException(status_code=400, detail=result["detail"])
     return result
+
+
+@router.get("/backups/{name}/download")
+def download_backup(name: str, _: None = Depends(require_platform_admin)):
+    """The snapshot file itself, to keep somewhere other than this disk.
+
+    Nothing could take a snapshot off the machine except a shell on it,
+    so "copy them off on a schedule" had no command to run. This is one:
+    a scheduled `curl -fo` with the admin key. Verified before it is
+    handed over, so what is kept elsewhere is known to be readable.
+    """
+    from fastapi.responses import FileResponse
+
+    directory = _directory()
+    if directory is None:
+        raise HTTPException(status_code=404, detail="No snapshot directory.")
+    target = directory / Path(name).name
+    checked = verify(str(target))
+    if not checked["ok"]:
+        raise HTTPException(status_code=404, detail=checked["detail"])
+    return FileResponse(str(target), media_type="application/vnd.sqlite3",
+                        filename=target.name)
 
 
 @router.get("/backups/{name}/verify")

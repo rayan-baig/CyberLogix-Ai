@@ -444,8 +444,15 @@ def _tell_about_quiet_sensors(tenant: Tenant, offline: list, now) -> List[Dict[s
     # Grace counts as watched: its readings are still taken.
     if licence_state(tenant, now) not in ("active", "grace"):
         return []
+    import scheduler
+
+    # Silent while we were listening, not merely silent: see
+    # scheduler.listening_since.
+    since = scheduler.listening_since()
+    quiet_for = timedelta(minutes=SENSOR_OFFLINE_AFTER_MINUTES)
     newly = [s for s in offline
              if s.last_seen is not None and not s.clock_skewed(now)
+             and (since is None or now - max(s.last_seen, since) > quiet_for)
              and STORE.claim_quiet_alert(s)]
     by_site: Dict[Any, list] = {}
     for sensor in newly:
@@ -514,6 +521,7 @@ def _retry_failed_alert_texts(tenant: Tenant, now, auto_escalate: bool) -> List[
         if not step:
             if (incident.alert_texts_failed
                     and incident.sms_retry_step >= len(SMS_RETRY_AFTER_MINUTES)):
+                _tell_owner_nobody_was_texted(tenant, incident)
                 actions.append({
                     "action": "alert_texts_undelivered",
                     "incident_id": incident.incident_id,
@@ -552,6 +560,69 @@ def _retry_failed_alert_texts(tenant: Tenant, now, auto_escalate: bool) -> List[
             "step": step,
             "delivered": landed,
             "deliveries": deliveries,
+        })
+    return actions
+
+
+def _tell_owner_nobody_was_texted(tenant: Tenant, incident) -> None:
+    """Email the business, once, when no alert text got through at all.
+
+    After the last re-send the console card said so, and nothing else
+    did: an owner not looking at the console found out the next morning.
+    Once per incident (the mail is keyed on it), and retried like the
+    alert email if the mail host is down too.
+    """
+    import mail
+    import wording
+    from notifications import PUBLIC_BASE_URL
+
+    sensor = STORE.get_sensor(incident.sensor_id)
+    where = (f"{sensor.location_name or sensor.sensor_id} at "
+             f"{wording.place_of(sensor, tenant)}") if sensor else incident.sensor_id
+    console = f"{PUBLIC_BASE_URL}/console" if PUBLIC_BASE_URL else "the console"
+    mail.send(
+        to_address=tenant.contact_email or "",
+        subject=f"NOBODY HAS BEEN TEXTED: {where} is out of range",
+        body=(
+            f"{where} went out of range at {iso(incident.opened_at)} (UTC), "
+            f"alert {incident.incident_id}.\n\n"
+            f"We tried to text your on-call team {1 + len(SMS_RETRY_AFTER_MINUTES)} "
+            "times and the text message service failed every time, so nobody "
+            "may know. Phone whoever is on call now.\n\n"
+            f"Acknowledge it in {console} once somebody has it."
+        ),
+        dedupe_key=f"incident-undelivered:{incident.incident_id}",
+        klass="transactional",
+        tenant_id=tenant.tenant_id,
+    )
+
+
+def _retry_failed_calls(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[str, Any]]:
+    """Walk the call ladder again when every call failed at the provider.
+
+    The call was claimed once and never tried again, so a Twilio outage
+    at the moment of escalation meant no phone rang, however long the
+    freezer stayed warm. Tried again VOICE_RETRY_AFTER_MINUTES after the
+    first call, claimed and stored before dialling like the first.
+    """
+    actions: List[Dict[str, Any]] = []
+    if not auto_escalate or not tenant.entitlements()["voice_escalation"]:
+        return actions
+    for incident in STORE.open_incidents(tenant.tenant_id):
+        step = incident.voice_retry_due(now)
+        if not step or not STORE.claim_voice_retry(incident, step):
+            continue
+        outcome = dispatch_voice_call(incident, tenant, hooks_in_background=True)
+        reached = bool(outcome["delivery"] and outcome["delivery"].get("delivered"))
+        logger.warning("Call ladder retry %d for incident %s: %s.", step,
+                       incident.incident_id, "a call got through" if reached else "failed again")
+        actions.append({
+            "action": "voice_escalation_retried",
+            "incident_id": incident.incident_id,
+            "sensor_id": incident.sensor_id,
+            "step": step,
+            "delivered": reached,
+            "voice_delivery": outcome["delivery"],
         })
     return actions
 
@@ -664,6 +735,10 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
                 "voice_delivery": outcome["delivery"],
             }
         )
+
+    retried = _retry_failed_calls(tenant, now, auto_escalate)
+    escalated += len(retried)
+    actions.extend(retried)
 
     return {
         "status": "sweep_complete",

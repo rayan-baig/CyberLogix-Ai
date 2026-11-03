@@ -45,6 +45,20 @@ RETRYABLE_SMS_STATUSES = frozenset(
     {"send_failed", "client_unavailable", "delivery_error"}
 )
 
+# When the sweep walks the call ladder again, in minutes after the first
+# call, if every call on it failed in a way a retry can fix. The call was
+# claimed once and never tried again, so a Twilio outage at the moment of
+# escalation meant no phone rang, ever.
+VOICE_RETRY_AFTER_MINUTES = (5, 15)
+RETRYABLE_VOICE_STATUSES = frozenset(
+    {"call_failed", "client_unavailable", "delivery_error"}
+)
+
+# When the sweep tries an alert email again that the mail host would not
+# take, in minutes after it was first tried, while the alert is open. The
+# hourly queue gave it three tries in three hours and then dropped it.
+ALERT_MAIL_RETRY_MINUTES = (1, 5, 15, 30, 60, 120, 240, 480)
+
 # How long after a voice call an operator may deliberately place another,
 # because nobody picked up. Short enough to be useful; long enough that a
 # double-click, a retried request, or a dozen operators reacting to the

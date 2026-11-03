@@ -314,7 +314,14 @@ curl -s -H "X-CyberLogix-Admin: $KEY" \
   https://cyberlogix.example.com/api/admin/backups
 ```
 
-Pick a snapshot, verify it, then restore it from `/book → Health`, or:
+Pick a snapshot and verify it:
+
+```
+curl -s -H "X-CyberLogix-Admin: $KEY" \
+  https://cyberlogix.example.com/api/admin/backups/cyberlogix-....sqlite3/verify
+```
+
+Then restore it from `/book → Health`, or:
 
 ```
 curl -s -X POST -H "X-CyberLogix-Admin: $KEY" \
@@ -324,13 +331,23 @@ curl -s -X POST -H "X-CyberLogix-Admin: $KEY" \
 ```
 
 It verifies the snapshot, snapshots the database it is about to replace,
-swaps the file, and reopens and reloads in place — no restart. Every
-write made since the snapshot is discarded, which is why `confirm` is
-required and there is no "latest".
+copies the snapshot in through SQLite and reloads in place — no restart.
+Every write made since the snapshot is discarded, which is why `confirm`
+is required and there is no "latest" — except the record of what was
+already sent (incidents, mail), so nothing goes out twice. Rehearse on a
+copy, never on production, and never with the production settings: the
+full ten-minute checklist, for Render and Docker and for a lost disk, is
+in [docs/OPERATIONS.md](docs/OPERATIONS.md#restore-checklist-about-ten-minutes).
 
 **Copy the snapshots off the machine on a schedule.** Nothing in this
-application does that, and it is the difference between surviving a bad
-migration and surviving a lost disk.
+application does that for you, and it is the difference between surviving
+a bad migration and surviving a lost disk. A cron job elsewhere can fetch
+each one:
+
+```
+curl -fsS -H "X-CyberLogix-Admin: $KEY" -o cyberlogix-....sqlite3 \
+  https://cyberlogix.example.com/api/admin/backups/cyberlogix-....sqlite3/download
+```
 
 ---
 

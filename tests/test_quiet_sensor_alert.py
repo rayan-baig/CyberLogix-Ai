@@ -128,3 +128,29 @@ def test_a_whole_site_going_dark_is_one_text_not_one_per_sensor(api, tenant_fact
     assert len(texts) == 1
     assert "5" in texts[0]["body"]
     assert len(texts[0]["body"]) <= 160
+
+
+def test_our_own_downtime_is_not_read_as_the_sensors_going_quiet(
+        api, tenant_factory, sensor_factory, texts, monkeypatch):
+    """After a deploy or an outage of ours, every sensor's last reading is
+    old because nothing was here to take one. The first sweep, now seconds
+    after a start, must not text every business about it; a sensor still
+    silent half an hour after we are back is texted as usual."""
+    import scheduler
+
+    headers, tenant = tenant_factory()
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", location="Kitchen")
+    _pulse(api, headers, "FRZ-1")
+    _quiet("FRZ-1", minutes=120)          # we were down for two hours
+    t = STORE.get_tenant(tenant["tenant_id"])
+
+    monkeypatch.setattr(scheduler, "_listening_since", utc_now() - timedelta(seconds=5))
+    result = automation.sweep_tenant(t)
+    assert texts == []
+    # Still shown as offline on the console: only the text waits.
+    assert result["sensors_offline"] == 1
+
+    monkeypatch.setattr(scheduler, "_listening_since",
+                        utc_now() - timedelta(minutes=SENSOR_OFFLINE_AFTER_MINUTES + 1))
+    automation.sweep_tenant(t)
+    assert len(texts) == 1

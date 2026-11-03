@@ -10,7 +10,7 @@ code, the fuzzer, the browser smoke test, and mutation testing.
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 2,010 tests across 124 files. Gemini, Twilio and SMTP are all stubbed and the
+About 2,200 tests across 133 files. The language model, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
@@ -19,6 +19,25 @@ on the message that would actually have left the building.
 CI runs the suite on Python 3.11, which the image ships, and again on 3.13.
 Password hashing runs at a fraction of its real cost under the suite (see
 `tests/conftest.py`); a test holds the production setting where it is.
+
+## Load, outage and restore
+
+Three tools start real servers (one worker, as the image does) on a
+throwaway database, with Twilio replaced by a recording sink and a local
+mail sink, and time what happens. They are not part of the suite: each
+takes minutes. Results and what they found are in
+[LOAD-TEST.md](LOAD-TEST.md).
+
+```bash
+python tools/load_test.py                       # 250, 1000, 3000, 5000 sensors
+python tools/load_test.py --sensors 1000 --history 500 --saturate 30
+python tools/restore_rehearsal.py               # backup, restore, app works
+```
+
+The suite covers the same ground quickly: `tests/test_outage_drill.py`
+(Twilio errors and timeouts, the mail host down, both back),
+`tests/test_restore_rehearsal.py` (backup, restore, app works, nothing
+sent twice), `tests/test_sweep_overlap.py` and `tests/test_oncall.py`.
 
 ## Types in the money code
 

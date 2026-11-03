@@ -33,6 +33,9 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
 | `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |
 | `CYBERLOGIX_BILLING_EMAIL` | — | Billing contact on invoices |
+| `CYBERLOGIX_BACKUP_KEEP` | `14` | Snapshots kept, oldest deleted first |
+| `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
+| `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
 | `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the contact on their invoice |
 
 `.env.example` carries the same list with the reasoning next to each one, and
@@ -66,7 +69,9 @@ replace the `Database` class with a Postgres adapter before scaling out.
 the adapter only needs `put`, `get`, `delete`, `all`, `count` and `clear`.
 
 Reading history is capped per sensor by a ring buffer, and the eviction is
-mirrored into the database, so the table cannot grow without bound.
+mirrored into the database, so the table cannot grow without bound. When
+to move to Postgres, with the numbers measured under load, is in
+[LOAD-TEST.md](LOAD-TEST.md).
 
 ## Backups
 
@@ -86,15 +91,186 @@ A snapshot is taken daily by the same pass that bills, and on demand at
   afternoon somebody needs it.
 * **Every snapshot is verified before it counts** — reopened, integrity
   checked, rows counted. An unread backup is a guess.
-* **Retention is by count, oldest first**, so the snapshots cannot fill
-  the disk the live database is also on and turn a backup policy into an
-  outage.
+* **Retention is by count, oldest first** (`CYBERLOGIX_BACKUP_KEEP`, 14),
+  and a snapshot that would leave less than `CYBERLOGIX_BACKUP_MIN_FREE_MB`
+  (100) free on its disk is not taken: it is refused and recorded as a
+  fault. Count alone did not keep the disk safe. Fourteen snapshots of a
+  few hundred sensors' database fill render.yaml's 1 GB disk
+  ([LOAD-TEST.md](LOAD-TEST.md#disk)), and a full disk is not a missed
+  backup: SQLite cannot write, so every reading would be refused.
 
 `CYBERLOGIX_BACKUP_DIR` defaults to a directory beside the database, which
 survives a bad migration and not a lost disk; `GET /api/admin/backups`
-says so out loud when that is the case. Copy them off the machine on a
+says so out loud when that is the case, and says how much room is left
+(`free_bytes`, `space_for_another`). Copy them off the machine on a
 schedule — a backup that only exists next to the thing it is backing up
-is not one.
+is not one. This is the command, for a cron job anywhere else:
+
+```bash
+KEY=...   # CYBERLOGIX_ADMIN_KEY
+HOST=https://cyberlogix.example.com
+NAME=$(curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"])')
+curl -fsS -H "X-CyberLogix-Admin: $KEY" -o "$NAME" "$HOST/api/admin/backups/$NAME/download"
+```
+
+The download is verified on the server before it is sent.
+
+### Restore checklist (about ten minutes)
+
+Rehearsed on a 1,000-sensor database at full history (500,000 readings,
+130 MB): snapshot, list, verify, download, start a fresh copy, check it
+and restore in place took about 15 seconds of machine time between them
+(`python tools/restore_rehearsal.py` does every step and times it; rough
+numbers in [LOAD-TEST.md](LOAD-TEST.md#restore)). The rest of the ten
+minutes is reading and typing. Set `KEY` and `HOST` as above first.
+
+**1. Decide which case it is (1 min).**
+
+* *The data is wrong, the disk is fine* (a bad import, a mistake): restore
+  in place, step 3. Every write since the snapshot is discarded, except
+  what has already been sent (see "What a restore keeps").
+* *The disk is gone* (a new service, a new server): put a copy kept off
+  the machine back first, step 2, then step 3.
+* *A rehearsal*: never on production. Step 5.
+
+**2. Put the snapshot where the app can see it (2 min, only if the disk is
+gone).**
+
+* Docker: `cp cyberlogix-<stamp>.sqlite3 /srv/cyberlogix/backups/`, then
+  start the container as usual (`docker start cyberlogix`, or the
+  `docker run` in DEPLOY.md section 2). It starts on an empty database.
+* Render: deploy the service (it gets an empty disk), open an SSH session
+  from the service's Connect menu, and copy the file onto the disk, into
+  `/app/data/backups/` (Render's SSH supports `scp`; the address is on the
+  same menu).
+
+**3. Check and restore (3 min).**
+
+```bash
+curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups          # pick NAME
+curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups/$NAME/verify
+curl -fsS -X POST -H "X-CyberLogix-Admin: $KEY" -H 'Content-Type: application/json' \
+  -d "{\"snapshot\":\"$NAME\",\"confirm\":true}" $HOST/api/admin/backups/restore
+```
+
+`verify` must say `"ok": true`. The restore snapshots the database it
+replaces first (`-pre-restore`), copies the snapshot in through SQLite
+(the connection never closes and no stale write-ahead log can be read
+into it) and reloads, with no restart. The app does not answer while it
+reloads: about 6 seconds at 1,000 sensors with full history, longer in
+proportion. The same commands work on Render and Docker.
+
+**4. Check it worked (3 min).**
+
+* `curl -fsS $HOST/api/health` answers 200 with the version, and
+  `curl -fsS $HOST/api/watchdog` answers 200 within a minute (the sweep
+  is running).
+* Sign in as an owner: the sensors are there with their charts, the
+  Alerts tab has the incidents, Setup has the audit trail, and the vault
+  check on a sensor says intact.
+* Send one reading out of range from a test sensor (or the "Send a test
+  alert" button): the text arrives.
+
+**5. Rehearsing on a copy, never on production.** Run the image on your
+own machine with the downloaded snapshot and **without** the production
+settings: no `--env-file`, so no Twilio and no mail host (dry run: alerts
+are recorded, never sent), and the sweep off. A copy started with the
+production `.env` texts and phones the real roster about the snapshot's
+open incidents and sends the day's digests again.
+
+```bash
+mkdir -p /tmp/rehearsal/data /tmp/rehearsal/backups
+cp cyberlogix-<stamp>.sqlite3 /tmp/rehearsal/backups/
+docker run --rm -d --name rehearsal -p 8081:8080 \
+  -v /tmp/rehearsal/data:/app/data -v /tmp/rehearsal/backups:/srv/backups \
+  -e CYBERLOGIX_BACKUP_DIR=/srv/backups -e CYBERLOGIX_ADMIN_KEY=rehearsal \
+  -e CYBERLOGIX_SWEEP_SECONDS=0 cyberlogix
+KEY=rehearsal HOST=http://127.0.0.1:8081    # then steps 3 and 4
+docker stop rehearsal
+```
+
+**If the app will not start at all**, put the file in place by hand with
+it stopped: `cp` the snapshot to the database path (`/app/data/cyberlogix.db`)
+and **delete `cyberlogix.db-wal` and `cyberlogix.db-shm` beside it** before
+starting. A write-ahead log left from the old database is read as part of
+the new one.
+
+### What a restore keeps
+
+Restoring the record does not un-send a text, a call or an email. So a
+restore keeps, from the database it replaces: every incident as it stands
+(acknowledged, escalated, resolved, and the ones opened since the
+snapshot), every mail it sent or still has queued (the digests, the weekly
+reports, the alert emails), each sensor's last contact, and the weekly
+text's "sent this week". Without this, a restored snapshot re-escalated an
+incident already answered, sent the day's digest again, and texted every
+business that each of its sensors had gone quiet (in the snapshot, the
+last reading was hours old). Businesses that deleted themselves are
+deleted again; ids and invoice numbers never go backwards. Invoices issued
+since the snapshot are **not** kept: check the billing worklist after a
+restore so nobody is billed twice for one period.
+
+### What was wrong in the steps before
+
+Found by following them on a big database:
+
+* "Pick a snapshot, verify it" had no command for verifying it.
+* "Copy the snapshots off the machine" had no way to do it but a shell on
+  the server; there is a download now.
+* Restoring onto a new disk (the case backups exist for) was not covered,
+  and a copy started for a rehearsal with the production settings would
+  have alerted the real roster.
+* The restore swapped the database file under a write-ahead log that
+  anything else holding the file open could leave behind.
+* A restore re-sent alerts and digests that had already gone out.
+
+## Outage drill: Twilio and mail
+
+Twice a year, and after any change to how alerts are sent. On a staging
+copy, never on production. `tests/test_outage_drill.py` runs the same
+checks on every push; this is the live version. About 30 minutes, most of
+it waiting for the re-send steps.
+
+1. **Set it up.** A staging deploy with real Twilio test credentials, one
+   business on a plan with calls, two people on its roster with your own
+   phones, a test sensor, and `CYBERLOGIX_OPERATOR_EMAIL` set to you.
+2. **Break Twilio with errors.** Set `TWILIO_AUTH_TOKEN` to a wrong value
+   and redeploy (every text and call is refused with an error).
+3. **Break mail.** Set `SMTP_HOST` to a host that does not answer, e.g.
+   `127.0.0.1` with `SMTP_PORT=9`, and redeploy.
+4. **Breach.** Post one reading out of range. Check:
+   - [ ] the reading answers 200 and the incident opens;
+   - [ ] the Alerts card says the texts failed, with the next re-send time;
+   - [ ] `/book` -> Health shows a fault for `notifications.send_sms` and,
+         after the alert email's first try, `mail.deliver`, each counted.
+5. **Wait 16 minutes.** Check:
+   - [ ] the incident shows re-sends at about 1, 5 and 15 minutes, all failed;
+   - [ ] after 10 minutes the call was tried and failed, and again at 15;
+   - [ ] the console card now says "Phone the roster yourself."
+6. **Timeouts too.** Repeat 4 with Twilio unreachable rather than refusing
+   (point the service at a network that drops it, or block
+   `api.twilio.com`): the reading still answers within about 10 seconds
+   (`TWILIO_TIMEOUT_SECONDS`, 8) and everything above holds.
+7. **Bring mail back** (restore `SMTP_HOST`, redeploy). Within the next
+   alert-email step (at most 30 minutes after the breach, sooner earlier
+   on), check:
+   - [ ] the owner gets the alert email once, subject `TEXTS FAILED - ALERT: ...`;
+   - [ ] and one `NOBODY HAS BEEN TEXTED: ...` email;
+   - [ ] the operator's daily digest lists the faults.
+8. **Bring Twilio back** (the right token). Post a new out-of-range
+   reading on another sensor and check:
+   - [ ] the text arrives at once, and nothing is sent twice for the first
+         incident (its re-sends stopped at the last step; its call retry
+         stops once a call gets through);
+   - [ ] no duplicate emails arrived at any point.
+9. **Clean up.** Acknowledge and resolve both incidents; clear the faults.
+
+What the first run of this drill found, now fixed: a call that failed at
+the provider was never tried again; the alert email waited for the hourly
+mail queue and was dropped after three hours; the owner's copy of the
+alert did not say the texts had failed; nothing told the owner when the
+last re-send failed; and nothing told the operator that Twilio was
+failing for everybody at once.
 
 ## The dead man's switch
 
