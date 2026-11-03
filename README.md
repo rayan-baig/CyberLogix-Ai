@@ -216,7 +216,7 @@ The short version:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 2,200 tests. The language model, Twilio and SMTP are stubbed and the database is
+About 2,340 tests. The language model, Twilio and SMTP are stubbed and the database is
 in memory, so the suite needs no credentials, makes no network calls and
 touches no file on disk. CI runs the suite on Python 3.11 (what the image
 ships) and again on 3.13, and also runs pyflakes, a type check on the money

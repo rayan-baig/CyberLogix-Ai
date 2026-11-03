@@ -10,7 +10,7 @@ code, the fuzzer, the browser smoke test, and mutation testing.
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 2,200 tests across 133 files. The language model, Twilio and SMTP are all stubbed and the
+About 2,340 tests across 140 files. The language model, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
@@ -116,6 +116,18 @@ And who is on call: an owner builds a rotation and sets quiet hours
 through the On call now card at phone size, the card names who is on now
 and next and a muted person with turns as a gap, and a viewer sees all of
 it at both sizes with no form and no button.
+
+And one person with five businesses (owner of three, operator at one,
+viewer at another): the switcher drawer at phone size lists each with her
+role, opening one shows that business and none of the others' units, a
+reload and a new sign-in through the form stay where she left off, and the
+monthly summary email's link to another business's inspector log opens
+that business with the dates filled in. The sensor setup guides at
+`/help/sensors` are among the pages loaded at both sizes.
+
+The money path from trial to paid to late to paid by card is
+`tests/test_payment_lifecycle.py`, against a local fake Stripe that signs
+its webhooks the way Stripe does and replays, delays and reorders them.
 
 `tools/first_day_walk.js` times the path from the landing page to a first
 sensor reading and counts the clicks and fields on the way:
