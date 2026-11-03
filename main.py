@@ -331,6 +331,7 @@ PRICING_HTML = STATIC_DIR / "pricing.html"
 HELP_HTML = STATIC_DIR / "help.html"
 SENSORS_HTML = STATIC_DIR / "help-sensors.html"
 SHEET_HTML = STATIC_DIR / "sheet.html"
+DEVELOPERS_HTML = STATIC_DIR / "developers.html"
 ERROR_HTML = STATIC_DIR / "error.html"
 FAVICON = STATIC_DIR / "favicon.ico"
 
@@ -1004,6 +1005,24 @@ def sensor_setup_page(request: Request):
 
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     return _serve_page(SENSORS_HTML, request, markup={"%%GUIDES%%": render_html(base)})
+
+
+@app.get("/developers", include_in_schema=False)
+def developer_reference(request: Request):
+    """The API reference as one plain page, rendered here from the schema.
+
+    /docs and /redoc need a CDN and a looser policy; this needs neither,
+    so it works wherever the product does. Routes only the platform
+    operator can call are counted, not listed (apiref.py).
+    """
+    from apiref import render
+
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    markup = render(app.openapi(), base)
+    count = markup.pop("%%ROUTE_COUNT%%")
+    return _serve_page(DEVELOPERS_HTML, request,
+                       {"%%VERSION%%": __version__, "%%ROUTE_COUNT%%": count},
+                       markup=markup)
 
 
 _SWAGGER_VERSION = "5"

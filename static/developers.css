@@ -1,0 +1,56 @@
+/* The API reference (/developers). Layout only; every colour is a token
+ * from theme.css. Rendered on the server from the OpenAPI schema, so
+ * there is no script and nothing inline. */
+.ref-intro code, .ref-op code { font-family: var(--mono); font-size: 0.92em; color: var(--ink); }
+.ref-intro .steps li { overflow-wrap: anywhere; }
+
+.ref-toc {
+  list-style: none; padding: 0; margin: 0 0 12px;
+  columns: 3 220px; column-gap: 24px; font-size: 14px;
+}
+.ref-toc li { padding: 3px 0; break-inside: avoid; }
+.ref-toc a { color: var(--ink-2); text-decoration: none; }
+.ref-toc a:hover, .ref-toc a:focus-visible { color: var(--ink); }
+.ref-count { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+.ref-op {
+  background: var(--surface); border-radius: 12px; box-shadow: var(--lift-1);
+  padding: 16px 20px; margin: 0 0 12px; min-width: 0;
+}
+@media (max-width: 720px) { .ref-op { padding: 14px; } }
+.ref-op h3 {
+  margin: 0 0 6px; font-size: 15px; font-weight: 500; color: var(--ink);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.ref-method {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border-lit);
+  color: var(--accent);
+}
+.ref-post { color: var(--commerce); }
+.ref-delete { color: var(--intel); }
+.ref-summary { margin: 0 0 6px; color: var(--ink-2); }
+.ref-auth { margin: 0 0 8px; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.ref-auth b { color: var(--ink); font-weight: 500; }
+.ref-none { color: var(--muted); }
+.ref-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); margin: 12px 0 4px;
+}
+.ref-small { font-size: 13px; color: var(--muted); margin: 8px 0 0; overflow-wrap: anywhere; }
+.ref-table {
+  display: block; overflow-x: auto; width: 100%;
+  border-collapse: collapse; font-size: 13.5px; margin: 6px 0;
+}
+.ref-table th, .ref-table td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border);
+  color: var(--ink-2); vertical-align: top;
+}
+.ref-table th { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.ref-pre {
+  overflow-x: auto; white-space: pre; margin: 6px 0 0;
+  padding: 10px 12px; border-radius: 8px; font-size: 12.5px;
+  font-family: var(--mono); color: var(--ink-2);
+  border: 1px solid var(--border); background: var(--sunken);
+}
