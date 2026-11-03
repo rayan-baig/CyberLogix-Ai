@@ -837,6 +837,9 @@ function render(d, health) {
     account.innerHTML = esc(a.headline)
       + (a.alerting_continues
           ? ` <span class="u-o-75">Alerting is still running.</span>` : "")
+      + (a.pay_url
+          ? ` <a class="banner-act" id="account-pay" href="${esc(a.pay_url)}"
+               target="_blank" rel="noopener">Pay now</a>` : "")
       + ` <button type="button" class="banner-act" id="account-act">${
           a.on_trial ? "See what it costs" : "Sort it out"}</button>`;
     account.hidden = false;

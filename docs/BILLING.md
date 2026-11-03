@@ -223,6 +223,27 @@ the estate is watched exactly as before and only its reporting is
 withheld; past that, ingest stops and the refusal names the route that
 restores it.
 
+That is for an account with no contract: a trial nobody bought, or a
+plan nobody signed for. **Under a signed contract that is still running,
+the licence does not lapse at all.** A month is billed in advance and
+paid net 30, and the paid-up time only runs on from a paid invoice, so it
+ends before the next bill is even due. Read as a lapse, a slow finance
+department stopped a contract customer's freezer alarms two weeks later
+— which the agreement promises never happens. While a contract runs,
+an unpaid bill is collections' business, and the most it withholds is
+reporting, at 45 days. A cancelled contract, or one past its term
+without renewal, lapses like any other licence.
+
+What the console says along the way: nothing while a bill is not yet
+due; from the day it falls due, a warning with the amount, how many days
+are left before reports pause, a "Pay now" link carrying that invoice's
+id, and "Alerting is still running"; at 45 days, that reporting is
+withheld until it clears. The banner goes when the bill is paid.
+`tests/test_payment_lifecycle.py` walks one business through trial,
+paid, late and paid again by card against a local fake Stripe, with
+replayed, stale and out-of-order webhooks, checking all of that at every
+step and that a warm freezer is texted and phoned about throughout.
+
 Every route that is the way *back* stays open at every point — signing in,
 changing plan, signing a contract, reading and settling an invoice,
 accepting the terms, and the console page that carries all of them.
@@ -269,10 +290,18 @@ is still a valid signature. Unset secret means the endpoint refuses
 everything rather than trusting the body.
 
 **Retries are free.** Stripe delivers at least once and retries any
-non-2xx for days. The event id is the payment reference, so the ledger's
-own duplicate check settles a storm of retries exactly once — and an
-event we do not handle gets a polite 200 rather than a refusal Stripe
-will keep re-sending.
+non-2xx for days. One card payment arrives as three events (the
+checkout, the payment intent and the charge), and all three name the same
+payment intent, so that is the payment reference and the ledger's own
+duplicate check settles a storm of retries, in any order, exactly once —
+and an event we do not handle gets a polite 200 rather than a refusal
+Stripe will keep re-sending.
+
+Only the checkout session carries a payment link's invoice id. The
+payment intent and the charge do not, so when one of them is already on
+an invoice it is recognised as that payment rather than listed as money
+nobody can place; and when one arrives first and is listed, the checkout
+that follows matches it and takes it off the list.
 
 **Unmatched money is visible.** A payment that names no invoice, names
 one that does not exist, arrives in another currency, or belongs to a
