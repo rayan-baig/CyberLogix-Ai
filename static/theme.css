@@ -829,6 +829,7 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
 }
 .log-out td { color: var(--critical); }
 .log-table td { vertical-align: top; }
+.log-days td:first-child { white-space: nowrap; }
 .doc-footer {
   margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border);
   color: var(--muted); font-size: 12px;

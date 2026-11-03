@@ -3036,14 +3036,17 @@ async function openInspectorLog(from, to, print) {
             <td>${b.closed_at ? esc(stamp(b.closed_at)) : "still open"}</td>
           </tr>`).join("")}</tbody>
         </table></div>`
-      : `<div class="card-note">It stayed in range the whole time.</div>`;
+      : `<div class="card-note">${unit.out_of_range_readings
+          ? "Some readings were out of range, but no alert was opened for "
+            + "them: a routine defrost is not alerted."
+          : "It stayed in range the whole time."}</div>`;
     return `<section class="log-unit">
       <h3 class="log-unit-name">${esc(unit.location_name)}${
         unit.site_name ? ` <span class="log-sub-inline">· ${esc(unit.site_name)}</span>` : ""}</h3>
       <div class="log-meta">${esc(unit.sensor_id)} · ${esc(unit.industry_name)} · limit ${
         limits(unit) || "none set"} · ${esc(unit.readings)} readings${
         unit.in_range_percent !== null ? `, ${esc(unit.in_range_percent)}% in range` : ""}</div>
-      <div class="scrollx"><table class="log-table">
+      <div class="scrollx"><table class="log-table log-days">
         <thead><tr><th>Day</th><th class="num">Lowest</th><th class="num">Highest</th>
           <th class="num">Readings</th><th class="num">Out of range</th></tr></thead>
         <tbody>${days}</tbody>

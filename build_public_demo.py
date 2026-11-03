@@ -13,7 +13,8 @@ never heard of any of this.
 
     python build_public_demo.py
 
-writes `docs/index.html`, which GitHub Pages serves at
+writes `docs/index.html` (with `docs/console.html` and `docs/help.html`
+beside it), which GitHub Pages serves at
 https://<user>.github.io/<repo>/ once Pages is switched on for the repo.
 
 Self-contained on purpose. It seeds a throwaway database in a temporary
@@ -456,12 +457,20 @@ def build(data: dict, page_name: str = "console.html",
     if own_script is None:
         raise SystemExit(f"{page_name} does not end by loading its own script.")
     markup = body[:own_script.start()]
+    # The plain view pulls circuit.js with a <script src>, which is one
+    # more file that does not exist beside a single inlined page; it is
+    # written in below instead.
+    markup = markup.replace(
+        '<script src="/static/circuit.js"></script>', "")
     app_js = ("<script>\n"
               + (ROOT / "static" / own_script.group(1)).read_text().replace(
                   "</script", "<\\/script")
               + "</script>\n")
 
     page = (
+        # Said in the page, not left to the host: served without a charset
+        # header, every degree sign reads as mojibake.
+        '<meta charset="utf-8">\n'
         "<title>CyberLogix Console</title>\n"
         # A demo is for whoever is handed the link, not for a search
         # engine: it is the console's private surface, on a public host.
@@ -491,6 +500,13 @@ def build(data: dict, page_name: str = "console.html",
     page = (page.replace('href="/help', 'href="help.html')
                 .replace('"/help#', '"help.html#'))
     refuse_outbound(page)
+    # And nothing loaded from the server's own root, which on GitHub Pages
+    # is somebody else's site: a stray <script src="/static/..."> is a 404
+    # at best. Markup only; the inlined scripts' comments name such tags.
+    bare = re.sub(r"<script>.*?</script>", "", page, flags=re.S)
+    rooted = re.findall(r'src="/[^"]*"', bare)
+    if rooted:
+        raise SystemExit(f"the demo page still loads from the server: {rooted}")
     return page
 
 

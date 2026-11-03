@@ -3,6 +3,24 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.4.0 — 2026-11-03
+
+- **Reply 1 to say you have it.** Answering an alert text with "1" or
+  "ACK" stops the calls. It only works from a number the alert went to,
+  and only for that business's open alert.
+- **Alerts say what matters first.** Which unit, where, how far out of
+  range, what to check and how to answer, in one text message. The same
+  alert goes to the business's email, and the phone call says the same
+  things and "press 1".
+- **A log for the inspector, in one click.** Pick the dates; every unit's
+  temperatures, each time one went out of range and who answered it,
+  ready to print or save as PDF.
+- **Invoices print on one page,** with the period they cover.
+- **Withdraw a join code** you gave to the wrong person, before it is used.
+- **Safer pages.** No page runs script or styling written into it, so text
+  that reaches a page cannot be made to run.
+- The public demo has the help page too.
+
 ## 3.3.0 — 2026-11-02
 
 Ready for the first customers.
