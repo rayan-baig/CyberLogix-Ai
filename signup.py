@@ -47,6 +47,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from accounts import MIN_PASSWORD_LENGTH
+from domain import mask_email
 from store import INDUSTRY_PROFILES, PLAN_TIERS, STORE, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.signup")
@@ -268,7 +269,7 @@ def start_trial(payload: SignupRequest, request: Request):
     )
     logger.info(
         "Trial started: %s (%s) tenant=%s",
-        tenant.company_name, email, tenant.tenant_id,
+        tenant.company_name, mask_email(email), tenant.tenant_id,
     )
 
     # The one moment they are certainly paying attention. Waiting for the

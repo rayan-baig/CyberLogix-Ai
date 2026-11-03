@@ -3,6 +3,14 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.6.1 — 2026-11-03
+
+- **Server logs keep people's details out.** Log lines about texts and
+  calls show only the last four digits of a phone number, and a provider's
+  error text has numbers and addresses blanked. A new trial and a failed
+  sign-in log the email address shortened, the way mail log lines already
+  did.
+
 ## 3.6.0 — 2026-11-03
 
 Who is on call, on a screen; and four fixes from a careful read of the

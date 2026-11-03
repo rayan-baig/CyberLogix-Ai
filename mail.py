@@ -67,6 +67,12 @@ from store import (
 
 logger = logging.getLogger("cyberlogix.mail")
 
+
+def _redact(text: str) -> str:
+    """A mail host's error can quote the address it refused: keep it out of the log."""
+    from faults import redact
+    return redact(text)
+
 router = APIRouter(prefix="/api/mail", tags=["Mail"])
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
@@ -370,7 +376,7 @@ def never_raises(fn):
         try:
             return fn(*args, **kwargs)
         except Exception as exc:  # noqa: BLE001 - the contract is total
-            logger.exception("Mail failed unexpectedly (%s).", exc)
+            logger.error("Mail failed unexpectedly (%s).", _redact(str(exc)))
             return {
                 "sent": False,
                 "status": "error",
@@ -412,7 +418,7 @@ def send(
     """
     to_address = (to_address or "").strip()
     if not valid_address(to_address):
-        logger.warning("Refusing to send to an unusable address (%r).", to_address)
+        logger.warning("Refusing to send to an unusable address (%s).", mask_email(str(to_address or "")))
         return _result(None, False, "bad_address",
                        "No usable email address for this recipient.")
 
@@ -499,7 +505,7 @@ def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict
         faults.record("mail.deliver", exc, context="the mail host refused or did not answer")
         logger.warning(
             "Mail to %s failed on attempt %d (%s).",
-            mask_email(message.to_address), attempts, exc,
+            mask_email(message.to_address), attempts, _redact(str(exc)),
         )
         return _result(
             message, False, "failed" if final else "retry",
