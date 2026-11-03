@@ -32,7 +32,6 @@ it; after a week, last month's is left unsent rather than arriving late.
 
 from __future__ import annotations
 
-import html as _html
 import logging
 import re
 import statistics
@@ -346,44 +345,6 @@ def render_text(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_html(report: Dict[str, Any]) -> str:
-    """The same summary as a small table. Every value is escaped."""
-    e = _html.escape
-    rows = [
-        ("Units watched", f"{report['units']}"),
-        ("Readings kept", f"{report['readings']:,}"
-         + (f" ({report['in_range_percent']:g}% in range)"
-            if report["in_range_percent"] is not None else "")),
-        ("Out of range", f"{report['breach_count']}"),
-        ("Acknowledged", f"{report['acknowledged_count']}"
-         + (f", half within {_minutes(report['median_minutes_to_acknowledge'])}"
-            if report["median_minutes_to_acknowledge"] is not None else "")),
-        ("Open now", f"{report['open_problem_count']}"),
-    ]
-    out = [f"<h2>{e(report['company_name'])}: {e(report['month_label'])}</h2>",
-           "<table>"]
-    out += [f"<tr><th align=\"left\">{e(k)}</th><td>{e(v)}</td></tr>" for k, v in rows]
-    out.append("</table>")
-    if report["who_acknowledged"]:
-        out.append("<h3>Who answered</h3><ul>")
-        out += [f"<li>{e(r['name'])}: {r['acknowledged']}, typically in "
-                f"{e(_minutes(r['median_minutes']))}</li>"
-                for r in report["who_acknowledged"]]
-        out.append("</ul>")
-    problems = _problem_lines(report)
-    if problems:
-        out.append("<h3>Open now</h3><ul>")
-        out += [f"<li>{e(line)}</li>" for line in problems[:LIST_AT_MOST]]
-        out.append("</ul>")
-    if report["inspector_log"]:
-        link = report["inspector_log"]
-        out.append(f'<p><a href="{e(link, quote=True)}">Open the inspector\'s '
-                   f"log for {e(report['month_label'])}</a></p>")
-    if report["caveat"]:
-        out.append(f"<p>{e(report['caveat'])}</p>")
-    return "".join(out)
-
-
 # ---- sending ------------------------------------------------------------
 
 
@@ -405,7 +366,7 @@ def send_for(tenant: Tenant, first: date, last: date,
         return {"status": "no_owner", "sent": 0}
 
     report = summary(tenant, first, last, now)
-    text, markup = render_text(report), render_html(report)
+    text = render_text(report)
     sent = 0
     statuses = []
     for owner in recipients:
@@ -413,8 +374,9 @@ def send_for(tenant: Tenant, first: date, last: date,
         result = send_mail(
             to_address=owner.email,
             subject=subject(report),
+            # The HTML part is made from this text by mail.compose, so the
+            # two say the same thing.
             body=f"{owner.full_name},\n\n{text}",
-            html=f"<p>{_html.escape(owner.full_name)},</p>{markup}",
             dedupe_key=f"monthly:{tenant.tenant_id}:{report['month']}:{person.user_id}",
             # Mail we choose to send, so it carries the unsubscribe link
             # and the List-Unsubscribe header, and honours a stop.

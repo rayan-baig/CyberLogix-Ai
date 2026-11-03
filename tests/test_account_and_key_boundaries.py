@@ -381,7 +381,7 @@ def test_password_reset_with_mail_off_is_queued_single_use_expiring_and_signs_ou
     monkeypatch.setattr(no_smtp, "MAIL_FROM", "hub@example.com")
     monkeypatch.setattr(no_smtp, "_transport", sent.append)
     assert no_smtp.flush_queue()["sent"] >= 1
-    assert any(token in m.get_content() for m in sent)
+    assert any(token in m.get_body(preferencelist=("plain",)).get_content() for m in sent)
 
     # It works once, and ends every other session.
     used = api.post("/api/accounts/reset",
@@ -400,7 +400,7 @@ def test_password_reset_with_mail_off_is_queued_single_use_expiring_and_signs_ou
     api.post("/api/accounts/forgot", json={"email": DANA["email"]})
     links = {found.group(1) for m in sent
              for found in [re.search(r"/reset\?token=(clr_[A-Za-z0-9_-]+)",
-                                     m.get_content())] if found}
+                                     m.get_body(preferencelist=("plain",)).get_content())] if found}
     links.discard(token)
     assert len(links) == 1
     late = links.pop()

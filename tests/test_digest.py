@@ -68,7 +68,7 @@ def test_the_digest_carries_the_book_and_the_money(mailbox, operator_address, pa
     result = send_operator_digest()
 
     assert result["sent"] is True
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "a year booked" in body
     assert "1 invoice(s) issued" in body
 
@@ -80,7 +80,7 @@ def test_the_digest_names_who_to_call_and_how(mailbox, operator_address, paying)
 
     send_operator_digest()
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert tenant["company_name"] in body
     assert tenant["contact_email"] in body
     assert tenant["contact_phone"] in body
@@ -168,7 +168,7 @@ def test_the_customer_report_keeps_the_two_apart_as_well(
 
     send_customer_reports()
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "UNITS THAT HAVE STOPPED REPORTING" in body
     assert "UNITS THAT HAVE NEVER REPORTED" in body
 
@@ -188,12 +188,12 @@ def test_a_long_book_is_trimmed_and_the_rest_counted(
     assert body["overflow"] >= 3
 
     send_operator_digest()
-    assert "more. The whole book is at /book" in mailbox[-1].get_content()
+    assert "more. The whole book is at /book" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_a_quiet_day_says_so(mailbox, operator_address):
     send_operator_digest()
-    assert "Nothing needs a person today" in mailbox[-1].get_content()
+    assert "Nothing needs a person today" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_subject_leads_with_what_is_wrong(
@@ -235,7 +235,7 @@ def test_an_estate_that_measured_nothing_is_not_told_it_was_fine(
     """
     send_customer_reports()
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "stayed inside its limits" not in body
     assert "Nothing was measured this week" in body
     assert "not the same as nothing going wrong" in body
@@ -250,7 +250,7 @@ def test_an_estate_that_measured_something_clean_is_told_so(
 
     send_customer_reports()
 
-    assert "stayed inside its limits" in mailbox[-1].get_content()
+    assert "stayed inside its limits" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_digest_waits_for_the_hour_it_was_asked_for(
@@ -318,7 +318,7 @@ def test_the_report_names_units_that_have_stopped_reporting(
 
     send_customer_reports()
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "STOPPED REPORTING" in body
     assert "RACK-01" in body
 

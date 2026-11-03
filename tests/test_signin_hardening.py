@@ -178,7 +178,7 @@ def test_a_sent_reset_email_is_not_kept_with_its_link(api, mailbox):
     accounts.reset_rate_limits()
     assert api.post("/api/accounts/forgot", json={"email": DANA["email"]}).status_code == 200
     reset_mail = [m for m in mailbox if "Reset" in m["Subject"]]
-    assert reset_mail and "clr_" in reset_mail[0].get_content()     # the person got the link
+    assert reset_mail and "clr_" in reset_mail[0].get_body(preferencelist=("plain",)).get_content()     # the person got the link
     stored = [m for m in STORE.mail_log() if "Reset" in m.subject]
     assert stored and "clr_" not in stored[0].body                   # the log did not keep it
     assert "clr_" not in stored[0].dedupe_key

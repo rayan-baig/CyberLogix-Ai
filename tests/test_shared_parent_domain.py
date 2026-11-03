@@ -159,7 +159,7 @@ def test_every_mail_says_whose_product_it_is(mailbox, klass):
     message = mail.compose(
         to_address="ops@example.com", subject="Hello", body="Body.", klass=klass
     )
-    assert "CyberLogix is a product of MTRX Horizyn." in message.get_content()
+    assert "CyberLogix is a product of MTRX Horizyn." in message.get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_public_pages_name_the_parent_company():
@@ -193,7 +193,7 @@ def test_the_old_spelling_is_gone_from_everything_a_person_reads(api, mailbox):
         seen[f"legal.{name}"] = text
     seen["issuer"] = str(invoicing.issuer_block())
     seen["mail"] = mail.compose(to_address="ops@example.com", subject="Hi",
-                                body="Body.", klass="commercial").get_content()
+                                body="Body.", klass="commercial").get_body(preferencelist=("plain",)).get_content()
     # And every file in the repository a person might read.
     for name in subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).split():
         if name.endswith((".py", ".md", ".html", ".yaml", ".yml", ".example", ".txt", ".js", ".css")):

@@ -50,7 +50,7 @@ def locked_out(api, tenant_factory):
 
 
 def _link(mailbox):
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     found = re.search(r"/reset\?token=(clr_[A-Za-z0-9_-]+)", body)
     assert found, f"no reset link in:\n{body}"
     return found.group(1)
@@ -208,7 +208,7 @@ def test_the_email_says_what_using_it_does(api, mailbox, locked_out):
     _, email = locked_out
     api.post("/api/accounts/forgot", json={"email": email})
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "signs out every other session" in body
     assert "if this was not you" in body
 

@@ -129,7 +129,7 @@ def test_the_business_gets_the_alert_by_email_once(estate, mailbox):
 
     mails = mailbox.to(tenant.contact_email)
     assert len(mails) == 1
-    subject, body = mails[0]["Subject"], mails[0].get_content()
+    subject, body = mails[0]["Subject"], mails[0].get_body(preferencelist=("plain",)).get_content()
     assert subject.startswith(f"ALERT: {LOCATION} at {SITE} is 58")
     assert "above the limit" in subject
     first = body.splitlines()[0]

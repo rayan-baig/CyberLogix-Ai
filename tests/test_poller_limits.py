@@ -199,8 +199,8 @@ def test_after_repeated_failures_it_stops_and_tells_the_owner(
     told = [m for m in mailbox if "stopped fetching" in m["Subject"]]
     assert len(told) == 1
     assert told[0]["To"] == "ops@example.com"
-    assert "401" in told[0].get_content()
-    assert "secret-token" not in told[0].get_content()
+    assert "401" in told[0].get_body(preferencelist=("plain",)).get_content()
+    assert "secret-token" not in told[0].get_body(preferencelist=("plain",)).get_content()
     audit = api.get("/api/accounts/audit", headers=headers).text
     assert "poller.stopped" in audit
 
