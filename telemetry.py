@@ -31,7 +31,6 @@ from store import (
     evaluate_sensor_breach,
     display_temperature,
     require_plausible,
-    format_temperature,
     to_fahrenheit,
     utc_now,
 )
@@ -168,47 +167,80 @@ def build_emergency_sms(
     tenant_id: str,
     unit: str = "F",
 ) -> tuple[str, str]:
-    """Draft the emergency SMS for a breach, returning (text, source).
+    """The alert text for a breach, returning (text, source).
+
+    Facts first, in one segment: which unit, where, the reading, how far
+    past its limit, what to check, and "Reply 1". wording.py builds it.
+    The model words only the line saying what to check -- the facts and
+    the way to acknowledge are never left to it -- and its line is used
+    only if it is one short plain sentence. Source is that line's source.
 
     The reading is written in the tenant's unit: a manager in Lyon woken at
     3am should not have to convert Fahrenheit before deciding whether to
     drive in.
     """
-    profile = INDUSTRY_PROFILES[sensor.industry_vertical]
-    humidity_text = f"{humidity}%" if humidity is not None else "not reported"
-    reading = format_temperature(temperature, unit)
+    import wording
 
-    # No timestamp in the prompt. It made every prompt unique to the
-    # second, so the answer cache (keyed on the prompt) could never serve
-    # the same failure twice and every repeat paid for a fresh model call.
-    # The text is sent the moment it is drafted; the time adds nothing.
-    fallback = (
-        f"EMERGENCY ALERT: {profile['name']} sensor {sensor.sensor_id} at "
-        f"{sensor.location_name} reported critical temperature {reading}. "
-        "Immediate physical inspection required."
+    tenant = STORE.get_tenant(tenant_id)
+    facts = wording.breach_facts(sensor, temperature, unit)
+    # No reading and no timestamp in the prompt, so the answer cache can
+    # serve the same failure on the same kind of unit twice.
+    line, source = safe_generate(
+        wording.action_prompt(sensor, facts), wording.action_for(sensor),
+        purpose="emergency SMS", tenant_id=tenant_id,
     )
+    action = wording.clean_action(line)
+    if action is None:
+        action, source = wording.action_for(sensor), "fallback_template"
+    return wording.alert_sms(tenant, sensor, temperature, unit, action), source
 
-    prompt = f"""
-    You are the CyberLogix AI 24/7 automated Emergency Operations Dispatcher.
-    A critical physical facility infrastructure failure has just been detected.
 
-    Sector Profile: {profile['name']}
-    Suspected Root Cause Catastrophe: {profile['catastrophe']}
-    Sensor Node ID: {sensor.sensor_id}
-    Facility Location Tag: {sensor.location_name}
-    Telemetry Reading: {reading}
-    Relative Humidity: {humidity_text}
+_email_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="alert-mail")
+_email_futures: list = []
 
-    Draft an ultra-urgent, 2-sentence emergency SMS alert message to be blasted
-    immediately to the on-call facility director's mobile phone. State the
-    immediate threat of asset destruction and demand urgent physical
-    intervention. Do not use markdown formatting tags. Return ONLY the raw
-    emergency SMS text string.
+
+def _email_later(tenant: Tenant, sensor, incident) -> None:
+    future = _email_pool.submit(send_alert_email, tenant, sensor, incident)
+    _email_futures[:] = [f for f in _email_futures if not f.done()] + [future]
+
+
+def wait_for_alert_emails(timeout: float = 30.0) -> bool:
+    """Wait for alert emails still being sent. For tests."""
+    from concurrent.futures import wait
+
+    _, pending = wait(list(_email_futures), timeout=timeout)
+    return not pending
+
+
+def send_alert_email(tenant: Tenant, sensor, incident) -> dict:
+    """The same alert to the business's own address, once per incident.
+
+    The roster is phone numbers; the business's contact email is where the
+    owner reads everything else from us, and an alarm that only ever went
+    to whoever is on call tonight is one the owner hears about tomorrow.
+    Never raises: a mail host having a bad night must not touch the text
+    that has already gone out.
     """
+    import wording
+    from mail import send as send_mail
+    from notifications import PUBLIC_BASE_URL
 
-    return safe_generate(
-        prompt, fallback, purpose="emergency SMS", tenant_id=tenant_id
-    )
+    try:
+        subject, body = wording.alert_email(
+            tenant, sensor, incident, tenant.temperature_unit,
+            console_url=f"{PUBLIC_BASE_URL}/console" if PUBLIC_BASE_URL else "",
+        )
+        return send_mail(
+            to_address=tenant.contact_email or "",
+            subject=subject,
+            body=body,
+            dedupe_key=f"incident-alert:{incident.incident_id}",
+            klass="transactional",
+            tenant_id=tenant.tenant_id,
+        )
+    except Exception:  # noqa: BLE001 - the email is a copy; the text is the alert
+        logger.exception("Alert email for %s failed.", incident.incident_id)
+        return {"sent": False, "status": "failed"}
 
 
 def _routine_defrost(sensor, temperature: float):
@@ -377,6 +409,9 @@ def process_reading(
                 )
             ]
     STORE.record_sms_delivery(incident, fanout[0] if fanout else None, fanout)
+    # On a worker: the mail host may take its full timeout to answer, and
+    # the sensor waiting on this response should not.
+    _email_later(tenant, sensor, incident)
 
     # Push a copy into whatever the team already has open. Imported here
     # rather than at module scope: webhooks imports the store and the auth

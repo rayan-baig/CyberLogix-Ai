@@ -78,6 +78,15 @@ PYTHON=.venv/bin/python node tools/console_smoke.js
 BASE_URL=http://127.0.0.1:8080 SMOKE_SHOTS=/tmp/shots node tools/console_smoke.js
 ```
 
+Every browser context it opens fails on a Content-Security-Policy
+refusal, and it loads every page (the landing page, sign-up, pricing,
+help, the industry pages, the agreements, reset, the partner portal, the
+book, the plain view, the offline and error pages) at both sizes looking
+for one. On every element it draws, it also checks that each utility class
+(the classes that replaced `style="..."` attributes) still gets its way:
+the computed value with the class must match the same declaration applied
+inline.
+
 It also walks a new business's first day: the landing page states who it is
 for, the price and the trial in the first screen (phone and laptop), sign-up
 lands in the console, every empty card offers its next step, the checklist

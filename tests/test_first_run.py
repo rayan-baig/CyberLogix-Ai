@@ -19,6 +19,7 @@ from pathlib import Path
 
 
 from store import INDUSTRY_PROFILES
+from pages import page_source
 
 CONSOLE = Path(__file__).resolve().parent.parent / "static" / "console.html"
 
@@ -72,7 +73,7 @@ def test_the_industry_list_carries_what_the_placeholders_need(api):
 
 
 def script():
-    return CONSOLE.read_text()
+    return page_source(CONSOLE)
 
 
 def test_the_console_selects_a_sector_rather_than_taking_the_first():

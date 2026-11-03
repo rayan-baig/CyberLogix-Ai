@@ -17,9 +17,6 @@ from main import app
 # Served by the framework, not by this product.
 FRAMEWORK = {
     ("GET", "/openapi.json"),
-    ("GET", "/docs"),
-    ("GET", "/docs/oauth2-redirect"),
-    ("GET", "/redoc"),
 }
 
 

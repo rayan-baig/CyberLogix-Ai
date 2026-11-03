@@ -22,6 +22,8 @@ the same terms, so this is not a back way round sign-up.
 
 from __future__ import annotations
 
+import hashlib
+
 import logging
 import os
 from typing import List, Optional
@@ -337,10 +339,50 @@ def make_join_code(
     )
     return {
         "code": code,
+        "code_id": hashlib.sha256(code.encode("utf-8")).hexdigest()[:12],
         "role": role,
         "expires_in_hours": 72,
         "message": "Shown once. It works once and expires in three days.",
     }
+
+
+@router.get("/join-codes")
+def list_join_codes(owner: User = Depends(require_role("owner"))):
+    """The codes this business has made that nobody has used yet.
+
+    Never the codes themselves -- those are shown once and only their hash
+    is kept -- but enough to recognise one and withdraw it. Owners only.
+    """
+    codes = STORE.join_codes_for(owner.tenant_id)
+    names = {}
+    for code in codes:
+        if code.issued_by not in names:
+            maker = STORE.get_user(code.issued_by)
+            names[code.issued_by] = maker.full_name if maker else ""
+    return {
+        "count": len(codes),
+        "codes": [c.public(names.get(c.issued_by, "")) for c in codes],
+    }
+
+
+@router.delete("/join-codes/{code_id}")
+def revoke_join_code(code_id: str, owner: User = Depends(require_role("owner"))):
+    """Withdraw a code before it is used: given to the wrong person, or
+    the person is no longer coming. Owners only, and only this business's."""
+    code = STORE.revoke_join_code(owner.tenant_id, code_id)
+    if code is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No unused join code with that id for this business.",
+        )
+    STORE.record_audit(
+        tenant_id=owner.tenant_id,
+        actor=f"{owner.full_name} <{owner.email}>",
+        actor_role=owner.role,
+        action="account.join_code_revoked",
+        detail=f"Withdrew an unused join code for a {code.role}.",
+    )
+    return {"message": "Withdrawn. That code no longer works.", "code_id": code_id}
 
 
 @router.post("/join")

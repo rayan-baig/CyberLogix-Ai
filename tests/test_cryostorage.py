@@ -10,6 +10,7 @@ wrong only here, on the one asset that cannot be replaced at any price.
 import pytest
 
 from store import INDUSTRY_PROFILES, display_temperature, evaluate_breach
+from pages import served_page
 
 # −130°C is where water in a cell stops being glass and starts being ice.
 GLASS_TRANSITION_F = -202.0
@@ -97,8 +98,10 @@ def test_a_tank_runs_the_whole_ladder(api, operator_factory, sensor_factory,
     assert breach["current_temperature"] == pytest.approx(-128.89, abs=0.05)
     text = breach["dispatched_sms_text"]
     assert "-128" in text, f"the alert does not name the reading: {text!r}"
-    assert "°C" in text, "the alert quotes a unit the lab does not use"
-    assert "IVF" in text and "DEWAR-01" in text
+    # GSM-7 has no degree sign, so the scale is the letter after the number.
+    assert "-128.9C, " in text, "the alert quotes a unit the lab does not use"
+    assert "F limit" not in text
+    assert "DEWAR-01" in text and "nitrogen" in text
 
 
 def test_the_sector_is_priced_and_named_like_the_others(api):
@@ -166,7 +169,7 @@ def test_every_vertical_has_a_line_and_the_page_does_not_keep_a_copy(api):
         "else's story"
     )
 
-    page = api.get("/").text
+    page = served_page(api, "/")
     for row in listed:
         assert row["slogan"] not in page, (
             f"{row['vertical']}'s line is hard-coded into the landing page "

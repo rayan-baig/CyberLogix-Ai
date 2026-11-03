@@ -110,6 +110,108 @@ async function call(base, token, method, route, body) {
 
 /* ---------------- page checks ---------------- */
 
+/* Every context the walk opens reports a Content-Security-Policy refusal
+   as a failure, whichever page it is on. The policy allows no inline
+   script or style, so a refusal is a piece of the page that did not run
+   or did not draw -- a dead button, an unstyled card -- and the browser
+   says so only in its console. */
+const CSP_INIT = () => {
+  document.addEventListener("securitypolicyviolation", (e) => {
+    console.error(`CSP violation: ${e.violatedDirective} blocked `
+      + `${e.blockedURI || "inline"} at ${e.sourceFile || location.pathname}:${e.lineNumber}`);
+  });
+};
+const CSP_PATTERN = /CSP violation|Content Security Policy/;
+
+function watchPolicy(browser) {
+  const open = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const context = await open(options);
+    await context.addInitScript(CSP_INIT);
+    context.on("console", (msg) => {
+      if (CSP_PATTERN.test(msg.text())) {
+        let where = "";
+        try { where = new URL(msg.page().url()).pathname; } catch (_) { /* closed */ }
+        fail(`policy ${where}`, msg.text().slice(0, 240));
+      }
+    });
+    return context;
+  };
+}
+
+/* A style="..." attribute became a utility class (utilities.css). An
+   inline style beat any rule, and a class does not, so this checks, on
+   every element drawn, that each utility class still gets its way: the
+   computed value with the class must equal the value with the same
+   declaration applied inline. A mismatch is a component rule winning,
+   and a card laid out differently than before. */
+async function utilitiesHold(page) {
+  return page.evaluate(() => {
+    const rules = {};
+    for (const sheet of Array.from(document.styleSheets)) {
+      let list;
+      try { list = sheet.cssRules; } catch (_) { continue; }
+      for (const rule of Array.from(list || [])) {
+        const m = /^\.(u-[a-z0-9-]+)\.\1$/.exec(rule.selectorText || "");
+        if (m) rules[m[1]] = rule.style;
+      }
+    }
+    const out = [];
+    for (const el of Array.from(document.querySelectorAll('[class*="u-"]'))) {
+      const mine = Array.from(el.classList).filter((c) => c.startsWith("u-"));
+      for (const cls of mine) {
+        const decl = rules[cls];
+        if (!decl) { out.push(`${cls} has no rule`); continue; }
+        for (const prop of Array.from(decl)) {
+          // `font: inherit` then `font-size: 13px` on one element: the
+          // longhand is meant to win, so the shorthand is not checked on it.
+          if (mine.some((other) => other !== cls && rules[other]
+              && Array.from(rules[other]).includes(prop))
+              && Array.from(decl).length > 1) continue;
+          const before = getComputedStyle(el).getPropertyValue(prop);
+          const old = el.style.getPropertyValue(prop);
+          el.style.setProperty(prop, decl.getPropertyValue(prop));
+          const forced = getComputedStyle(el).getPropertyValue(prop);
+          el.style.setProperty(prop, old);
+          if (before !== forced) {
+            const id = el.id ? `#${el.id}` : `${el.tagName.toLowerCase()}.${Array.from(el.classList).join(".")}`;
+            out.push(`${id}: ${cls} ${prop} is ${before}, not ${forced}`);
+          }
+        }
+      }
+    }
+    return Array.from(new Set(out)).slice(0, 20);
+  });
+}
+
+/* Every public and private page, at phone and desktop size: no policy
+   refusal, no script error, no utility class losing to a rule. */
+async function checkPages(browser, base, token) {
+  const pages = ["/", "/signup", "/pricing", "/help", "/for", "/for/restaurant",
+                 "/for/pharmacy", "/legal", "/reset", "/partners", "/book",
+                 "/today", "/offline", "/proof/not-a-real-token", "/no-such-page"];
+  for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
+    const context = await browser.newContext({ viewport, serviceWorkers: "block",
+                                               reducedMotion: "reduce" });
+    await context.addInitScript((t) => localStorage.setItem("cyberlogix.session", t), token);
+    for (const route of pages) {
+      const page = await context.newPage();
+      const flush = watchErrors(page, `${label} ${route}`);
+      await page.goto(`${base}${route}`, { waitUntil: "load" });
+      await page.waitForTimeout(700);
+      for (const bad of await utilitiesHold(page)) fail(`${label} ${route}`, bad);
+      const wide = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (wide > 2) fail(`${label} ${route}`, `page scrolls sideways by ${wide}px`);
+      await shoot(page, `page ${label} ${route}`);
+      flush();
+      await page.close();
+    }
+    await context.close();
+    ok(`${label}: ${pages.length} pages load with no policy refusal or script error`);
+  }
+}
+
 function watchErrors(page, label) {
   const seen = [];
   page.on("pageerror", (err) => seen.push(`JS error: ${err.message}`));
@@ -172,6 +274,7 @@ async function walkTabs(page, label) {
     const none = await page.isVisible("#find-none");
     if (!showing && !none) fail(label, `tab ${tab} shows nothing and says nothing`);
     for (const bad of await junkOnScreen(page)) fail(`${label} tab ${tab}`, bad);
+    for (const bad of await utilitiesHold(page)) fail(`${label} tab ${tab}`, bad);
     await shoot(page, `${label} ${tab}`);
     const wide = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -249,6 +352,9 @@ async function driveControls(page, label, tag) {
   await page.waitForSelector("#drawer:not([hidden])");
   await page.waitForTimeout(400);
   for (const bad of await junkOnScreen(page)) fail(`${label} drawer`, bad);
+  for (const bad of await utilitiesHold(page)) fail(`${label} drawer`, bad);
+  const bars = await page.$$eval("[data-w]", (els) => els.filter((e) => !e.style.width).length);
+  if (bars) fail(`${label} drawer`, `${bars} bar(s) drawn with no width`);
   await page.keyboard.press("Escape");
   await page.waitForSelector("#drawer", { state: "hidden" });
   ok(`${label}: sensor drawer opens and closes`);
@@ -544,6 +650,7 @@ async function checkFirstDay(browser, base) {
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch();
+  watchPolicy(browser);
   try {
     let sceneToken = null;
     let secrets = {};
@@ -573,6 +680,8 @@ async function main() {
       sceneToken = token;
       await context.close();
     }
+    console.log("\nevery page, under the policy");
+    await checkPages(browser, server.base, sceneToken);
     console.log("\nfirst day");
     await checkLanding(browser, server.base);
     await checkFirstDay(browser, server.base);

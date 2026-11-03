@@ -233,7 +233,12 @@ one of the *other* businesses needs them.
   they enter it from their own account under *Join a business*. It works
   once and lasts three days. Adding an existing person by email alone is
   refused: both of you have to agree, so no business can attach itself to
-  somebody's sign-in by knowing their address.
+  somebody's sign-in by knowing their address. Codes not used yet are
+  listed under the form (`GET /api/accounts/businesses/join-codes`, never
+  the code itself, which is shown once) and can be withdrawn
+  (`DELETE .../join-codes/{code_id}`); a used, withdrawn or expired code
+  does nothing, and a code only ever adds the business that made it. The
+  owner changes a member's role, or removes them, from *Your team*.
 - **Nobody else manages your sign-in.** No business can reset the password
   of a sign-in that is also used for other businesses, the one that happens
   to hold it included; the person resets it themselves from the sign-in

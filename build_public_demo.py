@@ -13,7 +13,8 @@ never heard of any of this.
 
     python build_public_demo.py
 
-writes `docs/index.html`, which GitHub Pages serves at
+writes `docs/index.html` (with `docs/console.html` and `docs/help.html`
+beside it), which GitHub Pages serves at
 https://<user>.github.io/<repo>/ once Pages is switched on for the repo.
 
 Self-contained on purpose. It seeds a throwaway database in a temporary
@@ -53,6 +54,9 @@ PATHS = [
     "/api/sites", "/api/invoices", "/api/contracts",
     "/api/billing/pricing",
     "/api/autopilot/compliance?days=7",
+    # Asked for with the dates picked on the card; the stub falls back to
+    # the path alone, so this one answer serves whatever dates are chosen.
+    "/api/autopilot/inspector-log",
     "/api/accounts/businesses",
     "/api/simulator",
     "/api/help/sensor-offline",
@@ -111,6 +115,9 @@ def check_every_panel_has_data(page_name: str = "console.html") -> None:
     looking at it. It looks like the feature is broken.
     """
     page = (ROOT / "static" / page_name).read_text()
+    # The calls are made by the page's own script, which is a file of its own.
+    for name in re.findall(r'<script src="/static/([a-z0-9-]+\.js)"></script>', page):
+        page += (ROOT / "static" / name).read_text()
     asked = paths_the_page_asks_for(page)
     captured = {p.split("?")[0] for p in PATHS}
     # Paths with a value substituted into them are captured per-item by
@@ -365,17 +372,30 @@ def capture() -> dict:
     return out
 
 
-def build(data: dict, page_name: str = "console.html",
-          extra_stub: str = "", banner: str = "") -> str:
-    console = (ROOT / page_name).read_text() if "/" in page_name else (
-        ROOT / "static" / page_name).read_text()
-    theme = (ROOT / "static" / "theme.css").read_text()
+def refuse_outbound(page: str) -> None:
+    """The guarantee each page makes: open it, and nobody is told you did.
 
-    # The shipped stylesheet pulls its webfonts from fonts.googleapis.com.
-    # On a page whose whole job is to be forwarded to strangers, that
-    # means every person who opens it tells Google they opened it, from
-    # their IP address, before a word renders. Swap the import for the
-    # embedded copy so the page reaches nothing at all.
+    Checked at the places a browser actually loads from, not at every
+    http:// in the file. The console prints an example Slack webhook as
+    grey hint text in an input box; matching on bare text flagged that
+    and would have taught whoever hit it to loosen the check until it
+    went quiet, which is how a guard stops guarding.
+    """
+    loads_from = re.findall(
+        r"""(?:src|href)\s*=\s*["']\s*(https?://[^"']+)"""
+        r"""|@import\s+url\(\s*['"]?\s*(https?://[^'")]+)"""
+        r"""|url\(\s*['"]?\s*(https?://[^'")]+)""",
+        page)
+    outbound = sorted({hit for group in loads_from for hit in group if hit})
+    if outbound:
+        raise SystemExit(
+            "the public page would fetch from the network, so opening it "
+            f"would be observable: {outbound}")
+
+
+def offline_theme() -> str:
+    """theme.css with its Google Fonts import swapped for the embedded copy."""
+    theme = (ROOT / "static" / "theme.css").read_text()
     fonts = (ROOT / "static" / "fonts-embedded.css").read_text()
     imports = [line for line in theme.splitlines()
                if line.startswith("@import url('https://fonts.googleapis.com")]
@@ -383,7 +403,19 @@ def build(data: dict, page_name: str = "console.html",
         raise SystemExit(
             f"expected one Google Fonts import in theme.css, found "
             f"{len(imports)}. The public page must not fetch anything.")
-    theme = theme.replace(imports[0], fonts)
+    return theme.replace(imports[0], fonts)
+
+
+def build(data: dict, page_name: str = "console.html",
+          extra_stub: str = "", banner: str = "") -> str:
+    console = (ROOT / page_name).read_text() if "/" in page_name else (
+        ROOT / "static" / page_name).read_text()
+    # The shipped stylesheet pulls its webfonts from fonts.googleapis.com.
+    # On a page whose whole job is to be forwarded to strangers, that
+    # means every person who opens it tells Google they opened it, from
+    # their IP address, before a word renders. offline_theme() swaps the
+    # import for the embedded copy so the page reaches nothing at all.
+    theme = offline_theme()
     circuit = (ROOT / "static" / "circuit.js").read_text()
     # Its own usage comment contains a literal </script>, which closes the
     # tag early when the file is inlined rather than linked. Escaping the
@@ -403,28 +435,42 @@ def build(data: dict, page_name: str = "console.html",
     console = (console.replace('href="/console"', 'href="console.html"')
                       .replace('href="/today"', 'href="index.html"'))
 
-    # A page's own <style> lives in its <head>, and only the <body> is
-    # carried over. The console keeps everything in theme.css so nothing
-    # was lost and nobody noticed; the plain view keeps its own block,
-    # and the first build of it silently shipped an unstyled page that
+    # A page's own stylesheet is linked from its <head>, and only the
+    # <body> is carried over, so each one is read in here: the page's own
+    # (simple.css) and the utility classes every page uses for small
+    # adjustments (utilities.css), in the order the page links them. The
+    # first build of the plain view silently shipped an unstyled page that
     # still looked plausible -- default list numbering, no card, and no
     # sign anything was missing.
     head = console[:console.index("<body>")]
     own_styles = "\n".join(
-        re.findall(r"<style>(.*?)</style>", head, re.S))
+        (ROOT / "static" / name).read_text()
+        for name in re.findall(r'<link rel="stylesheet" href="/static/([a-z0-9-]+\.css)">', head)
+        if name != "theme.css")
 
     body = console[console.index("<body>") + len("<body>"):
                    console.rindex("</body>")]
-    # The page's own script has to run after the stub is installed.
-    split = body.index('<script>\n"use strict";')
-    markup, app_js = body[:split], body[split:]
-
+    # The page's own script has to run after the stub is installed. It is
+    # a file now (the policy refuses inline script on the real server), so
+    # it is read and written in here, where no policy applies.
+    own_script = re.search(r'<script src="/static/([a-z0-9-]+\.js)"></script>\s*$', body)
+    if own_script is None:
+        raise SystemExit(f"{page_name} does not end by loading its own script.")
+    markup = body[:own_script.start()]
     # The plain view pulls circuit.js with a <script src>, which is one
-    # more file that does not exist beside a single inlined page.
+    # more file that does not exist beside a single inlined page; it is
+    # written in below instead.
     markup = markup.replace(
         '<script src="/static/circuit.js"></script>', "")
+    app_js = ("<script>\n"
+              + (ROOT / "static" / own_script.group(1)).read_text().replace(
+                  "</script", "<\\/script")
+              + "</script>\n")
 
     page = (
+        # Said in the page, not left to the host: served without a charset
+        # header, every degree sign reads as mojibake.
+        '<meta charset="utf-8">\n'
         "<title>CyberLogix Console</title>\n"
         # A demo is for whoever is handed the link, not for a search
         # engine: it is the console's private surface, on a public host.
@@ -449,23 +495,83 @@ def build(data: dict, page_name: str = "console.html",
         + app_js
     )
 
-    # The guarantee this page makes: open it, and nobody is told you did.
-    #
-    # Checked at the places a browser actually loads from, not at every
-    # http:// in the file. The console prints an example Slack webhook as
-    # grey hint text in an input box; matching on bare text flagged that
-    # and would have taught whoever hit it to loosen the check until it
-    # went quiet, which is how a guard stops guarding.
-    loads_from = re.findall(
-        r"""(?:src|href)\s*=\s*["']\s*(https?://[^"']+)"""
-        r"""|@import\s+url\(\s*['"]?\s*(https?://[^'")]+)"""
-        r"""|url\(\s*['"]?\s*(https?://[^'")]+)""",
-        page)
-    outbound = sorted({hit for group in loads_from for hit in group if hit})
-    if outbound:
-        raise SystemExit(
-            "the public page would fetch from the network, so opening it "
-            f"would be observable: {outbound}")
+    # The help page is a file beside this one in the demo (help.html), so
+    # its links, and the ones the scripts build, point there.
+    page = (page.replace('href="/help', 'href="help.html')
+                .replace('"/help#', '"help.html#'))
+    refuse_outbound(page)
+    # And nothing loaded from the server's own root, which on GitHub Pages
+    # is somebody else's site: a stray <script src="/static/..."> is a 404
+    # at best. Markup only; the inlined scripts' comments name such tags.
+    bare = re.sub(r"<script>.*?</script>", "", page, flags=re.S)
+    rooted = re.findall(r'src="/[^"]*"', bare)
+    if rooted:
+        raise SystemExit(f"the demo page still loads from the server: {rooted}")
+    return page
+
+
+# Pages the demo has a copy of, by the route the real app serves them at.
+DEMO_PAGES = {"/": "index.html", "/console": "console.html", "/help": "help.html"}
+
+
+def capture_help() -> str:
+    """The help page exactly as the application serves it."""
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    with TestClient(app) as client:
+        got = client.get("/help")
+        got.raise_for_status()
+        return got.text
+
+
+def build_help(served: str) -> str:
+    """The real help page, as one file beside the demo's other two.
+
+    The console and the plain view both link to /help, and on GitHub
+    Pages there is nothing there: the link from "A sensor is offline"
+    went to a 404, which reads as a broken product. This is the page the
+    server renders -- every answer from helpdesk.py -- with its
+    stylesheets written in, nothing fetched from anywhere, and every link
+    pointing at a page the demo actually has. A link to a page it has no
+    copy of (pricing, the agreements) is left as its words, not a 404.
+    """
+    page = served
+    # Previews, the canonical address and the installed-app links all name
+    # the server the copy was rendered on, which is not where it is read.
+    page = re.sub(r'\n<link rel="(?:canonical|icon|apple-touch-icon|manifest)"[^>]*>', "", page)
+    page = re.sub(r'\n<meta (?:property="og:|name="twitter:)[^>]*>', "", page)
+    page = page.replace("<head>", '<head>\n<meta name="robots" content="noindex">', 1)
+
+    pages_css = (ROOT / "static" / "pages.css").read_text()
+    page = page.replace('<link rel="stylesheet" href="/static/theme.css">',
+                        f"<style>\n{offline_theme()}\n</style>")
+    page = page.replace('<link rel="stylesheet" href="/static/pages.css">',
+                        f"<style>\n{pages_css}\n</style>")
+    circuit = (ROOT / "static" / "circuit.js").read_text().replace("</script", "<\\/script")
+    page = page.replace('<script src="/static/circuit.js" defer></script>\n', "")
+    page = page.replace("</body>", f"<script>\n{circuit}\n</script>\n</body>", 1)
+    logo = (ROOT / "static" / "logo.svg").read_text()
+    page = page.replace("/static/logo.svg", "data:image/svg+xml;base64,"
+                        + base64.b64encode(logo.encode()).decode())
+
+    def relink(match: "re.Match[str]") -> str:
+        route, anchor, text = match.group(2), match.group(3) or "", match.group(5)
+        if route in DEMO_PAGES:
+            return (f'{match.group(1)}href="{DEMO_PAGES[route]}{anchor}"'
+                    f'{match.group(4)}>{text}</a>')
+        # Inside the nav a dead link is dropped; in a sentence its words stay.
+        return "" if "<nav" in page[:match.start()].rsplit("</nav>", 1)[-1] else text
+
+    page = re.sub(r'(<a\b[^>]*?)href="(/[a-z]*)(#[a-z-]+)?"([^>]*)>(.*?)</a>',
+                  relink, page, flags=re.S)
+    refuse_outbound(page)
+    # Markup only: circuit.js's own usage comment names its <script src>.
+    markup = re.sub(r"<script>.*?</script>", "", page, flags=re.S)
+    leftover = re.findall(r'(?:href|src)="/[^"]*"', markup)
+    if leftover:
+        raise SystemExit(f"the demo help page still points at the server: {leftover}")
     return page
 
 
@@ -506,6 +612,7 @@ def main() -> None:
         check_every_panel_has_data("console.html")
         check_every_panel_has_data("simple.html")
         data = capture()
+        help_page = build_help(capture_help())
         # index.html is the plain view, because the front door belongs to
         # whoever was handed the link and has never seen the product. The
         # console is one click away for anyone who wants the instruments.
@@ -514,6 +621,7 @@ def main() -> None:
                                 extra_stub=SIMPLE_STUB_EXTRA,
                                 banner=SIMPLE_BANNER),
             "console.html": build(data, "console.html"),
+            "help.html": help_page,
         }
 
     DOCS.mkdir(exist_ok=True)

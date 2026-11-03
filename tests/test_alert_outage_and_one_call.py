@@ -20,6 +20,7 @@ import automation
 import notifications
 import scheduler
 from store import STORE, VOICE_ESCALATION_GRACE_MINUTES, utc_now
+from pages import page_source
 
 PAGE = Path(__file__).resolve().parent.parent / "static" / "console.html"
 
@@ -88,7 +89,7 @@ def _render_note(row):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
-    src = PAGE.read_text()
+    src = page_source(PAGE)
     esc_start = src.index("const esc = ")
     esc_end = src.index("\n\n", esc_start)
     fn_start = src.index("function textsFailedNote(i)")

@@ -71,6 +71,10 @@ UNGATED_BY_DESIGN = {
     "/api/voice/keypress/{incident_id}/{token}": (
         "Twilio's callback, verified by request signature and a per-incident secret"
     ),
+    "/api/voice/sms-reply": (
+        "Twilio's inbound-text callback, verified by request signature, and "
+        "it acts only for a number the alert went to"
+    ),
     "/api/vault/verify": "a public verifier — being checkable by outsiders is the point",
     "/api/claims/{incident_id}/packet": "assembles a document, changes no state",
     "/api/shortcuts/{vertical}": "produces a document, changes no state",

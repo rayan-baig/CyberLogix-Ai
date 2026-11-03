@@ -20,10 +20,11 @@ import industries
 import simulator
 from pricing import PRICE_BOOK, headline
 from store import INDUSTRY_PROFILES, PLAN_TIERS, STORE
+from pages import page_source, served_page
 
 ROOT = Path(__file__).resolve().parent.parent
-CONSOLE = (ROOT / "static" / "console.html").read_text()
-LANDING = (ROOT / "static" / "index.html").read_text()
+CONSOLE = page_source(ROOT / "static" / "console.html")
+LANDING = page_source(ROOT / "static" / "index.html")
 
 
 def _sign_up(api, email="sam@harbour.example", company="Harbour Street Kitchen"):
@@ -161,7 +162,7 @@ def test_each_industry_page_states_the_fix_with_the_limit_it_alarms_on(vertical)
 
 
 def test_the_industry_page_leads_with_the_problem_then_the_fix(api):
-    html = api.get("/for/restaurant").text
+    html = served_page(api, "/for/restaurant")
     problem = html.index("<h2>The problem</h2>")
     fix = html.index("<h2>The fix</h2>")
     assert problem < fix
@@ -529,7 +530,7 @@ def test_the_console_marks_every_simulated_card(api):
 
 # --- C1: from sign-up to a first reading, with fewer steps --------------------
 
-SIGNUP = (ROOT / "static" / "signup.html").read_text()
+SIGNUP = page_source(ROOT / "static" / "signup.html")
 
 
 def _const(source, name):

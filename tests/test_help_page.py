@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import helpdesk
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -117,7 +118,7 @@ def test_the_test_alert_answer_is_the_test_alert():
 
 
 def test_the_console_has_the_buttons_the_answers_name():
-    console = (ROOT / "static" / "console.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
     for label in ("Send a test alert", "Download everything", "Delete everything",
                   "Download or delete everything", "Who gets called",
                   "What you pay", "Fetch from a sensor cloud", "New key",
@@ -173,7 +174,7 @@ def test_help_is_linked_from_the_console_and_the_landing_page(api):
 
 
 def test_the_help_page_has_no_inline_style_or_script():
-    page = (ROOT / "static" / "help.html").read_text()
+    page = page_source(ROOT / "static" / "help.html")
     assert "<style" not in page and "style=" not in page
     assert "<script>" not in page
 
@@ -210,7 +211,7 @@ def test_the_docs_carry_the_same_offline_steps():
 
 
 def test_an_offline_sensor_links_to_the_steps_in_the_console():
-    console = (ROOT / "static" / "console.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
     # On the card, only when it is offline.
     assert '${s.online ? "" : `<a class="offline-help" href="/help#sensor-offline"' in console
     # In the drawer, expandable, filled from the served list.
@@ -219,7 +220,7 @@ def test_an_offline_sensor_links_to_the_steps_in_the_console():
 
 
 def test_the_simple_view_links_a_quiet_sensor_to_the_steps():
-    simple = (ROOT / "static" / "simple.html").read_text()
+    simple = page_source(ROOT / "static" / "simple.html")
     assert 'help: "/help#sensor-offline"' in simple
 
 

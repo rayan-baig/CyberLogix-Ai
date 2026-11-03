@@ -17,6 +17,7 @@ variable.
 import re
 
 import pytest
+from pages import page_source
 
 
 CARDED = ("/", "/signup", "/pricing", "/help", "/for", "/for/restaurant", "/legal")
@@ -149,8 +150,8 @@ WORDS = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve", 13: "Thirteen",
 def _landing():
     from pathlib import Path
 
-    return (Path(__file__).resolve().parent.parent
-            / "static" / "index.html").read_text()
+    return page_source(Path(__file__).resolve().parent.parent
+            / "static" / "index.html")
 
 
 def test_the_sector_count_in_the_heading_is_the_number_shown():
@@ -290,7 +291,7 @@ def test_private_pages_send_noindex(api, path):
                                   "offline", "proof", "reset", "error"])
 def test_private_page_files_say_noindex_themselves(name):
     """For copies served without our headers: the public demo is one."""
-    page = (ROOT / "static" / f"{name}.html").read_text()
+    page = page_source(ROOT / "static" / f"{name}.html")
     assert '<meta name="robots" content="noindex">' in page
 
 

@@ -64,6 +64,7 @@ from digest import router as digest_router
 from payments import router as payments_router
 from books import router as books_router
 from margin import router as margin_router
+from inspector import router as inspector_router
 from watchdog import router as watchdog_router
 from legal import router as legal_router
 from mail import router as mail_router
@@ -114,6 +115,10 @@ app = FastAPI(
     # From the VERSION file, so the health check, the API docs and the
     # console's About card all report the release CHANGELOG.md describes.
     version=__version__,
+    # Served by the two routes near the page routes below, so each carries
+    # no inline script (see API_DOCS_POLICY).
+    docs_url=None,
+    redoc_url=None,
 )
 
 # CYBERLOGIX_ALLOWED_ORIGINS names, comma-separated and exactly, the other
@@ -260,6 +265,7 @@ app.include_router(pollers_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)
+app.include_router(inspector_router)
 app.include_router(payments_router)
 app.include_router(margin_router)
 app.include_router(books_router)
@@ -356,15 +362,42 @@ _FONT_FILES = "https://fonts.gstatic.com"
 
 CONTENT_SECURITY_POLICY = "; ".join([
     "default-src 'self'",
-    # 'unsafe-inline' is honest rather than aspirational: every page here
-    # carries its own <script> and <style> block, and a policy written as
-    # though they did not would be a policy that has to be switched off.
-    # It still refuses script from any other origin, which is what stops
-    # an injected <script src> from reaching anywhere useful.
-    "script-src 'self' 'unsafe-inline'",
-    f"style-src 'self' 'unsafe-inline' {_FONT_CSS}",
+    # No 'unsafe-inline', for script or style. Every page's script and
+    # stylesheet is a file under /static (console.js, landing.css, ...), no
+    # element carries an onclick or a style="..." attribute, and markup a
+    # script builds uses classes (utilities.css) rather than style
+    # attributes. So text that gets into a page -- a sensor name, a company
+    # name, a note -- cannot run as script or restyle the page even if an
+    # escape is missed somewhere: the browser refuses anything inline.
+    # tests/test_csp.py holds every served page to that.
+    "script-src 'self'",
+    f"style-src 'self' {_FONT_CSS}",
     f"font-src 'self' {_FONT_FILES}",
     "img-src 'self' data:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "object-src 'none'",
+])
+
+
+# The two API reference pages run third-party code from a CDN (Swagger UI
+# and ReDoc), so they get a policy of their own that names that origin,
+# and only they do. Their own setup is a file (static/api-docs.js), so
+# script stays strict here too. Style does not: ReDoc writes its styles
+# into <style> elements at run time (styled-components) and Swagger UI's
+# bundle is not ours to change, so style-src keeps 'unsafe-inline' on
+# these two pages only. A page with nothing of the customer's on it, and
+# no script it does not name.
+_DOCS_CDN = "https://cdn.jsdelivr.net"
+API_DOCS_POLICY = "; ".join([
+    "default-src 'self'",
+    f"script-src 'self' {_DOCS_CDN}",
+    f"style-src 'self' 'unsafe-inline' {_DOCS_CDN} {_FONT_CSS}",
+    f"font-src 'self' {_FONT_FILES}",
+    "img-src 'self' data:",
+    "worker-src 'self' blob:",
     "connect-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
@@ -931,6 +964,49 @@ def help_page(request: Request):
         "%%FAQ%%": render_faq(),
         "%%OFFLINE_STEPS%%": render_offline(),
     })
+
+
+_SWAGGER_VERSION = "5"
+_REDOC_VERSION = "2"
+
+
+@app.get("/docs", include_in_schema=False)
+def api_reference():
+    """Interactive API docs (Swagger UI), with no inline script.
+
+    FastAPI's own page configures Swagger UI in an inline <script>, which
+    the policy refuses. The same configuration is static/api-docs.js.
+    """
+    page = (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        f"<title>{html.escape(app.title)} - API</title>"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<link rel=\"icon\" href=\"/favicon.ico\">"
+        f"<link rel=\"stylesheet\" href=\"{_DOCS_CDN}/npm/swagger-ui-dist@"
+        f"{_SWAGGER_VERSION}/swagger-ui.css\">"
+        "</head><body><div id=\"swagger-ui\"></div>"
+        f"<script src=\"{_DOCS_CDN}/npm/swagger-ui-dist@{_SWAGGER_VERSION}/"
+        "swagger-ui-bundle.js\"></script>"
+        "<script src=\"/static/api-docs.js\"></script>"
+        "</body></html>"
+    )
+    return HTMLResponse(page, headers={"Content-Security-Policy": API_DOCS_POLICY})
+
+
+@app.get("/redoc", include_in_schema=False)
+def api_reference_redoc():
+    """The same API reference, as ReDoc reads it. No script of ours at all."""
+    page = (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        f"<title>{html.escape(app.title)} - API</title>"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<link rel=\"icon\" href=\"/favicon.ico\">"
+        "</head><body><redoc spec-url=\"/openapi.json\"></redoc>"
+        f"<script src=\"{_DOCS_CDN}/npm/redoc@{_REDOC_VERSION}/bundles/"
+        "redoc.standalone.js\"></script>"
+        "</body></html>"
+    )
+    return HTMLResponse(page, headers={"Content-Security-Policy": API_DOCS_POLICY})
 
 
 @app.get("/favicon.ico", include_in_schema=False)

@@ -18,6 +18,7 @@ import pytest
 
 import pricing
 from domain import PLAN_TIERS
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "static" / "pricing.js"
@@ -157,6 +158,6 @@ def test_pricing_is_linked_from_the_landing_page_and_listed(api):
 
 
 def test_the_pricing_page_has_no_inline_style_or_script():
-    page = (ROOT / "static" / "pricing.html").read_text()
+    page = page_source(ROOT / "static" / "pricing.html")
     assert "<style" not in page and "style=" not in page
     assert "<script>" not in page

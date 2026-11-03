@@ -12,9 +12,10 @@ In production it runs on its own subdomain of MTRX Horizyn's domain,
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
 
 Wireless thermal sensors report to the hub. Each reading is scored against
-the threshold profile for its industry. A breach opens an incident and sends
-a Gemini-drafted SMS; if nobody acknowledges it, the hub escalates to a
-spoken phone call. In the background the forecaster projects which sensors
+the threshold profile for its industry. A breach opens an incident and texts
+the on-call roster which unit, where and how far out of range; a reply of
+"1" acknowledges it. If nobody does, the hub escalates to a spoken phone
+call, where pressing 1 does the same. In the background the forecaster projects which sensors
 will fail next, and the compliance clerk assembles the paperwork inspectors
 ask for.
 

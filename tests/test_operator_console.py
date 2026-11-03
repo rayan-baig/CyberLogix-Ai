@@ -23,13 +23,14 @@ import re
 from pathlib import Path
 
 import pytest
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "static" / "book.html"
 
 
 def console_js() -> str:
-    src = PAGE.read_text()
+    src = page_source(PAGE)
     return src[src.index("<script>"): src.rindex("</script>")]
 
 
@@ -203,7 +204,7 @@ def test_every_platform_endpoint_a_person_needs_has_a_button():
             if "require_platform_admin" in args:
                 routes[verb.upper()].append(prefix.group(1) + route)
 
-    pages = "".join(p.read_text() for p in (ROOT / "static").glob("*.html"))
+    pages = "".join(page_source(p) for p in (ROOT / "static").glob("*.html"))
     uncovered = sorted(
         f"{verb} {route}"
         for verb, found in routes.items()
@@ -217,7 +218,7 @@ def test_every_platform_endpoint_a_person_needs_has_a_button():
 def test_every_tab_has_a_loader_and_a_panel():
     """A tab with no panel is a blank page, and a panel with no loader
     is a page that never fills in."""
-    page = PAGE.read_text()
+    page = page_source(PAGE)
     tabs = set(re.findall(r'data-panel="([a-z]+)"', page))
     panels = set(re.findall(r'id="panel-([a-z]+)"', page))
     loaders = set(re.findall(r"(\w+): load(\w+),", console_js()))
@@ -242,7 +243,7 @@ def test_the_console_never_invents_a_missing_number():
 def test_every_write_button_names_an_action_the_console_handles():
     """A button whose action nothing handles is a button that does
     nothing at all, silently, which is how it would ship."""
-    page = PAGE.read_text()
+    page = page_source(PAGE)
     js = console_js()
     declared = set(re.findall(r'data-act="([a-z-]+)"', page))
     # the ones rendered into list items, which the markup cannot show

@@ -16,9 +16,10 @@ pin each join, because each break was at a join.
 
 import re
 from pathlib import Path
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
-CONSOLE = (ROOT / "static" / "console.html").read_text()
+CONSOLE = page_source(ROOT / "static" / "console.html")
 CONVERSION = (ROOT / "conversion.py").read_text()
 
 
@@ -183,7 +184,7 @@ def test_the_form_says_what_is_being_accepted():
 # --- 1d: "You are signed in" --------------------------------------------------
 
 
-SIGNUP_PAGE = (ROOT / "static" / "signup.html").read_text()
+SIGNUP_PAGE = page_source(ROOT / "static" / "signup.html")
 
 
 def _js_const(source, name):

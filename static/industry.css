@@ -1,0 +1,86 @@
+/* One page per industry, in that industry's own words.
+ *
+ * A restaurant owner and an IVF clinic director both need this product
+ * and neither will read the other's page. "Walk-in" means nothing in a
+ * hangar. So the page is one template and twelve sets of words, and the
+ * words come from the server rather than being written into the markup.
+ *
+ * Same palette and the same type as everything else: this is the first
+ * thing a stranger sees, and it has to look like the console they will
+ * be shown next.
+ */
+.wrap { max-width: 760px; margin: 0 auto; padding: 22px 16px 70px; }
+.top { display: flex; align-items: center; gap: 12px; padding: 16px 0 30px; }
+
+.eyebrow {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+}
+h1.lede {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(28px, 6.5vw, 42px); line-height: 1.12;
+  letter-spacing: -0.015em; margin: 0 0 16px;
+}
+.standfirst {
+  font-size: clamp(16px, 2.6vw, 18px); line-height: 1.6;
+  color: var(--ink-2); margin: 0 0 30px; max-width: 58ch;
+}
+
+.slab {
+  border-radius: 16px; padding: 24px 26px; margin-bottom: 18px;
+  border: 1px solid var(--border); background: var(--surface);
+  box-shadow: var(--lift-1);
+}
+.slab h2 {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 0 0 14px; font-weight: 400;
+}
+.slab p { margin: 0 0 12px; font-size: 15.5px; line-height: 1.68; color: var(--ink-2); }
+.slab p:last-child { margin-bottom: 0; }
+.slab.bad { border-color: color-mix(in srgb, var(--critical) 38%, transparent); }
+.slab.bad h2 { color: var(--critical); }
+/* The fix in one paragraph, above the detail: the sentence a reader
+   who stops here still leaves with. */
+.slab .fix-line { color: var(--ink); font-size: 16.5px; margin-bottom: 18px; }
+
+/* The four things, numbered, because it is a sequence. */
+.does { list-style: none; counter-reset: n; margin: 0; padding: 0; }
+.does li {
+  counter-increment: n; position: relative;
+  padding: 0 0 18px 46px; font-size: 15px; line-height: 1.62;
+  color: var(--ink-2);
+}
+.does li:last-child { padding-bottom: 0; }
+.does li::before {
+  content: counter(n); position: absolute; left: 0; top: -2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  background: var(--accent-dim);
+}
+.does b { display: block; color: var(--ink); font-weight: 500;
+          font-size: 16px; margin-bottom: 3px; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+.tag-pill {
+  font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid var(--border-lit); color: var(--ink-2);
+}
+
+.foot { margin-top: 34px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* The index of all twelve. */
+.grid { display: grid; gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.ind {
+  display: block; text-decoration: none; padding: 20px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--surface-2); transition: border-color .2s var(--ease),
+              transform .2s var(--ease);
+}
+.ind:hover { border-color: var(--accent); transform: translateY(-1px); }
+.ind b { display: block; font-family: var(--display); font-size: 18px;
+         font-weight: 400; color: var(--ink); margin-bottom: 6px; }
+.ind span { font-size: 13.5px; line-height: 1.55; color: var(--muted); }

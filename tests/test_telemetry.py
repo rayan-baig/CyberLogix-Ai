@@ -26,10 +26,18 @@ def test_breach_opens_incident_with_gemini_sms(
     assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
     assert body["catastrophe_type"] == "HVAC Circuit Trip / Cooling Fan Stalled"
     assert body["sms_dispatch_source"] == "gemini"
-    assert body["dispatched_sms_text"].startswith("URGENT:")
+    # Facts first, then the model's line, then how to answer.
+    text = body["dispatched_sms_text"]
+    assert text.startswith("ALERT Austin DC / Hall B (RACK-01)")
+    assert "94F, 16F above the 78F limit." in text
+    assert "URGENT: equipment failing, attend the site now." in text
+    assert text.endswith("Reply 1 if you are on it.")
     assert "94.0°F > 78.0°F" in body["breach_details"]
     assert body["incident_id"].startswith("INC-")
-    assert "61.5%" in stub_gemini.prompts[0]
+    # The model is told the trade, not the reading: the facts are not its
+    # to word, and without them the answer can be cached per kind of unit.
+    assert "CyberTech Data Centers" in stub_gemini.prompts[0]
+    assert "94" not in stub_gemini.prompts[0]
 
 
 def test_sustained_breach_does_not_spam_incidents(

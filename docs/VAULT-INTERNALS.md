@@ -56,6 +56,24 @@ Gemini-written executive summary.
 — one row per sensor plus a totals row — so it can go straight into an audit
 pack without anyone re-typing numbers.
 
+### The log for an inspector
+
+`GET /api/autopilot/inspector-log?start=YYYY-MM-DD&end=YYYY-MM-DD` (up to
+92 days; a week by default) is what an inspector standing in the kitchen
+asks for: each unit's lowest and highest reading per day (and per hour,
+in the data), every time it went out of range with its worst reading, who
+acknowledged it and how soon, what was done and who reviewed it. Only the
+calling business's units and alerts, read through its own credential.
+Readings come from the rolling window plus the copies kept on each alert,
+so an old excursion still shows after the window has moved on, and the
+log says so when the window does not cover the dates asked for.
+
+In the console, *Log for an inspector* (under *Proof*) takes the dates
+and opens the log as a document with the print dialog over it: one click
+to print or save as PDF. On paper only the document prints, black on
+white, with each table's headings repeated on every page and an
+out-of-range day in bold.
+
 ## Evidence outlives the rolling window
 
 Readings are a ring buffer: the oldest are deleted once a sensor passes

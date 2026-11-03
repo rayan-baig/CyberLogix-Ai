@@ -1,0 +1,119 @@
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.top .brand { text-decoration: none; color: var(--ink); }
+.top .brand-name { font-size: 17px; }
+.top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+/* Five words of navigation do not fit a phone. Measured at 390px the row
+   ran to 405 and the whole page scrolled sideways, which on the page that
+   takes somebody's money reads as broken before they have typed anything.
+   The brand shrinks to its mark and the links tighten; nothing is hidden,
+   because every one of them is a place somebody might need to get to. */
+@media (max-width: 720px) {
+  .top { padding: 14px 16px; gap: 10px; }
+  .top .brand-name { display: none; }
+  .top nav { gap: 14px; }
+  .top nav a { font-size: 13px; }
+}
+
+.shell { display: grid; grid-template-columns: 1fr 420px; gap: 56px;
+         padding: 56px 0 90px; align-items: start; }
+@media (max-width: 960px) { .shell { grid-template-columns: 1fr; gap: 34px; } }
+
+h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(30px, 4.2vw, 46px); line-height: 1.08;
+  letter-spacing: -0.015em; margin: 0 0 18px; color: var(--ink);
+}
+.lede { font-size: 17px; line-height: 1.65; color: var(--muted);
+        max-width: 52ch; margin: 0 0 30px; }
+.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.points li { color: var(--muted); font-size: 14.5px; line-height: 1.6;
+             padding-left: 24px; position: relative; }
+.points li::before {
+  content: ""; position: absolute; left: 4px; top: 8px;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+}
+.points b { color: var(--ink); font-weight: 600; }
+
+/* --- the form ------------------------------------------------------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px;
+}
+.card h2 {
+  font-family: var(--display); font-weight: 400; font-size: 20px;
+  margin: 0 0 6px; color: var(--ink);
+}
+.card .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field label { font-size: 12.5px; color: var(--muted); letter-spacing: .02em; }
+.field input, .field select {
+  font: inherit; font-size: 14.5px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 9px; padding: 11px 13px; width: 100%;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+}
+.field .hint { font-size: 12px; color: var(--muted); }
+button.go {
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  width: 100%; padding: 13px; border-radius: 10px; border: none;
+  color: #05070D; background: var(--accent); margin-top: 6px;
+}
+button.go:disabled { opacity: .55; cursor: progress; }
+.small { font-size: 12.5px; color: var(--muted); margin: 16px 0 0;
+         line-height: 1.6; }
+.small a { color: var(--accent-cyan); }
+
+.error {
+  margin: 0 0 18px; padding: 12px 15px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger, #E0534F) 45%, transparent);
+  background: color-mix(in srgb, var(--danger, #E0534F) 10%, transparent);
+  color: var(--ink); font-size: 13.5px; line-height: 1.55;
+}
+
+/* --- what you get after signing up ---------------------------------- */
+.done h2 { font-family: var(--display); font-weight: 400; font-size: 22px;
+           margin: 0 0 8px; color: var(--ink); }
+.keybox {
+  margin: 20px 0; padding: 15px 17px; border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--warn, #E0A030) 40%, transparent);
+  background: color-mix(in srgb, var(--warn, #E0A030) 8%, transparent);
+}
+.keybox .lbl { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
+.keybox code {
+  font-family: var(--mono); font-size: 13px; color: var(--ink);
+  word-break: break-all; display: block; margin-bottom: 10px;
+}
+.step { margin: 0 0 22px; }
+.step .n { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+.step h3 { font-size: 15px; margin: 3px 0 4px; color: var(--ink);
+           font-weight: 600; }
+.step p { font-size: 13.5px; color: var(--muted); margin: 0 0 9px;
+          line-height: 1.55; }
+.step pre {
+  margin: 0; padding: 12px 14px; border-radius: 9px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  line-height: 1.55; white-space: pre-wrap; word-break: break-all;
+}
+
+footer {
+  border-top: 1px solid var(--border); padding: 26px 0;
+  color: var(--muted); font-size: 13px;
+}
+footer nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover, footer a:focus-visible { color: var(--ink); }

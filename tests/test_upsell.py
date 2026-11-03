@@ -12,6 +12,7 @@ import pytest
 
 from contracts import run_billing
 from store import STORE, add_months, utc_now
+from pages import page_source
 
 
 @pytest.fixture()
@@ -208,7 +209,7 @@ def test_the_console_offers_a_button_for_every_priced_add_on():
     """The list said what was not being sold and could not sell it."""
     from pathlib import Path
 
-    page = Path("static/console.html").read_text()
+    page = page_source(Path("static/console.html"))
     assert "data-buy=" in page
     assert "/api/contracts/add-ons" in page
     # And it sends the whole set, not the one that was clicked.

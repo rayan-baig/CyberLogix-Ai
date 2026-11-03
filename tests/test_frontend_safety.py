@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 import pytest
+from pages import page_source, served_page
 
 ROOT = Path(__file__).resolve().parent.parent
 SURFACES = ("static/console.html", "static/partner.html")
@@ -45,7 +46,7 @@ ESCAPED_ONE_STEP_LATER = (
 
 
 def script_of(path: Path) -> str:
-    src = path.read_text()
+    src = page_source(path)
     return src[src.index("<script>"): src.rindex("</script>")]
 
 
@@ -160,7 +161,7 @@ def test_the_console_does_not_throw_away_an_issued_credential(api):
     which made the whole credential unreachable from the UI — rotation
     would have been the only way to ever see one.
     """
-    page = api.get("/console").text
+    page = served_page(api, "/console")
 
     assert "showIssuedKey" in page, "nothing surfaces an issued key"
     assert "made.ingest_key" in page, (
@@ -184,7 +185,7 @@ def test_the_business_key_from_sign_up_is_shown_on_the_page(api):
     the browser's developer console, with a toast telling the owner to
     keep a key they had no way to see, and a key written to the console
     log stays in that log."""
-    page = api.get("/console").text
+    page = served_page(api, "/console")
 
     assert 'showIssuedKey("this business (master key)", made.api_key)' in page
     assert "console.info" not in page and "console.log" not in page
@@ -193,7 +194,7 @@ def test_the_business_key_from_sign_up_is_shown_on_the_page(api):
 def test_a_proxy_error_page_never_lands_in_a_toast(api):
     """A load balancer answering for a restarting server sends HTML, and
     the whole page went into the toast word for word."""
-    page = api.get("/console").text
+    page = served_page(api, "/console")
     handler = page[page.index("async function api("):]
     handler = handler[:handler.index("\n}\n")]
 
@@ -206,7 +207,7 @@ def test_the_wall_shows_the_whole_estate_and_nothing_to_press(api):
     with a fleet search typed, the wall showed only part of the estate
     and said nothing; and it carried every incident button, the search
     bar, and who was called on what number."""
-    page = api.get("/console").text
+    page = served_page(api, "/console")
     css = api.get("/static/theme.css").text
     wall = page[page.index("function setWall("):]
     wall = wall[:wall.index("\n}\n")]
@@ -363,7 +364,7 @@ def test_one_failing_panel_cannot_blank_the_console(api):
     panels = re.search(r"const OPTIONAL_PANELS = \{(.*?)\};", js, re.S)
     assert panels, "no map from panel to its element"
     for element_id in re.findall(r'"([a-z-]+-body)"', panels.group(1)):
-        assert f'id="{element_id}"' in (ROOT / "static/console.html").read_text(), (
+        assert f'id="{element_id}"' in page_source(ROOT / "static/console.html"), (
             f"OPTIONAL_PANELS points at #{element_id}, which is not on the page"
         )
 
@@ -383,7 +384,7 @@ def test_every_public_page_has_a_phone_layout(surface):
     Verified live in Chromium at 390x844 across /, /signup, /legal and
     /console: document width equals viewport width on all four.
     """
-    page = (ROOT / surface).read_text()
+    page = page_source(ROOT / surface)
     small = re.findall(r"@media \(max-width: (\d+)px\)\s*\{", page)
     assert small, f"{surface} has no small-screen rules at all"
     assert any(int(w) <= 760 for w in small), (
@@ -492,7 +493,7 @@ def test_a_rejected_form_shows_a_sentence_not_a_json_blob():
     -- which contains the real reason and buries it. Every form in the
     console shares one error path, so this is checked once, here.
     """
-    source = (ROOT / "static/console.html").read_text()
+    source = page_source(ROOT / "static/console.html")
 
     assert "function readableError(" in source
     assert "row.msg" in source, "the useful part of a validation error"
@@ -511,7 +512,7 @@ def test_the_poll_does_not_rebuild_a_card_somebody_is_typing_into():
     is not a reason to wipe the box somebody is mid-word in, so the card
     redraws only when the set of devices actually changes.
     """
-    source = (ROOT / "static/console.html").read_text()
+    source = page_source(ROOT / "static/console.html")
 
     assert "knockSignature" in source
     assert "if (signature === knockSignature)" in source
@@ -527,6 +528,6 @@ def test_the_poll_does_not_rebuild_a_card_somebody_is_typing_into():
 
 
 def test_a_chosen_industry_is_never_reset_underneath_the_operator():
-    source = (ROOT / "static/console.html").read_text()
+    source = page_source(ROOT / "static/console.html")
 
     assert "if (select.options.length) return;" in source

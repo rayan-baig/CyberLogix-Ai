@@ -1356,6 +1356,25 @@ class JoinCode:
     def spent(self) -> bool:
         return self.used_at is not None or utc_now() >= self.expires_at
 
+    @property
+    def code_id(self) -> str:
+        """A name for the code that is not the code: the start of its hash.
+
+        The owner needs to point at one outstanding code to withdraw it,
+        and the code itself is shown once and never kept. Twelve hex
+        characters of a SHA-256 of 24 random bytes say nothing about it.
+        """
+        return self.token_hash[:12]
+
+    def public(self, issued_by_name: str = "") -> Dict[str, Any]:
+        return {
+            "code_id": self.code_id,
+            "role": self.role,
+            "issued_by": issued_by_name,
+            "issued_at": iso(self.issued_at),
+            "expires_at": iso(self.expires_at),
+        }
+
     def to_row(self) -> Dict[str, Any]:
         return {
             "token_hash": self.token_hash,

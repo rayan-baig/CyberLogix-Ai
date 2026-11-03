@@ -2533,6 +2533,28 @@ class HubStore:
             self._db.delete("join_code", digest)
             return code
 
+    def join_codes_for(self, tenant_id: str) -> List[JoinCode]:
+        """The codes for this business still waiting to be used, newest first."""
+        with self._lock:
+            live = [c for c in self._join_codes.values()
+                    if c.tenant_id == tenant_id and not c.spent]
+            return sorted(live, key=lambda c: c.issued_at, reverse=True)
+
+    def revoke_join_code(self, tenant_id: str, code_id: str) -> Optional[JoinCode]:
+        """Withdraw one unused code of this business. None if there is none.
+
+        Matched on the business as well as the id, so an owner of one
+        business cannot withdraw -- or learn anything about -- another's.
+        """
+        with self._lock:
+            for digest, code in list(self._join_codes.items()):
+                if (code.tenant_id == tenant_id and code.code_id == code_id
+                        and not code.spent):
+                    self._join_codes.pop(digest, None)
+                    self._db.delete("join_code", digest)
+                    return code
+            return None
+
     def issue_reset(self, user: User, ttl_hours: int = 24, by_owner: bool = False) -> str:
         """Create a reset and return the plaintext token, once."""
         with self._lock:
