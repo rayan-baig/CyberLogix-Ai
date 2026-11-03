@@ -403,7 +403,7 @@ async function loadHealth() {
     tone: "bad", title: why,
   })), "Nothing is stopped.");
 
-  const [backups, mail, log, sup, due, terms, fit, broke] =
+  const [backups, mail, log, sup, due, terms, fit, broke, used] =
     await Promise.all([
     read("/api/admin/backups"),
     read("/api/mail/status"),
@@ -413,7 +413,15 @@ async function loadHealth() {
     read("/api/legal/acceptance/outstanding"),
     read("/api/admin/readiness"),
     read("/api/admin/faults?limit=25"),
+    read("/api/admin/usage"),
   ]);
+
+  // Daily totals, never who: what usage.py keeps is a date and numbers.
+  const today = used.daily[used.daily.length - 1] || {};
+  linesInto("usage-lines", Object.keys(used.meaning).map((k) => [
+    used.meaning[k], String(used.totals[k]), "today " + (today[k] || 0),
+  ]));
+  $("usage-note").textContent = used.note || "";
 
   linesInto("backup-lines", [
     ["Snapshots kept", backups.count + " of " + backups.keep, backups.directory || ""],

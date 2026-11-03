@@ -269,6 +269,9 @@ def send_test_alert(
         )
         if went:
             _tested.add(tenant.tenant_id)
+            import usage
+
+            usage.count("test_alerts")
     finally:
         with _lock:
             _inflight.discard(tenant.tenant_id)

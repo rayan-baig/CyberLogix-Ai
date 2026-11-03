@@ -239,6 +239,10 @@ def adopt(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=detail) from None
 
+    import usage
+
+    usage.count("sensors_added")
+
     replayed = _replay(sensor, tenant, row, unit)
     forget(tenant.tenant_id, payload.serial)
     write_audit(tenant, operator, "doorstep.adopted",

@@ -140,6 +140,11 @@ services:
         sync: false
       - key: CYBERLOGIX_OPERATOR_EMAIL
         sync: false
+      # Optional: where a short report of each server error (a 500) goes,
+      # with nobody's details in it. Left empty, none is sent. Not a value
+      # here, so a blueprint sync never clears one set in the dashboard.
+      - key: CYBERLOGIX_ERRORS_EMAIL
+        sync: false
       # Where the help page tells customers to write for help. Unset, it
       # uses MAIL_REPLY_TO, and with neither it points them at their invoice.
       - key: CYBERLOGIX_SUPPORT_EMAIL
