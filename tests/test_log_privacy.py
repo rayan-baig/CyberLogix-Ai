@@ -26,3 +26,15 @@ def test_a_failed_text_logs_no_full_number(monkeypatch, caplog):
     assert "...9876" in text, text
     assert "5550109876" not in text and "+15550109876" not in text
 
+
+
+def test_a_refused_password_reset_logs_no_full_address(api, caplog):
+    import accounts
+
+    accounts.reset_rate_limits()
+    with caplog.at_level(logging.INFO, logger="cyberlogix.accounts"):
+        for _ in range(accounts.FORGOT_PER_ADDRESS_PER_HOUR + 1):
+            api.post("/api/accounts/forgot", json={"email": "someone@limited.example"})
+    accounts.reset_rate_limits()
+    assert "refused" in caplog.text
+    assert "someone@limited.example" not in caplog.text

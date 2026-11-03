@@ -459,6 +459,10 @@ def register_sensor(
             status_code=status.HTTP_409_CONFLICT, detail=detail
         ) from None
 
+    import usage
+
+    usage.count("sensors_added")
+
     from pricing import PRICE_BOOK, build_subscription
 
     entry = PRICE_BOOK[vertical]

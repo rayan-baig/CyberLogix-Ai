@@ -46,6 +46,7 @@ from contracts import (
 )
 from backup import BACKUP_KEEP
 from invoicing import COMPANY, PAYMENT_TERMS_DAYS, issuer_block
+from usage import KEEP_DAYS as USAGE_KEEP_DAYS
 from store import (
     DISPATCH_SLA_SECONDS,
     MAIL_BODY_KEEP_DAYS,
@@ -72,8 +73,10 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # 2.2 names who "we" are: CyberLogix is a product of MTRX Horizyn, and the
 # agreements are with MTRX Horizyn.
 # 2.3 spells the company MTRX Horizyn, as it is now named, in place of the earlier spelling.
-TERMS_VERSION = "2.3"
-EFFECTIVE_DATE = "2026-11-02"
+# 2.4 says that a few actions are counted as daily totals, with nothing
+# about who did them (usage.py).
+TERMS_VERSION = "2.4"
+EFFECTIVE_DATE = "2026-11-03"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -292,6 +295,11 @@ a real answer. The message itself is deleted after
 was delivered are kept. If an address bounces or asks us to stop, we keep
 that address on a "do not mail" list, because forgetting it would mean
 writing to it again.
+
+**How often things are done.** We count a few actions per day, such as
+sign-ups, sensors added and alerts acknowledged, as daily totals with
+nothing about who did them, and delete each day's totals after
+{USAGE_KEEP_DAYS} days.
 
 We do not sell any of it, and we do not use it to train anything.
 

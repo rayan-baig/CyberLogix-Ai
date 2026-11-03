@@ -224,4 +224,7 @@ def inspector_log(
     if (last - first).days + 1 > MAX_DAYS:
         raise HTTPException(status_code=422,
                             detail=f"Choose {MAX_DAYS} days or fewer.")
+    import usage
+
+    usage.count("inspector_logs")
     return build_log(tenant, first, last)

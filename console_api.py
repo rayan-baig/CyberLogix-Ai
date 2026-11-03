@@ -259,6 +259,7 @@ def console_overview(
     )
 
     from firstday import checklist
+    from helpdesk import support_address
     from pricing import build_roi, build_subscription
 
     subscription = build_subscription(tenant)
@@ -311,6 +312,8 @@ def console_overview(
         "grace_window_minutes": VOICE_ESCALATION_GRACE_MINUTES,
         # The first-day checklist, ticked from what the account holds.
         "first_day": checklist(tenant),
+        # Where the About card tells people to write, or "" for only /help.
+        "support_email": support_address(),
     }
 
 

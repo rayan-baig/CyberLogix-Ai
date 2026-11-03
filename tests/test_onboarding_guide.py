@@ -131,7 +131,7 @@ def test_the_welcome_email_prints_no_command_that_would_fail(
     api, mailbox, signed_up
 ):
     """Every curl line in the email, run against the app."""
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
     commands = re.findall(r"^\s*(curl -X POST \S+ .+)$", body, re.MULTILINE)
     assert commands, f"no commands in the welcome email:\n{body}"
 
@@ -153,7 +153,7 @@ def test_the_welcome_email_prints_no_command_that_would_fail(
 def test_the_email_sends_them_to_the_console_for_the_roster(
     api, mailbox, signed_up
 ):
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
     assert "/console" in body
     # And never a contacts command it cannot authorise.
     assert "api/contacts" not in body

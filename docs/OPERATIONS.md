@@ -1,7 +1,7 @@
 # Running it in production
 
-Settings, where the state lives, backups, the dead man's switch, deleting
-a business, the agreements, and the deployment details behind the short
+Settings, where the state lives, backups, the dead man's switch, error
+reports, usage counts, deleting a business, the agreements, and the deployment details behind the short
 version in the README. The step-by-step runbook is
 [DEPLOY.md](../DEPLOY.md).
 
@@ -36,6 +36,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_BACKUP_KEEP` | `14` | Snapshots kept, oldest deleted first |
 | `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
 | `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
+| `CYBERLOGIX_ERRORS_EMAIL` | — | Where a short report of each unexpected server error (500) is mailed. Empty sends nothing. See [Error reports](#error-reports) |
 | `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the contact on their invoice |
 | `CYBERLOGIX_NOINDEX` | — | `1` on a copy that is not the live product (staging, a demo): every page asks search engines not to list it, robots.txt closes, the sitemap is empty. See [STAGING.md](STAGING.md) |
 
@@ -328,6 +329,52 @@ first sweep, 200 after, three pings landed on a real switch, and when
 the process was killed the endpoint stopped answering entirely while the
 pings stopped dead — which is exactly the state the external service
 alarms on.
+
+## Error reports
+
+Every unexpected error is written to the fault list (`/book` -> Health,
+or `GET /api/admin/faults`), counted once per kind however often it
+happens. A list somebody has to open is not much use at 2am, so a 500 is
+also mailed to `CYBERLOGIX_ERRORS_EMAIL` when that is set. Empty, nothing
+is sent and the fault list works as before.
+
+**In the report:** the time, the version, the method and the route as
+written in the code (`/api/voice/keypress/{incident_id}/{token}`, never
+the address it was called at or its query string), the error's type and
+message, the reference code the error page showed the customer (the same
+code the fault list is keyed on, so the two can be matched), how many
+times it has happened, and the stack trace with paths relative to the
+app.
+
+**Never in it:** the request body, cookies, headers or the caller's IP
+are never read. The message and the trace go through the same redaction
+as the fault list (email addresses and phone numbers out) and through
+token scrubbing (our keys and tokens, anything after "Bearer", and
+anything given to a name like key, token, secret or password). The
+fault list is scrubbed of tokens the same way. A test sends an email
+address in the query string, a form, a header and a cookie of a request
+that fails, and checks that none of it reaches the report.
+
+**How many:** one email per distinct error an hour, and at most 20 a
+day, counted in the database so a restart does not start the count
+again. The email is sent after the error page has gone out, through the
+ordinary mail queue, so a mail host that is down gets it on the next
+pass rather than never.
+
+## Usage counts
+
+`usage.py` counts a few actions as daily totals: businesses signed up,
+sensors added, test alerts sent, alerts acknowledged (by the console
+button or API, by text reply, and by pressing 1 on a call, counted
+apart), inspector's logs made (the console opens one to print it) and
+help pages viewed. A day is a date and some numbers: no account, person,
+address, cookie or IP, and nothing goes to anyone else. The pricing
+calculator runs in the browser and never reaches the server, so it is
+not counted. Days older than 400 are deleted.
+
+The last 30 days are at `/book` -> Health, at `GET /api/admin/usage`
+(admin key), and in `/api/stats`, behind `STATS_KEY`, for MTRX Horizyn's
+console. The privacy statement says so in one sentence.
 
 ## Download everything, delete everything
 

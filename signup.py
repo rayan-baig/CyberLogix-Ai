@@ -257,6 +257,10 @@ def start_trial(payload: SignupRequest, request: Request):
     # through the front door.
     record_acceptance(tenant, user)
 
+    import usage
+
+    usage.count("signups")
+
     STORE.record_audit(
         tenant_id=tenant.tenant_id,
         actor=f"{user.full_name} <{user.email}>",

@@ -617,7 +617,7 @@ def forgot_password(payload: ForgotPassword):
     else:
         logger.warning(
             "Password reset for %s refused: %d in the last hour.",
-            address, len(recent),
+            mask_email(address), len(recent),
         )
 
     return {

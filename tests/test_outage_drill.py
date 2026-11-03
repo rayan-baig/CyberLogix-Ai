@@ -108,7 +108,7 @@ def test_texts_failing_are_retried_said_plainly_and_sent_once_on_recovery(
     # The owner's copy says the texts did not go, in the subject line.
     alert = mailbox.to(tenant.contact_email)[0]
     assert alert["Subject"].startswith("TEXTS FAILED - ALERT:")
-    assert "Phone whoever is on call now" in alert.get_content()
+    assert "Phone whoever is on call now" in alert.get_body(preferencelist=("plain",)).get_content()
     # And the operator can see Twilio is failing, without reading logs.
     assert any(f["source"] == "notifications.send_sms" for f in faults.recent())
 
@@ -130,7 +130,7 @@ def test_when_no_text_ever_lands_the_owner_is_told_once(
     told = [m for m in mailbox.to(tenant.contact_email)
             if m["Subject"].startswith("NOBODY HAS BEEN TEXTED")]
     assert len(told) == 1
-    assert "Phone whoever is on call now" in told[0].get_content()
+    assert "Phone whoever is on call now" in told[0].get_body(preferencelist=("plain",)).get_content()
     assert twilio.sms == []
 
 

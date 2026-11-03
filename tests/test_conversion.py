@@ -72,7 +72,7 @@ def test_signing_up_gets_the_setup_commands_by_email(api, mailbox):
     tenant, _ = _trial(api)
 
     assert len(mailbox) == 1
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
     assert "curl -X POST https://hub.example/api/licenses/me/sensors" in body
     # The master key is never emailed: it would live at the mail provider
     # and in the mail log for good. The commands carry a placeholder.
@@ -83,7 +83,7 @@ def test_signing_up_gets_the_setup_commands_by_email(api, mailbox):
 def test_the_welcome_speaks_the_sector_they_chose(api, mailbox):
     """A restaurant is not told about vaccine fridges."""
     _trial(api)
-    assert "restaurant" in mailbox[0].get_content()
+    assert "restaurant" in mailbox[0].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_a_broken_mail_host_cannot_fail_a_signup(api, monkeypatch):
@@ -174,7 +174,7 @@ def test_an_expired_trial_is_told_monitoring_is_still_running(api, mailbox):
 
     run_trial_conversion()
 
-    body = mailbox[-1].get_content()
+    body = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert _stages(tenant.tenant_id)[-1].endswith("grace")
     assert "still running" in body
 
@@ -188,7 +188,7 @@ def test_a_lapsed_trial_is_told_plainly_that_nothing_is_watched(api, mailbox):
     run_trial_conversion()
 
     assert _stages(tenant.tenant_id)[-1].endswith("dark")
-    assert "has stopped" in mailbox[-1].get_content()
+    assert "has stopped" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_a_suspended_account_hears_nothing(api, mailbox):
@@ -275,7 +275,7 @@ def test_the_sales_line_is_built_from_their_own_readings(
     _days_left(tenant, 3)
     run_trial_conversion()
 
-    text = mailbox[-1].get_content()
+    text = mailbox[-1].get_body(preferencelist=("plain",)).get_content()
     assert "1 excursion" in text
     assert f"${evidence['monthly_usd']:,.2f} a month" in text
 
@@ -302,7 +302,7 @@ def test_a_trial_that_caught_nothing_is_told_the_truth(api, mailbox):
 
     run_trial_conversion()
 
-    assert "has not taken any readings yet" in mailbox[-1].get_content()
+    assert "has not taken any readings yet" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 # ---- the ladder is commercial mail -------------------------------------

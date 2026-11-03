@@ -3,6 +3,36 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.9.0 — 2026-11-03
+
+Server errors reported to one inbox, privacy-friendly usage counts, one
+look for every email, and the plan and support address on the About card.
+
+- **A server error is emailed,** if CYBERLOGIX_ERRORS_EMAIL is set: the
+  time, the version, the method and route, the error, the reference the
+  error page showed, and the stack trace. Never the request body,
+  cookies, headers, the caller's IP, or anybody's email address or phone
+  number. One email per distinct error an hour and at most 20 a day,
+  counted in the database. The fault list is unchanged, and now also
+  takes keys and tokens out of the error messages it keeps; before, an
+  error message that quoted a key kept it.
+- **Daily usage totals** for the operator: sign-ups, sensors added, test
+  alerts, alerts acknowledged (by button, text reply and keypress),
+  inspector's logs and help page views. Numbers per day, nothing about
+  who, deleted after 400 days. In /book under Health, at
+  /api/admin/usage, and in /api/stats for MTRX Horizyn's console. The
+  privacy statement says so (version 2.4).
+- **Every email has a plain-text part and an HTML version** in one
+  600px column, made from the same text, with the "CyberLogix is a
+  product of MTRX Horizyn" footer once. Before, only the monthly summary
+  had an HTML part, and it left out the alerts its text listed.
+  Licence reminders and the operator's digest now say where to change
+  them; marketing mail keeps its unsubscribe link; alerts, bills and
+  password resets say they cannot be switched off.
+- **The About and help card shows your plan** and, when the deployment
+  sets one, the address to write to for help, beside the version and
+  the link to /help.
+
 ## 3.8.0 — 2026-11-03
 
 A sheet to print for each industry, an API reference that needs no CDN,

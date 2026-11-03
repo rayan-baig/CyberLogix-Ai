@@ -1,7 +1,8 @@
 # Mail and digests
 
-The outbound mail transport and its guards, the emails that ask a trial
-for the order, and the daily and weekly digests.
+The outbound mail transport and its guards, the look every email
+shares, the emails that ask a trial for the order, and the daily and
+weekly digests.
 
 ## Mail
 
@@ -58,6 +59,32 @@ whose entire job is to be paid by somebody who wanted the date.
 Unconfigured, nothing is lost and nothing is pretended: notices queue,
 `/api/mail/status` names the missing settings, and the operator digest
 puts it in the subject line.
+
+## One look for every email
+
+Every email has a plain-text part, which is the message, and an HTML part
+made from that same text by `mail.compose`: the same words and the same
+links, in one column 600px wide, with the footer once at the bottom. A
+block laid out with spaces (an invoice's lines, a setup command) keeps
+its spacing; everything a customer typed is escaped. The HTML is made
+from the text rather than written beside it because two versions drift:
+the monthly summary's HTML once left out every alert its text listed.
+
+The footer always ends "CyberLogix is a product of MTRX Horizyn." Above
+that it says how to stop or change the message, by kind (`mail.MUST_SEND`
+and `mail.MANAGED`):
+
+| Kind | Footer |
+|---|---|
+| Marketing: the trial emails, the weekly report, the monthly summary | The signed unsubscribe link, and the `List-Unsubscribe` header |
+| Licence reminders, the operator's daily digest | A link to where they are managed (the console, `/book`) |
+| Must-send: alerts, the "nobody was texted" email, a stopped vendor feed, a roster gap, invoices and reminders to pay, password resets, error reports | That it concerns the account and is sent regardless of marketing preferences. No link, because none of these can be switched off |
+
+`tests/test_every_email.py` sends one of every kind through a small SMTP
+server on the loopback address and reads each one back: both parts, no
+unfilled placeholder, the footer once, nothing wider than 600px, the
+same words and links in both parts, and the right way out. A new kind of
+email has to be added to its list, or it fails.
 
 ## Asking for the order
 
@@ -134,9 +161,8 @@ the readings kept do not cover the whole month, it says so.
   never touched.
 - **Stopping it.** It is mail we choose to send, so it carries the
   signed unsubscribe link and the `List-Unsubscribe` header, honours a
-  stop, and has the footer naming MTRX Horizyn. A plain-text part is the
-  message; an HTML part beside it shows the same figures as a table, with
-  everything a customer typed escaped.
+  stop, and has the footer naming MTRX Horizyn. Like every email, it has
+  a plain-text part and an HTML part made from it (below).
 
 `GET /api/digest/monthly` (any signed-in role, or the business key;
 `?month=YYYY-MM` for another month) shows what this business's summary

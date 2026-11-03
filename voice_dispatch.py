@@ -18,6 +18,7 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+import usage
 from gemini import safe_generate
 from auth import (
     actor_label,
@@ -264,6 +265,8 @@ async def voice_keypress(
     incident, claimed = STORE.acknowledge_incident(
         incident, f"phone keypad ({caller})"
     )
+    if claimed:
+        usage.count("acknowledged_keypress")
     tenant = STORE.get_tenant(incident.tenant_id)
     if tenant is not None and claimed:
         write_audit(
@@ -450,6 +453,7 @@ async def sms_reply(request: Request) -> Response:
     if not claimed:
         return _sms_answer(f"CyberLogix: already acknowledged by "
                            f"{incident.acknowledged_by}.", tenant.tenant_id)
+    usage.count("acknowledged_text")
     write_audit(tenant, None, "incident.acknowledged",
                 f"{incident.incident_id} acknowledged by text reply from {who}.",
                 fallback_actor=f"{who} (text reply)")
@@ -612,6 +616,7 @@ def acknowledge_incident(
             "incident": incident.public(),
         }
 
+    usage.count("acknowledged_button")
     _notify_hooks(tenant, incident, "acknowledged", f"{actor} has the incident.")
     write_audit(
         tenant,

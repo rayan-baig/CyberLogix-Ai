@@ -46,9 +46,9 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
 | [docs/BILLING.md](docs/BILLING.md) | The rate card, plans, volume pricing, add-ons, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
-| [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
+| [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, deleting a business, the agreements, deployment details, what to do before the first customer |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, error reports by email, daily usage counts, deleting a business, the agreements, deployment details, what to do before the first customer |
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, the sales sheet print check, mutation testing |
 | [docs/PARTNERS.md](docs/PARTNERS.md) | Resellers: what a partner sees, how commission works, setting one up step by step, each month, and what is not there yet |

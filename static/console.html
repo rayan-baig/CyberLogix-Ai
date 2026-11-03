@@ -899,6 +899,7 @@
             <span class="card-title">About and help</span>
             <span class="card-note" id="about-version">Version —</span>
           </div>
+          <p class="card-plain">You are on the <strong id="about-plan">—</strong>.</p>
           <p class="card-plain">Answers to common questions: the trial, prices,
              how alerts escalate, the test alert, offline sensors, and how to
              download or delete your data.</p>
@@ -906,6 +907,10 @@
             <a class="btn btn-sm" href="/help">Open help</a>
             <a class="btn btn-sm" href="/help#sensor-offline">A sensor is offline</a>
           </div>
+          <!-- Only when the deployment names an address
+               (CYBERLOGIX_SUPPORT_EMAIL, or the reply-to address). -->
+          <p class="card-plain" id="about-support" hidden>Or write to us:
+             <a id="about-support-link" href="mailto:">—</a></p>
           <p class="card-plain about-line">CyberLogix AI, a product of MTRX Horizyn.</p>
         </section>
 

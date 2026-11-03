@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import functools
 import hmac
+import html as _html
 import hashlib
 import logging
 import os
@@ -46,7 +47,7 @@ from email import policy as email_policy
 from email.headerregistry import HeaderRegistry
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -270,8 +271,59 @@ def payment_instructions(invoice=None) -> str:
     return "\n".join(lines)
 
 
-def _footer(address: str, klass: str) -> str:
+# --- the look every message shares -----------------------------------------
+#
+# Every message has a plain-text part, which is the message, and an HTML
+# part made from that same text: the same words and the same links, in one
+# column no wider than EMAIL_WIDTH_PX, with the same footer once at the
+# bottom. Made from the text rather than written beside it, because two
+# versions written separately drift: the monthly summary's HTML had a
+# table that left out every alert listed in its text.
+
+EMAIL_WIDTH_PX = 600
+
+# Must-send mail: an alert, a bill, a password reset, an error report.
+# Nobody can switch these off, so they carry no unsubscribe or manage link,
+# and a link that said they could would be untrue. Keyed on the start of
+# the message's dedupe key, which every sender already builds.
+MUST_SEND = (
+    "incident-alert:",
+    "incident-undelivered:",
+    "roster-gap:",
+    "poller-stopped:",
+    "reset:",
+    "invoice:",
+    "dunning:",
+    "error-report:",
+)
+
+# Mail that is neither must-send nor marketing says where its reader
+# changes it: (path, what the link is for).
+MANAGED = {
+    "licence-alert:": ("/console", "Change the licences we remind you about"),
+    "digest:operator:": ("/book", "The same figures, and the settings behind them"),
+}
+
+_URL = re.compile(r"https?://[^\s<>\"']+")
+_TRAILING = ".,;:!?)]'\""
+
+
+def urls_in(text: str) -> List[str]:
+    """The links in a piece of plain text, without a full stop after them."""
+    return [m.group(0).rstrip(_TRAILING) for m in _URL.finditer(text or "")]
+
+
+def _manage(dedupe_key: str) -> Optional[Tuple[str, str]]:
+    """(link or path, label) for a managed kind of mail, else None."""
+    for prefix, (path, label) in MANAGED.items():
+        if dedupe_key.startswith(prefix):
+            return (f"{PUBLIC_BASE_URL}{path}" if PUBLIC_BASE_URL else path), label
+    return None
+
+
+def _footer(address: str, klass: str, dedupe_key: str = "") -> str:
     parts = []
+    managed = _manage(dedupe_key)
     if klass == "commercial":
         link = unsubscribe_link(address)
         if link:
@@ -283,6 +335,9 @@ def _footer(address: str, klass: str) -> str:
         parts.append(
             "This is not an invoice notice; billing mail is sent separately."
         )
+    elif managed:
+        where, label = managed
+        parts.append(f"{label}: {where}")
     else:
         parts.append(
             "This message concerns your account and is sent regardless of "
@@ -294,20 +349,67 @@ def _footer(address: str, klass: str) -> str:
     return "\n".join(parts)
 
 
-def _footer_html(address: str, klass: str) -> str:
-    """The same footer, for the HTML alternative. Every value is escaped."""
-    import html as _html
+def _linked(line: str) -> str:
+    """One line of plain text as HTML: escaped, with its links made links."""
+    out, last = [], 0
+    for match in _URL.finditer(line):
+        url = match.group(0).rstrip(_TRAILING)
+        out.append(_html.escape(line[last:match.start()]))
+        out.append(f'<a href="{_html.escape(url, quote=True)}" '
+                   f'style="color:#1f5fbf;word-break:break-all">{_html.escape(url)}</a>')
+        last = match.start() + len(url)
+    out.append(_html.escape(line[last:]))
+    return "".join(out)
 
-    lines = []
-    for line in _footer(address, klass).splitlines():
-        text = _html.escape(line)
-        link = unsubscribe_link(address) if klass == "commercial" else None
-        if link and link in line:
-            text = text.replace(
-                _html.escape(link),
-                f'<a href="{_html.escape(link, quote=True)}">{_html.escape(link)}</a>')
-        lines.append(text)
-    return "<hr><p><small>" + "<br>".join(lines) + "</small></p>"
+
+_TEXT_STYLE = ("font-family:Helvetica,Arial,sans-serif;font-size:15px;"
+               "line-height:1.5;color:#1d2433")
+_PRE_STYLE = ("margin:0 0 16px;white-space:pre-wrap;word-wrap:break-word;"
+              "font-family:Menlo,Consolas,monospace;font-size:13px;"
+              "line-height:1.45;color:#1d2433")
+
+
+def _blocks_html(text: str) -> str:
+    """Plain text as paragraphs. A block laid out with spaces (a table on an
+    invoice, a command, an indented list) keeps its spacing."""
+    out = []
+    for block in re.split(r"\n[ \t]*\n", text.strip("\n")):
+        lines = block.split("\n")
+        if not "".join(lines).strip():
+            continue
+        laid_out = any(line[:1] in (" ", "\t") or "  " in line.strip()
+                       for line in lines)
+        if laid_out:
+            out.append(f'<pre style="{_PRE_STYLE}">'
+                       + "\n".join(_linked(line) for line in lines) + "</pre>")
+        else:
+            out.append('<p style="margin:0 0 16px">'
+                       + "<br>".join(_linked(line) for line in lines) + "</p>")
+    return "".join(out)
+
+
+def render_html(body: str, footer: str, subject: str = "") -> str:
+    """The HTML part: the text's own words in one 600px column."""
+    width = EMAIL_WIDTH_PX
+    return (
+        "<!doctype html><html><head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{_html.escape(_one_line(subject))}</title>"
+        "</head>"
+        '<body style="margin:0;padding:0;background:#f3f4f6">'
+        '<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="background:#f3f4f6"><tr><td align="center" style="padding:16px 8px">'
+        f'<table width="{width}" cellpadding="0" cellspacing="0" border="0" '
+        f'style="width:100%;max-width:{width}px;background:#ffffff;'
+        'border:1px solid #e3e6eb;border-radius:6px">'
+        f'<tr><td style="padding:24px;{_TEXT_STYLE}">{_blocks_html(body)}</td></tr>'
+        '<tr><td style="padding:16px 24px;border-top:1px solid #e3e6eb;'
+        'font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;'
+        'color:#5b6474">'
+        + "<br>".join(_linked(line) for line in footer.splitlines())
+        + "</td></tr></table></td></tr></table></body></html>"
+    )
 
 
 def compose(
@@ -316,7 +418,7 @@ def compose(
     subject: str,
     body: str,
     klass: str,
-    html: str = "",
+    dedupe_key: str = "",
 ) -> EmailMessage:
     """Build the MIME message, refusing anything that could inject a header.
 
@@ -342,15 +444,11 @@ def compose(
             # sending domain stays out of the spam folder.
             message["List-Unsubscribe"] = f"<{link}>"
     message["Auto-Submitted"] = "auto-generated"
-    message.set_content(f"{body.rstrip()}\n\n--\n{_footer(to_address, klass)}\n")
-    if html:
-        # Beside the plain text, never instead of it: the text part is the
-        # message, and the one every client can show.
-        message.add_alternative(
-            f"<!doctype html><html><body>{html}{_footer_html(to_address, klass)}"
-            "</body></html>",
-            subtype="html",
-        )
+    footer = _footer(to_address, klass, dedupe_key)
+    message.set_content(f"{body.rstrip()}\n\n--\n{footer}\n")
+    # Beside the plain text, never instead of it: the text part is the
+    # message, and the one every client can show.
+    message.add_alternative(render_html(body, footer, subject), subtype="html")
     return message
 
 
@@ -431,7 +529,6 @@ def send(
     klass: str = "transactional",
     tenant_id: Optional[str] = None,
     sensitive: bool = False,
-    html: str = "",
 ) -> Dict[str, Any]:
     """Send one message, at most once, ever.
 
@@ -465,7 +562,6 @@ def send(
         klass=klass,
         tenant_id=tenant_id,
         sensitive=sensitive,
-        html=html,
     )
     if message is None:
         return _result(None, False, "duplicate",
@@ -505,7 +601,7 @@ def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict
             subject=message.subject,
             body=message.body,
             klass=message.klass,
-            html=message.html,
+            dedupe_key=message.dedupe_key,
         ))
     except smtplib.SMTPRecipientsRefused as exc:
         # The host says this mailbox does not exist. Retrying is not going

@@ -29,6 +29,7 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import all modular system routers
@@ -57,6 +58,7 @@ from pollers import router as pollers_router
 from people import router as people_router
 from tasks import router as tasks_router
 from faults import router as faults_router
+from usage import router as usage_router
 from firstday import router as firstday_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
@@ -73,6 +75,7 @@ from mail import status as mail_status
 from notifications import delivery_ready
 from partners import router as partners_router
 import scheduler
+import usage
 from licenses import router as license_router
 from pricing import router as billing_router
 from shortcuts import router as shortcuts_router
@@ -259,6 +262,7 @@ app.include_router(monthly_router)
 app.include_router(backup_router)
 app.include_router(readiness_router)
 app.include_router(faults_router)
+app.include_router(usage_router)
 app.include_router(certificates_router)
 app.include_router(disposition_router)
 app.include_router(doorstep_router)
@@ -535,6 +539,15 @@ async def unhandled_error_handler(request: Request, exc: Exception):
                 "fault_id": fault_id,
             },
         )
+    # Mailed to CYBERLOGIX_ERRORS_EMAIL when that is set, after the answer
+    # has gone, so the customer is not kept waiting on a mail host. The
+    # route as written ("/api/x/{token}") rather than the address it was
+    # called at, which can carry a key or an address in its path.
+    if row and faults.errors_address():
+        route = request.scope.get("route")
+        where = getattr(route, "path", None) or request.url.path
+        response.background = BackgroundTask(
+            faults.mail_report, row, exc, request.method, where)
     # This handler runs outside the middleware stack, so the headers the
     # middleware would have added are added here.
     return _apply_security_headers(response, request)
@@ -1004,6 +1017,7 @@ def help_page(request: Request):
     (helpdesk.py)."""
     from helpdesk import render_faq, render_offline
 
+    usage.count("help_views")
     return _serve_page(HELP_HTML, request, markup={
         "%%FAQ%%": render_faq(),
         "%%OFFLINE_STEPS%%": render_offline(),
@@ -1016,6 +1030,7 @@ def sensor_setup_page(request: Request):
     sensor_guides.py, with this deployment's own address in every step."""
     from sensor_guides import render_html
 
+    usage.count("help_views")
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     return _serve_page(SENSORS_HTML, request, markup={"%%GUIDES%%": render_html(base)})
 
@@ -1174,10 +1189,12 @@ def root_gateway():
 
 @app.get("/api/stats", include_in_schema=False)
 def usage_stats(request: Request):
-    """User counts for the owner's MTRX Horizyn console, and nothing else.
+    """Counts for the owner's MTRX Horizyn console, and nothing else.
 
-    Off unless STATS_KEY is set (the same value as the console's
-    MTRX_STATS_KEY), and answered only to that key.
+    How many people have a sign-in, and the last 30 days of daily totals
+    of what they do (usage.py): numbers only, never who. Off unless
+    STATS_KEY is set (the same value as the console's MTRX_STATS_KEY),
+    and answered only to that key.
     """
     import hmac as _hmac
 
@@ -1189,7 +1206,9 @@ def usage_stats(request: Request):
     sent = request.headers.get("authorization", "")
     if not _hmac.compare_digest(sent.encode(), f"Bearer {key}".encode()):
         return JSONResponse(status_code=401, content={"detail": "unauthorized"})
-    return STORE.usage_counts()
+    # The daily totals of what people do (usage.py): numbers per day,
+    # nothing about who.
+    return {**STORE.usage_counts(), "usage": usage.last_days(30)}
 
 
 @app.get("/api/health", status_code=200, tags=["Gateway"])

@@ -12,4 +12,7 @@ def test_counts_behind_the_key(api, monkeypatch, operator_factory):
     assert api.get("/api/stats").status_code == 401
     assert api.get("/api/stats", headers={"Authorization": "Bearer nope"}).status_code == 401
     body = api.get("/api/stats", headers={"Authorization": "Bearer s3cret-stats-key"}).json()
-    assert body == {"users": 1, "active_users": 1}
+    assert body["users"] == 1 and body["active_users"] == 1
+    # And the daily totals of what people do (usage.py), never who.
+    assert set(body) == {"users", "active_users", "usage"}
+    assert len(body["usage"]["daily"]) == 30

@@ -90,7 +90,7 @@ def test_the_invoice_is_sent_on_the_day_it_is_issued(
 
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
     assert len(mailbox) == 1
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
     assert invoice.number in mailbox[0]["Subject"]
     assert f"${invoice.total_usd:,.2f}" in body
     # The rendered document, not just a figure in a sentence.
@@ -116,7 +116,7 @@ def test_the_invoice_reads_like_a_document_a_person_would_pay(
     run_billing()
 
     subject = mailbox[0]["Subject"]
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
 
     assert subject.isascii(), subject
     assert "=?utf-8?" not in mailbox[0].as_string().split("\n\n", 1)[0]
@@ -147,7 +147,7 @@ def test_a_payment_gets_a_receipt(api, admin_headers, settle, overdue, mailbox):
     settle(tenant["tenant_id"], invoice.invoice_id, reference="WIRE-9")
 
     assert "paid" in mailbox[-1]["Subject"]
-    assert "WIRE-9" in mailbox[-1].get_content()
+    assert "WIRE-9" in mailbox[-1].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_a_part_payment_says_what_is_still_owed(settle, overdue, mailbox):
@@ -203,8 +203,8 @@ def test_a_chase_reaches_the_customer(mailbox, overdue):
     assert result["sent"] == 1
     assert len(mailbox) == 1
     assert mailbox[0]["To"] == tenant["contact_email"]
-    assert invoice.number in mailbox[0].get_content()
-    assert "past due" in mailbox[0].get_content()
+    assert invoice.number in mailbox[0].get_body(preferencelist=("plain",)).get_content()
+    assert "past due" in mailbox[0].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_notice_says_how_to_pay(mailbox, overdue, monkeypatch):
@@ -216,7 +216,7 @@ def test_the_notice_says_how_to_pay(mailbox, overdue, monkeypatch):
 
     run_dunning()
 
-    body = mailbox[0].get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
     assert "https://pay.example/inv" in body
     assert "Acct 12345678" in body
 
@@ -226,7 +226,7 @@ def test_an_unconfigured_deployment_admits_it_rather_than_bluffing(
 ):
     """Nobody has set remittance details, so the notice says so."""
     run_dunning()
-    assert "Payment details are not configured" in mailbox[0].get_content()
+    assert "Payment details are not configured" in mailbox[0].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_same_chase_is_never_sent_twice(mailbox, overdue):
@@ -355,7 +355,7 @@ def test_commercial_mail_carries_an_unsubscribe_header(mailbox):
         klass="commercial",
     )
     assert "List-Unsubscribe" in mailbox[0]
-    assert "Stop these messages" in mailbox[0].get_content()
+    assert "Stop these messages" in mailbox[0].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_unsubscribe_header_survives_as_a_url(mailbox):
