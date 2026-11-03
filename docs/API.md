@@ -2,8 +2,10 @@
 
 Who can call the API and with what credential, roles and the audit trail,
 getting back into an account, provisioning paid accounts, the browser
-security headers, and what the API refuses at the door. The interactive
-reference for every route is served at `/docs` on a running server; the
+security headers, and what the API refuses at the door. The reference for
+every route a customer can call is at `/developers` on a running server
+(plain HTML, no script, built from the routes); `/docs` and `/redoc` are
+the interactive versions, loaded from a CDN. The
 [README quick start](../README.md#quick-start) is the shortest walk
 through it.
 

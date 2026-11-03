@@ -24,8 +24,15 @@ reaching 2.05:1 against a 4.5 floor.
 The slogan is *A freezer fails at two. Nobody finds out until seven.*
 
 The landing page is at `/`, the console at `/console`, the reseller portal
-at `/partners`, the machine-readable gateway at `/api`, and interactive API
-docs at `/docs`.
+at `/partners`, the machine-readable gateway at `/api`, and the API
+reference at `/developers` (interactive versions, loaded from a CDN, at
+`/docs` and `/redoc`).
+
+Each industry page has a one-page sheet to print or save as PDF, at
+`/for/<industry>/sheet`: the problem, the fix, where the alarm is set,
+what the text, email and call say, the prices and the trial. Every
+figure on it is read from the code (`salessheet.py`), and it fits one
+side of A4 or Letter.
 
 The first screen of the landing page says who it is for, the lowest rate
 and the trial; those figures are substituted when the page is served, from
