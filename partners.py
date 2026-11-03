@@ -22,7 +22,7 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field
 
 from models import Finite
@@ -219,6 +219,37 @@ def list_partners():
             }
         )
     return {"count": len(rows), "partners": rows}
+
+
+@router.get("/businesses", dependencies=[Depends(require_admin)])
+def find_businesses(
+    search: str = Query(..., min_length=2, max_length=160),
+):
+    """Find a business to put under a partner, by name or sign-up email.
+
+    Attaching an account needs its account ID, and until this nothing the
+    operator could reach showed one: the book lists only accounts that
+    need a call, and the console does not show a business its own ID. A
+    partner says "Bella Vista on Harbor Street"; this turns that into the
+    ID the attach call takes, and says who already manages it.
+    """
+    needle = search.strip().lower()
+    rows = []
+    for tenant in STORE.list_tenants():
+        if needle not in tenant.company_name.lower() and \
+                needle not in (tenant.contact_email or "").lower():
+            continue
+        partner = STORE.get_partner(tenant.partner_id) if tenant.partner_id else None
+        rows.append({
+            "tenant_id": tenant.tenant_id,
+            "company_name": tenant.company_name,
+            "plan": tenant.plan,
+            "units": len(STORE.sensors_for(tenant.tenant_id)),
+            "partner_id": tenant.partner_id,
+            "partner_name": partner.company_name if partner else None,
+        })
+    rows.sort(key=lambda r: r["company_name"].lower())
+    return {"count": len(rows), "businesses": rows[:50]}
 
 
 @router.post("/{partner_id}/accounts", dependencies=[Depends(require_admin)])

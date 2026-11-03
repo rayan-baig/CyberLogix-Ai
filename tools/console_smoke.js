@@ -34,6 +34,10 @@
  * muted person with turns as a gap; a viewer sees it all with nothing
  * to press.
  *
+ * And a reseller: the operator makes a partner, finds a new business by
+ * name and attaches it; the partner signs in to /partners with the key
+ * and sees the account, that it needs a visit, and its units.
+ *
  * Exit code 0 when everything holds; 1 with a list of failures.
  */
 "use strict";
@@ -51,6 +55,11 @@ const TABS = ["all", "fridges", "alerts", "licences", "people", "money",
               "proof", "setup"];
 // Words that only reach a page when a value was missing.
 const JUNK = /\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|Infinity/;
+
+// The operator key the walk uses. Set to this on the server the smoke
+// test starts; against BASE_URL, set SMOKE_ADMIN_KEY or the partner walk
+// is skipped.
+const ADMIN_KEY = process.env.SMOKE_ADMIN_KEY || "smoke-admin-key";
 
 const failures = [];
 function fail(where, what) {
@@ -88,6 +97,8 @@ async function startServer() {
         // So the switcher walk can start five businesses from what look
         // like separate callers without meeting the sign-up ceiling.
         CYBERLOGIX_TRUST_PROXY_HEADER: "1",
+        // So the partner walk can make a reseller, as the operator would.
+        CYBERLOGIX_ADMIN_KEY: ADMIN_KEY,
       }),
       stdio: ["ignore", "inherit", "inherit"],
     },
@@ -201,7 +212,8 @@ async function utilitiesHold(page) {
    refusal, no script error, no utility class losing to a rule. */
 async function checkPages(browser, base, token) {
   const pages = ["/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant",
-                 "/for/pharmacy", "/legal", "/reset", "/partners", "/book",
+                 "/for/pharmacy", "/for/restaurant/sheet", "/for/cryostorage/sheet",
+                 "/developers", "/legal", "/reset", "/partners", "/book",
                  "/today", "/offline", "/proof/not-a-real-token", "/no-such-page"];
   for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
     const context = await browser.newContext({ viewport, serviceWorkers: "block",
@@ -970,6 +982,79 @@ async function checkSwitcher(browser, base) {
   if (!failures.some((f) => f.startsWith("switcher"))) ok("switcher: desktop drawer is clean");
 }
 
+/* ---------------- a reseller's portal ---------------- */
+
+/* The operator makes a partner, finds a new business by name and puts it
+   under them; the business fits a sensor and it goes warm. Then the
+   partner signs in to /partners with the key, at phone and desktop size:
+   the book shows the account and that it needs a visit, the account opens
+   with its units, and nothing on screen is missing a value or scrolls
+   sideways. */
+async function checkPartner(browser, base) {
+  const admin = { "Content-Type": "application/json", "X-CyberLogix-Admin": ADMIN_KEY };
+  const made = await fetch(`${base}/api/partners`, {
+    method: "POST", headers: admin,
+    body: JSON.stringify({ company_name: "Smoke Refrigeration", contact_name: "Ray Smoke",
+                           contact_email: "ray@smoke-refrigeration.example" }),
+  });
+  if (made.status === 401 || made.status === 503) {
+    console.log("  skip partner walk: the server does not take this admin key");
+    return;
+  }
+  if (!made.ok) { fail("partner", `making a partner answered ${made.status}`); return; }
+  const partner = await made.json();
+  const company = `Partner Smoke Grill ${Date.now()}`;
+  const business = await callFrom(base, null, "POST", "/api/signup", {
+    company_name: company, full_name: "Sam Partner", email: `sam-${Date.now()}@partner.example`,
+    password: "smoke-partner-password-1", contact_phone: "+15550100",
+    industry_vertical: "restaurant",
+  }, "198.51.100.77");
+  const found = await (await fetch(
+    `${base}/api/partners/businesses?search=${encodeURIComponent(company)}`,
+    { headers: admin })).json();
+  const id = (found.businesses[0] || {}).tenant_id;
+  if (id !== business.tenant.tenant_id) { fail("partner", "the search did not find the business"); return; }
+  await fetch(`${base}/api/partners/${partner.partner_id}/accounts`, {
+    method: "POST", headers: admin, body: JSON.stringify({ tenant_id: id }),
+  });
+  await call(base, business.token, "POST", "/api/licenses/me/sensors",
+             { sensor_id: "PS-WALKIN", industry_vertical: "restaurant", location_name: "Walk-in" });
+  await call(base, business.token, "POST", "/api/sensor-pulse",
+             { sensor_id: "PS-WALKIN", temperature_fahrenheit: 51 });
+
+  for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
+    const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+    const page = await context.newPage();
+    const flush = watchErrors(page, `partner ${label}`);
+    await page.goto(`${base}/partners`);
+    await page.fill("#pk", partner.api_key);
+    await page.click("#key-form button[type=submit]");
+    await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+    await page.waitForTimeout(400);
+    const text = await page.innerText("#app");
+    if (!text.includes(company)) fail(`partner ${label}`, "the book does not show the account");
+    if (!(await page.innerText("#attn-body")).includes(company)) {
+      fail(`partner ${label}`, "the warm walk-in is not under needs attention");
+    }
+    const junk = text.match(JUNK);
+    if (junk) fail(`partner ${label}`, `shows "${junk[0]}"`);
+    await shoot(page, `partner ${label} book`);
+    await page.click(`[data-open="${id}"]`);
+    await page.waitForSelector("#detail-view:not([hidden])", { timeout: 5000 });
+    const detail = await page.innerText("#detail-view");
+    if (!detail.includes("PS-WALKIN")) fail(`partner ${label}`, "the account opens without its units");
+    const wide = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (wide > 2) fail(`partner ${label}`, `page scrolls sideways by ${wide}px`);
+    await shoot(page, `partner ${label} account`);
+    flush();
+    await context.close();
+  }
+  if (!failures.some((f) => f.startsWith("partner"))) {
+    ok("partner: found, attached, and the portal shows the book and the account");
+  }
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch();
@@ -1007,6 +1092,8 @@ async function main() {
     await checkRotation(browser, server.base, sceneToken);
     console.log("\none person, five businesses");
     await checkSwitcher(browser, server.base);
+    console.log("\na reseller");
+    await checkPartner(browser, server.base);
     console.log("\nevery page, under the policy");
     await checkPages(browser, server.base, sceneToken);
     console.log("\nfirst day");
