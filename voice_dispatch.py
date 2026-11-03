@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 from typing import Optional
 from urllib.parse import parse_qsl
@@ -29,18 +30,19 @@ from auth import (
 from notifications import (
     acknowledgement_url,
     build_gather_reply,
+    build_sms_reply,
     place_voice_call,
+    same_phone,
+    sms_segments,
     verify_twilio_signature,
 )
 from store import (
-    INDUSTRY_PROFILES,
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     VOICE_REDIAL_COOLDOWN_MINUTES,
     Incident,
     Tenant,
     User,
-    format_temperature,
     spoken_temperature,
     utc_now,
 )
@@ -75,52 +77,40 @@ def _load_incident(incident_id: str, tenant: Tenant) -> Incident:
     return incident
 
 
-def build_voice_script(incident: Incident, tenant: Tenant) -> tuple[str, str]:
-    """Draft the spoken escalation script, returning (script, source)."""
-    profile = INDUSTRY_PROFILES[incident.industry_vertical]
-    sensor = STORE.get_sensor(incident.sensor_id)
-    location = sensor.location_name if sensor else "the monitored facility"
-    minutes = int(incident.minutes_open())
-    unit = tenant.temperature_unit
-    spoken = spoken_temperature(incident.temperature_fahrenheit, unit)
+def build_voice_script(incident: Incident, tenant: Tenant,
+                       can_press: bool = True) -> tuple[str, str]:
+    """The spoken escalation script, returning (script, source).
 
-    fallback = (
-        f"This is an automated emergency call from CyberLogix AI for "
-        f"{tenant.company_name}. Sensor {incident.sensor_id} at {location} has "
-        f"been reporting a critical temperature of "
-        f"{spoken} for {minutes} "
-        f"minutes, and the likely cause is {profile['catastrophe']}. Please go "
-        f"to the site immediately. This message will repeat."
-    )
-
-    prompt = f"""
-    You are the CyberLogix AI automated outbound emergency voice operator.
-    You are placing a phone call because a critical facility alert was sent by
-    SMS {minutes} minutes ago and nobody has acknowledged it.
-
-    Customer: {tenant.company_name}
-    Sector Profile: {profile['name']}
-    Suspected Root Cause Catastrophe: {profile['catastrophe']}
-    Sensor Node ID: {incident.sensor_id}
-    Facility Location Tag: {location}
-    Current Reading: {format_temperature(incident.temperature_fahrenheit, unit)}
-    Breach Detail: {incident.breach_details}
-    Minutes Unacknowledged: {minutes}
-
-    Write the exact words to be spoken aloud by a text-to-speech voice down
-    the phone line. Keep it under 60 spoken words. Open by identifying
-    CyberLogix AI so the person knows this is not a scam call, state the
-    specific asset at risk and the likely cause, and close by telling them to
-    press 1 to acknowledge. Write plain spoken sentences only: no markdown, no
-    stage directions, no bullet points, no speaker labels.
+    Short, because Twilio reads it twice: who is calling, which unit and
+    where, how far out of range and for how long, what to check, and
+    "press 1". wording.py puts the facts together; the model words only
+    the line saying what to check, and is never trusted with the reading
+    or with how to stop the calls. `can_press` is False when the call has
+    nowhere to send a keypress, so it does not promise one.
     """
+    import wording
 
-    return safe_generate(
-        prompt,
-        fallback,
+    sensor = STORE.get_sensor(incident.sensor_id)
+    if sensor is None:  # pragma: no cover - a retired unit keeps its incidents
+        location = "the monitored unit"
+        return (
+            f"This is CyberLogix AI with a temperature alarm for "
+            f"{tenant.company_name}. {location} is at "
+            f"{spoken_temperature(incident.temperature_fahrenheit, tenant.temperature_unit)}. "
+            "Please check it now.", "fallback_template")
+    unit = tenant.temperature_unit
+    facts = wording.breach_facts(sensor, incident.temperature_fahrenheit, unit)
+    line, source = safe_generate(
+        wording.action_prompt(sensor, facts, spoken=True),
+        wording.action_for(sensor),
         purpose="voice escalation script",
         tenant_id=tenant.tenant_id,
     )
+    action = wording.clean_action(line)
+    if action is None:
+        action, source = wording.action_for(sensor), "fallback_template"
+    return (wording.voice_script(tenant, sensor, incident, unit, action, can_press),
+            source)
 
 
 def _notify_hooks(
@@ -150,16 +140,18 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant,
     `hooks_in_background`, so the copy into Slack, Teams or PagerDuty goes
     out without the sweep waiting on it.
     """
-    script, source = build_voice_script(incident, tenant)
+    # So the script's closing "press 1 to acknowledge" reaches something --
+    # and when nothing can receive the keypress, the script does not say it.
+    action_url = acknowledgement_url(
+        incident.incident_id, STORE.issue_ack_token(incident)
+    )
+    script, source = build_voice_script(
+        incident, tenant, can_press=action_url is not None)
 
     # Walk the escalation ladder: stop at the first person actually reached,
     # so a wrong number or a dead line does not end the escalation.
     sensor = STORE.get_sensor(incident.sensor_id)
     ladder = STORE.voice_ladder(tenant, sensor.site_id if sensor else None)
-    # So the script's closing "press 1 to acknowledge" reaches something.
-    action_url = acknowledgement_url(
-        incident.incident_id, STORE.issue_ack_token(incident)
-    )
     fanout = []
     delivery = None
     for contact in ladder:
@@ -306,6 +298,158 @@ async def voice_keypress(
         ),
         media_type="application/xml",
     )
+
+
+# ==============================================================================
+#  Acknowledging by text
+#
+#  The alert text ends "Reply 1 if you are on it", and the reply is the
+#  quickest way there is to stop the ladder: no sign-in, no app, one key.
+#  Twilio posts the reply here (set this address as the "A message comes
+#  in" webhook on the sending number). It counts only when:
+#
+#    * Twilio signed it -- the same check as the keypress -- so nobody can
+#      post a forged "1" from a number they have guessed;
+#    * the number that sent it is one the alert went to: on that business's
+#      roster for that unit's site (or the business's own number when it
+#      has no roster), active, and receiving texts or calls;
+#    * and the alert is still that business's, and still open.
+#
+#  Nothing else is touched. A number on nobody's roster gets no reply at
+#  all -- not even confirmation that the number is ours.
+# ==============================================================================
+
+_ACK_REPLY = re.compile(
+    r"^(?:1|ACK|ACKNOWLEDGE[D]?|OK|OKAY|YES|ON IT)"
+    r"(?:\s*#?\s*(?:INC)?-?\s*0*(\d{1,9}))?$"
+)
+
+
+def _ack_words(body: str) -> tuple[bool, Optional[int]]:
+    """Whether a reply acknowledges, and the alert number it names if any."""
+    text = " ".join(re.sub(r"[^A-Za-z0-9#\- ]", " ", body or "").upper().split())
+    found = _ACK_REPLY.match(text)
+    if not found:
+        return False, None
+    return True, int(found.group(1)) if found.group(1) else None
+
+
+def _alert_number(incident: Incident) -> int:
+    """INC-000012 -> 12: what a person types back."""
+    digits = re.sub(r"\D", "", incident.incident_id)
+    return int(digits) if digits else 0
+
+
+def _alerted(tenant: Tenant, incident: Incident, phone: str):
+    """The roster entry this incident's alert went to at `phone`, if any."""
+    sensor = STORE.get_sensor(incident.sensor_id)
+    site_id = sensor.site_id if sensor else None
+    for contact in (STORE.sms_recipients(tenant, site_id)
+                    + STORE.voice_ladder(tenant, site_id)):
+        if contact.phone and same_phone(contact.phone, phone):
+            return contact
+    return None
+
+
+def _on_any_roster(phone: str) -> bool:
+    for tenant in STORE.list_tenants():
+        if same_phone(tenant.contact_phone or "", phone):
+            return True
+        if any(c.active and same_phone(c.phone, phone)
+               for c in STORE.contacts_for(tenant.tenant_id)):
+            return True
+    return False
+
+
+def _sms_answer(text: Optional[str], tenant_id: Optional[str] = None,
+                status_code: int = status.HTTP_200_OK) -> Response:
+    """Reply by TwiML; a reply is a text too, so it is counted as one."""
+    if text and tenant_id:
+        from costs import record
+
+        record(tenant_id, "sms_sent")
+        record(tenant_id, "sms_segments", sms_segments(text))
+    return Response(content=build_sms_reply(text), media_type="application/xml",
+                    status_code=status_code)
+
+
+@router.post("/sms-reply", include_in_schema=False)
+async def sms_reply(request: Request) -> Response:
+    """Twilio posts a reply to an alert text. "1" or "ACK" acknowledges.
+
+    Async because it awaits the body; the store calls are quick and the
+    courtesy copy into Slack goes to a worker thread, as for the keypress.
+    """
+    body = (await request.body()).decode("utf-8", "replace")
+    form = dict(parse_qsl(body, keep_blank_values=True))
+    if not verify_twilio_signature(
+            _signed_url(request), form, request.headers.get("X-Twilio-Signature", "")):
+        logger.warning("Rejected an unverified text reply.")
+        return _sms_answer(None, status_code=status.HTTP_403_FORBIDDEN)
+
+    phone = (form.get("From") or "").strip()
+    acks, number = _ack_words(form.get("Body") or "")
+
+    # Every alert still not closed whose text went to this number, newest
+    # first, across every business that has them on a roster.
+    mine = []
+    for tenant in STORE.list_tenants():
+        for incident in STORE.incidents_for(tenant.tenant_id):
+            if incident.resolved_at is not None:
+                continue
+            contact = _alerted(tenant, incident, phone)
+            if contact is not None:
+                mine.append((tenant, incident, contact))
+    mine.sort(key=lambda row: row[1].opened_at, reverse=True)
+
+    if not mine:
+        if _on_any_roster(phone):
+            return _sms_answer("CyberLogix: there is no open alert for this "
+                               "number to acknowledge.")
+        logger.info("A text from a number on no roster was ignored.")
+        return _sms_answer(None)
+
+    first_tenant = mine[0][0].tenant_id
+    if not acks:
+        return _sms_answer("CyberLogix: reply 1 to acknowledge the alert and "
+                           "stop the calls.", first_tenant)
+    if number is not None:
+        mine = [row for row in mine if _alert_number(row[1]) == number]
+        if not mine:
+            return _sms_answer(f"CyberLogix: no open alert {number} was sent to "
+                               "this number.", first_tenant)
+
+    waiting = [row for row in mine if row[1].acknowledged_at is None]
+    if not waiting:
+        _, incident, _ = mine[0]
+        return _sms_answer(f"CyberLogix: already acknowledged by "
+                           f"{incident.acknowledged_by}.", first_tenant)
+    if len(waiting) > 1:
+        listed = "; ".join(
+            f"{_alert_number(i)} {(STORE.get_sensor(i.sensor_id).location_name if STORE.get_sensor(i.sensor_id) else i.sensor_id)}"
+            for _, i, _ in waiting[:4])
+        return _sms_answer(f"CyberLogix: {len(waiting)} alerts are open: {listed}. "
+                           f"Reply ACK and the number, e.g. ACK "
+                           f"{_alert_number(waiting[0][1])}.", first_tenant)
+
+    tenant, incident, contact = waiting[0]
+    who = contact.full_name or "on-call contact"
+    incident, claimed = STORE.acknowledge_incident(
+        incident, f"{who}, by text reply ({contact.phone})")
+    sensor = STORE.get_sensor(incident.sensor_id)
+    where = (sensor.location_name if sensor and sensor.location_name
+             else incident.sensor_id)
+    if not claimed:
+        return _sms_answer(f"CyberLogix: already acknowledged by "
+                           f"{incident.acknowledged_by}.", tenant.tenant_id)
+    write_audit(tenant, None, "incident.acknowledged",
+                f"{incident.incident_id} acknowledged by text reply from {who}.",
+                fallback_actor=f"{who} (text reply)")
+    await asyncio.to_thread(_notify_hooks, tenant, incident, "acknowledged",
+                            f"Acknowledged by text by {who}.")
+    logger.info("Incident %s acknowledged by text reply.", incident.incident_id)
+    return _sms_answer(f"CyberLogix: thanks, {who}. {where} is yours. No more "
+                       "calls for this alert.", tenant.tenant_id)
 
 
 @router.get("/pending")

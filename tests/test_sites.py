@@ -209,9 +209,11 @@ def test_a_celsius_tenant_is_alerted_in_celsius(
     assert body["current_temperature"] == 21.0
     assert "°C" in body["breach_details"]
     assert "°F" not in body["breach_details"]
-    # The reading handed to the model is Celsius, so what it writes is too.
-    assert "21.0°C" in stub_gemini.prompts[-1]
-    assert "°F" not in stub_gemini.prompts[-1]
+    # The reading is written into the text by the code, in Celsius; the
+    # model is never handed a reading to restate, in either scale.
+    assert "21C, " in body["dispatched_sms_text"]
+    assert "F limit" not in body["dispatched_sms_text"]
+    assert "°" not in stub_gemini.prompts[-1]
 
     # And the wording used when the model is unreachable.
     break_gemini("outage")
@@ -219,7 +221,7 @@ def test_a_celsius_tenant_is_alerted_in_celsius(
     offline = api.post("/api/sensor-pulse", headers=headers,
                        json={"sensor_id": "FRZ-2",
                              "temperature_celsius": 21.0}).json()
-    assert "21.0°C" in offline["dispatched_sms_text"]
+    assert "21C, 21C above the 0C limit." in offline["dispatched_sms_text"]
 
 
 def test_the_escalation_call_speaks_the_tenants_unit(
@@ -241,7 +243,8 @@ def test_the_escalation_call_speaks_the_tenants_unit(
     incident = STORE.get_incident(body["incident_id"])
     script, _ = build_voice_script(incident, tenant)
 
-    assert "21.0 degrees Celsius" in script
+    assert "is at 21 degrees Celsius" in script
+    assert "21 degrees Celsius above its limit of 0 degrees Celsius" in script
     assert "degrees Fahrenheit" not in script
 
 

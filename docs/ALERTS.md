@@ -65,6 +65,52 @@ With no learned rhythm every breach pages.
 4. `POST /api/voice/acknowledge/{id}` halts the ladder;
    `POST /api/voice/resolve/{id}` closes the incident.
 
+### What the text, the email and the call say
+
+`wording.py` puts every alert together from the reading itself, in the
+order somebody half awake reads it: which unit, where, the reading, how
+far past its limit, what to check, how to answer.
+
+    ALERT Kitchen walk-in (WALKIN-1) at Main Street: 58F, 26F above the
+    32F limit. Check the door and food now. Reply 1 if you are on it.
+
+The text always fits **one SMS segment** (160 GSM-7 characters, no
+degree sign); `tests/test_alert_wording.py` holds every trade to that, in
+both scales. The "what to check" line is the trade's own (a pharmacy is
+told to check the fridge and stock, a data hall the cooling). With a
+model key set, the model words that one line and nothing else -- never
+the reading, the limit or how to answer -- and a line longer than one
+short sentence is not used. If the text runs long, that line goes first,
+then the names are shortened; the reading, the limit and "Reply 1" stay.
+
+The same alert goes once by email to the business's own contact address,
+with the facts in the subject line so it reads in a notification banner.
+
+The call is short, because Twilio reads it twice: who is calling, which
+unit and site, the reading and how far past its limit, how long it has
+been out of range, what to check, and "press 1". It only says "press 1"
+when pressing it reaches something (see below); otherwise it says to
+reply 1 to the text or acknowledge in the console.
+
+### Reply 1 to acknowledge
+
+A reply of `1`, `ACK`, `OK` or `yes` to the alert text acknowledges the
+alert and stops the calls. Set `https://<your host>/api/voice/sms-reply`
+as the "A message comes in" webhook on the Twilio number that sends the
+alerts. A reply counts only when:
+
+* Twilio signed it (the same check as the keypress below; with no
+  `TWILIO_AUTH_TOKEN` nothing is trusted);
+* it came from a number the alert went to -- active on that business's
+  roster for that unit's site, or the business's own number when it has
+  no roster;
+* and the alert is that business's and still open.
+
+A number on nobody's roster gets no reply at all. With two open alerts
+the reply asks which, and `ACK 12` picks alert 12. The acknowledgement is
+recorded as "*name*, by text reply (*number*)" in the incident and the
+audit trail, and posted to the team's channels.
+
 ### Press 1 to acknowledge
 
 The call script closes by telling the callee to press 1, and that reaches

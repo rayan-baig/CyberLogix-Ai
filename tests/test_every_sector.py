@@ -142,9 +142,20 @@ def test_a_breach_alert_names_the_sector_and_speaks_the_unit(
     assert body["current_temperature"] == pytest.approx(
         to_celsius(reading_f) if unit == "C" else reading_f, abs=0.02)
 
+    # The trade is named by what it tells the person to check, in its own
+    # words -- the sector's catalogue name ("Retail & Hospital
+    # Pharmacies") is jargon on a lock screen and costs a third of the
+    # segment. The reading carries its scale letter (GSM-7 has no degree
+    # sign), and the whole text fits one segment.
+    import wording
+
     sms = body["dispatched_sms_text"]
-    assert profile["name"] in sms, f"the alert does not name {vertical}: {sms}"
-    assert f"°{unit}" in sms
+    # A long unit name can squeeze the trade's line out; then the short one.
+    assert (wording.ACTIONS[vertical] in sms or wording.DEFAULT_ACTION in sms), (
+        f"the alert does not say what to check: {sms}")
+    assert re.search(rf"-?\d+(\.\d)?{unit}, ", sms), sms
+    assert len(sms) <= wording.SMS_LIMIT, sms
+    assert profile["name"] not in sms
     _no_other_scale(sms, unit, "the alert text")
     _clean(sms, "the alert text")
 

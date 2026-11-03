@@ -374,6 +374,39 @@ def build_gather_reply(spoken_text: str) -> str:
     )
 
 
+def build_sms_reply(text: Optional[str]) -> str:
+    """TwiML answering an inbound text: one reply, or none at all.
+
+    An empty <Response/> sends nothing, which is the answer a number that
+    is on nobody's roster gets: not even confirmation that it reached us.
+    """
+    if not text:
+        return '<?xml version="1.0" encoding="UTF-8"?><Response/>'
+    safe = xml_escape(to_gsm7(text.strip())[:MAX_SMS_CHARACTERS])
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f"<Response><Message>{safe}</Message></Response>"
+    )
+
+
+def same_phone(a: str, b: str) -> bool:
+    """Two ways of writing one phone number.
+
+    Twilio reports the sender as +15550100; a roster may hold +1-555-0100
+    or (555) 0100 with the country code left off. Digits only, and a
+    North American number with or without its leading 1. Anything looser
+    would let a different number stand in for somebody on the roster.
+    """
+    da = "".join(ch for ch in (a or "") if ch.isdigit())
+    db = "".join(ch for ch in (b or "") if ch.isdigit())
+    if len(da) < 7 or len(db) < 7:
+        return False
+    if da == db:
+        return True
+    short, long_ = sorted((da, db), key=len)
+    return len(short) == 10 and long_ == "1" + short
+
+
 def acknowledgement_url(incident_id: str, token: str) -> Optional[str]:
     """Where Twilio should post a keypress for this call, if reachable."""
     if not PUBLIC_BASE_URL:
