@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%%TITLE%%</title>
+<meta name="description" content="%%DESCRIPTION%%">
+<!-- The sheet is rendered from salessheet.py at serve time, from the rate
+     card, the industry profile and the alert code. Do not write a figure
+     into this file. -->
+<link rel="canonical" href="%%BASE_URL%%%%PAGE_PATH%%">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/static/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/sheet.css">
+<script src="/static/sheet.js" defer></script>
+</head>
+<body class="sheet-page">
+<nav class="sheet-bar" aria-label="Sheet">
+  <a class="btn btn-sm" href="%%BACK_PATH%%">Back to the industry page</a>
+  <button class="btn btn-sm btn-primary" type="button" id="print-sheet">Print or save as PDF</button>
+</nav>
+<main>
+%%SHEET%%
+</main>
+</body>
+</html>

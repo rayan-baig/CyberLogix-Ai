@@ -68,6 +68,15 @@ def test_every_add_on_and_the_discount_are_the_rate_card(api):
             in page)
 
 
+def test_the_one_time_setup_charge_and_the_escalator_are_on_the_page(api):
+    """Both are on a contract's bills (contracts.py), so both are stated
+    where a buyer reads the prices, from the figures that charge them."""
+    page = re.sub(r"\s+", " ", api.get("/pricing").text)
+    assert (f"one-time setup charge of ${pricing.SETUP_FEE_PER_SITE_USD:,.0f} "
+            "per site") in page
+    assert f"rises {pricing.ANNUAL_ESCALATOR_PERCENT:g}% a year" in page
+
+
 def test_the_plans_table_is_the_plan_tiers(api):
     page = api.get("/pricing").text
     for tier in PLAN_TIERS.values():

@@ -330,6 +330,7 @@ RESET_HTML = STATIC_DIR / "reset.html"
 PRICING_HTML = STATIC_DIR / "pricing.html"
 HELP_HTML = STATIC_DIR / "help.html"
 SENSORS_HTML = STATIC_DIR / "help-sensors.html"
+SHEET_HTML = STATIC_DIR / "sheet.html"
 ERROR_HTML = STATIC_DIR / "error.html"
 FAVICON = STATIC_DIR / "favicon.ico"
 
@@ -824,6 +825,32 @@ def industry_page(request: Request, vertical: str = ""):
     })
 
 
+@app.get("/for/{vertical}/sheet", include_in_schema=False)
+def industry_sheet(request: Request, vertical: str):
+    """One industry on one printed page: the problem, the fix, where the
+    alarm is set, what an alert says, the prices and the trial.
+
+    Rendered from salessheet.py, which reads every figure from the code
+    that charges, alarms and alerts. Not listed for search engines: it is
+    the industry page again, made for paper.
+    """
+    from salessheet import known_sheet, render_html, sheet_title
+
+    if not known_sheet(vertical):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No sheet for that industry.")
+    name = INDUSTRY_PROFILES[vertical]["name"]
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return _serve_page(SHEET_HTML, request, {
+        "%%TITLE%%": sheet_title(vertical),
+        "%%DESCRIPTION%%": (f"Temperature alarms for {name} on one page: the "
+                            "problem, the fix, the alarm limits, the alerts, "
+                            "the prices and the free trial."),
+        "%%PAGE_PATH%%": f"/for/{vertical}/sheet",
+        "%%BACK_PATH%%": f"/for/{vertical}",
+    }, markup={"%%SHEET%%": render_html(vertical, base, __version__)})
+
+
 @app.get("/today", include_in_schema=False)
 def plain_view():
     """The console, asked one question: is there anything I have to do.
@@ -1029,13 +1056,22 @@ def favicon():
 
 
 def _pricing_text() -> Dict[str, str]:
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, headline
+    from pricing import (
+        ANNUAL_ESCALATOR_PERCENT,
+        ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        SETUP_FEE_PER_SITE_USD,
+        headline,
+    )
 
     facts = headline()
     return {
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
         "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
+        # Charged on a contract's first invoice (contracts.py). It was on
+        # the bill and on no page a buyer reads first.
+        "%%SETUP_FEE%%": f"${SETUP_FEE_PER_SITE_USD:,.0f}",
+        "%%ESCALATOR%%": f"{ANNUAL_ESCALATOR_PERCENT:g}",
     }
 
 
