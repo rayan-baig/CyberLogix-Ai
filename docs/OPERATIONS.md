@@ -224,6 +224,19 @@ Found by following them on a big database:
   anything else holding the file open could leave behind.
 * A restore re-sent alerts and digests that had already gone out.
 
+### A demo database never backs up into the live folder
+
+`python demo_account.py --db PATH` seeds a made-up restaurant group into
+a new database and marks it as a demo. A demo's snapshots go in
+`demo-backups/` beside the demo database, whatever
+`CYBERLOGIX_BACKUP_DIR` says; if that folder would be a live backup
+folder after all, no snapshot is taken. A sister product once ran its
+demo with the production settings, and the demo's daily snapshots went
+into the live folder, where keeping the newest fourteen pruned the real
+ones away. `tests/test_demo_account.py` takes a snapshot of a seeded demo
+in its own process with `CYBERLOGIX_BACKUP_DIR` set, and checks the live
+folder is untouched.
+
 ## Outage drill: Twilio and mail
 
 Twice a year, and after any change to how alerts are sent. On a staging

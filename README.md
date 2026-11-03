@@ -129,6 +129,21 @@ limits — then serves the app on :8080. It prints a login
 (`dana@blueharbor.example` / `harbor-demo-2026`). It resets the store, so run
 it only against a throwaway instance.
 
+For a demo account that stays put — a sales laptop, a staging box — seed
+a new database instead:
+
+```bash
+.venv/bin/python demo_account.py --db /tmp/cyberlogix-demo.db
+CYBERLOGIX_DB_PATH=/tmp/cyberlogix-demo.db .venv/bin/python main.py
+```
+
+It makes Juniper & Vine Kitchens, a made-up restaurant group: three
+sites, twenty units, a week of readings with one breach handled and one
+problem open now, an on-call rotation and a paid invoice, and prints the
+owner's and an operator's sign-in. It refuses a database that holds
+anything, mails nobody, and its backups go to `demo-backups/` beside it,
+never to `CYBERLOGIX_BACKUP_DIR`.
+
 ## Quick start
 
 ```bash
