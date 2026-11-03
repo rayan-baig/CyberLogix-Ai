@@ -302,3 +302,17 @@ def test_robots_keeps_crawlers_off_every_private_path(api):
         assert f"Disallow: {private}" in body
     for public in ("/pricing", "/help", "/for", "/legal"):
         assert f"Allow: {public}" in body
+
+
+def test_a_staging_copy_asks_to_be_left_out_of_search_entirely(api, monkeypatch):
+    """CYBERLOGIX_NOINDEX: a copy that is not the live product must not be
+    where a stranger lands from a search and starts a trial."""
+    import main
+
+    monkeypatch.setattr(main, "NOINDEX", True)
+    assert api.get("/robots.txt").text == "User-agent: *\nDisallow: /\n"
+    assert "<loc>" not in api.get("/sitemap.xml").text
+    for path in ("/", "/pricing", "/signup", "/for/restaurant", "/static/theme.css"):
+        assert "noindex" in api.get(path).headers.get("X-Robots-Tag", ""), path
+    monkeypatch.setattr(main, "NOINDEX", False)
+    assert "X-Robots-Tag" not in api.get("/").headers

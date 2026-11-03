@@ -76,6 +76,8 @@ function renderIndustry(d) {
     <div class="foot">
       <a class="btn btn-sm btn-primary u-w-auto" href="/signup">
         Start watching</a>
+      <a class="btn btn-sm" href="/for/${esc(d.vertical)}/sheet">
+        One-page sheet to print</a>
       <a class="btn btn-sm" href="/for">Another industry</a>
     </div>`;
 }

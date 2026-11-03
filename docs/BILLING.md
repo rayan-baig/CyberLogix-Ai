@@ -429,4 +429,5 @@ The portal at `/partners` shows their book, what it earns them, which
 accounts need an engineer today, and one account in operational detail. A
 partner is a principal with narrower rights than a tenant owner: scoped to
 their own accounts, and shown what an engineer needs without the customer's
-roster or audit trail.
+roster or audit trail. Setting one up, step by step, is in
+[PARTNERS.md](PARTNERS.md).

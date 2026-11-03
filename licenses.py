@@ -202,8 +202,17 @@ def onboard_tenant(
 
 @router.get("/me")
 def current_license(tenant: Tenant = Depends(require_tenant)):
-    """Entitlements and seat usage for the calling tenant."""
-    return tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id))
+    """Entitlements and seat usage for the calling tenant.
+
+    `partner_name` names the reseller that manages the account, if one
+    does: that firm's portal shows this business's units, alerts and
+    batteries (never its roster or its bills), and the business should be
+    able to see who that is, not only an ID.
+    """
+    body = tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id))
+    partner = STORE.get_partner(tenant.partner_id) if tenant.partner_id else None
+    body["partner_name"] = partner.company_name if partner else None
+    return body
 
 
 # Which tiers are above which. Self-service moves up this list and never

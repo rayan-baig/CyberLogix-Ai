@@ -330,6 +330,8 @@ RESET_HTML = STATIC_DIR / "reset.html"
 PRICING_HTML = STATIC_DIR / "pricing.html"
 HELP_HTML = STATIC_DIR / "help.html"
 SENSORS_HTML = STATIC_DIR / "help-sensors.html"
+SHEET_HTML = STATIC_DIR / "sheet.html"
+DEVELOPERS_HTML = STATIC_DIR / "developers.html"
 ERROR_HTML = STATIC_DIR / "error.html"
 FAVICON = STATIC_DIR / "favicon.ico"
 
@@ -417,6 +419,13 @@ API_DOCS_POLICY = "; ".join([
 # industry), and a test holds the two together.
 PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal")
 
+# A copy that is not the live product -- staging, a demo box -- asks to be
+# left out of search results entirely: every page noindex, robots.txt
+# closed, the sitemap empty. Otherwise a stranger searching for the
+# product could find staging's sign-up page and start a trial on a copy
+# that texts nobody (docs/STAGING.md).
+NOINDEX = os.environ.get("CYBERLOGIX_NOINDEX", "").strip().lower() in ("1", "true", "yes")
+
 # Paths whose errors are always JSON: the API and its documentation, and
 # the static files a page loads. A browser that mistypes a page address
 # gets the friendly page; a script calling the API gets what it can parse.
@@ -425,6 +434,8 @@ _MACHINE_PREFIXES = ("/api", "/docs", "/redoc", "/openapi.json", "/static")
 
 def _indexable(path: str) -> bool:
     """A public page a search engine may list, or a file such pages use."""
+    if NOINDEX:
+        return False
     if path in PUBLIC_PAGES or path in ("/robots.txt", "/sitemap.xml", "/favicon.ico"):
         return True
     if path.startswith("/static/"):
@@ -709,6 +720,8 @@ def robots(request: Request):
     it is what the front door used to be.
     """
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    if NOINDEX:
+        return PlainTextResponse("User-agent: *\nDisallow: /\n")
     body = "\n".join([
         "User-agent: *",
         "Allow: /$",
@@ -752,6 +765,8 @@ def sitemap(request: Request):
              ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
     pages += [("/help", "0.6"), ("/help/sensors", "0.6"), ("/legal", "0.4")]
+    if NOINDEX:
+        pages = []
     entries = "".join(
         f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
         for path, weight in pages
@@ -822,6 +837,32 @@ def industry_page(request: Request, vertical: str = ""):
         "%%OG_TITLE%%": title,
         "%%OG_DESCRIPTION%%": description,
     })
+
+
+@app.get("/for/{vertical}/sheet", include_in_schema=False)
+def industry_sheet(request: Request, vertical: str):
+    """One industry on one printed page: the problem, the fix, where the
+    alarm is set, what an alert says, the prices and the trial.
+
+    Rendered from salessheet.py, which reads every figure from the code
+    that charges, alarms and alerts. Not listed for search engines: it is
+    the industry page again, made for paper.
+    """
+    from salessheet import known_sheet, render_html, sheet_title
+
+    if not known_sheet(vertical):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No sheet for that industry.")
+    name = INDUSTRY_PROFILES[vertical]["name"]
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return _serve_page(SHEET_HTML, request, {
+        "%%TITLE%%": sheet_title(vertical),
+        "%%DESCRIPTION%%": (f"Temperature alarms for {name} on one page: the "
+                            "problem, the fix, the alarm limits, the alerts, "
+                            "the prices and the free trial."),
+        "%%PAGE_PATH%%": f"/for/{vertical}/sheet",
+        "%%BACK_PATH%%": f"/for/{vertical}",
+    }, markup={"%%SHEET%%": render_html(vertical, base, __version__)})
 
 
 @app.get("/today", include_in_schema=False)
@@ -979,6 +1020,24 @@ def sensor_setup_page(request: Request):
     return _serve_page(SENSORS_HTML, request, markup={"%%GUIDES%%": render_html(base)})
 
 
+@app.get("/developers", include_in_schema=False)
+def developer_reference(request: Request):
+    """The API reference as one plain page, rendered here from the schema.
+
+    /docs and /redoc need a CDN and a looser policy; this needs neither,
+    so it works wherever the product does. Routes only the platform
+    operator can call are counted, not listed (apiref.py).
+    """
+    from apiref import render
+
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    markup = render(app.openapi(), base)
+    count = markup.pop("%%ROUTE_COUNT%%")
+    return _serve_page(DEVELOPERS_HTML, request,
+                       {"%%VERSION%%": __version__, "%%ROUTE_COUNT%%": count},
+                       markup=markup)
+
+
 _SWAGGER_VERSION = "5"
 _REDOC_VERSION = "2"
 
@@ -1029,13 +1088,22 @@ def favicon():
 
 
 def _pricing_text() -> Dict[str, str]:
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, headline
+    from pricing import (
+        ANNUAL_ESCALATOR_PERCENT,
+        ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        SETUP_FEE_PER_SITE_USD,
+        headline,
+    )
 
     facts = headline()
     return {
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
         "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
+        # Charged on a contract's first invoice (contracts.py). It was on
+        # the bill and on no page a buyer reads first.
+        "%%SETUP_FEE%%": f"${SETUP_FEE_PER_SITE_USD:,.0f}",
+        "%%ESCALATOR%%": f"{ANNUAL_ESCALATOR_PERCENT:g}",
     }
 
 

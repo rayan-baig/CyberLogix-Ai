@@ -582,7 +582,11 @@ def build_help(served: str) -> str:
         if route in DEMO_PAGES:
             return (f'{match.group(1)}href="{DEMO_PAGES[route]}{anchor}"'
                     f'{match.group(4)}>{text}</a>')
-        # Inside the nav a dead link is dropped; in a sentence its words stay.
+        # Inside the nav a dead link is dropped, and so is a button (the help
+        # page's row of them: a button's words alone are not a sentence); in
+        # a sentence its words stay.
+        if 'class="btn' in match.group(1) + match.group(4):
+            return ""
         return "" if "<nav" in page[:match.start()].rsplit("</nav>", 1)[-1] else text
 
     page = re.sub(r'(<a\b[^>]*?)href="(/[a-z/]*)(#[a-z-]+)?"([^>]*)>(.*?)</a>',

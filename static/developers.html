@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — API reference</title>
+<meta name="description" content="Every CyberLogix AI API endpoint a customer or developer can call: what it does, the credential it needs, its parameters and an example body.">
+<!-- Rendered from the app's own OpenAPI schema at serve time (apiref.py).
+     Do not write an endpoint into this file. -->
+<link rel="canonical" href="%%BASE_URL%%/developers">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/static/logo-mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/pages.css">
+<link rel="stylesheet" href="/static/developers.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+  <nav aria-label="Elsewhere">
+    <a href="/">Home</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/help">Help</a>
+    <a class="btn btn-sm" href="/console">Sign in</a>
+  </nav>
+</header>
+
+<main class="wrap page">
+  <p class="kicker">Developers</p>
+  <h1>API reference</h1>
+  <p class="lede">Every endpoint a customer or a developer can call: what it
+    does, the credential it needs, its parameters and an example body. Read
+    from the running service, version %%VERSION%%, so it lists what this
+    server actually answers: %%ROUTE_COUNT%% endpoints.</p>
+
+  <div class="panel ref-intro">
+    <h2>Before you start</h2>
+    <p>Every address below is relative to <code>%%BASE_URL%%</code>. Send
+      and expect JSON. Most endpoints take one of these credentials, in a
+      header:</p>
+    <ul class="steps">
+      <li><strong>Business API key</strong>, <code>X-CyberLogix-Key</code>:
+        made when the business signs up, and replaced from the console's
+        Setup tab. It acts for the whole business; keep it on a server.</li>
+      <li><strong>Signed-in session</strong>,
+        <code>Authorization: Bearer $TOKEN</code>: what
+        <code>POST /api/accounts/login</code> returns. It acts as one person,
+        with that person's role.</li>
+      <li><strong>Sensor key</strong>, <code>X-CyberLogix-Sensor-Key</code>:
+        one sensor's own key. It can only send that sensor's readings.</li>
+      <li><strong>Partner key</strong>, <code>X-CyberLogix-Partner</code>:
+        a reseller's key for its own book of accounts.</li>
+    </ul>
+    <p class="small muted">Some actions also need a role (owner, operator)
+      as well as a credential; a request without it is answered 403 and
+      says which. A body that does not fit is answered 422, naming the
+      field. The examples use <code>$KEY</code> and <code>$TOKEN</code> for
+      your own values: no real key is ever shown here.</p>
+    <p class="small muted">Prefer an interactive explorer? <a href="/docs">Swagger UI</a>
+      and <a href="/redoc">ReDoc</a> show the same schema, loaded from a
+      public CDN. The raw schema is at <a href="/openapi.json">/openapi.json</a>.</p>
+  </div>
+
+  <h2>Contents</h2>
+  <ul class="ref-toc">%%TOC%%</ul>
+
+  %%REFERENCE%%
+
+  %%HIDDEN_NOTE%%
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span>CyberLogix AI</span>
+    <span class="lineage">A product of MTRX Horizyn</span>
+    <nav aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/help">Help</a>
+      <a href="/legal">Agreements</a>
+      <a href="/console">Console</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

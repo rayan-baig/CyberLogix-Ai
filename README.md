@@ -50,7 +50,9 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, deleting a business, the agreements, deployment details, what to do before the first customer |
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
-| [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, mutation testing |
+| [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, the sales sheet print check, mutation testing |
+| [docs/PARTNERS.md](docs/PARTNERS.md) | Resellers: what a partner sees, how commission works, setting one up step by step, each month, and what is not there yet |
+| [docs/STAGING.md](docs/STAGING.md) | A second copy on Render for trying changes first: its own disk, test Twilio and Stripe, and moving a change to live |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
 | [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md), [docs/SENSOR-SETUP.md](docs/SENSOR-SETUP.md) | The customer guides above |
 
@@ -95,12 +97,16 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Watchdog | `/api/watchdog` | Whether the thing that watches the freezers is running |
 | Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
 | Help | `/help`, `/help/sensors`, `/api/help` | Customer questions answered from the code, what to check when a sensor is offline, and how to set each kind of sensor up |
+| Sales sheets | `/for/<industry>/sheet` | One printed page per industry: the problem, the fix, the alarm limits, an alert, the prices and the trial, all from the code |
+| API reference | `/developers` | Every customer-facing endpoint, its credential, parameters and an example body, rendered from the schema with no script |
 | Pricing page | `/pricing` | Every rate and a calculator, rendered from the rate card |
 
 
 The landing page is at `/`, the console at `/console`, the reseller portal
-at `/partners`, the machine-readable gateway at `/api`, and interactive API
-docs at `/docs`.
+at `/partners`, the machine-readable gateway at `/api`, and the API
+reference at `/developers` (plain HTML, built from the routes; Swagger UI
+and ReDoc, which load from a CDN, are at `/docs` and `/redoc`). Each
+industry has a one-page sheet to print at `/for/<industry>/sheet`.
 
 ## Running locally
 
@@ -216,7 +222,7 @@ The short version:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 2,340 tests. The language model, Twilio and SMTP are stubbed and the database is
+About 2,400 tests. The language model, Twilio and SMTP are stubbed and the database is
 in memory, so the suite needs no credentials, makes no network calls and
 touches no file on disk. CI runs the suite on Python 3.11 (what the image
 ships) and again on 3.13, and also runs pyflakes, a type check on the money

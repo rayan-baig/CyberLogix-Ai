@@ -37,6 +37,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
 | `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
 | `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the contact on their invoice |
+| `CYBERLOGIX_NOINDEX` | — | `1` on a copy that is not the live product (staging, a demo): every page asks search engines not to list it, robots.txt closes, the sitemap is empty. See [STAGING.md](STAGING.md) |
 
 `.env.example` carries the same list with the reasoning next to each one, and
 a test fails if a setting is read by the code but missing from that file — or

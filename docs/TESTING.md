@@ -125,6 +125,29 @@ monthly summary email's link to another business's inspector log opens
 that business with the dates filled in. The sensor setup guides at
 `/help/sensors` are among the pages loaded at both sizes.
 
+And a reseller: the operator makes a partner, finds a new business by
+name and attaches it, the business's walk-in goes warm, and the partner
+signs in to `/partners` with the key at both sizes and sees the account,
+that it needs a visit, and its units. The API reference at `/developers`
+and two industries' one-page sheets are among the pages loaded.
+
+## The sales sheets on paper
+
+`tools/sheet_print.js` prints every industry's one-page sheet
+(`/for/<industry>/sheet`) to PDF the way a browser's Print does, on A4 and
+on Letter, and fails if any runs onto a second page, shows a missing value,
+or is refused anything by the content security policy:
+
+```bash
+PYTHON=.venv/bin/python node tools/sheet_print.js
+# keep the PDFs to look at:
+SHEET_PDFS=/tmp/sheets node tools/sheet_print.js
+```
+
+Set `PUBLIC_BASE_URL` to the real address when you run it, so the
+addresses printed on the sheets are as long as they will be. That the
+figures on them are the code's is `tests/test_sales_sheet.py`.
+
 The money path from trial to paid to late to paid by card is
 `tests/test_payment_lifecycle.py`, against a local fake Stripe that signs
 its webhooks the way Stripe does and replays, delays and reorders them.

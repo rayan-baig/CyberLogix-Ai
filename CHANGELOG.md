@@ -3,6 +3,35 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.8.0 — 2026-11-03
+
+A sheet to print for each industry, an API reference that needs no CDN,
+partners set up end to end, and the runbook brought up to date.
+
+- **A one-page sheet for every industry,** at /for/<industry>/sheet and
+  linked from each industry page: the problem, the fix, where the alarm
+  is set, what the text, email and call say, the prices and the free
+  trial. Every figure on it comes from the code that charges and alerts,
+  and it prints on one side of A4 or Letter.
+- **The pricing page names the one-time setup charge** on a contract's
+  first bill, and that terms longer than a year rise each year. Both were
+  on the bills and on no page a buyer reads first.
+- **An API reference at /developers,** linked from the help page: every
+  endpoint a customer can call, the key it needs, its parameters and an
+  example body, built from the routes on the server. It loads nothing
+  from elsewhere and runs no script, so it works where /docs and /redoc
+  are blank. Routes only we can call are not listed, and no key is shown.
+- **Partners can be set up from start to finish.** The operator can find
+  a business's account ID by its name or email, which attaching it to a
+  partner needs and nothing showed before. A business can see the name
+  of the partner that looks after it. docs/PARTNERS.md is the whole job.
+- **A staging copy that cannot reach real people:** docs/STAGING.md, and
+  CYBERLOGIX_NOINDEX, which keeps a copy that is not the live one out of
+  search results.
+- **DEPLOY.md** now covers the Twilio reply webhook, the support address,
+  growing the disk to 5 GB, the restore steps, the monthly summary, the
+  demo account, rotations and quiet hours, and checking the version.
+
 ## 3.7.0 — 2026-11-03
 
 Paying late never silences an alarm; a monthly summary for owners; five
