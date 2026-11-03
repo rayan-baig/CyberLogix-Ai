@@ -935,9 +935,15 @@ def remove_source(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No such source on this account.")
     # Waits for an answer being written right now, so that once this has
-    # returned nothing this source fetched is ever written again.
+    # returned nothing this source fetched is ever written again. The
+    # delete also holds the store's lock: poll_once records how a fetch
+    # went by reading the row and writing it back under that lock, and a
+    # delete landing between its read and its write was undone by the
+    # write -- the source came back, credential and all, about one run
+    # in eight of the test that checks it.
     with _source_lock(source_id):
-        STORE._db.delete(SOURCE_KIND, source_id)
+        with STORE._lock:
+            STORE._db.delete(SOURCE_KIND, source_id)
     with _in_flight_lock:
         _source_locks.pop(source_id, None)
     write_audit(tenant, operator, "poller.removed", row["name"])
