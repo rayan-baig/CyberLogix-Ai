@@ -3367,6 +3367,7 @@ async function openBusinesses() {
             <option value="owner">Owner</option></select></div>
         <button class="btn" type="submit">Make a join code</button>
         <code class="biz-key" id="biz-joincode" hidden></code>
+        <div id="biz-codes"></div>
       </form>` : "";
 
   $("drawer").innerHTML = `
@@ -3400,7 +3401,45 @@ async function openBusinesses() {
   }
   $("biz-join").addEventListener("submit", joinBusiness);
   const invite = $("biz-invite");
-  if (invite) invite.addEventListener("submit", makeJoinCode);
+  if (invite) {
+    invite.addEventListener("submit", makeJoinCode);
+    $("biz-codes").addEventListener("click", revokeJoinCode);
+    showJoinCodes();
+  }
+}
+
+/* The codes this business has made that nobody has used yet, each with a
+   way to withdraw it: given to the wrong person, or they are not coming. */
+async function showJoinCodes() {
+  const box = $("biz-codes");
+  if (!box) return;
+  let list;
+  try { list = await api("/api/accounts/businesses/join-codes"); }
+  catch (_) { box.innerHTML = ""; return; }
+  box.innerHTML = list.codes.length ? `
+    <div class="biz-meta">Waiting to be used</div>
+    ${list.codes.map((c) => `
+      <div class="row u-p-5-0 u-bb">
+        <span class="grow u-fs-12-5">${esc(c.role)} · made ${esc(stamp(c.issued_at))}
+          <span class="u-d-block u-fs-11-5 u-c-muted">until ${esc(stamp(c.expires_at))}</span>
+        </span>
+        <button class="btn btn-sm" type="button" data-revoke-code="${esc(c.code_id)}">Withdraw</button>
+      </div>`).join("")}` : "";
+}
+
+async function revokeJoinCode(event) {
+  const btn = event.target.closest("[data-revoke-code]");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const done = await api(
+      `/api/accounts/businesses/join-codes/${encodeURIComponent(btn.dataset.revokeCode)}`,
+      { method: "DELETE" });
+    toast(done.message, "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+  showJoinCodes();
 }
 
 async function joinBusiness(event) {
@@ -3433,6 +3472,7 @@ async function makeJoinCode(event) {
     box.textContent = made.code;
     box.hidden = false;
     toast("Shown once. Give it to them yourself.", "ok");
+    showJoinCodes();
   } catch (err) {
     toast(err.message, "err");
   } finally {
