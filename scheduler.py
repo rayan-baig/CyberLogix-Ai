@@ -199,7 +199,35 @@ def run_vendor_polls() -> dict:
     return pollers.run_poll_pass()
 
 
+# One fleet sweep at a time. Two could run at once: the built-in loop and
+# an outside scheduler both configured, or an outside scheduler firing
+# every minute while a pass is held up by a telephony outage (every text
+# and call waiting out its timeout). Each send was already claimed, so
+# nobody was texted twice -- but the passes stacked, each holding a worker
+# thread for minutes, and those are the threads that take readings in.
+# A pass that finds one running steps aside and says so, and does not
+# write the heartbeat: if the running one never finishes, the watchdog
+# has to go stale, because nothing is being swept.
+_sweep_lock = threading.Lock()
+
+
 def run_one_pass() -> dict:
+    """Sweep every tenant once, unless a sweep is already running."""
+    if not _sweep_lock.acquire(blocking=False):
+        logger.warning("A sweep is still running; this one stands aside.")
+        return {
+            "tenants_swept": 0,
+            "voice_calls_placed": 0,
+            "failed_tenants": [],
+            "skipped": "another sweep is still running",
+        }
+    try:
+        return _sweep_every_tenant()
+    finally:
+        _sweep_lock.release()
+
+
+def _sweep_every_tenant() -> dict:
     """Sweep every tenant once, returning a summary of what was done.
 
     A failure on one tenant must not stop the others: the whole point is
@@ -243,6 +271,16 @@ def run_one_pass() -> dict:
             )
             failures.append(tenant.tenant_id)
 
+    # Alert emails the mail host would not take, on the sweep's minute
+    # timetable rather than the hourly queue's.
+    mailed = {"tried": 0, "sent": 0, "dropped": 0}
+    try:
+        from mail import retry_alert_mail
+
+        mailed = retry_alert_mail()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Alert mail retry failed (%s).", exc)
+
     if calls:
         logger.critical(
             "Unattended sweep placed %d escalation call(s) across %d tenant(s).",
@@ -254,6 +292,7 @@ def run_one_pass() -> dict:
         "voice_calls_placed": calls,
         "failed_tenants": failures,
         "vendor_polls": fetched,
+        "alert_mail": mailed,
     }
     # Written by the sweep, never by a request handler. A process that
     # answers HTTP while this task is dead has to look dead to the
@@ -262,24 +301,43 @@ def run_one_pass() -> dict:
     return result
 
 
-async def _loop(interval: int) -> None:
+# The first sweep after a start, in seconds. Not a whole interval: a
+# deploy or a restart in the middle of an incident would otherwise hold its
+# phone call back by a minute, and the watchdog answers 503 until the first
+# sweep, so an uptime check would page somebody on every deploy.
+FIRST_SWEEP_AFTER_SECONDS = 5.0
+
+
+async def _loop(interval: float) -> None:
     logger.info(
-        "Autopilot scheduler started; sweeping every %ds, billing every %ds.",
+        "Autopilot scheduler started; sweeping every %ss, billing every %ds.",
         interval,
         BILLING_EVERY_SECONDS,
     )
-    # Counted in seconds slept rather than in passes, so changing the sweep
+    clock = asyncio.get_running_loop().time
+    # Counted in elapsed time rather than in passes, so changing the sweep
     # interval does not silently change how often the company invoices.
     since_billing = 0.0
     money: Optional[asyncio.Task] = None
+    # On a fixed cadence, not "sleep, then sweep". Sleeping a whole
+    # interval after each pass made the period the interval plus however
+    # long the pass took, so the slower the sweep got under load, the
+    # later every escalation call went out.
+    next_due = clock() + min(interval, FIRST_SWEEP_AFTER_SECONDS)
+    last_tick = clock()
     while True:
         try:
-            await asyncio.sleep(interval)
+            await asyncio.sleep(max(0.0, next_due - clock()))
             # Sweeps touch SQLite and the telephony client, both blocking,
             # so they run on a worker thread rather than stalling the API.
             await asyncio.to_thread(run_one_pass)
+            # A pass that overran its interval is followed straight away,
+            # never by a burst of the passes it missed.
+            next_due = max(next_due + interval, clock())
 
-            since_billing += interval
+            now_tick = clock()
+            since_billing += now_tick - last_tick
+            last_tick = now_tick
             if since_billing >= BILLING_EVERY_SECONDS:
                 since_billing = 0.0
                 # Alongside the sweep, never in its way. The money pass sends
@@ -380,10 +438,27 @@ def _supervise(task: "asyncio.Task") -> None:
         logger.warning("No event loop to restart the sweep on.")
 
 
+# When this process started sweeping. A sensor is only "gone quiet" once
+# it has been silent for SENSOR_OFFLINE_AFTER_MINUTES while something was
+# listening: after a deploy or an outage of our own, every sensor's last
+# reading is old because we were not here to take one, and the first sweep
+# would otherwise text every business that each of its sensors had gone
+# quiet. Set only when the built-in loop runs.
+_listening_since = None
+
+
+def listening_since():
+    return _listening_since
+
+
 def start() -> Optional[asyncio.Task]:
     """Start the loop, unless it is switched off or already running."""
-    global _task
+    global _task, _listening_since
     interval = _interval()
+    if interval > 0 and _listening_since is None:
+        from store import utc_now
+
+        _listening_since = utc_now()
     if interval <= 0:
         logger.info(
             "Autopilot scheduler disabled (CYBERLOGIX_SWEEP_SECONDS=%s). "
@@ -401,7 +476,8 @@ def start() -> Optional[asyncio.Task]:
 
 async def stop() -> None:
     """Cancel the loop and wait for it to unwind."""
-    global _task
+    global _task, _listening_since
+    _listening_since = None
     if _task is None:
         return
     _task.cancel()

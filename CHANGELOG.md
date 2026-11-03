@@ -3,6 +3,34 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.5.0 — 2026-11-03
+
+Alerts on time under load, through outages and after a restore.
+
+- **Load tested.** 250 to 5,000 sensors reporting every minute, with
+  console users refreshing: no failed or lost readings, and a bad
+  reading's text goes out in milliseconds. What we measured, and when to
+  move off SQLite, is in docs/LOAD-TEST.md.
+- **A restart no longer needs four times the memory.** Readings load one
+  at a time, and each takes about a quarter of the room it did, so a
+  server that ran all day can start again on the same machine.
+- **Backups cannot fill the disk.** A snapshot that would leave the live
+  database without room is refused and reported, and snapshots can be
+  downloaded, so copying them off the machine is one command.
+- **A restore sends nothing twice.** Calls, texts, digests and reports
+  already sent before a restore are not sent again, and sensors are not
+  reported as gone quiet because the snapshot is old.
+- **A call that fails is tried again**, 5 and 15 minutes later, while
+  Twilio is down. The alert email waits out a mail outage and goes when
+  the mail host is back. If the texts fail, the owner's email says so,
+  and the owner is told once if no text ever got through.
+- **Rotations and quiet hours.** Take turns on call, handing over at a
+  local time, through clock changes. Quiet hours hold back texts to a
+  person only while somebody else is awake to get them; a breach always
+  reaches somebody.
+- **Sweeps run on the minute and one at a time,** and the first one after
+  a restart is within seconds.
+
 ## 3.4.0 — 2026-11-03
 
 - **Reply 1 to say you have it.** Answering an alert text with "1" or

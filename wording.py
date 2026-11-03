@@ -230,7 +230,18 @@ def alert_email(tenant, sensor, incident, unit: str,
               if facts["limit"] is not None else "out of range")
     subject = f"ALERT: {location} at {place} is {reading}, {out_by}"
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
+    # Sent after the texts were tried, so it can say when none got through:
+    # the owner reading this must not assume the team already knows.
+    # Not in dry run, where no text is ever sent and every alert would
+    # say so.
+    texts_failed = bool(getattr(incident, "alert_texts_failed", False)) and any(
+        (r or {}).get("status") != "not_configured" for r in incident._sms_receipts())
+    if texts_failed:
+        subject = "TEXTS FAILED - " + subject
     lines = [
+        *(["We could not text your on-call team about this: the text message "
+           "service failed. Phone whoever is on call now. We keep trying the "
+           "texts.", ""] if texts_failed else []),
         f"{location} ({sensor.sensor_id}) at {place} is reading {reading}.",
         (f"Its limit is {limit}, so it is {out_by}." if limit else ""),
         "",

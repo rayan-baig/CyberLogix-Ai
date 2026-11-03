@@ -12,16 +12,40 @@ hasn't happened yet.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from datetime import date, timedelta
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+import oncall
 from accounts import require_role
 from auth import require_tenant, write_audit
-from store import STORE, Contact, Tenant, User
+from store import STORE, Contact, Tenant, User, iso, utc_now
 
 router = APIRouter(prefix="/api/contacts", tags=["On-Call Roster"])
+
+
+class QuietHours(BaseModel):
+    """Hours this person is not texted unless nobody else would be."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start: str = Field(..., description="Local time quiet hours begin, e.g. 22:00.")
+    end: str = Field(..., description="Local time they end, e.g. 07:00. Earlier "
+                                      "than start means over midnight.")
+    timezone: str = Field(..., description="IANA time zone, e.g. Europe/London.")
+
+    @field_validator("start", "end")
+    @classmethod
+    def _clock(cls, value: str) -> str:
+        return oncall.clock(value).strftime("%H:%M")
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone(cls, value: str) -> str:
+        oncall.zone(value)
+        return value.strip()
 
 
 class ContactCreate(BaseModel):
@@ -40,6 +64,7 @@ class ContactCreate(BaseModel):
             "its own."
         ),
     )
+    quiet_hours: Optional[QuietHours] = None
 
 
 class ContactUpdate(BaseModel):
@@ -50,6 +75,7 @@ class ContactUpdate(BaseModel):
     escalation_order: Optional[int] = Field(None, ge=1, le=99)
     active: Optional[bool] = None
     site_id: Optional[str] = None
+    quiet_hours: Optional[QuietHours] = None
 
 
 def _own_site(site_id: Optional[str], tenant: Tenant) -> Optional[str]:
@@ -82,7 +108,7 @@ def roster_gaps(tenant: Tenant) -> List[str]:
     """
     roster = STORE.contacts_for(tenant.tenant_id)
     if not roster:
-        return []
+        return _rotation_gaps(tenant, roster)
     fallback = f"{tenant.contact_name} on {tenant.contact_phone}"
     channels = [("sms", "alert text")]
     if tenant.entitlements()["voice_escalation"]:
@@ -107,7 +133,75 @@ def roster_gaps(tenant: Tenant) -> List[str]:
                 "nobody of its own and nobody covering the whole estate is "
                 f"on. It would go only to the sign-up contact, {fallback}."
             )
+    return gaps + _rotation_gaps(tenant, roster) + _quiet_hour_notes(tenant)
+
+
+def _place(site_id: Optional[str]) -> str:
+    site = STORE.get_site(site_id) if site_id else None
+    return f"the rotation at {site.name}" if site else "the estate's rotation"
+
+
+def _rotation_gaps(tenant: Tenant, roster: List[Contact]) -> List[str]:
+    """A rotation that would leave a shift with nobody on it."""
+    by_id = {c.contact_id: c for c in roster}
+    gaps = []
+    for rotation in oncall.rotations_for(STORE._db, tenant.tenant_id):
+        place = _place(rotation.site_id)
+        if not rotation.members:
+            gaps.append(
+                f"{place[0].upper()}{place[1:]} has nobody in it. Add people "
+                "to it, or remove it."
+            )
+            continue
+        for member in rotation.members:
+            contact = by_id.get(member)
+            if contact is None:
+                continue
+            if not contact.active:
+                gaps.append(
+                    f"{contact.full_name} is muted but has turns in {place}: "
+                    "on their shifts nobody from the rotation is on call."
+                )
+            elif not contact.receives_sms:
+                gaps.append(
+                    f"{contact.full_name} does not get alert texts but has "
+                    f"turns in {place}: on their shifts nobody from the "
+                    "rotation is texted."
+                )
     return gaps
+
+
+def _quiet_hour_notes(tenant: Tenant, now=None) -> List[str]:
+    """When everyone a text would reach is in quiet hours, say when.
+
+    Not a gap: the text still goes, to all of them, because nobody being
+    woken is worse than somebody being woken. But an owner who set quiet
+    hours for everyone should know that is what happens.
+    """
+    if not any(c.quiet_hours for c in STORE.contacts_for(tenant.tenant_id)):
+        return []
+    now = now or utc_now()
+    notes = []
+    places = sorted({s.site_id or "" for s in STORE.sensors_for(tenant.tenant_id)}) or [""]
+    for site_id in places:
+        for step in range(48):
+            moment = now + timedelta(minutes=30 * step)
+            roster = STORE._roster_for_site(tenant, site_id or None, "sms", moment)
+            if not roster:
+                continue
+            awake, _ = oncall.awake_first(roster, moment)
+            if not awake:
+                site = STORE.get_site(site_id) if site_id else None
+                where = site.name if site else "the estate"
+                quiet = roster[0].quiet_hours or {}
+                notes.append(
+                    f"Everyone who gets the alert text for {where} is in quiet "
+                    f"hours at times (from {quiet.get('start')} "
+                    f"{quiet.get('timezone')}). A breach then still texts all "
+                    "of them: quiet hours never silence an alert."
+                )
+                break
+    return notes
 
 
 def _warn_owner_of_new_gaps(tenant: Tenant, before: List[str], operator: User) -> List[str]:
@@ -186,6 +280,9 @@ def add_contact(
         escalation_order=payload.escalation_order,
         site_id=_own_site(payload.site_id, tenant),
     )
+    if payload.quiet_hours is not None:
+        contact.quiet_hours = payload.quiet_hours.model_dump()
+        STORE.save_contact(contact)
     scope = "estate-wide"
     if contact.site_id:
         site = STORE.get_site(contact.site_id)
@@ -215,6 +312,8 @@ def update_contact(
 
     if "site_id" in changes:
         changes["site_id"] = _own_site(changes["site_id"], tenant)
+    if "quiet_hours" in changes and payload.quiet_hours is not None:
+        changes["quiet_hours"] = payload.quiet_hours.model_dump()
 
     before = roster_gaps(tenant)
     for field, value in changes.items():
@@ -265,7 +364,139 @@ def preview_routing(tenant: Tenant = Depends(require_tenant)):
         ],
         "note": (
             "The text goes to everyone listed. The call walks the ladder and "
-            "stops at the first person actually reached."
+            "stops at the first person actually reached. Right now: people "
+            "in a rotation count only on their shift, and anybody in quiet "
+            "hours is texted only if nobody else would be, and called last."
         ),
         "warnings": roster_gaps(tenant),
     }
+
+
+# ---- rotations ---------------------------------------------------------------
+
+
+class RotationIn(BaseModel):
+    """Take turns being on call. One rotation per site, and one for the estate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    site_id: Optional[str] = Field(
+        None, description="The site this rotation covers; empty for the whole estate.")
+    timezone: str = Field(..., description="IANA time zone handovers are in, e.g. America/New_York.")
+    handover: str = Field("08:00", description="Local time one shift hands to the next.")
+    shift_days: int = Field(7, ge=1, le=oncall.MAX_SHIFT_DAYS,
+                            description="Days in one shift: 1 for daily, 7 for weekly.")
+    starts_on: Optional[date] = Field(
+        None, description="The local date the first member's first shift starts. "
+                          "Defaults to today there.")
+    members: List[str] = Field(default_factory=list, max_length=50,
+                               description="Contact ids, in the order they take turns.")
+
+    @field_validator("handover")
+    @classmethod
+    def _clock(cls, value: str) -> str:
+        return oncall.clock(value).strftime("%H:%M")
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone(cls, value: str) -> str:
+        oncall.zone(value)
+        return value.strip()
+
+
+def _rotation_view(rotation: oncall.Rotation, now) -> Dict:
+    names = {c.contact_id: c.full_name for c in STORE.contacts_for(rotation.tenant_id)}
+    on_shift = rotation.on_shift(now)
+    schedule = rotation.schedule(now)
+    for shift in schedule:
+        shift["full_name"] = names.get(shift["contact_id"], "(removed)")
+    return {
+        **rotation.to_row(),
+        "scope": rotation.site_id or oncall.ESTATE,
+        "members": [{"contact_id": m, "full_name": names.get(m, "(removed)")}
+                    for m in rotation.members],
+        "on_shift_now": ({"contact_id": on_shift, "full_name": names.get(on_shift)}
+                         if on_shift else None),
+        "next_handover_at": (iso(rotation.next_handover(now))
+                             if rotation.members else None),
+        "schedule": schedule,
+    }
+
+
+@router.get("/rotations")
+def list_rotations(tenant: Tenant = Depends(require_tenant)):
+    """Every rotation, who is on shift now, and the next few handovers."""
+    now = utc_now()
+    return {
+        "rotations": [_rotation_view(r, now)
+                      for r in oncall.rotations_for(STORE._db, tenant.tenant_id)],
+        "note": (
+            "People in a rotation are alerted only on their shift; everybody "
+            "else on the roster is alerted as usual. Handovers follow the "
+            "local clock, through daylight-saving changes."
+        ),
+        "warnings": roster_gaps(tenant),
+    }
+
+
+@router.put("/rotations")
+def set_rotation(
+    payload: RotationIn,
+    tenant: Tenant = Depends(require_tenant),
+    operator: User = Depends(require_role("operator")),
+):
+    """Create or replace the rotation for a site, or for the whole estate."""
+    site_id = _own_site(payload.site_id, tenant)
+    roster = {c.contact_id: c for c in STORE.contacts_for(tenant.tenant_id)}
+    members = [m.strip() for m in payload.members]
+    if len(set(members)) != len(members):
+        raise HTTPException(status_code=400, detail="Somebody is in the rotation twice.")
+    unknown = [m for m in members if m not in roster]
+    if unknown:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Not on this business's roster: {', '.join(unknown)}.")
+    elsewhere = [
+        roster[m].full_name
+        for r in oncall.rotations_for(STORE._db, tenant.tenant_id)
+        if r.rec_id != oncall.rotation_id(tenant.tenant_id, site_id)
+        for m in r.members if m in members
+    ]
+    if elsewhere:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"Already in another rotation: {', '.join(elsewhere)}. "
+                    "Somebody takes turns in one rotation at a time."))
+    tz = oncall.zone(payload.timezone)
+    starts_on = payload.starts_on or utc_now().astimezone(tz).date()
+    rotation = oncall.Rotation(
+        tenant_id=tenant.tenant_id, site_id=site_id, timezone=payload.timezone,
+        handover=payload.handover, shift_days=payload.shift_days,
+        starts_on=starts_on.isoformat(), members=members,
+        updated_at=iso(utc_now()),
+    )
+    before = roster_gaps(tenant)
+    STORE._db.put(oncall.ROTATION_KIND, rotation.rec_id, rotation.to_row())
+    write_audit(
+        tenant, operator, "rotation.set",
+        f"{_place(site_id)}: {len(members)} people, {payload.shift_days}-day "
+        f"shifts handing over at {payload.handover} {payload.timezone}.",
+    )
+    return dict(_rotation_view(rotation, utc_now()),
+                warnings=_warn_owner_of_new_gaps(tenant, before, operator))
+
+
+@router.delete("/rotations/{scope}")
+def remove_rotation(
+    scope: str,
+    tenant: Tenant = Depends(require_tenant),
+    operator: User = Depends(require_role("operator")),
+):
+    """Stop a rotation. Its members go back to being on call all the time."""
+    site_id = None if scope == oncall.ESTATE else _own_site(scope, tenant)
+    rec_id = oncall.rotation_id(tenant.tenant_id, site_id)
+    if STORE._db.get(oncall.ROTATION_KIND, rec_id) is None:
+        raise HTTPException(status_code=404, detail="There is no rotation there.")
+    STORE._db.delete(oncall.ROTATION_KIND, rec_id)
+    write_audit(tenant, operator, "rotation.removed", f"{_place(site_id)} removed.")
+    return {"removed": True, "warnings": roster_gaps(tenant)}

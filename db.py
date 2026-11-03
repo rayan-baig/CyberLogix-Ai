@@ -191,6 +191,34 @@ class Database:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def each_reading_in_order(self, take) -> int:
+        """Hand every stored reading to `take`, oldest first, one at a time.
+
+        For the start-up load. `all("reading")` built every row as a dict
+        in one list, then a second list of objects, then sorted it: the
+        peak at start-up was several times the working set, and a
+        deployment that ran happily for a day could not start again on
+        the same machine. Streamed and ordered here instead, by time and
+        then by the number in the id, compared as a number: as text,
+        RDG-1000000 sorts before RDG-999999, and the counter passes a
+        million in a day at a thousand sensors.
+        """
+        count = 0
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT data FROM records WHERE kind = 'reading' "
+                "ORDER BY json_extract(data, '$.recorded_at'), "
+                "CAST(substr(rec_id, instr(rec_id, '-') + 1) AS INTEGER), rec_id"
+            )
+            while True:
+                batch = cursor.fetchmany(5000)
+                if not batch:
+                    break
+                for (blob,) in batch:
+                    take(json.loads(blob))
+                    count += 1
+        return count
+
     def rows(self, kind: str) -> List[Tuple[str, Dict[str, Any]]]:
         """Every record of one kind, with its id. all() drops the id."""
         with self._lock:
@@ -256,6 +284,22 @@ class Database:
                 "trusted as a backup."
             )
         return {"path": destination, "records": total, "kinds": kinds}
+
+    def restore_from(self, source: str) -> None:
+        """Replace this database's contents with a snapshot's, in place.
+
+        SQLite's backup run the other way: every page of `source` written
+        into the open database, as one transaction, through the normal
+        write path, so the write-ahead log and any other open connection
+        stay consistent and this connection never closes.
+        """
+        with self._lock:
+            src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+            try:
+                src.backup(self._conn)
+            finally:
+                src.close()
+            self._conn.commit()
 
     def close(self) -> None:
         with self._lock:

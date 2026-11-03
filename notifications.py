@@ -326,7 +326,23 @@ def send_sms(
     except Exception as exc:  # noqa: BLE001 - a send failure must not kill the breach path
         logger.exception("SMS to %s failed (%s).", to, exc)
         release(tenant_id, "sms")
+        _provider_fault("notifications.send_sms", exc)
         return _undelivered("sms", to, "send_failed", f"Twilio rejected the send: {exc}")
+
+
+def _provider_fault(source: str, exc: Exception) -> None:
+    """Tell the operator Twilio is failing: one counted fault, not a log line.
+
+    The incident records each failed text; nothing told the operator that
+    every business's texts were failing at once. A fault shows on /book ->
+    Health and in the daily digest, counted, however many alerts it hit.
+    """
+    try:
+        import faults
+
+        faults.record(source, exc, context="Twilio refused or did not answer")
+    except Exception:  # noqa: BLE001 - delivery must never raise
+        logger.exception("Could not record the delivery fault.")
 
 
 def build_twiml(spoken_text: str, action_url: Optional[str] = None) -> str:
@@ -477,6 +493,7 @@ def place_voice_call(
     except Exception as exc:  # noqa: BLE001 - a dial failure must not kill escalation
         logger.exception("Voice call to %s failed (%s).", to, exc)
         release(tenant_id, "voice")
+        _provider_fault("notifications.place_voice_call", exc)
         return _undelivered(
             "voice", to, "call_failed", f"Twilio rejected the call: {exc}"
         )

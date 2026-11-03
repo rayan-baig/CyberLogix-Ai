@@ -53,7 +53,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from auth import require_platform_admin
 from invoicing import COMPANY
+from domain import ALERT_MAIL_RETRY_MINUTES
 from store import (
+    ALERT_MAIL_KEYS,
     MAIL_MAX_AGE_HOURS,
     MAIL_MAX_ATTEMPTS,
     STORE,
@@ -440,13 +442,16 @@ def send(
 
 
 @never_raises
-def deliver(message: MailMessage) -> Dict[str, Any]:
+def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict[str, Any]:
     """Attempt one already-claimed message.
 
     Split from `send` so the retry pass can reuse it without re-claiming,
     and so a message that was queued while SMTP was unconfigured goes out
-    the moment somebody configures it.
+    the moment somebody configures it. Alert mail is allowed more tries
+    than the rest (retry_alert_mail).
     """
+    if message.dedupe_key.startswith(ALERT_MAIL_KEYS):
+        max_attempts = max(max_attempts, len(ALERT_MAIL_RETRY_MINUTES) + 1)
     if not configured():
         detail = (
             "No mail transport configured. Missing: "
@@ -483,10 +488,15 @@ def deliver(message: MailMessage) -> Dict[str, Any]:
         return _result(message, False, "refused", f"Recipient refused: {exc}")
     except Exception as exc:  # noqa: BLE001 - every other failure may be transient
         attempts = message.attempts + 1
-        final = attempts >= MAIL_MAX_ATTEMPTS
+        final = attempts >= max_attempts
         STORE.record_attempt(
             message, "failed" if final else "queued", f"{type(exc).__name__}: {exc}"
         )
+        # The operator finds out from the health page and the digest, not
+        # from a customer: one fault, counted, however many messages.
+        import faults
+
+        faults.record("mail.deliver", exc, context="the mail host refused or did not answer")
         logger.warning(
             "Mail to %s failed on attempt %d (%s).",
             mask_email(message.to_address), attempts, exc,
@@ -502,6 +512,43 @@ def deliver(message: MailMessage) -> Dict[str, Any]:
         "Mail sent to %s: %s", mask_email(message.to_address), message.subject
     )
     return _result(message, True, "sent", "Accepted by the mail host.")
+
+
+def retry_alert_mail(now=None) -> Dict[str, Any]:
+    """Try alert mail again that the mail host would not take. Every sweep.
+
+    The alert email went into the hourly queue like an invoice: three
+    tries in three hours, then dropped, so an outage of the mail host for
+    an afternoon lost the owner's copy of every alert in it. It is tried
+    again on ALERT_MAIL_RETRY_MINUTES while the alert is open, and goes
+    out within minutes of the host coming back. An alert somebody has
+    answered in the meantime is not sent late.
+    """
+    now = now or utc_now()
+    tried, sent, dropped = 0, 0, 0
+    for message in STORE.queued_alert_mail():
+        incident_id = message.dedupe_key.split(":", 1)[1]
+        incident = STORE.get_incident(incident_id)
+        if incident is None or not incident.open:
+            STORE.record_attempt(
+                message, "failed",
+                "Not sent: the alert was answered before the mail host came back.")
+            dropped += 1
+            continue
+        # Never tried at all (the process stopped between writing it down
+        # and sending it) waits the first step like a failed try, so a
+        # first try still on its way from the breach is not doubled.
+        step = min(max(message.attempts, 1), len(ALERT_MAIL_RETRY_MINUTES)) - 1
+        minutes = (now - message.created_at).total_seconds() / 60.0
+        if minutes < ALERT_MAIL_RETRY_MINUTES[step]:
+            continue
+        tried += 1
+        if deliver(message).get("sent"):
+            sent += 1
+    if tried or dropped:
+        logger.info("Alert mail retry: %d tried, %d sent, %d no longer needed.",
+                    tried, sent, dropped)
+    return {"tried": tried, "sent": sent, "dropped": dropped}
 
 
 def flush_queue(limit: int = 200) -> Dict[str, Any]:

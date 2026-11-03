@@ -342,6 +342,14 @@ def _alert_number(incident: Incident) -> int:
 
 def _alerted(tenant: Tenant, incident: Incident, phone: str):
     """The roster entry this incident's alert went to at `phone`, if any."""
+    # Whoever it was actually sent to, first: with a rotation, the person
+    # texted at 07:55 is off shift by the time they reply at 08:02, and
+    # their "1" is still the answer to the text they were sent.
+    for receipt in list(incident._sms_receipts()) + list(incident.voice_fanout):
+        if receipt.get("to") and same_phone(receipt["to"], phone):
+            contact = STORE.get_contact(receipt.get("contact_id") or "")
+            if contact is not None and contact.tenant_id == tenant.tenant_id and contact.active:
+                return contact
     sensor = STORE.get_sensor(incident.sensor_id)
     site_id = sensor.site_id if sensor else None
     for contact in (STORE.sms_recipients(tenant, site_id)
