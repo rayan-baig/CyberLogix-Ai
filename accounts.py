@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from domain import mask_email
 from store import ROLES, STORE, LoginSession, Tenant, User, hash_secret, verify_password
 
 logger = logging.getLogger("cyberlogix.accounts")
@@ -306,7 +307,7 @@ def login(payload: LoginRequest, request: Request):
     # Removed from every business they had: nothing left to sign in to. The
     # same answer as a wrong password, so it says nothing about the account.
     if user is None or not correct or not STORE.open_logins_of(user):
-        logger.warning("Failed login for %s", payload.email)
+        logger.warning("Failed login for %s", mask_email(payload.email))
         with _login_lock:
             spread = f"address:{address}"
             over = len(_recent(spread, time.monotonic())) >= MAX_LOGIN_ATTEMPTS_PER_ADDRESS

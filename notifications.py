@@ -21,6 +21,23 @@ from xml.sax.saxutils import escape as xml_escape
 
 logger = logging.getLogger("cyberlogix.notifications")
 
+
+def number_tail(number: str) -> str:
+    """A phone number for a log line: its last four digits only.
+
+    Server logs are kept by the host and read in a browser. "...1234" is
+    enough to match a line to a person on the roster; the whole number is
+    a customer's employee's personal phone.
+    """
+    digits = "".join(ch for ch in str(number or "") if ch.isdigit())
+    return "..." + digits[-4:] if len(digits) >= 4 else "(no number)"
+
+
+def _redact(text: str) -> str:
+    """Twilio's own error text names the refused number: keep it out."""
+    from faults import redact
+    return redact(text)
+
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
@@ -230,7 +247,7 @@ def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
         )
 
     if premium_destination(to):
-        logger.warning("Refused a %s to a premium or shared-cost number (%s).", channel, to)
+        logger.warning("Refused a %s to a premium or shared-cost number (%s).", channel, number_tail(to))
         return _undelivered(
             channel, to, "blocked_destination",
             "That number is in a premium-rate or satellite range, which alerts are never sent to.",
@@ -250,7 +267,7 @@ def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
             "Twilio not configured (missing %s); %s to %s composed but not sent.",
             ", ".join(missing),
             channel,
-            to,
+            number_tail(to),
         )
         return _undelivered(
             channel,
@@ -280,7 +297,7 @@ def send_sms(
     allowed, reason = allow_message(tenant_id, "sms")
     if not allowed:
         record(tenant_id, "sms_suppressed")
-        logger.warning("SMS to %s suppressed: %s", to, reason)
+        logger.warning("SMS to %s suppressed: %s", number_tail(to), reason)
         return _undelivered("sms", to, "budget_exceeded", reason)
 
     blocked = _precheck("sms", to)
@@ -309,7 +326,7 @@ def send_sms(
         # Billed per segment, so counted per segment. Counting messages
         # is what hid a 3x overspend on the largest delivery line.
         record(tenant_id, "sms_segments", parts)
-        logger.info("SMS delivered to %s (sid=%s).", to, message.sid)
+        logger.info("SMS delivered to %s (sid=%s).", number_tail(to), message.sid)
         return {
             "channel": "sms",
             "to": to,
@@ -324,7 +341,7 @@ def send_sms(
             "detail": "Alert handed to Twilio for delivery.",
         }
     except Exception as exc:  # noqa: BLE001 - a send failure must not kill the breach path
-        logger.exception("SMS to %s failed (%s).", to, exc)
+        logger.error("SMS to %s failed (%s).", number_tail(to), _redact(str(exc)))
         release(tenant_id, "sms")
         _provider_fault("notifications.send_sms", exc)
         return _undelivered("sms", to, "send_failed", f"Twilio rejected the send: {exc}")
@@ -462,7 +479,7 @@ def place_voice_call(
     allowed, reason = allow_message(tenant_id, "voice")
     if not allowed:
         record(tenant_id, "voice_suppressed")
-        logger.warning("Voice call to %s suppressed: %s", to, reason)
+        logger.warning("Voice call to %s suppressed: %s", number_tail(to), reason)
         return _undelivered("voice", to, "budget_exceeded", reason)
 
     blocked = _precheck("voice", to)
@@ -481,7 +498,7 @@ def place_voice_call(
             twiml=build_twiml(spoken_text, action_url),
         )
         # voice_calls was counted by reserve(), before the call.
-        logger.info("Voice call placed to %s (sid=%s).", to, call.sid)
+        logger.info("Voice call placed to %s (sid=%s).", number_tail(to), call.sid)
         return {
             "channel": "voice",
             "to": to,
@@ -491,7 +508,7 @@ def place_voice_call(
             "detail": "Call handed to Twilio for dialling.",
         }
     except Exception as exc:  # noqa: BLE001 - a dial failure must not kill escalation
-        logger.exception("Voice call to %s failed (%s).", to, exc)
+        logger.error("Voice call to %s failed (%s).", number_tail(to), _redact(str(exc)))
         release(tenant_id, "voice")
         _provider_fault("notifications.place_voice_call", exc)
         return _undelivered(
