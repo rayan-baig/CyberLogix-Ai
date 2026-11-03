@@ -34,6 +34,9 @@ services:
   - type: web
     name: cyberlogix
     runtime: docker
+    # The Dockerfile copies the whole repository, VERSION and CHANGELOG.md
+    # included, and its build fails if either is missing; /api/health
+    # reports the version, so a deploy can be checked from outside.
     dockerfilePath: ./Dockerfile
     plan: starter
     region: oregon

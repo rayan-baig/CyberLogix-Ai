@@ -23,7 +23,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_RATE_AI_CALL` | `0.0012` | USD per model call, for the estimate |
 | `CYBERLOGIX_RATE_SMS` | `0.0079` | USD per SMS, for the estimate |
 | `CYBERLOGIX_RATE_VOICE_CALL` | `0.0140` | USD per voice call, for the estimate |
-| `PUBLIC_BASE_URL` | — | Public URL so "press 1 to acknowledge" reaches the callback |
+| `PUBLIC_BASE_URL` | — | Public URL, `https://cyberlogix.<domain>`: "press 1 to acknowledge" reaches the callback, and link previews and the sitemap use whole addresses. Unset, pages use the address the request arrived on |
 | `CYBERLOGIX_SWEEP_SECONDS` | `60` | Unattended sweep interval; `0` disables the in-process loop |
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
@@ -33,6 +33,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_TAX_ID` | — | Issuer tax ID on invoices |
 | `CYBERLOGIX_REMIT_TO` | — | Remittance details on invoices |
 | `CYBERLOGIX_BILLING_EMAIL` | — | Billing contact on invoices |
+| `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the contact on their invoice |
 
 `.env.example` carries the same list with the reasoning next to each one, and
 a test fails if a setting is read by the code but missing from that file — or

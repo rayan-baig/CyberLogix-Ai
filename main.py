@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
@@ -28,6 +29,7 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import all modular system routers
 from accounts import router as accounts_router
@@ -44,6 +46,7 @@ from costs import router as costs_router
 from forecaster import router as forecaster_router
 from gemini import GEMINI_MODEL, dispatch_ready, dispatch_status
 from hardware_bridge import router as bridge_router
+from helpdesk import router as help_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
 from certificates import router as certificates_router
@@ -79,6 +82,7 @@ from telemetry import router as telemetry_router
 from vault import router as vault_router
 from voice_dispatch import router as voice_router
 from webhooks import router as webhooks_router
+from version import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -107,7 +111,9 @@ app = FastAPI(
         "Universal IoT Telemetry, License Control, Autonomous Operations, "
         "Voice Escalation, and Predictive Forecasting Suite."
     ),
-    version="3.0.0",
+    # From the VERSION file, so the health check, the API docs and the
+    # console's About card all report the release CHANGELOG.md describes.
+    version=__version__,
 )
 
 # CYBERLOGIX_ALLOWED_ORIGINS names, comma-separated and exactly, the other
@@ -258,6 +264,7 @@ app.include_router(payments_router)
 app.include_router(margin_router)
 app.include_router(books_router)
 app.include_router(simulator_router)
+app.include_router(help_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -312,6 +319,10 @@ PROOF_HTML = STATIC_DIR / "proof.html"
 SIMPLE_HTML = STATIC_DIR / "simple.html"
 INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
+PRICING_HTML = STATIC_DIR / "pricing.html"
+HELP_HTML = STATIC_DIR / "help.html"
+ERROR_HTML = STATIC_DIR / "error.html"
+FAVICON = STATIC_DIR / "favicon.ico"
 
 # The console and the partner portal render from one stylesheet, so it is
 # served rather than inlined twice.
@@ -362,10 +373,40 @@ CONTENT_SECURITY_POLICY = "; ".join([
 ])
 
 
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    """Set the headers that a browser can enforce on our behalf."""
-    response = await call_next(request)
+# The pages a search engine may list. Everything else -- the console, the
+# plain view, the partner portal, the book, the reset and offline pages,
+# a shared proof link, the API and the demo simulator behind it -- is
+# answered with `X-Robots-Tag: noindex`, and robots.txt asks crawlers to
+# stay out as well. The sitemap lists exactly these (plus one page per
+# industry), and a test holds the two together.
+PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/for", "/legal")
+
+# Paths whose errors are always JSON: the API and its documentation, and
+# the static files a page loads. A browser that mistypes a page address
+# gets the friendly page; a script calling the API gets what it can parse.
+_MACHINE_PREFIXES = ("/api", "/docs", "/redoc", "/openapi.json", "/static")
+
+
+def _indexable(path: str) -> bool:
+    """A public page a search engine may list, or a file such pages use."""
+    if path in PUBLIC_PAGES or path in ("/robots.txt", "/sitemap.xml", "/favicon.ico"):
+        return True
+    if path.startswith("/static/"):
+        return True
+    if path.startswith("/for/"):
+        from industries import known
+
+        return path[len("/for/"):] in known()
+    return False
+
+
+def _apply_security_headers(response: Response, request: Request) -> Response:
+    """The headers a browser enforces on our behalf, on any response.
+
+    Called by the middleware below and, separately, by the handler for
+    unhandled errors: Starlette answers those from outside the middleware
+    stack, so a 500 would otherwise go out with none of them.
+    """
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault(
@@ -391,7 +432,17 @@ async def security_headers(request: Request, call_next):
         response.headers.setdefault(
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
+    # Private pages, and any error, are kept out of search results.
+    if response.status_code >= 400 or not _indexable(request.url.path):
+        response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
     return response
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Set the headers that a browser can enforce on our behalf."""
+    response = await call_next(request)
+    return _apply_security_headers(response, request)
 
 
 @app.exception_handler(Exception)
@@ -416,15 +467,42 @@ async def unhandled_error_handler(request: Request, exc: Exception):
         # the query (?k= on the bridge), and the fault list is kept for good.
         context="query=" + str({k: f"<{len(v)} chars>" for k, v in request.query_params.items()}),
     )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": (
+    fault_id = str(row.get("fault_id", ""))
+    response: Response
+    if _wants_page(request):
+        try:
+            response = _error_page(request, 500, fault_id)
+        except Exception:  # pragma: no cover - the page itself failed to render
+            logging.getLogger("cyberlogix").exception("error page failed")
+            response = PlainTextResponse(
                 "Something went wrong on our side. It has been recorded."
-            ),
-            "fault_id": row.get("fault_id", ""),
-        },
-    )
+                + (f" Reference: {fault_id}" if fault_id else ""),
+                status_code=500)
+    else:
+        response = JSONResponse(
+            status_code=500,
+            content={
+                "detail": (
+                    "Something went wrong on our side. It has been recorded."
+                ),
+                "fault_id": fault_id,
+            },
+        )
+    # This handler runs outside the middleware stack, so the headers the
+    # middleware would have added are added here.
+    return _apply_security_headers(response, request)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    """A missing page gets a page; everything else answers as it always did.
+
+    Only a 404, only for a browser asking for a page, and never under the
+    API: a script calling /api/... must keep getting JSON it can parse.
+    """
+    if exc.status_code == 404 and _wants_page(request):
+        return _error_page(request, 404)
+    return await http_exception_handler(request, exc)
 
 
 @app.exception_handler(RequestValidationError)
@@ -497,9 +575,18 @@ def _background_colour() -> str:
 
 
 def _serve_page(
-    path: Path, request: Request, extra: Optional[Dict[str, str]] = None
+    path: Path,
+    request: Request,
+    extra: Optional[Dict[str, str]] = None,
+    markup: Optional[Dict[str, str]] = None,
+    status_code: int = 200,
 ) -> HTMLResponse:
-    """Read a public page, substitute the deployment's own URL, serve it."""
+    """Read a public page, substitute the deployment's own URL, serve it.
+
+    `extra` values are text and are escaped. `markup` values are HTML that
+    the caller has already built safely (helpdesk.py, the pricing tables)
+    and go in as they are.
+    """
     source = _page_cache.get(str(path))
     if source is None:
         source = path.read_text(encoding="utf-8")
@@ -507,9 +594,51 @@ def _serve_page(
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     page = (source.replace(_BASE_TOKEN, base)
                   .replace(_THEME_TOKEN, _background_colour()))
+    for token, value in (markup or {}).items():
+        page = page.replace(token, value)
     for token, value in (extra or {}).items():
         page = page.replace(token, html.escape(value))
-    return HTMLResponse(page)
+    return HTMLResponse(page, status_code=status_code)
+
+
+def _wants_page(request: Request) -> bool:
+    """A browser asking for a page, rather than a script asking the API."""
+    path = request.url.path
+    for prefix in _MACHINE_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + "."):
+            return False
+    return "text/html" in request.headers.get("accept", "")
+
+
+_ERROR_TEXT = {
+    404: ("Page not found",
+          "There is nothing at this address. The link may be old, or the "
+          "address may have a typing mistake in it."),
+    500: ("Something went wrong",
+          "Something went wrong on our side and it has been recorded. "
+          "Please try again in a minute. Your sensors are still being "
+          "watched."),
+}
+
+
+def _error_page(request: Request, status_code: int, fault_id: str = "") -> HTMLResponse:
+    """The friendly error page, in the site's own look.
+
+    A 500 names a reference code that can be looked up in the fault list,
+    and nothing else: never the exception, its message or a traceback.
+    """
+    title, message = _ERROR_TEXT[status_code]
+    detail = ""
+    if fault_id:
+        detail = ('<p class="muted">If you contact us about this, quote '
+                  f'<span class="fault-ref">{html.escape(fault_id)}</span>.</p>')
+    return _serve_page(
+        ERROR_HTML, request,
+        extra={"%%STATUS%%": str(status_code), "%%TITLE%%": title,
+               "%%MESSAGE%%": message},
+        markup={"%%DETAIL%%": detail},
+        status_code=status_code,
+    )
 
 
 def _landing_facts() -> Dict[str, str]:
@@ -548,11 +677,21 @@ def robots(request: Request):
         "User-agent: *",
         "Allow: /$",
         "Allow: /signup",
+        "Allow: /pricing",
+        "Allow: /help",
+        "Allow: /for",
         "Allow: /legal",
         "Disallow: /console",
+        "Disallow: /today",
         "Disallow: /partners",
         "Disallow: /book",
+        "Disallow: /reset",
+        "Disallow: /offline",
+        "Disallow: /proof/",
         "Disallow: /api/",
+        "Disallow: /docs",
+        "Disallow: /redoc",
+        "Disallow: /openapi.json",
         "",
         f"Sitemap: {base}/sitemap.xml",
         "",
@@ -573,9 +712,10 @@ def sitemap(request: Request):
     from industries import known
 
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
-    pages = [("/", "1.0"), ("/signup", "0.9"), ("/for", "0.8")]
+    pages = [("/", "1.0"), ("/pricing", "0.9"), ("/signup", "0.9"),
+             ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
-    pages += [("/legal", "0.4")]
+    pages += [("/help", "0.6"), ("/legal", "0.4")]
     entries = "".join(
         f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
         for path, weight in pages
@@ -611,7 +751,7 @@ def operations_console():
 
 @app.get("/for", include_in_schema=False)
 @app.get("/for/{vertical}", include_in_schema=False)
-def industry_page(vertical: str = ""):
+def industry_page(request: Request, vertical: str = ""):
     """What the product does, in one industry's own words.
 
     One template and twelve sets of words. A restaurant owner and an IVF
@@ -622,8 +762,30 @@ def industry_page(vertical: str = ""):
     Public and unauthenticated on purpose. This is the front of the
     product, and a page that asks a stranger to sign in before it will
     say what the thing does is a page nobody reads.
+
+    An industry with no page is a 404, so a mistyped address gets the
+    friendly page rather than a template that never fills in.
     """
-    return FileResponse(INDUSTRY_HTML, media_type="text/html")
+    from industries import known
+
+    if vertical and vertical not in known():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No page for that industry.")
+    if vertical:
+        name = INDUSTRY_PROFILES[vertical]["name"]
+        title = f"CyberLogix AI for {name}"
+        description = (f"Temperature alarms for {name}: a text to everyone "
+                       "on call the moment something goes out of range, and "
+                       "the record afterwards.")
+    else:
+        title = "CyberLogix AI for your industry"
+        description = ("Temperature alarms for every trade with something "
+                       "that must stay cold: find yours.")
+    return _serve_page(INDUSTRY_HTML, request, {
+        "%%PAGE_PATH%%": f"/for/{vertical}" if vertical else "/for",
+        "%%OG_TITLE%%": title,
+        "%%OG_DESCRIPTION%%": description,
+    })
 
 
 @app.get("/today", include_in_schema=False)
@@ -737,13 +899,108 @@ def reset_page():
 
 
 @app.get("/legal", include_in_schema=False)
-def legal_page():
+def legal_page(request: Request):
     """The agreements, where a prospect can read them before signing.
 
     Terms nobody can find until after they have bought are a surprise, not
     terms — and in several jurisdictions an unenforceable one.
     """
-    return FileResponse(LEGAL_HTML, media_type="text/html")
+    return _serve_page(LEGAL_HTML, request)
+
+
+@app.get("/pricing", include_in_schema=False)
+def pricing_page(request: Request):
+    """Every rate, the plans, and a calculator, rendered from pricing.py.
+
+    The calculator's numbers are the ones rendered here, read back out of
+    the markup by static/pricing.js, so the page cannot quote a price the
+    invoice will not charge.
+    """
+    return _serve_page(PRICING_HTML, request, _pricing_text(),
+                       markup=_pricing_markup())
+
+
+@app.get("/help", include_in_schema=False)
+def help_page(request: Request):
+    """The customer help page: the questions, and what to do when a sensor
+    goes quiet. Answers are built from the constants the product runs on
+    (helpdesk.py)."""
+    from helpdesk import render_faq, render_offline
+
+    return _serve_page(HELP_HTML, request, markup={
+        "%%FAQ%%": render_faq(),
+        "%%OFFLINE_STEPS%%": render_offline(),
+    })
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Browsers and crawlers ask for this whatever the page says."""
+    return FileResponse(FAVICON, media_type="image/x-icon")
+
+
+def _pricing_text() -> Dict[str, str]:
+    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, headline
+
+    facts = headline()
+    return {
+        "%%TRIAL_DAYS%%": str(facts["trial_days"]),
+        "%%TRIAL_UNITS%%": str(facts["trial_units"]),
+        "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
+    }
+
+
+def _pricing_markup() -> Dict[str, str]:
+    """The rate card, plans and extras as HTML, every value escaped."""
+    from pricing import calculator_rates, headline
+
+    e = html.escape
+    data = calculator_rates()
+    cheapest = headline()["from_vertical"]
+
+    def money(amount: float) -> str:
+        return f"${amount:,.0f}" if amount == int(amount) else f"${amount:,.2f}"
+
+    options = "".join(
+        f'<option value="{e(r["vertical"])}" data-rate="{r["monthly_usd"]!r}" '
+        f'data-unit="{e(r["unit"])}" data-plural="{e(r["unit_plural"])}"'
+        f'{" selected" if r["vertical"] == cheapest else ""}>'
+        f'{e(r["industry"])}</option>'
+        for r in data["rates"])
+    rate_rows = "".join(
+        f'<tr data-vertical="{e(r["vertical"])}"><td>{e(r["industry"])}</td>'
+        f'<td>{e(r["unit"])}</td>'
+        f'<td class="num">{money(r["monthly_usd"])}</td></tr>'
+        for r in data["rates"])
+    addon_boxes = "".join(
+        f'<label><input type="checkbox" class="calc-addon" value="{e(a["key"])}" '
+        f'data-rate="{a["monthly_usd"]!r}" data-name="{e(a["name"])}"> '
+        f'{e(a["name"])} · {money(a["monthly_usd"])} a month</label>'
+        for a in data["add_ons"])
+    addon_rows = "".join(
+        f'<tr data-add-on="{e(a["key"])}"><td>{e(a["name"])}</td>'
+        f'<td>{e(a["description"])}</td>'
+        f'<td class="num">{money(a["monthly_usd"])}</td></tr>'
+        for a in data["add_ons"])
+
+    def term(days: int) -> str:
+        if days % 365 == 0:
+            years = days // 365
+            return f"{years} year" + ("" if years == 1 else "s")
+        return f"{days} days, free"
+
+    plan_rows = "".join(
+        f'<tr><td>{e(t["name"])}</td><td class="num">{t["max_sensors"]:,}</td>'
+        f'<td>{"Yes" if t["voice_escalation"] else "No, texts only"}</td>'
+        f'<td>{e(term(int(t["term_days"])))}</td></tr>'
+        for t in PLAN_TIERS.values())
+    return {
+        "%%RATE_OPTIONS%%": options,
+        "%%RATE_ROWS%%": rate_rows,
+        "%%ADDON_CHECKBOXES%%": addon_boxes,
+        "%%ADDON_ROWS%%": addon_rows,
+        "%%PLAN_ROWS%%": plan_rows,
+    }
 
 
 @app.get("/api", status_code=200, tags=["Gateway"])

@@ -1251,3 +1251,26 @@ body[data-stale] #offline-banner {
 .sim-would .sub { display: block; color: var(--muted); margin-top: 4px; }
 body.wall #first-day, body.wall .sim-zone, body.wall #sim-start,
 body.wall .empty-acts { display: none !important; }
+
+/* A sensor gone quiet: the way to the steps, on its card and in its
+   drawer. Classes rather than style attributes, so they survive a
+   content security policy that refuses inline styles. */
+.offline-help {
+  display: inline-block; margin-top: 8px; font-size: 13px;
+  color: var(--warning); text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.offline-help:hover, .offline-help:focus-visible { color: var(--ink); }
+.offline-box {
+  margin-top: 16px; padding: 12px 14px; border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.offline-box summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+.offline-box .card-plain { margin: 10px 0 8px; }
+.offline-steps { margin: 8px 0; padding-left: 20px; color: var(--ink-2);
+                 font-size: 13.5px; line-height: 1.6; }
+.offline-steps li { margin-bottom: 6px; }
+.offline-steps strong { color: var(--ink); font-weight: 600; }
+.about-line { margin-top: 12px; }
+

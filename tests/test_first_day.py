@@ -468,7 +468,12 @@ def test_nothing_simulated_reaches_a_record(api, clock, wire):
     for path, text in before.items():
         after = api.get(path, headers=owner).text
         assert "SIM-" not in after
-        strip = lambda t: re.sub(r'"(generated_at|issued_at|[a-z_]*digest[a-z_]*|attestation_id|signature)":"[^"]*"', "", t)  # noqa: E731
+        # Ids, signatures and every timestamp: a report's window is "the
+        # last N days from now", so it moves when the clock crosses a
+        # second between the two reads, which CI caught as a flake.
+        strip = lambda t: re.sub(  # noqa: E731
+            r'"(generated_at|issued_at|[a-z_]*digest[a-z_]*|attestation_id|signature)":"[^"]*"'
+            r'|\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', "", t)
         assert strip(after) == strip(text), path
     export = api.get("/api/accounts/business/export", headers=owner)
     assert export.status_code == 200 and "SIM-" not in export.text

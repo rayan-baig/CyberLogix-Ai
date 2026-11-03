@@ -293,6 +293,54 @@ def headline() -> Dict[str, Any]:
     }
 
 
+def calculator_rates() -> Dict[str, Any]:
+    """Everything the public price calculator works from.
+
+    The /pricing page renders these into its markup and static/pricing.js
+    reads them back out, so the calculator has no number of its own: change
+    a rate here and the page, the calculator and the invoice all move
+    together. tests/test_pricing_page.py holds the three to each other.
+    """
+    rates = [
+        {
+            "vertical": vertical,
+            "industry": INDUSTRY_PROFILES[vertical]["name"],
+            "unit": entry["unit"],
+            "unit_plural": plural(vertical, 2),
+            "monthly_usd": entry["monthly_usd"],
+            "per_site": per_site(vertical),
+        }
+        for vertical, entry in sorted(
+            PRICE_BOOK.items(),
+            key=lambda kv: INDUSTRY_PROFILES[kv[0]]["name"])
+    ]
+    return {
+        "currency": "USD",
+        "rates": rates,
+        "add_ons": [
+            {"key": key, "name": entry["name"], "basis": entry["basis"],
+             "monthly_usd": entry["monthly_usd"],
+             "description": entry["description"]}
+            for key, entry in ADD_ONS.items()
+        ],
+        "annual_prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+    }
+
+
+def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = ()) -> float:
+    """The monthly price of an estate described as {vertical: units}.
+
+    The calculator's sum, in Python: what build_subscription charges for
+    the same estate on the rate card, plus flat add-ons. The page's
+    JavaScript is tested against this.
+    """
+    estate = sum(max(0, int(count)) for count in units.values())
+    total = sum(unit_price(vertical) * max(0, int(count))
+                for vertical, count in units.items())
+    total += sum(add_on_price(key, estate) for key in add_ons)
+    return round(total, 2)
+
+
 def per_site(vertical: str) -> bool:
     """Billed per location rather than per sensor.
 

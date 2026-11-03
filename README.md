@@ -26,6 +26,12 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   everything, what is kept afterwards and why, and what happens to backups.
 * [The vault](docs/THE-VAULT.md): what the tamper-evident record is, what
   an attestation proves and what it does not, and how anyone can check one.
+* [A sensor is offline](docs/SENSOR-OFFLINE.md): what offline means, what
+  we do about it, and what to check, in order.
+
+The app has the same answers at `/help`, and every rate with a price
+calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
+each version; the number in use is in `VERSION` and at `/api/health`.
 
 ## Where the docs are
 
@@ -40,7 +46,7 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups, the dead man's switch, deleting a business, the agreements, deployment details, what to do before the first customer |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, mutation testing |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
-| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md) | The two customer guides above |
+| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md) | The customer guides above |
 
 ## Modules
 
@@ -82,6 +88,8 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
 | Backups | `/api/admin` | Verified snapshots of the one file that is the company |
 | Watchdog | `/api/watchdog` | Whether the thing that watches the freezers is running |
 | Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
+| Help | `/help`, `/api/help` | Customer questions answered from the code, and what to check when a sensor is offline |
+| Pricing page | `/pricing` | Every rate and a calculator, rendered from the rate card |
 
 
 The landing page is at `/`, the console at `/console`, the reseller portal
@@ -187,7 +195,7 @@ The short version:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 1,890 tests. Gemini, Twilio and SMTP are stubbed and the database is
+About 2,010 tests. Gemini, Twilio and SMTP are stubbed and the database is
 in memory, so the suite needs no credentials, makes no network calls and
 touches no file on disk. CI runs the suite on Python 3.11 (what the image
 ships) and again on 3.13, and also runs pyflakes, a type check on the money

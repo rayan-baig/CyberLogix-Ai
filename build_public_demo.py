@@ -55,6 +55,7 @@ PATHS = [
     "/api/autopilot/compliance?days=7",
     "/api/accounts/businesses",
     "/api/simulator",
+    "/api/help/sensor-offline",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
@@ -425,6 +426,9 @@ def build(data: dict, page_name: str = "console.html",
 
     page = (
         "<title>CyberLogix Console</title>\n"
+        # A demo is for whoever is handed the link, not for a search
+        # engine: it is the console's private surface, on a public host.
+        '<meta name="robots" content="noindex">\n'
         f"<style>\n{theme}\n\n"
         "/* --- the one thing this page adds to the product --------- */\n"
         ".demo-bar {\n"

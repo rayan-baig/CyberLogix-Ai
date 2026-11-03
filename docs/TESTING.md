@@ -10,7 +10,7 @@ code, the fuzzer, the browser smoke test, and mutation testing.
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 1,890 tests across 120 files. Gemini, Twilio and SMTP are all stubbed and the
+About 2,010 tests across 124 files. Gemini, Twilio and SMTP are all stubbed and the
 database is in-memory, so the suite runs without credentials, makes no network
 calls and touches no file on disk. The mail fixture replaces only the function
 that opens the socket, so a test asserting that a chase went out is asserting
@@ -94,6 +94,13 @@ WIDE=1 PYTHON=.venv/bin/python node tools/first_day_walk.js   # desktop
 
 `tests/test_every_route_is_tested.py` fails a whole-suite run if any route
 the app serves is not reached by at least one test.
+
+`tests/test_pricing_page.py` runs `static/pricing.js` under Node (skipped
+if Node is missing) and checks the calculator's sum against
+`pricing.quote_monthly`, which is what the invoice charges.
+`tests/test_help_page.py` checks every figure on the help page against
+the constant it comes from, and `tests/test_version.py` checks that
+`VERSION` has an entry at the top of `CHANGELOG.md`.
 
 ## Mutation testing
 

@@ -368,8 +368,11 @@ A product at this size is sold by a link pasted into a Slack channel or
 an email to whoever signs things off. A link that renders as a bare URL
 has spent the introduction the sender was making.
 
-The two public pages carry a full Open Graph and Twitter card, and
-`/static/og.png` is the image. The trap is quiet and total: those URLs
+Every public page (the front page, `/signup`, `/pricing`, `/help`, `/for`
+and each industry page, `/legal`) carries a full Open Graph and Twitter
+card, and `/static/og.png` is the image. Each also names the favicon
+(`/favicon.ico` and the SVG mark), the home-screen icon and the web
+manifest, and a test checks that every icon file named exists. The trap is quiet and total: those URLs
 are fetched by a scraper with no page to resolve a relative path
 against, so a relative one is silently dropped and the card falls back
 to nothing. The deployment's own address is the one thing a static file
@@ -379,7 +382,21 @@ laptop without anybody configuring anything, and from the variable when
 it is set, because behind a proxy the request's idea of its own host is
 whatever the proxy passed on.
 
-`/robots.txt` keeps crawlers off `/console`, `/partners` and `/book`.
-None of them is secret — each renders nothing without a credential — but
+`/sitemap.xml` lists only those public pages. Everything else (the
+console, the simple view, the partner portal, the book, the reset and
+offline pages, a shared proof link, the API and the demo simulator behind
+it) answers with `X-Robots-Tag: noindex`, and so does every error.
+`/robots.txt` points at the sitemap and keeps crawlers off those private
+paths. None of them is secret — each renders nothing without a credential — but
 a search result that lands somebody on a password field has taught them
 nothing about the product and asked them for a credential.
+
+## When something goes wrong
+
+A browser that asks for a page that does not exist gets a 404 page in the
+site's own look, with a way home, to the console and to help. A fault
+gets a 500 page with a reference code (the fault id, which the operator
+can look up) and never the error itself. Under `/api`, `/docs` and
+`/static` both stay JSON, as a script expects. The 500 is answered from
+outside the middleware stack, so the handler adds the security headers
+itself.

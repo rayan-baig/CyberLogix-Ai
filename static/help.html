@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberLogix AI — Help</title>
+<meta name="description" content="Answers to the questions CyberLogix AI customers ask: the trial, prices, alerts, the test alert, offline sensors, and your data.">
+<!-- The answers are rendered from helpdesk.py at serve time, from the same
+     constants the product runs on. Do not write a figure into this file. -->
+<link rel="canonical" href="%%BASE_URL%%/help">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CyberLogix AI">
+<meta property="og:title" content="CyberLogix AI help">
+<meta property="og:description" content="Answers to the questions CyberLogix AI customers ask: the trial, prices, alerts, offline sensors, and your data.">
+<meta property="og:url" content="%%BASE_URL%%/help">
+<meta property="og:image" content="%%BASE_URL%%/static/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CyberLogix AI — a freezer fails at 3am, somebody answers.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CyberLogix AI help">
+<meta name="twitter:description" content="Answers to the questions CyberLogix AI customers ask.">
+<meta name="twitter:image" content="%%BASE_URL%%/static/og.png">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/static/logo-mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/pages.css">
+<script src="/static/circuit.js" defer></script>
+</head>
+<body>
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+  <nav aria-label="Elsewhere">
+    <a href="/">Home</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/help" aria-current="page">Help</a>
+    <a class="btn btn-sm" href="/console">Sign in</a>
+  </nav>
+</header>
+
+<main class="wrap page">
+  <p class="kicker">Help</p>
+  <h1>Questions, answered.</h1>
+  <p class="lede">The things customers ask most, in plain words. Every
+    figure here comes from the running product, so it is what actually
+    happens.</p>
+  <div class="help-links">
+    <a class="btn btn-sm" href="#sensor-offline">A sensor is offline</a>
+    <a class="btn btn-sm" href="#test-alert">Send a test alert</a>
+    <a class="btn btn-sm" href="#help">Get help</a>
+  </div>
+
+  <h2>Common questions</h2>
+  %%FAQ%%
+
+  <h2 id="sensor-offline">A sensor is offline: what to check</h2>
+  <div class="panel">
+    %%OFFLINE_STEPS%%
+  </div>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span>CyberLogix AI</span>
+    <span class="lineage">A product of MTRX Horizyn</span>
+    <nav aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/legal">Agreements</a>
+      <a href="/console">Console</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
