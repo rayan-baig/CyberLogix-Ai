@@ -24,6 +24,11 @@
  * itself and goes; the test alert opens no incident; and a simulated
  * unit is stamped as one and never reaches the real fleet.
  *
+ * And who is on call: an owner builds a rotation and sets quiet hours
+ * through the card's forms; the card names who is on now and next, and a
+ * muted person with turns as a gap; a viewer sees it all with nothing
+ * to press.
+ *
  * Exit code 0 when everything holds; 1 with a list of failures.
  */
 "use strict";
@@ -647,6 +652,140 @@ async function checkFirstDay(browser, base) {
   await context.close();
 }
 
+/* ---------------- who is on call: rotations and quiet hours ---------------- */
+
+async function openConsoleAs(browser, base, token, viewport, label) {
+  const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+  await context.addInitScript((t) => localStorage.setItem("cyberlogix.session", t), token);
+  const page = await context.newPage();
+  const flush = watchErrors(page, label);
+  await page.goto(`${base}/console`);
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(900);
+  await page.click('.f-tab[data-tab="people"]');
+  await page.waitForTimeout(200);
+  return { context, page, flush };
+}
+
+async function screenIsClean(page, label) {
+  for (const bad of await junkOnScreen(page)) fail(label, bad);
+  for (const bad of await utilitiesHold(page)) fail(label, bad);
+  const wide = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  if (wide > 2) fail(label, `page scrolls sideways by ${wide}px`);
+}
+
+/* An owner builds a rotation and sets quiet hours through the card's own
+   forms, at phone size; the card says who is on now and next, and names
+   a muted person with turns as a gap. A viewer sees all of it, on both
+   sizes, with nothing to press. Then the owner stops the rotation. */
+async function checkRotation(browser, base, token) {
+  const names = ["Riley Rota", "Morgan Rota", "Casey Rota"];
+  const people = [];
+  for (const [i, name] of names.entries()) {
+    people.push(await call(base, token, "POST", "/api/contacts",
+      { full_name: name, phone: `+1555010${i + 3}` }));
+  }
+
+  // The owner, on a phone.
+  let label = "rotation phone owner";
+  let { context, page, flush } = await openConsoleAs(browser, base, token, PHONE, label);
+  if (!(await page.isVisible("#rotation-form"))) fail(label, "an owner has no form to make a rotation");
+  if (!/everyone on the roster is\s+on call all the time/.test(await page.textContent("#rotation-body"))) {
+    fail(label, "with no rotation the card does not say everyone is on call");
+  }
+  for (const person of [people[1], people[0]]) {
+    await page.selectOption("#rot-add", person.contact_id);
+    await page.click("#rot-add-btn");
+  }
+  // Riley first: move up from second place.
+  await page.click('#rot-members [data-rot-up="1"]');
+  const order = await page.$$eval("#rot-members .rota-member", (els) => els.map((e) => e.textContent.trim()));
+  if (!/Riley/.test(order[0] || "") || !/Morgan/.test(order[1] || "")) {
+    fail(label, `the order did not follow the Up button: ${order.join(" | ")}`);
+  }
+  await page.fill("#rot-tz", "America/New_York");
+  await page.fill("#rot-handover", "08:00");
+  await page.fill("#rot-days", "7");
+  await page.click('#rotation-form button[type="submit"]');
+  try {
+    await page.waitForSelector("#rotation-body .rota", { timeout: 8000 });
+    const text = await page.textContent("#rotation-body");
+    if (!/On call now\s*Riley Rota/.test(text)) fail(label, `not saying who is on now: ${text.slice(0, 160)}`);
+    if (!/Next\s*Morgan Rota/.test(text)) fail(label, "not saying who is next");
+    if (!/Always on call\s*Casey Rota/.test(text)) fail(label, "not saying who is on call all the time");
+    if (!(await page.$("#rotation-body .rota-shifts li.is-now"))) fail(label, "no list of upcoming turns");
+    else ok("rotation: an owner builds one on a phone; now, next and always on call are shown");
+  } catch (_) { fail(label, "the saved rotation never appeared"); }
+
+  await page.selectOption("#qh-person", people[2].contact_id);
+  await page.fill("#qh-start", "22:00");
+  await page.fill("#qh-end", "07:00");
+  await page.fill("#qh-tz", "Europe/London");
+  await page.click('#quiet-form button[type="submit"]');
+  await page.waitForTimeout(1200);
+  const quiet = await page.textContent("#quiet-body");
+  if (!/Casey Rota\s*Quiet 22:00 to 07:00 Europe\/London/.test(quiet)) {
+    fail(label, `quiet hours not shown after saving: ${quiet.slice(0, 160)}`);
+  } else ok("rotation: quiet hours set through the form and shown");
+  await screenIsClean(page, label);
+  await shoot(page, "rotation phone owner");
+  flush();
+  await context.close();
+
+  // A muted person with turns is named as a gap.
+  await call(base, token, "PATCH", `/api/contacts/${people[1].contact_id}`, { active: false });
+
+  // A viewer, at both sizes: everything to read, nothing to press.
+  const viewerEmail = `viewer-${Date.now()}@smoke.example`;
+  await call(base, token, "POST", "/api/accounts/users", {
+    email: viewerEmail, full_name: "Vic Viewer", password: "smoke-viewer-password-1", role: "viewer",
+  });
+  const session = await call(base, null, "POST", "/api/accounts/login",
+    { email: viewerEmail, password: "smoke-viewer-password-1" });
+  for (const [size, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
+    label = `rotation ${size} viewer`;
+    ({ context, page, flush } = await openConsoleAs(browser, base, session.token, viewport, label));
+    const seen = await page.evaluate(() => {
+      const visible = (el) => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+      const card = document.getElementById("find-on-call-rotation");
+      return {
+        rota: card.querySelectorAll(".rota").length,
+        text: document.getElementById("rotation-body").innerText,
+        forms: ["rotation-form", "quiet-form"].filter((id) => visible(document.getElementById(id))),
+        buttons: Array.from(card.querySelectorAll("button")).filter(visible).length,
+        note: visible(document.getElementById("rotation-viewer")),
+      };
+    });
+    if (!seen.rota) fail(label, "a viewer cannot see the rotation");
+    if (!/Riley Rota/.test(seen.text)) fail(label, "a viewer cannot see who is on call");
+    if (!/muted but has turns/.test(seen.text)) fail(label, "a muted person with turns is not named as a gap");
+    if (seen.forms.length) fail(label, `a viewer is shown ${seen.forms.join(", ")}`);
+    if (seen.buttons) fail(label, `a viewer is shown ${seen.buttons} button(s) on the card`);
+    if (!seen.note) fail(label, "a viewer is not told who can change it");
+    if (!seen.forms.length && !seen.buttons && seen.rota) ok(`rotation: a ${size} viewer sees it and can change nothing`);
+    await screenIsClean(page, label);
+    await shoot(page, `rotation ${size} viewer`);
+    flush();
+    await context.close();
+  }
+
+  // The owner on a desktop, then stops it.
+  label = "rotation desktop owner";
+  ({ context, page, flush } = await openConsoleAs(browser, base, token, DESKTOP, label));
+  await screenIsClean(page, label);
+  await shoot(page, "rotation desktop owner");
+  page.once("dialog", (d) => d.accept());
+  await page.click('#rotation-body [data-rota-stop="estate"]');
+  try {
+    await page.waitForFunction(() => !document.querySelector("#rotation-body .rota"), null, { timeout: 8000 });
+    ok("rotation: an owner stops it from the card");
+  } catch (_) { fail(label, "stopping the rotation did not take it off the card"); }
+  flush();
+  await context.close();
+  await call(base, token, "PATCH", `/api/contacts/${people[1].contact_id}`, { active: true });
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch();
@@ -680,6 +819,8 @@ async function main() {
       sceneToken = token;
       await context.close();
     }
+    console.log("\nwho is on call");
+    await checkRotation(browser, server.base, sceneToken);
     console.log("\nevery page, under the policy");
     await checkPages(browser, server.base, sceneToken);
     console.log("\nfirst day");

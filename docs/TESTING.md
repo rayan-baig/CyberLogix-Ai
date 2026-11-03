@@ -112,6 +112,11 @@ lands in the console, every empty card offers its next step, the checklist
 ticks itself and goes, the test alert opens no incident, and a simulated unit
 is stamped as one and stays out of the real fleet.
 
+And who is on call: an owner builds a rotation and sets quiet hours
+through the On call now card at phone size, the card names who is on now
+and next and a muted person with turns as a gap, and a viewer sees all of
+it at both sizes with no form and no button.
+
 `tools/first_day_walk.js` times the path from the landing page to a first
 sensor reading and counts the clicks and fields on the way:
 

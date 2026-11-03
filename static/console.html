@@ -561,6 +561,90 @@
           </div>
         </section>
 
+        <!-- Rotations and quiet hours (oncall.py). The roster above says who
+             can be called; this says who is on call at which hour. Anybody
+             in no rotation is on call all the time, as before, so a
+             business that never opens this card loses nothing. -->
+        <section class="card" id="find-on-call-rotation" data-group="people" data-find="on call rotation rota shifts handover who is on call now next night shift weekend quiet hours sleeping do not disturb" data-label="On call rotation">
+          <div class="card-head">
+            <span class="card-title">On call now</span>
+            <span class="card-note" id="rotation-note"></span>
+          </div>
+          <p class="card-plain">Take turns being on call, and give people
+             hours when they are only woken if nobody else is awake.</p>
+          <div id="rotation-body"></div>
+          <p class="card-note rota-viewer" id="rotation-viewer" hidden>An owner or
+             operator can change the rotation and quiet hours.</p>
+
+          <form id="rotation-form" class="rota-form" hidden>
+            <div class="sub-head" id="rot-form-title">Make a rotation</div>
+            <div class="rota-grid">
+              <div class="field">
+                <label for="rot-scope">Covers</label>
+                <select id="rot-scope"></select>
+              </div>
+              <div class="field">
+                <label for="rot-tz">Time zone</label>
+                <input id="rot-tz" list="tz-list" required maxlength="64"
+                       autocomplete="off" placeholder="America/New_York">
+              </div>
+              <div class="field">
+                <label for="rot-handover">Hands over at</label>
+                <input id="rot-handover" type="time" required value="08:00">
+              </div>
+              <div class="field">
+                <label for="rot-days">Days per turn</label>
+                <input id="rot-days" type="number" min="1" max="28" required value="7">
+              </div>
+              <div class="field">
+                <label for="rot-start">First turn starts <span>(optional)</span></label>
+                <input id="rot-start" type="date">
+              </div>
+            </div>
+            <div class="field">
+              <label for="rot-add">Who takes turns, in order</label>
+              <ol class="rota-members" id="rot-members"></ol>
+              <div class="row">
+                <select id="rot-add" class="grow rota-select"></select>
+                <button class="btn btn-sm" type="button" id="rot-add-btn">Add</button>
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn btn-sm btn-go" type="submit">Save rotation</button>
+              <button class="btn btn-sm" type="button" id="rot-reset">Start again</button>
+            </div>
+          </form>
+
+          <div class="sub-head">Quiet hours</div>
+          <div id="quiet-body"></div>
+          <form id="quiet-form" class="rota-form" hidden>
+            <div class="rota-grid">
+              <div class="field">
+                <label for="qh-person">Person</label>
+                <select id="qh-person"></select>
+              </div>
+              <div class="field">
+                <label for="qh-start">Quiet from</label>
+                <input id="qh-start" type="time" required value="22:00">
+              </div>
+              <div class="field">
+                <label for="qh-end">Until</label>
+                <input id="qh-end" type="time" required value="07:00">
+              </div>
+              <div class="field">
+                <label for="qh-tz">Time zone</label>
+                <input id="qh-tz" list="tz-list" required maxlength="64"
+                       autocomplete="off" placeholder="Europe/London">
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn btn-sm btn-go" type="submit">Save quiet hours</button>
+              <button class="btn btn-sm" type="button" id="qh-clear">No quiet hours</button>
+            </div>
+          </form>
+          <datalist id="tz-list"></datalist>
+        </section>
+
         <section class="card" id="find-team" data-group="people" data-find="your crew people who can sign in team users staff logins roles operator owner" data-label="People who can sign in">
           <div class="card-head">
             <span class="card-title">People who can sign in</span>
