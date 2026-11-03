@@ -102,12 +102,45 @@ def _directory() -> Optional[Path]:
     the test suite's store into the working directory on every pass is
     not something a default should do quietly.
     """
+    live = STORE._db.path
+    if is_demo_database():
+        return _demo_directory(live)
     if BACKUP_DIR:
         return Path(BACKUP_DIR)
-    live = STORE._db.path
     if live == ":memory:":
         return None
     return Path(live).resolve().parent / "backups"
+
+
+# Where demo_account.py marks the database it seeded.
+DEMO_MARK = ("meta", "demo_database")
+
+
+def is_demo_database() -> bool:
+    return STORE._db.get(*DEMO_MARK) is not None
+
+
+def _demo_directory(live: str) -> Optional[Path]:
+    """A demo's snapshots: beside the demo, never in the live folder.
+
+    A sister product ran its demo with the production settings, and the
+    demo's daily snapshots went into the live backups folder, where
+    keeping only the newest of them pruned the real ones away. So a
+    database marked as a demo ignores CYBERLOGIX_BACKUP_DIR and keeps its
+    own in demo-backups/ next to itself; and if that is somehow the live
+    folder after all, it takes none rather than share it.
+    """
+    if live == ":memory:":
+        return None
+    own = (Path(live).resolve().parent / "demo-backups").resolve()
+    live_folders = {(Path(live).resolve().parent / "backups").resolve()}
+    if BACKUP_DIR:
+        live_folders.add(Path(BACKUP_DIR).resolve())
+    if own in live_folders:
+        logger.error("A demo database would back up into the live backup "
+                     "folder (%s); taking no snapshot.", own)
+        return None
+    return own
 
 
 def existing() -> List[Path]:

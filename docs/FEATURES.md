@@ -250,6 +250,19 @@ one of the *other* businesses needs them.
   never lasting longer than the session it replaced. Removing somebody
   from a business closes only that business, whichever one their sign-in
   lives in, and the removed business shows them its name and nothing more.
+- **Signing in picks up where you left off.** Each business's record of a
+  person notes when they last opened it, by signing in or switching, so a
+  new sign-in, on any device, opens the business they had open last. One
+  they have since been removed from, or that is suspended, is passed over
+  for the one before it. A reload of the console stays where it was.
+- **Checked with five.** `tests/test_business_switcher.py` gives one
+  person five businesses (owner of three, operator at one, viewer at
+  another) and after every switch reads the console, alerts, units, team,
+  audit trail, on-call list, invoices and sites, looking for any trace of
+  the other four; checks the role she holds in each; and checks the
+  session she switched from is dead. `tools/console_smoke.js` does the
+  same in a browser at phone and desktop size, including the link in the
+  monthly summary email, which opens the right business first.
 
 ## The first form a customer sees
 

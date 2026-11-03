@@ -24,6 +24,11 @@
  * itself and goes; the test alert opens no incident; and a simulated
  * unit is stamped as one and never reaches the real fleet.
  *
+ * And one person with five businesses and a different role in some: the
+ * switcher drawer at phone size, the right data and no other business's
+ * after a switch, a reload and a new sign-in staying where she left off,
+ * and the monthly email's link to another business's inspector log.
+ *
  * And who is on call: an owner builds a rotation and sets quiet hours
  * through the card's forms; the card names who is on now and next, and a
  * muted person with turns as a gap; a viewer sees it all with nothing
@@ -80,6 +85,9 @@ async function startServer() {
       env: Object.assign({}, process.env, {
         CYBERLOGIX_DB_PATH: path.join(dir, "smoke.db"),
         CYBERLOGIX_SWEEP_SECONDS: "0",
+        // So the switcher walk can start five businesses from what look
+        // like separate callers without meeting the sign-up ceiling.
+        CYBERLOGIX_TRUST_PROXY_HEADER: "1",
       }),
       stdio: ["ignore", "inherit", "inherit"],
     },
@@ -192,7 +200,7 @@ async function utilitiesHold(page) {
 /* Every public and private page, at phone and desktop size: no policy
    refusal, no script error, no utility class losing to a rule. */
 async function checkPages(browser, base, token) {
-  const pages = ["/", "/signup", "/pricing", "/help", "/for", "/for/restaurant",
+  const pages = ["/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant",
                  "/for/pharmacy", "/legal", "/reset", "/partners", "/book",
                  "/today", "/offline", "/proof/not-a-real-token", "/no-such-page"];
   for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
@@ -786,6 +794,182 @@ async function checkRotation(browser, base, token) {
   await call(base, token, "PATCH", `/api/contacts/${people[1].contact_id}`, { active: true });
 }
 
+/* ---------------- one person, five businesses ---------------- */
+
+async function callFrom(base, token, method, route, body, caller) {
+  const res = await fetch(base + route, {
+    method,
+    headers: Object.assign(
+      { "Content-Type": "application/json", "X-Forwarded-For": caller },
+      token ? { Authorization: `Bearer ${token}` } : {},
+    ),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${method} ${route} -> ${res.status} ${text.slice(0, 200)}`);
+  return JSON.parse(text);
+}
+
+/* Dana owns three businesses, is an operator at Sam's and a viewer at
+   Kim's. At phone size: the chip counts the others that need her, the
+   drawer lists all five with her role in each and does not scroll
+   sideways, opening one shows that business and none of the others'
+   units, a reload stays there, signing in again through the form lands
+   there, and a link to another business's inspector log switches to it
+   and fills in the dates. The drawer again at desktop size. */
+async function checkSwitcher(browser, base) {
+  const stamp = Date.now();
+  const password = "smoke-switcher-password-1";
+  const person = (name, tag, n) => ({
+    full_name: name, email: `${tag}-${stamp}@switch.example`, password,
+    contact_phone: "+15550100", industry_vertical: "restaurant",
+    caller: `198.51.100.${n}`,
+  });
+  const dana = person("Dana Switch", "dana", 21);
+  const businesses = [];
+  const signupAs = async (who, company) => {
+    const made = await callFrom(base, null, "POST", "/api/signup",
+      Object.assign({ company_name: company }, who, { caller: undefined }), who.caller);
+    return made;
+  };
+  let made = await signupAs(dana, "Switch Grill");
+  businesses.push({ name: "Switch Grill", id: made.tenant.tenant_id, key: made.api_key, role: "owner" });
+  let token = made.token;
+  for (const name of ["Switch Bakery", "Switch Deli"]) {
+    made = await callFrom(base, token, "POST", "/api/accounts/businesses",
+      { company_name: name, industry_vertical: "restaurant" }, dana.caller);
+    businesses.push({ name, id: made.tenant.tenant_id, key: made.api_key, role: "owner" });
+    token = made.token;
+  }
+  for (const [who, name, role, n] of [["sam", "Switch Pharmacy", "operator", 22],
+                                      ["kim", "Switch Florist", "viewer", 23]]) {
+    const owner = person(`${who} Owner`, who, n);
+    const theirs = await signupAs(owner, name);
+    businesses.push({ name, id: theirs.tenant.tenant_id, key: theirs.api_key, role });
+    const code = await callFrom(base, theirs.token, "POST", "/api/accounts/businesses/join-codes",
+      { role }, owner.caller);
+    await callFrom(base, token, "POST", "/api/accounts/businesses/join", { code: code.code }, dana.caller);
+  }
+  for (const [i, b] of businesses.entries()) {
+    const unit = `SW${i}-UNIT`;
+    b.unit = unit;
+    const headers = { "Content-Type": "application/json", "X-CyberLogix-Key": b.key };
+    await fetch(`${base}/api/licenses/me/sensors`, { method: "POST", headers,
+      body: JSON.stringify({ sensor_id: unit, industry_vertical: "restaurant",
+                             location_name: `${b.name} cold room` }) });
+    await fetch(`${base}/api/sensor-pulse`, { method: "POST", headers,
+      body: JSON.stringify({ sensor_id: unit, temperature_fahrenheit: 50 }) });
+  }
+  const florist = businesses[4];
+  const grill = businesses[0];
+
+  // Phone.
+  let label = "switcher phone";
+  const context = await browser.newContext({ viewport: PHONE, serviceWorkers: "block" });
+  await context.addInitScript((t) => {
+    if (!sessionStorage.getItem("smoke.seeded")) {
+      localStorage.setItem("cyberlogix.session", t);
+      sessionStorage.setItem("smoke.seeded", "1");
+    }
+  }, token);
+  const page = await context.newPage();
+  let flush = watchErrors(page, label);
+  await page.goto(`${base}/console`);
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(900);
+  const chip = (await page.textContent("#chip-company")).trim();
+  if (!chip.startsWith("Switch Deli")) fail(label, `the chip shows "${chip}", not the business open`);
+  const badge = await page.isVisible("#biz-badge") ? (await page.textContent("#biz-badge")).trim() : "";
+  if (badge !== "4") fail(label, `the chip counts ${badge || "nothing"} other businesses needing her, not 4`);
+  await page.click("#chip-company");
+  await page.waitForSelector("#drawer .biz-row", { timeout: 8000 });
+  const rows = await page.$$eval("#drawer .biz-row", (els) => els.map((e) => e.innerText));
+  if (rows.length !== 5) fail(label, `the drawer lists ${rows.length} businesses, not 5`);
+  for (const b of businesses) {
+    const row = rows.find((r) => r.includes(b.name)) || "";
+    if (!row.includes(`you are ${b.role}`)) fail(label, `${b.name} does not say she is ${b.role} there`);
+  }
+  await screenIsClean(page, label);
+  await shoot(page, "switcher phone drawer");
+  if (!failures.some((f) => f.startsWith(label))) ok("switcher: five businesses, her role in each, on a phone");
+
+  await Promise.all([
+    page.waitForNavigation({ timeout: 15000 }),
+    page.click(`#drawer [data-open-biz="${florist.id}"]`),
+  ]);
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(1200);
+  const seen = async () => page.evaluate(() => document.getElementById("app").innerText);
+  let text = await seen();
+  if (!(await page.textContent("#chip-company")).includes(florist.name)) fail(label, "opening the florist did not open it");
+  if (!text.includes(florist.unit)) fail(label, "the florist's own unit is not shown");
+  for (const b of businesses) {
+    if (b !== florist && (text.includes(b.unit) || text.includes(`${b.name} cold room`))) {
+      fail(label, `after switching, ${b.name}'s unit is on the page`);
+    }
+  }
+  if (!(await page.isVisible("#role-banner"))
+      || !/viewer/i.test(await page.textContent("#role-banner"))) {
+    fail(label, "a viewer is not told she is a viewer here");
+  }
+  await screenIsClean(page, `${label} florist`);
+  await shoot(page, "switcher phone florist");
+
+  await page.reload();
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(800);
+  if (!(await page.textContent("#chip-company")).includes(florist.name)) {
+    fail(label, "a reload did not stay in the business she opened");
+  }
+
+  // Signed out and in again through the form: where she left off.
+  const current = await page.evaluate(() => localStorage.getItem("cyberlogix.session"));
+  await callFrom(base, current, "POST", "/api/accounts/logout", undefined, dana.caller);
+  await page.evaluate(() => localStorage.removeItem("cyberlogix.session"));
+  await page.reload();
+  await page.waitForSelector("#signin-form", { timeout: 15000 });
+  await page.fill("#si-email", dana.email);
+  await page.fill("#si-password", password);
+  await page.click('#signin-form button[type="submit"]');
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(900);
+  if (!(await page.textContent("#chip-company")).includes(florist.name)) {
+    fail(label, "signing in again did not open the business she had open");
+  } else ok("switcher: a reload and a new sign-in both stay where she left off");
+
+  // The monthly email's link to another business's log.
+  await page.goto(`${base}/console#inspector-log?business=${grill.id}&from=2026-10-01&to=2026-10-31`);
+  await page.waitForTimeout(2500);
+  await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+  await page.waitForTimeout(1200);
+  const landed = (await page.textContent("#chip-company")).trim();
+  const dates = await page.evaluate(() => [
+    document.getElementById("inspector-from").value,
+    document.getElementById("inspector-to").value,
+    !document.getElementById("find-inspector-log").hidden,
+  ]);
+  if (!landed.startsWith(grill.name)) fail(label, `the log link opened "${landed}", not ${grill.name}`);
+  if (dates[0] !== "2026-10-01" || dates[1] !== "2026-10-31" || !dates[2]) {
+    fail(label, `the log link did not show the log card with its dates: ${dates.join(", ")}`);
+  } else ok("switcher: the monthly email's log link opens that business with the dates filled");
+  await shoot(page, "switcher phone inspector link");
+  flush();
+  await context.close();
+
+  // Desktop: the drawer.
+  label = "switcher desktop";
+  const latest = await callFrom(base, null, "POST", "/api/accounts/login",
+    { email: dana.email, password }, dana.caller);
+  const desk = await openConsoleAs(browser, base, latest.token, DESKTOP, label);
+  await desk.page.click("#chip-company");
+  await desk.page.waitForSelector("#drawer .biz-row", { timeout: 8000 });
+  await screenIsClean(desk.page, label);
+  await shoot(desk.page, "switcher desktop drawer");
+  desk.flush();
+  await desk.context.close();
+  if (!failures.some((f) => f.startsWith("switcher"))) ok("switcher: desktop drawer is clean");
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch();
@@ -821,6 +1005,8 @@ async function main() {
     }
     console.log("\nwho is on call");
     await checkRotation(browser, server.base, sceneToken);
+    console.log("\none person, five businesses");
+    await checkSwitcher(browser, server.base);
     console.log("\nevery page, under the policy");
     await checkPages(browser, server.base, sceneToken);
     console.log("\nfirst day");

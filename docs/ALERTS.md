@@ -44,6 +44,11 @@ curl -X PUT localhost:8080/api/contacts/rotations -H "Authorization: Bearer $TOK
 }'
 ```
 
+Without `starts_on`, the first turn starts at the most recent handover,
+so the person listed first is on call from the moment it is saved. (It
+used to start at today's handover, and a rotation saved before that time
+of day had the person listed last on call until then.)
+
 People in a rotation are alerted only on their shift; everybody else on
 the roster is alerted as before. A site whose person on shift is off falls
 back to the estate-wide contacts, then to the sign-up contact.

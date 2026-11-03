@@ -733,6 +733,11 @@ class User:
             "password_hash": self.password_hash,
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
+            # To the microsecond: signing in opens the business a person had
+            # open last (accounts.login), and two switches in one second read
+            # back from whole seconds as a tie, decided the wrong way.
+            "last_login_exact": (self.last_login_at.isoformat()
+                                 if self.last_login_at else None),
             "disabled": self.disabled,
             "linked_to": self.linked_to,
             "password_from_owner": self.password_from_owner,
@@ -748,7 +753,8 @@ class User:
             role=row["role"],
             password_hash=row["password_hash"],
             created_at=_parse(row["created_at"]),
-            last_login_at=_parse(row.get("last_login_at")),
+            last_login_at=(_parse(row.get("last_login_exact"))
+                           or _parse(row.get("last_login_at"))),
             disabled=row.get("disabled", False),
             linked_to=row.get("linked_to"),
             password_from_owner=bool(row.get("password_from_owner", False)),
@@ -1929,6 +1935,10 @@ class MailMessage:
     # reset link. It is kept only until the message has gone (or never
     # will), then replaced, so the mail log is not a drawer of live links.
     sensitive: bool = False
+    # An HTML version of the same message, sent beside the plain text as
+    # an alternative. Empty for almost everything: the plain text is the
+    # message, and the one a mail client without HTML shows.
+    html: str = ""
 
     def age_hours(self, now: Optional[datetime] = None) -> float:
         now = now or utc_now()
@@ -1949,6 +1959,7 @@ class MailMessage:
             "sent_at": iso(self.sent_at) if self.sent_at else None,
             "tenant_id": self.tenant_id,
             "sensitive": self.sensitive,
+            "html": self.html,
         }
 
     @classmethod
@@ -1967,6 +1978,7 @@ class MailMessage:
             sent_at=_parse(row["sent_at"]) if row.get("sent_at") else None,
             tenant_id=row.get("tenant_id"),
             sensitive=bool(row.get("sensitive", False)),
+            html=row.get("html") or "",
         )
 
     def public(self) -> Dict[str, Any]:

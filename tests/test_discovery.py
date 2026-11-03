@@ -253,7 +253,7 @@ def test_the_sitemap_lists_only_public_pages(api):
 
     body = api.get("/sitemap.xml").text
     listed = re.findall(r"<loc>http://testserver([^<]*)</loc>", body)
-    allowed = {"/", "/signup", "/pricing", "/help", "/for", "/legal"}
+    allowed = {"/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal"}
     allowed |= {f"/for/{v}" for v in known()}
     assert set(listed) <= allowed, set(listed) - allowed
     for must in ("/", "/pricing", "/for", "/legal"):

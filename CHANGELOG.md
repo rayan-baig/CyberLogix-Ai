@@ -3,6 +3,47 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.7.0 — 2026-11-03
+
+Paying late never silences an alarm; a monthly summary for owners; five
+businesses on one sign-in; how to set up every kind of sensor; a demo
+account.
+
+- **A late bill can no longer stop the monitoring.** Under a signed
+  contract the licence ran out before the next bill was even due, and
+  two weeks later readings were refused and nobody was phoned about a
+  warm freezer. While a contract runs, the most an unpaid bill does is
+  pause reports, at 45 days, as the agreement says.
+- **The console says when a bill is late,** from the day it falls due,
+  with a Pay now link for that bill and how long before reports pause.
+  It no longer counts a contract customer down to an end date that
+  stops nothing.
+- **A card payment is listed once.** Paying through the pay link also
+  put the same money on the unmatched-payments list, waiting to be
+  credited a second time by hand.
+- **A monthly compliance summary** goes to each business's owners in the
+  first week of the month: units, readings kept, every time something
+  went out of range with who answered and how fast, what is still open,
+  and a link to the inspector's log for the month. Once per business,
+  through restarts; with an unsubscribe link.
+- **Signing in opens the business you had open last,** if you have
+  several. The link in the monthly summary opens the right business.
+- **Setting up sensors, step by step,** at /help/sensors and in
+  docs/SENSOR-SETUP.md: your own device, devices that put the key in the
+  body, Monnit, SensorPush, a vendor's cloud, and anything that sends
+  JSON. Every address, header and field in them is checked against the
+  code.
+- **A sensor key works where its notice says.** The send-anything
+  address now reads X-CyberLogix-Sensor-Key; a device set up as told was
+  refused.
+- **A new rotation puts the first person on call straight away.** Saved
+  before the day's handover time, the last person in the list was on
+  call until it.
+- **A demo account:** `python demo_account.py --db PATH` seeds a made-up
+  restaurant group into a new database, prints how to sign in, refuses a
+  database with anything in it, and keeps its backups out of the live
+  backup folder.
+
 ## 3.6.1 — 2026-11-03
 
 - **Server logs keep people's details out.** Log lines about texts and

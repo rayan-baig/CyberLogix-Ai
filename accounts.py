@@ -20,6 +20,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -337,9 +338,14 @@ def login(payload: LoginRequest, request: Request):
     # trial becomes a lost customer rather than a paying one.
     from auth import licence_state
 
-    # Somebody with several businesses lands in the first one that is
-    # open to them. A suspension in one business must not lock its owner
+    # Somebody with several businesses lands in the one they had open
+    # last, if they still can: each business's record of them notes when
+    # it was last opened, by signing in or by switching to it. Signing in
+    # used to land in the first business every time, so somebody who
+    # spent their day in their third business switched to it again after
+    # every sign-in. A suspension in one business must not lock its owner
     # out of the others.
+    openable = []
     for record in STORE.logins_of(user):
         tenant = STORE.get_tenant(record.tenant_id)
         if (
@@ -347,13 +353,16 @@ def login(payload: LoginRequest, request: Request):
             and tenant is not None
             and licence_state(tenant) != "suspended"
         ):
-            user = record
-            break
-    else:
+            openable.append((record, tenant))
+    if not openable:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="The license for this account is not active.",
         )
+    never = datetime.min.replace(tzinfo=timezone.utc)
+    # max() keeps the first of equals, so with nothing opened yet it is
+    # still the first business, as before.
+    user, tenant = max(openable, key=lambda pair: pair[0].last_login_at or never)
 
     session = STORE.start_session(user)
     audit(user, "account.login", "Signed in to the console.")

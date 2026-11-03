@@ -48,6 +48,22 @@ def _env_int(name: str, default: int) -> int:
 LICENCE_GRACE_DAYS = _env_int("CYBERLOGIX_LICENCE_GRACE_DAYS", 14)
 
 
+def under_contract(tenant: Tenant, now=None) -> bool:
+    """True while a signed contract is running for this business.
+
+    A contract bills in advance and is paid net 30, so the paid-up time on
+    the licence (which only a paid invoice moves on) ends before the next
+    invoice is even due. Read as a lapse, that stopped a contract
+    customer's monitoring two weeks later, with nothing yet overdue: a
+    late payment silenced their freezer alerts, which the agreement
+    (section 5) says never happens. While a contract runs, money is
+    collections' business (contracts.py), and the most it withholds is
+    reporting.
+    """
+    sub = STORE.active_subscription(tenant.tenant_id)
+    return sub is not None and not sub.expired(now)
+
+
 def licence_state(tenant: Tenant, now=None) -> str:
     """"active", "grace", "lapsed" or "suspended"."""
     if tenant.suspended:
@@ -55,6 +71,8 @@ def licence_state(tenant: Tenant, now=None) -> str:
     if not tenant.expired:
         return "active"
     now = now or utc_now()
+    if under_contract(tenant, now):
+        return "active"
     if tenant.expires_at is None:
         return "lapsed"
     if now <= tenant.expires_at + timedelta(days=LICENCE_GRACE_DAYS):

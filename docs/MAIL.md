@@ -99,3 +99,45 @@ reported and then stopped: the first is an installation somebody did not
 finish, the second is hardware that has failed, and calling them the same
 thing produces a number that is always non-zero and therefore always
 ignored.
+
+## The monthly compliance summary
+
+Once a month each business's owners get the month on one page
+(`monthly.py`): how many units were watched, how many readings were kept
+and what share were in range, every time something went out of range,
+who acknowledged it and how quickly (each person's typical and slowest
+time, by name, never by address), and what is still open now — alerts
+not closed, units that stopped reporting or never started, low
+batteries. It links to the inspector's log for that month, which opens
+the console on the right business with the dates filled in; the figures
+in the email are read from the same log, so the two cannot disagree. If
+the readings kept do not cover the whole month, it says so.
+
+- **Owners only.** It names the staff who answered each alert.
+  Operators and viewers are not sent it; an owner removed from the
+  business is not either.
+- **Once per month per business.** Each owner's copy has its own message
+  key, claimed before it is sent, and the business's month is marked done
+  in the database when the pass has been round its owners. A restart
+  sends nothing twice, and a restore from before it went out carries the
+  mark forward. An owner added after it went does not get last month's.
+- **One pass at a time.** The hourly money pass runs it; an operator can
+  too, with `POST /api/digest/monthly` (admin key). A pass that finds one
+  running steps aside, as a second fleet sweep does, and it has its own
+  lock, so a month of reports never holds up the sweep that phones people.
+- **When.** From the first of the month after `CYBERLOGIX_DIGEST_HOUR_UTC`,
+  for a week. A server down on the first still sends it; after a week the
+  month is left unsent rather than arriving late.
+- **Paused with the other reports.** A business more than 45 days behind,
+  or past its licence's grace, gets none until it is current, as the
+  agreement says of reports. Settled inside the week, it goes. Alerts are
+  never touched.
+- **Stopping it.** It is mail we choose to send, so it carries the
+  signed unsubscribe link and the `List-Unsubscribe` header, honours a
+  stop, and has the footer naming MTRX Horizyn. A plain-text part is the
+  message; an HTML part beside it shows the same figures as a table, with
+  everything a customer typed escaped.
+
+`GET /api/digest/monthly` (any signed-in role, or the business key;
+`?month=YYYY-MM` for another month) shows what this business's summary
+says, who it goes to and whether it has gone, without sending anything.

@@ -58,12 +58,17 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
     morning — no warning the day before, no figure for what it would cost
     to carry on, and nothing on the page that would take the money.
     """
-    from auth import LICENCE_GRACE_DAYS, grace_days_left, licence_state
-    from contracts import delinquency
+    from auth import LICENCE_GRACE_DAYS, grace_days_left, licence_state, under_contract
+    from contracts import DELINQUENT_AFTER_DAYS, delinquency
+    from mail import pay_link
     from pricing import build_subscription
 
     now = now or utc_now()
     state = licence_state(tenant, now)
+    # Under a running contract the licence's own end date stops nothing
+    # (auth.under_contract), so a banner counting down to it was telling a
+    # paying customer their monitoring was about to stop when it was not.
+    contracted = under_contract(tenant, now)
     # Rounded up, not truncated. Six days minus a few seconds is not five
     # days, and this figure goes straight onto a banner.
     hours_left = (
@@ -93,7 +98,8 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
             "withheld until it is renewed."
         )
         severity = "critical"
-    elif days_left is not None and days_left <= warning_window(tenant):
+    elif (not contracted and days_left is not None
+          and days_left <= warning_window(tenant)):
         subject = "The trial" if tenant.plan == "trial" else "This licence"
         # Measured in hours, because a day count cannot tell "this evening"
         # from "tomorrow evening" — and those read very differently to
@@ -114,12 +120,38 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
             "past due. Reporting is withheld until it clears."
         )
         severity = "warning"
+    elif money["overdue_count"]:
+        # Late, not yet delinquent. The console said nothing here at all:
+        # the first a customer saw of a late bill on the page was reports
+        # disappearing on day 45, which the chase emails had warned of
+        # and the screen they actually look at had not.
+        days = money["days_overdue"]
+        left = max(1, DELINQUENT_AFTER_DAYS - days)
+        when = (
+            "fell due today" if days < 1
+            else f"is {days} day{'' if days == 1 else 's'} past due"
+        )
+        headline = (
+            f"${money['overdue_usd']:,.2f} {when}. Reports pause if it is "
+            f"still unpaid in {left} day{'' if left == 1 else 's'}."
+        )
+        severity = "warning"
     else:
         headline = None
         severity = "ok"
 
+    # The quickest way to settle what is late: the pay link for the oldest
+    # overdue bill, carrying its invoice id so the payment matches itself.
+    overdue = sorted(
+        (i for i in STORE.open_invoices(tenant.tenant_id) if i.overdue(now)),
+        key=lambda i: i.due_at,
+    )
+    pay_url = pay_link(overdue[0]) if overdue else ""
+
     return {
         "licence_state": state,
+        "under_contract": contracted,
+        "pay_url": pay_url,
         "severity": severity,
         "headline": headline,
         "plan": tenant.plan,

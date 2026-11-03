@@ -388,7 +388,8 @@ class RotationIn(BaseModel):
                             description="Days in one shift: 1 for daily, 7 for weekly.")
     starts_on: Optional[date] = Field(
         None, description="The local date the first member's first shift starts. "
-                          "Defaults to today there.")
+                          "Defaults to the most recent handover there, so the "
+                          "first member is on call from now.")
     members: List[str] = Field(default_factory=list, max_length=50,
                                description="Contact ids, in the order they take turns.")
 
@@ -468,7 +469,16 @@ def set_rotation(
             detail=(f"Already in another rotation: {', '.join(elsewhere)}. "
                     "Somebody takes turns in one rotation at a time."))
     tz = oncall.zone(payload.timezone)
-    starts_on = payload.starts_on or utc_now().astimezone(tz).date()
+    starts_on = payload.starts_on
+    if starts_on is None:
+        # From the most recent handover there, so the person listed first
+        # is on call from now. Started on today's date before today's
+        # handover, the first turn had not begun, and until it did the
+        # turn "before" it ran: the person listed last was on call.
+        now = utc_now()
+        starts_on = now.astimezone(tz).date()
+        if oncall.handover_at(starts_on, oncall.clock(payload.handover), tz) > now:
+            starts_on -= timedelta(days=1)
     rotation = oncall.Rotation(
         tenant_id=tenant.tenant_id, site_id=site_id, timezone=payload.timezone,
         handover=payload.handover, shift_days=payload.shift_days,

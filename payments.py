@@ -261,6 +261,14 @@ def clear_unmatched(key: str) -> bool:
     return True
 
 
+def settled_by(reference: str) -> Optional[Invoice]:
+    """The invoice a payment with this reference was recorded against."""
+    for invoice in STORE.all_invoices():
+        if any(p.get("reference") == reference for p in invoice.payments):
+            return invoice
+    return None
+
+
 def _payment_reference(kind: str, obj: Dict[str, Any]) -> Optional[str]:
     """The payment intent behind this event, if it says which.
 
@@ -327,6 +335,20 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"handled": False, "reason": "currency is not USD", **detail}
 
     invoice = STORE.get_invoice(reference) if reference else None
+    if invoice is None and reference is None:
+        # A payment link's invoice id rides on the checkout session only:
+        # the payment intent and the charge Stripe sends about the same
+        # payment do not carry it. Whichever came first, once the payment
+        # is on an invoice the others are that payment again, not money
+        # nobody can place. Listed as unmatched they asked a person to
+        # credit, by hand, a payment the ledger already had.
+        settled = settled_by(reference_used)
+        if settled is not None:
+            return {
+                "handled": True, "applied": False, "invoice": settled.number,
+                "state": settled.state, "balance_usd": settled.balance_usd,
+                **detail,
+            }
     if invoice is None:
         record_unmatched(reference_used, {
             **detail,
@@ -346,6 +368,13 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
     invoice, applied = STORE.settle_invoice(invoice, reference_used, amount)
     if applied:
         record_overpayment(invoice, reference_used, amount, owed_before)
+    # The same payment may have arrived first without its invoice id (the
+    # payment intent, or the charge) and gone on the unmatched list. It is
+    # matched now; left there, somebody would credit it a second time.
+    if STORE._db.get(_UNMATCHED_KIND, reference_used) is not None:
+        STORE._db.delete(_UNMATCHED_KIND, reference_used)
+        logger.info("Payment %s was matched to %s; taken off the unmatched list.",
+                    reference_used, invoice.number)
 
     if applied and tenant is not None:
         from invoicing import send_receipt

@@ -61,6 +61,7 @@ from firstday import router as firstday_router
 from readiness import router as readiness_router
 from conversion import router as conversion_router
 from digest import router as digest_router
+from monthly import router as monthly_router
 from payments import router as payments_router
 from books import router as books_router
 from margin import router as margin_router
@@ -254,6 +255,7 @@ app.include_router(signup_router)
 app.include_router(mail_router)
 app.include_router(conversion_router)
 app.include_router(digest_router)
+app.include_router(monthly_router)
 app.include_router(backup_router)
 app.include_router(readiness_router)
 app.include_router(faults_router)
@@ -327,6 +329,7 @@ INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 PRICING_HTML = STATIC_DIR / "pricing.html"
 HELP_HTML = STATIC_DIR / "help.html"
+SENSORS_HTML = STATIC_DIR / "help-sensors.html"
 ERROR_HTML = STATIC_DIR / "error.html"
 FAVICON = STATIC_DIR / "favicon.ico"
 
@@ -412,7 +415,7 @@ API_DOCS_POLICY = "; ".join([
 # answered with `X-Robots-Tag: noindex`, and robots.txt asks crawlers to
 # stay out as well. The sitemap lists exactly these (plus one page per
 # industry), and a test holds the two together.
-PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/for", "/legal")
+PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal")
 
 # Paths whose errors are always JSON: the API and its documentation, and
 # the static files a page loads. A browser that mistypes a page address
@@ -748,7 +751,7 @@ def sitemap(request: Request):
     pages = [("/", "1.0"), ("/pricing", "0.9"), ("/signup", "0.9"),
              ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
-    pages += [("/help", "0.6"), ("/legal", "0.4")]
+    pages += [("/help", "0.6"), ("/help/sensors", "0.6"), ("/legal", "0.4")]
     entries = "".join(
         f"<url><loc>{base}{path}</loc><priority>{weight}</priority></url>"
         for path, weight in pages
@@ -964,6 +967,16 @@ def help_page(request: Request):
         "%%FAQ%%": render_faq(),
         "%%OFFLINE_STEPS%%": render_offline(),
     })
+
+
+@app.get("/help/sensors", include_in_schema=False)
+def sensor_setup_page(request: Request):
+    """Step-by-step setup for every way a sensor can report, from
+    sensor_guides.py, with this deployment's own address in every step."""
+    from sensor_guides import render_html
+
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return _serve_page(SENSORS_HTML, request, markup={"%%GUIDES%%": render_html(base)})
 
 
 _SWAGGER_VERSION = "5"

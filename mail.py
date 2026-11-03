@@ -294,12 +294,29 @@ def _footer(address: str, klass: str) -> str:
     return "\n".join(parts)
 
 
+def _footer_html(address: str, klass: str) -> str:
+    """The same footer, for the HTML alternative. Every value is escaped."""
+    import html as _html
+
+    lines = []
+    for line in _footer(address, klass).splitlines():
+        text = _html.escape(line)
+        link = unsubscribe_link(address) if klass == "commercial" else None
+        if link and link in line:
+            text = text.replace(
+                _html.escape(link),
+                f'<a href="{_html.escape(link, quote=True)}">{_html.escape(link)}</a>')
+        lines.append(text)
+    return "<hr><p><small>" + "<br>".join(lines) + "</small></p>"
+
+
 def compose(
     *,
     to_address: str,
     subject: str,
     body: str,
     klass: str,
+    html: str = "",
 ) -> EmailMessage:
     """Build the MIME message, refusing anything that could inject a header.
 
@@ -326,6 +343,14 @@ def compose(
             message["List-Unsubscribe"] = f"<{link}>"
     message["Auto-Submitted"] = "auto-generated"
     message.set_content(f"{body.rstrip()}\n\n--\n{_footer(to_address, klass)}\n")
+    if html:
+        # Beside the plain text, never instead of it: the text part is the
+        # message, and the one every client can show.
+        message.add_alternative(
+            f"<!doctype html><html><body>{html}{_footer_html(to_address, klass)}"
+            "</body></html>",
+            subtype="html",
+        )
     return message
 
 
@@ -406,6 +431,7 @@ def send(
     klass: str = "transactional",
     tenant_id: Optional[str] = None,
     sensitive: bool = False,
+    html: str = "",
 ) -> Dict[str, Any]:
     """Send one message, at most once, ever.
 
@@ -439,6 +465,7 @@ def send(
         klass=klass,
         tenant_id=tenant_id,
         sensitive=sensitive,
+        html=html,
     )
     if message is None:
         return _result(None, False, "duplicate",
@@ -478,6 +505,7 @@ def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict
             subject=message.subject,
             body=message.body,
             klass=message.klass,
+            html=message.html,
         ))
     except smtplib.SMTPRecipientsRefused as exc:
         # The host says this mailbox does not exist. Retrying is not going

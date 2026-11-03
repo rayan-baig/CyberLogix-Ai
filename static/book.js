@@ -678,6 +678,21 @@ async function act(button) {
       await loadHealth();
       return;
     }
+    if (what === "monthly") {
+      const resp = await api("/api/digest/monthly", { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      // Each business's month goes once: pressing it again sends nothing.
+      say("health-said", !resp.ok
+          ? "The monthly summaries could not be sent."
+          : body.skipped
+            ? ("Not sent: " + body.skipped + ".")
+            : ("Sent " + body.sent_count + " monthly summar"
+               + (body.sent_count === 1 ? "y" : "ies") + " to owners of "
+               + body.business_count + " business(es) for " + body.month + "."),
+          !resp.ok);
+      await loadHealth();
+      return;
+    }
     if (what === "convert") {
       const resp = await api("/api/conversion/run", { method: "POST" });
       const body = await resp.json().catch(() => ({}));

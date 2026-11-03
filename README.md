@@ -29,6 +29,10 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   an attestation proves and what it does not, and how anyone can check one.
 * [A sensor is offline](docs/SENSOR-OFFLINE.md): what offline means, what
   we do about it, and what to check, in order.
+* [Setting up sensors](docs/SENSOR-SETUP.md): step by step for each way a
+  sensor can report — your own device, Monnit, SensorPush, Elitech,
+  Dickson, a vendor's cloud, or anything that sends JSON. Also at
+  `/help/sensors`.
 
 The app has the same answers at `/help`, and every rate with a price
 calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
@@ -42,13 +46,13 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
 | [docs/BILLING.md](docs/BILLING.md) | The rate card, plans, volume pricing, add-ons, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
-| [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, trial-conversion emails, the daily and weekly digests |
+| [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, deleting a business, the agreements, deployment details, what to do before the first customer |
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, mutation testing |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
-| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md) | The customer guides above |
+| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md), [docs/SENSOR-SETUP.md](docs/SENSOR-SETUP.md) | The customer guides above |
 
 ## Modules
 
@@ -86,11 +90,11 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Revenue Worklist | `/book` | The operator's own view: who to call, and what it is worth |
 | Outbound Mail | `/api/mail` | The transport, the queue, and who has asked us to stop |
 | Trial Conversion | `/api/conversion` | The trial asks for the order itself |
-| Digests & Reports | `/api/digest` | The book by email, and the customer's weekly evidence |
+| Digests & Reports | `/api/digest` | The book by email, the customer's weekly evidence, and the monthly compliance summary to owners |
 | Backups | `/api/admin` | Verified snapshots of the one file that is the company |
 | Watchdog | `/api/watchdog` | Whether the thing that watches the freezers is running |
 | Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
-| Help | `/help`, `/api/help` | Customer questions answered from the code, and what to check when a sensor is offline |
+| Help | `/help`, `/help/sensors`, `/api/help` | Customer questions answered from the code, what to check when a sensor is offline, and how to set each kind of sensor up |
 | Pricing page | `/pricing` | Every rate and a calculator, rendered from the rate card |
 
 
@@ -124,6 +128,21 @@ walk-in already failed, a data hall and an engine bay drifting toward their
 limits — then serves the app on :8080. It prints a login
 (`dana@blueharbor.example` / `harbor-demo-2026`). It resets the store, so run
 it only against a throwaway instance.
+
+For a demo account that stays put — a sales laptop, a staging box — seed
+a new database instead:
+
+```bash
+.venv/bin/python demo_account.py --db /tmp/cyberlogix-demo.db
+CYBERLOGIX_DB_PATH=/tmp/cyberlogix-demo.db .venv/bin/python main.py
+```
+
+It makes Juniper & Vine Kitchens, a made-up restaurant group: three
+sites, twenty units, a week of readings with one breach handled and one
+problem open now, an on-call rotation and a paid invoice, and prints the
+owner's and an operator's sign-in. It refuses a database that holds
+anything, mails nobody, and its backups go to `demo-backups/` beside it,
+never to `CYBERLOGIX_BACKUP_DIR`.
 
 ## Quick start
 
@@ -197,7 +216,7 @@ The short version:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-About 2,200 tests. The language model, Twilio and SMTP are stubbed and the database is
+About 2,340 tests. The language model, Twilio and SMTP are stubbed and the database is
 in memory, so the suite needs no credentials, makes no network calls and
 touches no file on disk. CI runs the suite on Python 3.11 (what the image
 ships) and again on 3.13, and also runs pyflakes, a type check on the money

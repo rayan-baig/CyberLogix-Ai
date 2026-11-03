@@ -362,7 +362,10 @@ def mailbox(monkeypatch):
             return [m["Subject"] for m in self]
 
         def bodies(self):
-            return [m.get_content() for m in self]
+            # The plain-text part: the whole message, or the text half of
+            # one sent with an HTML alternative.
+            return [m.get_body(preferencelist=("plain",)).get_content()
+                    for m in self]
 
         def to(self, address):
             return [m for m in self if m["To"] == address]

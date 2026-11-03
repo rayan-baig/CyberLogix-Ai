@@ -145,3 +145,13 @@ footer.site a { color: var(--muted); text-decoration: none; }
 footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 
 .panel > h2:first-child { margin-top: 0; margin-bottom: 18px; }
+
+/* The sensor setup guides (/help/sensors): an example message per guide,
+   scrolling inside its own box on a phone rather than widening the page,
+   and long addresses in the steps allowed to break. */
+.panel pre {
+  overflow-x: auto; white-space: pre; margin: 8px 0 4px;
+  padding: 10px 12px; border-radius: 8px; font-size: 12.5px;
+  border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+}
+.panel .steps li { overflow-wrap: anywhere; }
