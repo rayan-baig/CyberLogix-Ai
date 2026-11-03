@@ -15,3 +15,6 @@ cyberlogix.db-wal
 cyberlogix.db-shm
 *.md
 !README.md
+# Shipped: the About card and /api/health read VERSION, and the
+# changelog travels with the release it describes.
+!CHANGELOG.md

@@ -100,6 +100,12 @@ sensors that have gone silent for over 30 minutes (a sensor that cannot
 report cannot warn you) and places voice calls for incidents past the grace
 window. Pass `auto_escalate=false` to report without calling.
 
+What a customer should check when a sensor shows as offline, in plain
+words, is [SENSOR-OFFLINE.md](SENSOR-OFFLINE.md). The same list is on the
+help page (`/help#sensor-offline`) and in the console's sensor drawer,
+which reads it from `GET /api/help/sensor-offline`; all three come from
+`helpdesk.offline_steps()`, and a test keeps the doc in step.
+
 ## Alert channels
 
 An alert that needs somebody to log in to a dashboard is an alert that

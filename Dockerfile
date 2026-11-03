@@ -40,6 +40,11 @@ WORKDIR /app
 # tests, the local database and the virtualenv out.
 COPY . .
 
+# The release number and its changelog must be in the image: /api/health
+# and the console's About card read VERSION, and a build that dropped
+# either (a .dockerignore rule, say) fails here rather than in production.
+RUN test -s /app/VERSION && test -s /app/CHANGELOG.md
+
 # SQLite lives here. Mount a volume at /app/data to outlive the container;
 # leave it unmounted for a stateless deployment that rebuilds from
 # telemetry. Note the one-process assumption below.

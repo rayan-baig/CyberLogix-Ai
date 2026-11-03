@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
 <meta name="theme-color" content="#05070D">
 <title>CyberLogix — Today</title>
 <link rel="icon" href="/static/logo-mark.svg">
@@ -367,7 +368,8 @@ function render(data) {
         what: `<strong>${esc(name)}</strong> has gone quiet. ${
           esc(state.why)}`,
         todo: "Go and look at it. A sensor that stopped talking is the one "
-            + "problem this app cannot warn you about by itself." });
+            + "problem this app cannot warn you about by itself.",
+        help: "/help#sensor-offline" });
     } else if (state.cls === "w-soon") {
       jobs.push({ now: false, mark: "↑",
         what: `<strong>${esc(name)}</strong> is warming up. ${
@@ -396,6 +398,8 @@ function render(data) {
       <span class="grow">
         <p class="todo-what">${job.what}</p>
         <p class="todo-do">${esc(job.todo)}</p>
+        ${job.help ? `<a class="offline-help" href="${esc(job.help)}"
+            >What to check, step by step</a>` : ""}
       </span>
     </div>`).join("");
 

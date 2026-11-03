@@ -19,7 +19,7 @@ import re
 import pytest
 
 
-CARDED = ("/", "/signup")
+CARDED = ("/", "/signup", "/pricing", "/help", "/for", "/for/restaurant", "/legal")
 
 
 @pytest.mark.parametrize("path", CARDED)
@@ -113,7 +113,7 @@ def test_robots_points_at_the_sitemap_absolutely(api):
     assert "Sitemap: http://hub.example.com/sitemap.xml" in body
 
 
-def test_the_sitemap_lists_the_three_pages_worth_finding(api):
+def test_the_sitemap_lists_the_pages_worth_finding(api):
     body = api.get("/sitemap.xml")
     assert body.headers["content-type"].startswith("application/xml")
     assert "<loc>http://testserver/</loc>" in body.text
@@ -176,3 +176,128 @@ def test_no_plan_button_promises_a_plan_signup_cannot_give():
 
     assert "Start on ${esc(p.name)}" not in page
     assert 'href="/signup">${p.plan === "trial"' in page
+
+
+# ---- icons, the sitemap and noindex -----------------------------------------
+
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+PRIVATE = ("/console", "/today", "/partners", "/book", "/reset", "/offline",
+           "/proof/anything", "/api", "/api/health", "/api/simulator",
+           "/api/help/sensor-offline", "/docs", "/openapi.json")
+
+
+@pytest.mark.parametrize("path", CARDED)
+def test_every_public_page_names_its_icons(api, path):
+    page = api.get(path).text
+    assert 'rel="icon"' in page
+    assert 'rel="apple-touch-icon" href="/static/icons/icon-180.png"' in page
+    assert 'rel="manifest" href="/manifest.webmanifest"' in page
+    assert re.search(r'<meta property="og:url" content="https?://[^"]+">', page)
+
+
+def _icon_paths():
+    """Every icon, image and manifest a page or the manifest names."""
+    found = set()
+    for page in (ROOT / "static").glob("*.html"):
+        text = page.read_text()
+        for tag in re.findall(r"<link [^>]*>", text):
+            if re.search(r'rel="(?:icon|apple-touch-icon|manifest|mask-icon)"', tag):
+                href = re.search(r'href="([^"]+)"', tag).group(1)
+                if not href.startswith("data:"):
+                    found.add(href)
+        found.update(re.findall(r'<img src="(/[^"]+)"', text))
+        found.update(m.replace("%%BASE_URL%%", "") for m in re.findall(
+            r'content="(%%BASE_URL%%/static/[^"]+)"', text))
+    manifest = json.loads((ROOT / "static" / "manifest.webmanifest").read_text())
+    for icon in manifest["icons"]:
+        found.add(icon["src"])
+    for shortcut in manifest.get("shortcuts", []):
+        for icon in shortcut.get("icons", []):
+            found.add(icon["src"])
+    return sorted(found)
+
+
+def test_the_icon_list_is_not_empty():
+    paths = _icon_paths()
+    for expected in ("/favicon.ico", "/static/icons/icon-180.png",
+                     "/static/og.png", "/manifest.webmanifest",
+                     "/static/logo-mark.svg"):
+        assert expected in paths
+
+
+@pytest.mark.parametrize("path", _icon_paths())
+def test_every_icon_named_actually_exists(api, path):
+    resp = api.get(path)
+    assert resp.status_code == 200, path
+    assert len(resp.content) > 100, path
+
+
+def test_the_favicon_is_a_real_icon(api):
+    from io import BytesIO
+
+    from PIL import Image
+
+    resp = api.get("/favicon.ico")
+    assert resp.headers["content-type"] == "image/x-icon"
+    icon = Image.open(BytesIO(resp.content))
+    assert icon.format == "ICO"
+    assert (32, 32) in icon.info["sizes"]
+
+
+def test_the_sitemap_lists_only_public_pages(api):
+    from industries import known
+
+    body = api.get("/sitemap.xml").text
+    listed = re.findall(r"<loc>http://testserver([^<]*)</loc>", body)
+    allowed = {"/", "/signup", "/pricing", "/help", "/for", "/legal"}
+    allowed |= {f"/for/{v}" for v in known()}
+    assert set(listed) <= allowed, set(listed) - allowed
+    for must in ("/", "/pricing", "/for", "/legal"):
+        assert must in listed
+    for private in PRIVATE:
+        assert f"<loc>http://testserver{private}</loc>" not in body
+
+
+def test_every_page_in_the_sitemap_is_served_and_indexable(api):
+    body = api.get("/sitemap.xml").text
+    for url in re.findall(r"<loc>([^<]*)</loc>", body):
+        resp = api.get(url)
+        assert resp.status_code == 200, url
+        assert "X-Robots-Tag" not in resp.headers, url
+
+
+def test_the_sitemap_uses_the_configured_address(api, monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://cyberlogix.example")
+    body = api.get("/sitemap.xml").text
+    assert "<loc>https://cyberlogix.example/pricing</loc>" in body
+    assert "testserver" not in body
+    robots = api.get("/robots.txt").text
+    assert "Sitemap: https://cyberlogix.example/sitemap.xml" in robots
+
+
+@pytest.mark.parametrize("path", PRIVATE)
+def test_private_pages_send_noindex(api, path):
+    resp = api.get(path)
+    assert "noindex" in resp.headers.get("X-Robots-Tag", ""), path
+
+
+@pytest.mark.parametrize("name", ["console", "simple", "book", "partner",
+                                  "offline", "proof", "reset", "error"])
+def test_private_page_files_say_noindex_themselves(name):
+    """For copies served without our headers: the public demo is one."""
+    page = (ROOT / "static" / f"{name}.html").read_text()
+    assert '<meta name="robots" content="noindex">' in page
+
+
+def test_robots_keeps_crawlers_off_every_private_path(api):
+    body = api.get("/robots.txt").text
+    for private in ("/console", "/today", "/partners", "/book", "/reset",
+                    "/offline", "/proof/", "/api/", "/docs"):
+        assert f"Disallow: {private}" in body
+    for public in ("/pricing", "/help", "/for", "/legal"):
+        assert f"Allow: {public}" in body

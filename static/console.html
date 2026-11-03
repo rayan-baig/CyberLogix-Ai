@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
 <title>CyberLogix AI — Operations Console</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%20role%3D%22img%22%20aria-label%3D%22CyberLogix%20AI%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22clx-mark%22%20x1%3D%2216%22%20y1%3D%2229%22%20x2%3D%2216%22%20y2%3D%225%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237C3FE4%22%2F%3E%20%3Cstop%20offset%3D%220.5%22%20stop-color%3D%22%235A4DE8%22%2F%3E%20%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232F8BE8%22%2F%3E%20%3C%2FlinearGradient%3E%20%3C%2Fdefs%3E%20%3Cg%20fill%3D%22none%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%20%3Cpath%20d%3D%22M16%2029.5%20V6%22%20stroke-width%3D%223.6%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L9%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3Cpath%20d%3D%22M16%2022%20L23%2015%20V11%22%20stroke-width%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3Cg%20fill%3D%22%23FFFFFF%22%20stroke%3D%22url%28%23clx-mark%29%22%20stroke-width%3D%222%22%3E%20%3Ccircle%20cx%3D%2216%22%20cy%3D%226%22%20r%3D%223.6%22%2F%3E%20%3Ccircle%20cx%3D%229%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3Ccircle%20cx%3D%2223%22%20cy%3D%2211%22%20r%3D%223%22%2F%3E%20%3C%2Fg%3E%20%3C%2Fsvg%3E">
 <link rel="stylesheet" href="/static/theme.css">
@@ -148,6 +149,8 @@
          panel. Same data, same session, plain words. -->
     <a class="btn btn-sm" href="/today"
        title="A plain-English summary: is there anything I have to do">Simple view</a>
+    <a class="btn btn-sm" href="/help"
+       title="Answers to common questions, and what to do when a sensor is offline">Help</a>
     <button class="btn btn-sm" id="sign-out">Sign out</button>
   </nav>
 
@@ -800,6 +803,23 @@
             <button class="btn btn-sm" id="download-csv">Export CSV</button>
           </div>
           <div id="autopilot-out" style="margin-top:12px"></div>
+        </section>
+
+        <!-- The version comes from /api/health, which reads the VERSION
+             file; CHANGELOG.md says what is in it. -->
+        <section class="card" id="find-about" data-group="setup" data-find="about version help questions faq support contact offline sensor what to check" data-label="About and help">
+          <div class="card-head">
+            <span class="card-title">About and help</span>
+            <span class="card-note" id="about-version">Version —</span>
+          </div>
+          <p class="card-plain">Answers to common questions: the trial, prices,
+             how alerts escalate, the test alert, offline sensors, and how to
+             download or delete your data.</p>
+          <div class="row">
+            <a class="btn btn-sm" href="/help">Open help</a>
+            <a class="btn btn-sm" href="/help#sensor-offline">A sensor is offline</a>
+          </div>
+          <p class="card-plain about-line">CyberLogix AI, a product of MTRX Horizyn.</p>
         </section>
 
 
@@ -1593,6 +1613,7 @@ function render(d, health) {
   const t = d.tenant;
 
   $("sys-status").textContent = health.status === "online" ? "online" : health.status;
+  $("about-version").textContent = health.version ? `Version ${health.version}` : "Version —";
   $("chip-user").textContent = state.user
     ? `${state.user.full_name} · ${state.user.role}`
     : "—";
@@ -1915,6 +1936,8 @@ function sensorCard(s) {
       </div>
       <div class="spark-wrap">${sparkline(s)}</div>
       ${healthPills(s)}
+      ${s.online ? "" : `<a class="offline-help" href="/help#sensor-offline"
+          >Offline: what to check</a>`}
       <div class="sensor-meta">
         <span>${esc(bound)}</span>
         <span>limit ${below !== null && below !== undefined
@@ -4037,6 +4060,10 @@ async function openDrawer(sensorId, options = {}) {
         esc(f.risk_level)}${f.hours_until_breach ? ` · ${esc(f.hours_until_breach)}h`
         : ""}</span></div>` : ""}
     </div>
+    ${s.online ? "" : `<details class="offline-box" id="offline-box" open>
+      <summary>It is offline. What to check</summary>
+      <div id="offline-box-body"><p class="card-plain">Loading the steps…</p></div>
+    </details>`}
 
     <div class="card-head" style="margin-top:18px">
       <span class="card-title">Recent history</span>
@@ -4069,6 +4096,27 @@ async function openDrawer(sensorId, options = {}) {
 
   showDrawer();
   $("drawer-close").addEventListener("click", closeDrawer);
+  if (!s.online) paintOfflineHelp();
+}
+
+/* What to check when a sensor has gone quiet. The steps are the help
+   page's own list (helpdesk.py), fetched once, so the drawer, the help
+   page and the docs say the same thing. */
+async function paintOfflineHelp() {
+  const body = $("offline-box-body");
+  if (!body) return;
+  try {
+    state.offlineHelp = state.offlineHelp || await api("/api/help/sensor-offline");
+    const help = state.offlineHelp;
+    body.innerHTML = `<p class="card-plain">${esc(help.summary)}</p>
+      <ol class="offline-steps">${help.steps.map((step) => `<li><strong>${
+        esc(step.title)}${/\?$/.test(step.title) ? "" : "."}</strong> ${
+        esc(step.detail)}</li>`).join("")}</ol>
+      <a class="offline-help" href="/help#sensor-offline">Open the help page</a>`;
+  } catch (err) {
+    body.innerHTML = `<p class="card-plain">The steps are on the
+      <a href="/help#sensor-offline">help page</a>.</p>`;
+  }
 }
 
 /* ---------------- your businesses ----------------
