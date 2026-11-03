@@ -3,6 +3,32 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.6.0 — 2026-11-03
+
+Who is on call, on a screen; and four fixes from a careful read of the
+last two days' changes.
+
+- **On call now.** A card on the People tab, under Who gets called: who
+  is on call now and until when, who is next, the next turns in the
+  rotation's own time, who is in no rotation and so always on call, and
+  each person's quiet hours. Owners and operators build, change and stop
+  a rotation there and set quiet hours; a viewer sees it all and can
+  change nothing. An empty rotation, or a muted person with turns, is
+  named as a gap on the card.
+- **A long-named unit's alert costs one text, not two.** A name cut
+  short to fit was marked with "~", which a text message sends as two
+  characters, so a full-length alert was billed as two. The text is now
+  measured the way the network counts it.
+- **Removing a location removes its rotation.** Its people were released
+  to the whole estate but the rotation still held them to their turns,
+  and it could not be stopped or its people put in another one.
+- **A sweep that fails waits for the next one.** A pass that raised was
+  followed at once by another, back to back, flat out (for example with
+  the disk full); it now waits its minute like any other.
+- **Phone numbers and email addresses stay out of the fault list.** A
+  refused text or email names the number or address, and the fault list
+  is kept until somebody clears it, past a business deleting everything.
+
 ## 3.5.0 — 2026-11-03
 
 Alerts on time under load, through outages and after a restore.
