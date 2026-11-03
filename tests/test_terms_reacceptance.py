@@ -19,6 +19,7 @@ the answer has to be a list rather than a shrug.
 import pytest
 
 import legal
+from pages import page_source
 
 
 @pytest.fixture()
@@ -139,8 +140,8 @@ def test_the_customer_console_asks_and_the_operator_console_counts():
     """Both halves. The customer needs somewhere to accept; the operator
     needs to know who has not, because one account at a time it is
     invisible and fleet-wide it is one question from a buyer's lawyer."""
-    console = (ROOT / "static" / "console.html").read_text()
-    book = (ROOT / "static" / "book.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
+    book = page_source(ROOT / "static" / "book.html")
 
     assert "/api/legal/acceptance/status" in console
     assert "/api/legal/accept" in console
@@ -152,7 +153,7 @@ def test_only_an_owner_is_offered_the_button():
     """A record attested by a viewer is not the record the terms
     describe -- the server enforces it, and the console should not
     present a control that will be refused."""
-    console = (ROOT / "static" / "console.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
     js = console[console.index("<script>"):console.rindex("</script>")]
     block = js[js.index("async function checkTerms()"):]
     block = block[:block.index("async function acceptTerms()")]
@@ -164,7 +165,7 @@ def test_only_an_owner_is_offered_the_button():
 def test_the_documents_are_opened_before_they_are_accepted():
     """A one-click accept on text nobody was shown is worth less the
     moment it is questioned."""
-    console = (ROOT / "static" / "console.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
     js = console[console.index("<script>"):console.rindex("</script>")]
     block = js[js.index("async function acceptTerms()"):]
     block = block[:block.index("async function api(")]
@@ -184,7 +185,7 @@ def test_the_console_offers_a_password_change(api, signed_up):
     who thinks their password is known had one route -- the forgotten-
     password email, which needs mail configured and does not help if
     they are already signed in on a shared machine."""
-    console = (ROOT / "static" / "console.html").read_text()
+    console = page_source(ROOT / "static" / "console.html")
     assert 'id="password-form"' in console
     assert "/api/accounts/me/password" in console
 

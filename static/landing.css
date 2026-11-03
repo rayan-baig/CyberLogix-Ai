@@ -1,0 +1,168 @@
+/* Layout only. Every colour is a token from theme.css: this page and the
+   console are one product and must not each keep a palette. */
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.top .brand-name { font-size: 17px; }
+.top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.top nav a {
+  color: var(--muted); text-decoration: none; font-size: 14px;
+  transition: color .2s var(--ease);
+}
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+
+/* Five items do not fit a phone. Measured at 390px they ran to 550px and
+   the whole page scrolled sideways, which on a marketing page reads as
+   broken before a word of it has been read. The section links go; the way
+   in stays, because that is the one thing the header is for. */
+@media (max-width: 720px) {
+  .top { padding: 14px 20px; gap: 12px; }
+  .top nav a:not(.btn) { display: none; }
+}
+
+/* --- hero ---------------------------------------------------------- */
+.hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
+@media (max-width: 720px) {
+  .hero { padding: 34px 0 52px; } section.band { padding: 56px 0; }
+  .kicker { margin-bottom: 14px; } h1 { margin-bottom: 16px; }
+  .lede { margin-bottom: 22px; } .facts { margin-bottom: 24px; }
+}
+/* No decorative glow here: the board underneath already carries the
+   light, and a second source fighting it just makes the page murky. */
+.hero-inner { position: relative; max-width: 940px; }
+.kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 22px;
+}
+h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(34px, 5.4vw, 62px); line-height: 1.06;
+  letter-spacing: -0.015em; margin: 0 0 24px; color: var(--ink);
+}
+h1 em { font-style: normal; color: var(--accent-cyan); }
+.lede {
+  font-size: clamp(16px, 1.9vw, 19px); line-height: 1.62;
+  color: var(--muted); max-width: 60ch; margin: 0 0 34px;
+}
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+/* .btn-primary is full-width because it lives at the bottom of the sign-in
+   form, where that is right. Loose on a page it is a bar, not a button. */
+.cta-row .btn-primary, .closer .btn-primary { width: auto; }
+/* Who, how much, and the trial: three short rows under the lede, so all
+   of it fits the first screen of a phone. */
+.facts {
+  display: grid; gap: 10px 26px; margin: 0 0 30px; max-width: 880px;
+}
+@media (min-width: 860px) { .facts { grid-template-columns: 1.4fr 1fr 1fr; } }
+.facts > div { border-left: 2px solid var(--accent-deep); padding-left: 14px; }
+.facts dt {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 4px;
+}
+.facts dd { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.facts a { color: var(--ink); }
+
+/* --- generic section ------------------------------------------------ */
+section.band { padding: 76px 0; border-top: 1px solid var(--border); }
+.band-head { max-width: 62ch; margin: 0 0 42px; }
+h2 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(26px, 3.4vw, 38px); line-height: 1.14;
+  letter-spacing: -0.01em; margin: 0 0 14px; color: var(--ink);
+}
+.band-head p { margin: 0; color: var(--muted); line-height: 1.62; font-size: 16px; }
+h3 {
+  font-size: 15px; font-weight: 500; margin: 0 0 8px; color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+/* --- the ladder ----------------------------------------------------- */
+.ladder { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+@media (min-width: 860px) { .ladder { grid-template-columns: repeat(4, 1fr); } }
+.rung { background: color-mix(in srgb, var(--surface) 84%, transparent);
+        backdrop-filter: blur(6px); padding: 26px 24px; }
+.rung-when {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+}
+.rung p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+/* --- sectors -------------------------------------------------------- */
+.sectors { display: grid; gap: 14px; }
+@media (min-width: 700px) { .sectors { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .sectors { grid-template-columns: repeat(3, 1fr); } }
+.sector {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px); padding: 22px 22px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color .22s var(--ease), transform .22s var(--ease);
+}
+.sector:hover { border-color: var(--border-lit); transform: translateY(-2px); }
+/* The fault reads as what it is — a code off a service sheet — so the
+   line underneath is the only prose on the card and gets to carry it. */
+.sector-fault {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent-cyan);
+  margin: 0; line-height: 1.4;
+}
+.sector-line {
+  color: var(--ink-2); font-size: 14.5px; line-height: 1.55;
+  margin: 0; flex: 1;
+}
+.sector-price {
+  display: flex; align-items: baseline; gap: 7px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.sector-price b { font-family: var(--display); font-size: 22px; font-weight: 400; color: var(--ink); }
+.sector-price span { font-size: 12.5px; color: var(--muted); }
+
+/* --- proof ---------------------------------------------------------- */
+.proof { display: grid; gap: 22px; }
+@media (min-width: 820px) { .proof { grid-template-columns: repeat(3, 1fr); } }
+.proof-item { border-left: 2px solid var(--accent-deep); padding-left: 20px; }
+.proof-item p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.62; }
+
+/* --- plans ---------------------------------------------------------- */
+.plans { display: grid; gap: 14px; }
+@media (min-width: 800px) { .plans { grid-template-columns: repeat(3, 1fr); } }
+.plan {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px); padding: 26px 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.plan[data-featured="yes"] { border-color: var(--accent-deep); background: var(--raised); }
+.plan-name { font-family: var(--display); font-size: 26px; font-weight: 400; color: var(--ink); }
+.plan-seats { font-size: 14px; color: var(--muted); }
+.plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; flex: 1; }
+.plan li { font-size: 14px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start; }
+.plan li::before { content: "—"; color: var(--accent-deep); flex: none; }
+.plan li[data-has="no"] { opacity: .45; }
+.plan li[data-has="no"]::before { content: "·"; }
+
+/* --- closing -------------------------------------------------------- */
+.closer { text-align: center; padding: 92px 0 100px; border-top: 1px solid var(--border); }
+.closer h2 { margin-bottom: 18px; }
+.closer p { color: var(--muted); max-width: 52ch; margin: 0 auto 30px; line-height: 1.62; }
+footer {
+  border-top: 1px solid var(--border); padding: 30px 0 44px;
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  color: var(--muted); font-size: 13px;
+}
+footer nav { display: flex; gap: 20px; margin-left: auto; }
+.lineage {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent-violet);
+  padding-left: 16px; border-left: 1px solid var(--border);
+}
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover, footer a:focus-visible { color: var(--ink); }

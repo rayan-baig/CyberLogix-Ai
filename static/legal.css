@@ -1,0 +1,96 @@
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.top .brand { text-decoration: none; color: var(--ink); }
+.top .brand-name { font-size: 17px; }
+.top nav { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+/* Five words of navigation do not fit a phone. Measured at 390px the row
+   ran to 405 and the whole page scrolled sideways, which on the page that
+   takes somebody's money reads as broken before they have typed anything.
+   The brand shrinks to its mark and the links tighten; nothing is hidden,
+   because every one of them is a place somebody might need to get to. */
+@media (max-width: 720px) {
+  .top { padding: 14px 16px; gap: 10px; }
+  .top .brand-name { display: none; }
+  .top nav { gap: 14px; }
+  .top nav a { font-size: 13px; }
+}
+
+.shell { display: grid; grid-template-columns: 260px 1fr; gap: 44px;
+         padding: 48px 0 90px; align-items: start; }
+@media (max-width: 900px) { .shell { grid-template-columns: 1fr; gap: 26px; } }
+
+/* --- the picker ----------------------------------------------------- */
+.picker { position: sticky; top: 88px; display: grid; gap: 6px; }
+@media (max-width: 900px) { .picker { position: static; } }
+.picker button {
+  text-align: left; font: inherit; font-size: 14px; cursor: pointer;
+  padding: 11px 14px; border-radius: 10px; color: var(--muted);
+  background: transparent; border: 1px solid transparent;
+  transition: color .18s var(--ease), background .18s var(--ease);
+}
+.picker button:hover { color: var(--ink); background: var(--surface); }
+.picker button[aria-current="true"] {
+  color: var(--ink); background: var(--surface); border-color: var(--border);
+}
+
+/* --- the document --------------------------------------------------- */
+.doc { max-width: 74ch; }
+.doc h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1;
+  letter-spacing: -0.015em; margin: 0 0 8px; color: var(--ink);
+}
+.doc h2 {
+  font-family: var(--display); font-weight: 400; font-size: 21px;
+  margin: 40px 0 12px; color: var(--ink);
+  padding-top: 20px; border-top: 1px solid var(--border);
+}
+.doc p { color: var(--muted); line-height: 1.72; margin: 0 0 16px; }
+.doc strong { color: var(--ink); font-weight: 600; }
+.doc ul { color: var(--muted); line-height: 1.72; margin: 0 0 16px;
+          padding-left: 22px; }
+.doc li { margin-bottom: 7px; }
+.doc code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent-cyan);
+  background: var(--surface); padding: 2px 6px; border-radius: 5px;
+}
+.doc blockquote {
+  margin: 0 0 28px; padding: 14px 18px;
+  border-left: 2px solid color-mix(in srgb, var(--warn, #E0A030) 70%, transparent);
+  background: color-mix(in srgb, var(--warn, #E0A030) 8%, transparent);
+  border-radius: 0 10px 10px 0;
+  color: var(--muted); font-size: 14px; line-height: 1.65;
+}
+.doc table {
+  width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 14px;
+  display: block; overflow-x: auto;
+}
+.doc th, .doc td {
+  text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.doc th { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+.stamp {
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  margin: 28px 0 0; word-break: break-all;
+}
+
+footer {
+  border-top: 1px solid var(--border); padding: 26px 0;
+  color: var(--muted); font-size: 13px;
+}
+footer nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover, footer a:focus-visible { color: var(--ink); }

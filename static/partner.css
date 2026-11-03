@@ -1,0 +1,29 @@
+  /* Portal-only layout. Everything visual comes from the shared theme, so
+     a change to the palette reaches both surfaces at once. */
+  .portal { max-width: 1180px; margin: 0 auto; padding: 34px 30px; }
+  .book { width: 100%; border-collapse: collapse; }
+  .book td.name { font-weight: 500; }
+  .book td.money, .book th.money {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .book tbody tr { cursor: pointer; }
+  .book tbody tr.flagged td.name { color: var(--serious); }
+  /* Same reason as .tiles in the theme: a row that does not divide evenly
+     should still fill the width rather than leave empty cells. */
+  .earn { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+  .earn > .tile { flex: 1 1 190px; }
+  .attn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .attn:last-child { border-bottom: none; }
+  .attn-why { color: var(--serious); }
+  .back {
+    background: none; border: none; color: var(--accent); padding: 0;
+    font: inherit; text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer; margin-bottom: 14px;
+  }
+  @media (max-width: 720px) {
+    .portal { padding: 16px 14px; }
+  }

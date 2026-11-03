@@ -1,4 +1,5 @@
 """Hub gateway and cross-module mounting."""
+from pages import page_source, served_page
 
 
 def test_root_gateway_lists_every_module(api):
@@ -76,8 +77,11 @@ def test_the_front_door_explains_the_product_before_asking_for_a_password(api):
     assert "text/html" in resp.headers["content-type"]
     assert "signin-form" not in resp.text, "the root is the login box again"
     assert 'href="/console"' in resp.text, "no way through to the console"
+    # The plan cards (which name the escalation call) are drawn by the
+    # page's own script, so the page is read with it.
+    page = served_page(api, "/").lower()
     for promise in ("escalation", "sector", "claim"):
-        assert promise in resp.text.lower(), f"the page never mentions {promise}"
+        assert promise in page, f"the page never mentions {promise}"
 
 
 def test_the_console_is_served_at_console(api):
@@ -108,7 +112,7 @@ def test_the_landing_page_quotes_no_prices_of_its_own(api):
     # The file itself carries no price at all. The one figure in the first
     # screen -- the lowest rate -- is substituted from the rate card when
     # the page is served (see test_first_day.py), so it cannot drift.
-    source = (Path(__file__).resolve().parent.parent / "static" / "index.html").read_text()
+    source = page_source(Path(__file__).resolve().parent.parent / "static" / "index.html")
     for entry in PRICE_BOOK.values():
         price = f"{entry['monthly_usd']:.0f}"
         assert f"${price}" not in source, (
@@ -116,7 +120,7 @@ def test_the_landing_page_quotes_no_prices_of_its_own(api):
             "being read from the rate card"
         )
 
-    page = api.get("/").text
+    page = served_page(api, "/")
     lowest = headline()["from_label"]
     for entry in PRICE_BOOK.values():
         price = f"${entry['monthly_usd']:,.0f}"

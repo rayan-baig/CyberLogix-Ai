@@ -21,6 +21,7 @@ import pytest
 
 import accounts
 from store import STORE
+from pages import served_page
 
 
 @pytest.fixture(autouse=True)
@@ -244,7 +245,7 @@ def test_the_reset_page_is_served_and_kept_out_of_search(api):
 def test_the_page_scrubs_the_token_out_of_the_address_bar(api):
     """A one-time credential in the URL is one shoulder, one screenshot or
     one Referer header away from being somebody else's."""
-    js = api.get("/reset").text
+    js = served_page(api, "/reset")
     assert "history.replaceState" in js
 
 

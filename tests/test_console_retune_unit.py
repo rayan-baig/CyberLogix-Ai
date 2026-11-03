@@ -15,12 +15,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pages import page_source
 
 PAGE = Path(__file__).resolve().parent.parent / "static" / "console.html"
 
 
 def _tune_handler() -> str:
-    src = PAGE.read_text()
+    src = page_source(PAGE)
     start = src.index("  if (btn.dataset.tune) {")
     end = src.index("  if (btn.dataset.shortcut) {", start)
     return src[start:end]
@@ -77,7 +78,7 @@ def _trend(trend_f, unit):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
-    src = PAGE.read_text()
+    src = page_source(PAGE)
     start = src.index("    const perHour = f.trend_f_per_hour === null")
     end = src.index("    const shape = f.pattern", start)
     harness = f"""

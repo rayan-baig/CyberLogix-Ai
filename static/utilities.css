@@ -1,0 +1,147 @@
+/* One-declaration classes, for the small adjustments a page used to make
+   with a style="..." attribute.
+
+   The Content-Security-Policy no longer allows inline styles, which
+   covers style attributes as well as <style> blocks -- including the ones
+   in markup a script builds with innerHTML. So each adjustment is a class
+   here instead, named for what it sets: u-mt-12 is margin-top: 12px,
+   u-c-muted is color: var(--muted), u-fs-11-5 is font-size: 11.5px.
+
+   An attribute beat every rule; a class has to be made to. Each selector
+   names its class twice (.u-mt-12.u-mt-12), which outweighs a component
+   rule such as `.field textarea` or `pre.snippet`, and the file is linked
+   after every other stylesheet on a page, so it also wins a tie. A rule
+   marked !important still wins, as it did over the attribute -- that is
+   how [hidden] and the print rules keep working. The browser smoke test
+   (tools/console_smoke.js) checks every class on every element it draws
+   against the same declaration applied inline. Shorthands
+   come first, so a longhand on the same element still wins, as it did
+   when it came later in the attribute. A width that is worked out at run
+   time (a battery meter) is set from script with element.style, which the
+   policy allows; see data-w in console.js. */
+
+.u-bd.u-bd { border: 1px solid var(--border); }
+.u-bg-accent.u-bg-accent { background: var(--accent); }
+.u-bg-good.u-bg-good { background: var(--good); }
+.u-bg-raised.u-bg-raised { background: var(--raised); }
+.u-bg-sunken.u-bg-sunken { background: var(--sunken); }
+.u-flex-1-1-100pc.u-flex-1-1-100pc { flex: 1 1 100%; }
+.u-font-inherit.u-font-inherit { font: inherit; }
+.u-m-0.u-m-0 { margin: 0; }
+.u-m-0-0-10.u-m-0-0-10 { margin: 0 0 10px; }
+.u-m-0-0-12.u-m-0-0-12 { margin: 0 0 12px; }
+.u-m-0-0-6.u-m-0-0-6 { margin: 0 0 6px; }
+.u-m-0-0-8.u-m-0-0-8 { margin: 0 0 8px; }
+.u-m-10-0-0.u-m-10-0-0 { margin: 10px 0 0; }
+.u-m-10-0-4.u-m-10-0-4 { margin: 10px 0 4px; }
+.u-m-12-0-4.u-m-12-0-4 { margin: 12px 0 4px; }
+.u-m-8-0-2.u-m-8-0-2 { margin: 8px 0 2px; }
+.u-ov-auto.u-ov-auto { overflow: auto; }
+.u-ov-hidden.u-ov-hidden { overflow: hidden; }
+.u-p-10-0.u-p-10-0 { padding: 10px 0; }
+.u-p-10-0-2.u-p-10-0-2 { padding: 10px 0 2px; }
+.u-p-14.u-p-14 { padding: 14px; }
+.u-p-16-0.u-p-16-0 { padding: 16px 0; }
+.u-p-18-0.u-p-18-0 { padding: 18px 0; }
+.u-p-22.u-p-22 { padding: 22px; }
+.u-p-26.u-p-26 { padding: 26px; }
+.u-p-5-0.u-p-5-0 { padding: 5px 0; }
+.u-p-7-0.u-p-7-0 { padding: 7px 0; }
+.u-p-7-10.u-p-7-10 { padding: 7px 10px; }
+.u-p-8-0.u-p-8-0 { padding: 8px 0; }
+.u-p-9.u-p-9 { padding: 9px; }
+.u-p-9-11.u-p-9-11 { padding: 9px 11px; }
+.u-bb.u-bb { border-bottom: 1px solid var(--border); }
+.u-bt.u-bt { border-top: 1px solid var(--border); }
+.u-c-border-lit.u-c-border-lit { color: var(--border-lit); }
+.u-c-critical.u-c-critical { color: var(--critical); }
+.u-c-ink.u-c-ink { color: var(--ink); }
+.u-c-ink-2.u-c-ink-2 { color: var(--ink-2); }
+.u-c-muted.u-c-muted { color: var(--muted); }
+.u-c-warning.u-c-warning { color: var(--warning); }
+.u-cursor-pointer.u-cursor-pointer { cursor: pointer; }
+.u-d-block.u-d-block { display: block; }
+.u-d-flex.u-d-flex { display: flex; }
+.u-d-grid.u-d-grid { display: grid; }
+.u-ff-display.u-ff-display { font-family: var(--display); }
+.u-ff-inherit.u-ff-inherit { font-family: inherit; }
+.u-ff-mono.u-ff-mono { font-family: var(--mono); }
+.u-flex-wrap.u-flex-wrap { flex-wrap: wrap; }
+.u-fs-11-5.u-fs-11-5 { font-size: 11.5px; }
+.u-fs-12.u-fs-12 { font-size: 12px; }
+.u-fs-12-5.u-fs-12-5 { font-size: 12.5px; }
+.u-fs-13.u-fs-13 { font-size: 13px; }
+.u-fs-13-5.u-fs-13-5 { font-size: 13.5px; }
+.u-fs-16.u-fs-16 { font-size: 16px; }
+.u-fs-19.u-fs-19 { font-size: 19px; }
+.u-fs-20.u-fs-20 { font-size: 20px; }
+.u-fw-400.u-fw-400 { font-weight: 400; }
+.u-fw-500.u-fw-500 { font-weight: 500; }
+.u-fw-650.u-fw-650 { font-weight: 650; }
+.u-gap-10.u-gap-10 { gap: 10px; }
+.u-gap-14.u-gap-14 { gap: 14px; }
+.u-gap-16.u-gap-16 { gap: 16px; }
+.u-gap-6.u-gap-6 { gap: 6px; }
+.u-gap-8.u-gap-8 { gap: 8px; }
+.u-gap-8-10.u-gap-8-10 { gap: 8px 10px; }
+.u-gap-9.u-gap-9 { gap: 9px; }
+.u-h-40.u-h-40 { height: 40px; }
+.u-h-8.u-h-8 { height: 8px; }
+.u-items-baseline.u-items-baseline { align-items: baseline; }
+.u-items-center.u-items-center { align-items: center; }
+.u-justify-between.u-justify-between { justify-content: space-between; }
+.u-lh-1-6.u-lh-1-6 { line-height: 1.6; }
+.u-lh-1-65.u-lh-1-65 { line-height: 1.65; }
+.u-ls-n01em.u-ls-n01em { letter-spacing: -.01em; }
+.u-maxh-260.u-maxh-260 { max-height: 260px; }
+.u-maxh-280.u-maxh-280 { max-height: 280px; }
+.u-maxw-120.u-maxw-120 { max-width: 120px; }
+.u-maxw-170.u-maxw-170 { max-width: 170px; }
+.u-maxw-52ch.u-maxw-52ch { max-width: 52ch; }
+.u-maxw-640.u-maxw-640 { max-width: 640px; }
+.u-maxw-96.u-maxw-96 { max-width: 96px; }
+.u-mb-10.u-mb-10 { margin-bottom: 10px; }
+.u-mb-3.u-mb-3 { margin-bottom: 3px; }
+.u-mb-4.u-mb-4 { margin-bottom: 4px; }
+.u-mb-8.u-mb-8 { margin-bottom: 8px; }
+.u-minw-170.u-minw-170 { min-width: 170px; }
+.u-ml-2.u-ml-2 { margin-left: 2px; }
+.u-mt-0.u-mt-0 { margin-top: 0; }
+.u-mt-10.u-mt-10 { margin-top: 10px; }
+.u-mt-12.u-mt-12 { margin-top: 12px; }
+.u-mt-14.u-mt-14 { margin-top: 14px; }
+.u-mt-16.u-mt-16 { margin-top: 16px; }
+.u-mt-18.u-mt-18 { margin-top: 18px; }
+.u-mt-2.u-mt-2 { margin-top: 2px; }
+.u-mt-24.u-mt-24 { margin-top: 24px; }
+.u-mt-3.u-mt-3 { margin-top: 3px; }
+.u-mt-5.u-mt-5 { margin-top: 5px; }
+.u-mt-6.u-mt-6 { margin-top: 6px; }
+.u-mt-7.u-mt-7 { margin-top: 7px; }
+.u-mt-8.u-mt-8 { margin-top: 8px; }
+.u-mt-9.u-mt-9 { margin-top: 9px; }
+.u-o-5.u-o-5 { opacity: .5; }
+.u-o-55.u-o-55 { opacity: .55; }
+.u-o-62.u-o-62 { opacity: .62; }
+.u-o-75.u-o-75 { opacity: .75; }
+.u-o-85.u-o-85 { opacity: .85; }
+.u-ovy-auto.u-ovy-auto { overflow-y: auto; }
+.u-pb-6.u-pb-6 { padding-bottom: 6px; }
+.u-pl-18.u-pl-18 { padding-left: 18px; }
+.u-place-center.u-place-center { place-items: center; }
+.u-pt-10.u-pt-10 { padding-top: 10px; }
+.u-pt-8.u-pt-8 { padding-top: 8px; }
+.u-pt-9.u-pt-9 { padding-top: 9px; }
+.u-r-8.u-r-8 { border-radius: 8px; }
+.u-r-9.u-r-9 { border-radius: 9px; }
+.u-r-999.u-r-999 { border-radius: 999px; }
+.u-ta-right.u-ta-right { text-align: right; }
+.u-tnum.u-tnum { font-variant-numeric: tabular-nums; }
+.u-w-100pc.u-w-100pc { width: 100%; }
+.u-w-130.u-w-130 { width: 130px; }
+.u-w-150.u-w-150 { width: 150px; }
+.u-w-20.u-w-20 { width: 20px; }
+.u-w-auto.u-w-auto { width: auto; }
+.u-wb-break-all.u-wb-break-all { word-break: break-all; }
+.u-ws-nowrap.u-ws-nowrap { white-space: nowrap; }
+.u-ws-pre-wrap.u-ws-pre-wrap { white-space: pre-wrap; }

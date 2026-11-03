@@ -7,6 +7,7 @@ and the image must carry both files.
 
 import re
 from pathlib import Path
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = (ROOT / "VERSION").read_text().strip()
@@ -55,7 +56,7 @@ def test_a_missing_version_file_does_not_stop_the_service(tmp_path):
 
 
 def test_the_console_shows_the_version_in_its_about_card():
-    page = (ROOT / "static" / "console.html").read_text()
+    page = page_source(ROOT / "static" / "console.html")
     assert 'id="find-about"' in page
     assert 'data-group="setup"' in page.split('id="find-about"')[1][:80]
     assert '$("about-version").textContent' in page

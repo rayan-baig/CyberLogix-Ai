@@ -27,13 +27,14 @@ import re
 from pathlib import Path
 
 import pytest
+from pages import page_source
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "static" / "console.html"
 
 
 def script() -> str:
-    src = PAGE.read_text()
+    src = page_source(PAGE)
     return src[src.index("<script>"): src.rindex("</script>")]
 
 
@@ -123,7 +124,7 @@ def test_a_claimable_incident_only_reads_fields_it_has(
 
 
 def test_the_forecast_card_exists_and_is_wired():
-    page = PAGE.read_text()
+    page = page_source(PAGE)
     js = script()
 
     assert 'id="forecast-body"' in page

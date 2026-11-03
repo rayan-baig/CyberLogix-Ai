@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import CONTENT_SECURITY_POLICY, app
+from pages import page_source
 
 BROWSER = {"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
 SECRET = "the-database-password-is-hunter2"
@@ -133,7 +134,7 @@ def test_a_500_over_https_carries_hsts(exploding):
 def test_the_error_page_has_no_inline_style_or_script():
     from pathlib import Path
 
-    page = (Path(__file__).resolve().parent.parent / "static" / "error.html").read_text()
+    page = page_source(Path(__file__).resolve().parent.parent / "static" / "error.html")
     assert "<style" not in page and "style=" not in page
     assert "<script>" not in page
     assert 'name="robots" content="noindex"' in page

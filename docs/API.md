@@ -171,14 +171,29 @@ on ours. `Referrer-Policy` is the other half of the password-reset fix:
 the reset page scrubs the token out of the address bar, and this stops it
 reaching a third party in a `Referer` header before the scrub happens.
 
-`script-src` is `'self' 'unsafe-inline'`, which is honest rather than
-aspirational — every page here carries its own script block, and a policy
-written as though they did not is a policy that gets switched off. It
-still refuses script from any other origin, which is what stops an
-injected `<script src>` from reaching anywhere useful. The typeface
+Neither `script-src` nor `style-src` allows `'unsafe-inline'`. Every
+page's script and stylesheet is a file under `/static` (`console.js`,
+`landing.css` and so on), no element carries an `onclick` or a
+`style="..."` attribute, and markup a script builds with `innerHTML` uses
+classes from `utilities.css` instead of style attributes (a width worked
+out at run time, such as a battery meter, is set through `element.style`,
+which the policy allows). So text that reaches a page -- a sensor name, a
+company name -- cannot run as script or restyle the page even if an escape
+is missed somewhere: the browser refuses anything inline. The typeface
 origins are named rather than pretended away, because a policy that
 blocks the product's own stylesheet protects nothing once somebody
 removes it.
+
+The two API reference pages, `/docs` (Swagger UI) and `/redoc`, run
+third-party code from `cdn.jsdelivr.net`, so they get a policy of their
+own that names that origin. Their setup is a file (`static/api-docs.js`),
+so script stays strict there too; style keeps `'unsafe-inline'` on those
+two pages only, because ReDoc writes its styles into `<style>` elements at
+run time and Swagger UI's bundle is not ours to change.
+
+`tests/test_csp.py` holds every page the app serves to this (the list is
+read from the router, so a new page is checked too), and the browser smoke
+test fails on any policy refusal it sees.
 
 ## Numbers that cannot be stored
 

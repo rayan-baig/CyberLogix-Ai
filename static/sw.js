@@ -12,9 +12,14 @@
  * loudly, that what it is showing is not live.
  */
 
-const VERSION = "clx-shell-v8";
+const VERSION = "clx-shell-v9";
 const SHELL = [
   "/static/theme.css",
+  // The offline page's own stylesheet and script, now that it carries
+  // neither inline: without them it would paint unstyled, with a dead
+  // "Try again" button, at the one moment it is needed.
+  "/static/offline.css",
+  "/static/offline.js",
   "/static/logo.svg",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",
@@ -71,8 +76,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Everything else -- stylesheet, icons, scripts -- is cache first so
-  // the app paints instantly, revalidated behind the render.
+  // Scripts and stylesheets go to the network first, and fall back to the
+  // copy kept here only with no network. Each page's code lives in its own
+  // file under /static, and the page itself is always fetched fresh; a
+  // cached console.js answering a new console.html would be yesterday's
+  // code driving today's page, one load after every release.
+  if (/\.(js|css)$/.test(url.pathname)) {
+    event.respondWith(
+      caches.open(VERSION).then((cache) =>
+        fetch(request)
+          .then((response) => {
+            if (response && response.ok) cache.put(request, response.clone());
+            return response;
+          })
+          .catch(() => cache.match(request).then((hit) => hit || Response.error()))
+      )
+    );
+    return;
+  }
+
+  // Everything else -- icons, the logo, fonts -- is cache first so the
+  // app paints instantly, revalidated behind the render.
   event.respondWith(
     caches.open(VERSION).then((cache) =>
       cache.match(request).then((hit) => {

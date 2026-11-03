@@ -14,6 +14,7 @@ import re
 import pytest
 
 import build_public_demo
+from pages import page_source
 
 
 def test_the_page_is_the_real_console():
@@ -327,5 +328,5 @@ def test_the_panel_check_reads_urls_built_with_backticks():
     assert found == {"/api/quoted", "/api/backticked", "/api/split"}
 
     # And on the real page, the URL that got away the first time.
-    page = (b.ROOT / "static" / "console.html").read_text()
+    page = page_source(b.ROOT / "static" / "console.html")
     assert "/api/v1/enterprise-billing/quote" in b.paths_the_page_asks_for(page)

@@ -62,7 +62,7 @@ def test_the_policy_still_allows_the_product_its_own_assets(api):
     The typefaces come from Google Fonts, so those origins are named
     rather than pretended away.
     """
-    assert "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com" in (
+    assert "style-src 'self' https://fonts.googleapis.com" in (
         CONTENT_SECURITY_POLICY
     )
     assert "font-src 'self' https://fonts.gstatic.com" in CONTENT_SECURITY_POLICY
@@ -70,13 +70,14 @@ def test_the_policy_still_allows_the_product_its_own_assets(api):
 
 
 def test_the_policy_refuses_script_from_anywhere_else(api):
-    """'unsafe-inline' is honest about the pages as written; it is not a
-    licence for an injected <script src> to reach an attacker's host."""
+    """Script comes from this origin's files and nowhere else: not from an
+    injected <script src> on an attacker's host, and not from an inline
+    block or an onclick (tests/test_csp.py holds the pages to that)."""
     directive = next(
         d for d in CONTENT_SECURITY_POLICY.split("; ")
         if d.startswith("script-src")
     )
-    assert directive == "script-src 'self' 'unsafe-inline'"
+    assert directive == "script-src 'self'"
     assert "base-uri 'none'" in CONTENT_SECURITY_POLICY
     assert "object-src 'none'" in CONTENT_SECURITY_POLICY
 

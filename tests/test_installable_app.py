@@ -18,12 +18,13 @@ import json
 from pathlib import Path
 
 import pytest
+from pages import page_source, served_page
 
 ROOT = Path(__file__).resolve().parent.parent
 SW = (ROOT / "static" / "sw.js").read_text()
 MANIFEST = json.loads((ROOT / "static" / "manifest.webmanifest").read_text())
-OFFLINE = (ROOT / "static" / "offline.html").read_text()
-CONSOLE = (ROOT / "static" / "console.html").read_text()
+OFFLINE = page_source(ROOT / "static" / "offline.html")
+CONSOLE = page_source(ROOT / "static" / "console.html")
 
 
 # --- the rule ---------------------------------------------------------
@@ -123,7 +124,7 @@ def test_the_icons_are_real_images_not_placeholders():
 
 
 def test_the_console_is_installable(api):
-    page = api.get("/console").text
+    page = served_page(api, "/console")
 
     assert '<link rel="manifest" href="/manifest.webmanifest">' in page
     assert 'rel="apple-touch-icon"' in page
