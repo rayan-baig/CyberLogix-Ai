@@ -200,7 +200,7 @@ async function utilitiesHold(page) {
 /* Every public and private page, at phone and desktop size: no policy
    refusal, no script error, no utility class losing to a rule. */
 async function checkPages(browser, base, token) {
-  const pages = ["/", "/signup", "/pricing", "/help", "/for", "/for/restaurant",
+  const pages = ["/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant",
                  "/for/pharmacy", "/legal", "/reset", "/partners", "/book",
                  "/today", "/offline", "/proof/not-a-real-token", "/no-such-page"];
   for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {

@@ -29,6 +29,10 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   an attestation proves and what it does not, and how anyone can check one.
 * [A sensor is offline](docs/SENSOR-OFFLINE.md): what offline means, what
   we do about it, and what to check, in order.
+* [Setting up sensors](docs/SENSOR-SETUP.md): step by step for each way a
+  sensor can report — your own device, Monnit, SensorPush, Elitech,
+  Dickson, a vendor's cloud, or anything that sends JSON. Also at
+  `/help/sensors`.
 
 The app has the same answers at `/help`, and every rate with a price
 calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
@@ -48,7 +52,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, mutation testing |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
-| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md) | The customer guides above |
+| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md), [docs/SENSOR-SETUP.md](docs/SENSOR-SETUP.md) | The customer guides above |
 
 ## Modules
 
@@ -90,7 +94,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Backups | `/api/admin` | Verified snapshots of the one file that is the company |
 | Watchdog | `/api/watchdog` | Whether the thing that watches the freezers is running |
 | Discovery | `/robots.txt` | Link previews, the sitemap, and what a crawler may index |
-| Help | `/help`, `/api/help` | Customer questions answered from the code, and what to check when a sensor is offline |
+| Help | `/help`, `/help/sensors`, `/api/help` | Customer questions answered from the code, what to check when a sensor is offline, and how to set each kind of sensor up |
 | Pricing page | `/pricing` | Every rate and a calculator, rendered from the rate card |
 
 

@@ -566,6 +566,8 @@ async def ingest_any_payload(
     authorization: Optional[str] = Header(None),
     x_cyberlogix_key: Optional[str] = Header(None),
     x_signature: Optional[str] = Header(None),
+    x_cyberlogix_sensor_key: Optional[str] = Header(
+        None, description="The per-sensor key, in the header /api/sensor-pulse takes it in."),
 ):
     """Take whatever the device sends and work out the reading.
 
@@ -592,8 +594,12 @@ async def ingest_any_payload(
     # held the one event-loop thread for the whole alert, and every other
     # request in the process -- other businesses' sensors, the console,
     # /api/health -- waited behind it.
+    # The sensor key is told to travel in X-CyberLogix-Sensor-Key when it
+    # is issued, and this route only read X-CyberLogix-Key: a device set up
+    # as the notice says was refused with a 401.
     return await run_in_threadpool(
-        _ingest_any, payload, k, authorization, x_cyberlogix_key, x_signature)
+        _ingest_any, payload, k, authorization,
+        x_cyberlogix_sensor_key or x_cyberlogix_key, x_signature)
 
 
 def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):

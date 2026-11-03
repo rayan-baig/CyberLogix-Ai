@@ -526,19 +526,25 @@ def build(data: dict, page_name: str = "console.html",
 
 
 # Pages the demo has a copy of, by the route the real app serves them at.
-DEMO_PAGES = {"/": "index.html", "/console": "console.html", "/help": "help.html"}
+DEMO_PAGES = {"/": "index.html", "/console": "console.html", "/help": "help.html",
+              "/help/sensors": "sensors.html"}
+
+# The address the sensor guides show in their steps. The page is rendered
+# on a test client, whose address means nothing to a reader; this one is
+# on a reserved domain and plainly stands for "yours".
+EXAMPLE_ADDRESS = "https://cyberlogix.example.com"
 
 
-def capture_help() -> str:
-    """The help page exactly as the application serves it."""
+def capture_help(route: str = "/help") -> str:
+    """A help page exactly as the application serves it."""
     from fastapi.testclient import TestClient
 
     from main import app
 
     with TestClient(app) as client:
-        got = client.get("/help")
+        got = client.get(route)
         got.raise_for_status()
-        return got.text
+        return got.text.replace("http://testserver", EXAMPLE_ADDRESS)
 
 
 def build_help(served: str) -> str:
@@ -579,7 +585,7 @@ def build_help(served: str) -> str:
         # Inside the nav a dead link is dropped; in a sentence its words stay.
         return "" if "<nav" in page[:match.start()].rsplit("</nav>", 1)[-1] else text
 
-    page = re.sub(r'(<a\b[^>]*?)href="(/[a-z]*)(#[a-z-]+)?"([^>]*)>(.*?)</a>',
+    page = re.sub(r'(<a\b[^>]*?)href="(/[a-z/]*)(#[a-z-]+)?"([^>]*)>(.*?)</a>',
                   relink, page, flags=re.S)
     refuse_outbound(page)
     # Markup only: circuit.js's own usage comment names its <script src>.
@@ -628,6 +634,7 @@ def main() -> None:
         check_every_panel_has_data("simple.html")
         data = capture()
         help_page = build_help(capture_help())
+        sensors_page = build_help(capture_help("/help/sensors"))
         # index.html is the plain view, because the front door belongs to
         # whoever was handed the link and has never seen the product. The
         # console is one click away for anyone who wants the instruments.
@@ -637,6 +644,7 @@ def main() -> None:
                                 banner=SIMPLE_BANNER),
             "console.html": build(data, "console.html"),
             "help.html": help_page,
+            "sensors.html": sensors_page,
         }
 
     DOCS.mkdir(exist_ok=True)
