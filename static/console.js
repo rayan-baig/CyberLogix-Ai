@@ -3341,8 +3341,13 @@ async function followInspectorLink() {
   finder.tab = "proof";
   applyFinder();
   const card = $("find-inspector-log");
-  if (card) card.scrollIntoView({ block: "start" });
+  if (card) card.scrollIntoView({ block: "center" });
 }
+
+// A link followed while the console is already open changes only the hash.
+window.addEventListener("hashchange", () => {
+  if (state.token) followInspectorLink().catch(() => { /* the estate is the page */ });
+});
 
 function dayLabel(day, withYear) {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString([], Object.assign(

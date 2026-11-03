@@ -733,6 +733,11 @@ class User:
             "password_hash": self.password_hash,
             "created_at": iso(self.created_at),
             "last_login_at": iso(self.last_login_at),
+            # To the microsecond: signing in opens the business a person had
+            # open last (accounts.login), and two switches in one second read
+            # back from whole seconds as a tie, decided the wrong way.
+            "last_login_exact": (self.last_login_at.isoformat()
+                                 if self.last_login_at else None),
             "disabled": self.disabled,
             "linked_to": self.linked_to,
             "password_from_owner": self.password_from_owner,
@@ -748,7 +753,8 @@ class User:
             role=row["role"],
             password_hash=row["password_hash"],
             created_at=_parse(row["created_at"]),
-            last_login_at=_parse(row.get("last_login_at")),
+            last_login_at=(_parse(row.get("last_login_exact"))
+                           or _parse(row.get("last_login_at"))),
             disabled=row.get("disabled", False),
             linked_to=row.get("linked_to"),
             password_from_owner=bool(row.get("password_from_owner", False)),

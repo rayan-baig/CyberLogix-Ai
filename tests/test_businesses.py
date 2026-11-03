@@ -122,7 +122,9 @@ def test_one_sign_in_reaches_both(api):
         json={"company_name": "Harbor Bakery"},
     )
     session = _login(api, DANA)
-    assert session["tenant"]["company_name"] == "Blue Harbor Club"
+    # The one opened last (adding a business opens it): see
+    # test_business_switcher.py for signing in where you left off.
+    assert session["tenant"]["company_name"] == "Harbor Bakery"
     assert _list(api, session["token"])["count"] == 2
 
 

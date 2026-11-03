@@ -301,12 +301,37 @@ def test_a_rotation_is_exported_and_erased_with_its_business(api, operator_facto
     assert STORE._db.all(oncall.ROTATION_KIND) == []
 
 
-def test_starts_on_defaults_to_today_where_the_rotation_is(api, operator_factory):
+def test_starts_on_defaults_to_the_last_handover_where_the_rotation_is(
+        api, operator_factory):
     headers, _, _ = operator_factory(plan="enterprise")
+    tz = oncall.zone("Pacific/Kiritimati")
     resp = api.put("/api/contacts/rotations", headers=headers,
                    json={"timezone": "Pacific/Kiritimati", "members": []})
-    expected = utc_now().astimezone(oncall.zone("Pacific/Kiritimati")).date()
+    today = utc_now().astimezone(tz).date()
+    handover = oncall.handover_at(today, oncall.clock("08:00"), tz)
+    expected = today if handover <= utc_now() else today - timedelta(days=1)
     assert date.fromisoformat(resp.json()["starts_on"]) == expected
+
+
+@pytest.mark.parametrize("hours_to_handover", [-3, 3])
+def test_the_person_listed_first_is_on_call_from_now(
+        api, operator_factory, hours_to_handover):
+    """Made before the day's handover, the first turn had not begun, and
+    the person listed last was on call until it did. Found by the browser
+    walk, which failed at some hours of the day and not others."""
+    headers, _, _ = operator_factory(plan="enterprise")
+    a = _person(api, headers, "Alex", "+15550801", 1)
+    b = _person(api, headers, "Blair", "+15550802", 1)
+    c = _person(api, headers, "Casey", "+15550803", 1)
+    handover = (utc_now() + timedelta(hours=hours_to_handover)).strftime("%H:%M")
+    for days in (1, 7):
+        made = api.put("/api/contacts/rotations", headers=headers, json={
+            "timezone": "UTC", "handover": handover, "shift_days": days,
+            "members": [a["contact_id"], b["contact_id"], c["contact_id"]]})
+        assert made.status_code == 200, made.text
+        listed = api.get("/api/contacts/rotations", headers=headers).json()
+        (rotation,) = listed["rotations"]
+        assert rotation["on_shift_now"]["full_name"] == "Alex", (days, handover)
 
 
 def test_a_reply_after_the_handover_still_acknowledges(
