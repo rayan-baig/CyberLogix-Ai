@@ -225,11 +225,22 @@ def _parts(message):
     return plain, rich
 
 
+def _subject(value) -> str:
+    """A subject as a reader sees it. A long one is folded onto a second
+    header line, and some Python versions read the fold back as a space
+    at the start."""
+    return " ".join(str(value).split())
+
+
 @pytest.fixture()
 def every_email(api, smtp, tenant_factory, owner_headers, sensor_factory):
+    # The reset is limited per address per hour, and every test here asks.
+    import accounts
+
+    accounts.reset_rate_limits()
     _send_every_kind(api, tenant_factory, owner_headers, sensor_factory)
-    keys = {m.subject: m.dedupe_key for m in STORE.mail_log(limit=500)}
-    received = [(keys[m["Subject"]], m) for m in smtp]
+    keys = {_subject(m.subject): m.dedupe_key for m in STORE.mail_log(limit=500)}
+    received = [(keys[_subject(m["Subject"])], m) for m in smtp]
     assert len(received) == len(STORE.mail_log(limit=500)), "every message arrived"
     return received
 
