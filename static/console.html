@@ -528,6 +528,19 @@
           <div id="bill-body"></div>
         </section>
 
+        <!-- Bring a friend (referrals.py). Owners only: it is about the
+             bill. The business that joined is shown by its name only. -->
+        <section class="card" id="find-referrals" data-group="money" data-find="bring a friend referral code refer a business invite free month credit reward" data-label="Bring a friend">
+          <div class="card-head">
+            <span class="card-title">Bring a friend</span>
+            <span class="card-note" id="referral-note">Owners only</span>
+          </div>
+          <p class="card-plain">Give another business your code. They get a
+             longer free trial, and when they pay their first invoice you
+             get a month free on one location.</p>
+          <div id="referral-body"></div>
+        </section>
+
         <section class="card" id="find-on-call-roster" data-group="people" data-find="who gets called on-call roster contacts who gets called escalation phone" data-label="Who gets called">
           <div class="card-head">
             <span class="card-title">Who gets called</span>
@@ -723,6 +736,51 @@
             </div>
           </form>
           <div id="poller-body"></div>
+        </section>
+
+        <!-- The Kitchen Safety Bundle (omniarmor.py). Owners only: the key
+             is a credential and the bundle is on the bill. The key is
+             never shown again after it is saved, only its last four. -->
+        <section class="card" id="find-omniarmor" data-group="setup" data-find="omniarmor kitchen safety bundle connection daily report temperature log checklist connect key" data-label="OmniArmor connection">
+          <div class="card-head">
+            <span class="card-title">OmniArmor connection</span>
+            <span class="card-note" id="omni-note">Owners only</span>
+          </div>
+          <p class="card-plain">The Kitchen Safety Bundle. Each day&rsquo;s
+             fridge and freezer record goes to OmniArmor after the day ends,
+             and OmniArmor fills in its temperature-log check for you. No
+             names are sent, only roles.</p>
+          <div id="omni-owner" hidden>
+            <form id="omni-form">
+              <div class="row u-mb-8">
+                <input id="omni-address" class="grow" required maxlength="200"
+                       placeholder="https://omniarmor.example.com"
+                       aria-label="OmniArmor address">
+              </div>
+              <div class="row u-mb-8">
+                <input id="omni-key" class="grow" type="password" maxlength="60"
+                       autocomplete="off"
+                       placeholder="clx_&hellip; from OmniArmor: Settings, Connections"
+                       aria-label="Connection key">
+              </div>
+              <div class="row u-mb-8">
+                <input id="omni-site-label" class="grow" maxlength="60"
+                       placeholder="Site name to show (optional)"
+                       aria-label="Site name OmniArmor shows">
+                <input id="omni-tz" class="u-maxw-170" maxlength="64"
+                       placeholder="Time zone" aria-label="The site's time zone">
+              </div>
+              <div id="omni-sites" class="u-mb-8"></div>
+              <div class="row u-gap-8 u-flex-wrap">
+                <button class="btn btn-sm btn-primary" type="submit">Save connection</button>
+                <button class="btn btn-sm" type="button" id="omni-test">Send a test report</button>
+                <button class="btn btn-sm" type="button" id="omni-remove">Disconnect</button>
+              </div>
+            </form>
+            <div id="omni-body" class="u-mt-12"></div>
+          </div>
+          <p class="card-plain" id="omni-not-owner" hidden>Only an owner can
+             connect OmniArmor.</p>
         </section>
 
         <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">

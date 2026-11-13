@@ -42,6 +42,22 @@ business's account.
 - The rate is set when the partner is made: 20% unless you say
   otherwise, and anything from 0% to 50%.
 
+### Partners and "bring a friend"
+
+Businesses have their own referral codes (docs/BILLING.md, Bring a
+friend). The rule between the two is one business, one reward:
+
+- If a partner manages a business when it pays its first invoice, the
+  partner earns its commission on it as usual and **nobody earns a
+  referral credit** for it, even if it signed up with another business's
+  code. The referrer's console says the business is looked after by a
+  partner.
+- A business a partner manages can still hand out its own code and earn
+  credits. A credit lowers what that business pays, and commission is a
+  share of what it actually paid, so the partner is never paid on money
+  the business did not pay.
+- Partner keys have no referral code and earn no referral credit.
+
 ## Setting up a partner (the operator)
 
 ### 1. Make the partner
@@ -133,7 +149,9 @@ the channel needs it.
 
 - **A partner cannot sign up a customer or attach one.** The operator
   attaches every business (steps 3 and 4).
-- **No referral link.** A sign-up does not record which partner sent it.
+- **No partner referral link.** A sign-up does not record which partner
+  sent it. (Businesses have referral codes of their own; partners do
+  not.)
 - **The commission rate cannot be changed** after the partner is made.
   To change it today, a new partner has to be made and the businesses
   moved to it.

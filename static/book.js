@@ -767,6 +767,26 @@ $("expense-form").addEventListener("submit", async (event) => {
   }
 });
 
+/* A refund undoes a referral reward (referrals.py). The account ID is the
+   one the refunded business has; the referrer's credit is withdrawn. */
+$("refund-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  say("refund-said", "");
+  const id = $("refund-tenant").value.trim();
+  const resp = await api("/api/referrals/" + encodeURIComponent(id) + "/refunded",
+    { method: "POST", body: { note: "refunded" } });
+  const body = await resp.json().catch(() => ({}));
+  if (resp.ok) {
+    $("refund-form").reset();
+    say("refund-said", typeof body.withdrawn_usd === "number"
+      ? "Done. $" + body.withdrawn_usd.toFixed(2) + " of the reward was withdrawn."
+      : "Done.");
+  } else {
+    say("refund-said", typeof body.detail === "string"
+        ? body.detail : "That was not accepted.", true);
+  }
+});
+
 async function open_() {
   if (!storedKey()) return;
   $("err").hidden = true;

@@ -126,8 +126,10 @@ def facts(vertical: str) -> Dict[str, Any]:
         ANNUAL_PREPAY_DISCOUNT_PERCENT,
         PRICE_BOOK,
         SETUP_FEE_PER_SITE_USD,
+        STARTER_VERTICALS,
         headline,
         per_site,
+        starter_terms,
     )
 
     words = page(vertical)
@@ -161,6 +163,8 @@ def facts(vertical: str) -> Dict[str, Any]:
             {"name": a["name"], "monthly_usd": a["monthly_usd"], "basis": a["basis"]}
             for a in ADD_ONS.values()
         ],
+        # Starter is offered on the sheets for the trades it is for.
+        "starter": starter_terms() if vertical in STARTER_VERTICALS else None,
         "trial": {
             "days": trial["term_days"],
             "sensors": trial["max_sensors"],
@@ -195,8 +199,16 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
         f"<td>{e(_term(int(plan['term_days'])))}</td></tr>"
         for plan in f["plans"])
     extras = "".join(
-        f"<li>{e(a['name'])}: {_money(a['monthly_usd'])} a month</li>"
+        f"<li>{e(a['name'])}: {_money(a['monthly_usd'])} a month"
+        f"{' per location' if a['basis'] == 'per location' else ''}</li>"
         for a in f["add_ons"])
+    starter = f["starter"]
+    starter_line = (
+        f'<p class="sheet-small sheet-starter">A small caf&eacute; or shop? '
+        f"{e(starter['name'])}: {_money(starter['monthly_usd'])} a month for one "
+        f"location and up to {starter['max_units']} fridges or freezers, "
+        "texts and the site-wide alert included.</p>"
+        if starter else "")
 
     fix_points = [
         f"A text to everyone on call within {t['dispatch_seconds']} seconds "
@@ -268,6 +280,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
       <h2>What it costs</h2>
       <p class="sheet-big">{_money(p['monthly_usd'])} <span>{per}</span></p>
       <p class="sheet-small">{price_note} In US dollars.</p>
+      {starter_line}
       <table class="sheet-table">
         <thead><tr><th>Plan</th><th class="num">Sensors</th><th>Alerts</th>
           <th>Term</th></tr></thead>

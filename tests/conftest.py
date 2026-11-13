@@ -31,6 +31,10 @@ os.environ["CYBERLOGIX_PROVISIONING_KEY"] = "test-provisioning-key"
 # that introduced it.
 os.environ["CYBERLOGIX_ADMIN_KEY"] = "test-admin-key"
 
+# Seals the connection keys businesses paste (omniarmor.py). A test that
+# needs it unset patches the module's copy.
+os.environ["CYBERLOGIX_CREDENTIAL_KEY"] = "test-credential-key-not-a-real-secret"
+
 import gemini  # noqa: E402
 import store as _store_module  # noqa: E402
 from main import app  # noqa: E402

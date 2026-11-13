@@ -222,6 +222,9 @@ def adopt(
                 "other, and it is not guessed from the number."
             ))
 
+    from licenses import refuse_off_starter_vertical
+
+    refuse_off_starter_vertical(tenant, vertical)
     cap = tenant.entitlements()["max_sensors"]
     try:
         sensor = STORE.claim_sensor_seat(

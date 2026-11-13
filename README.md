@@ -45,7 +45,8 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/FEATURES.md](docs/FEATURES.md) | The console, the industry profiles and their limits, Fahrenheit or Celsius, sites, sector paperwork, several businesses, your own hardware (BYOD), forecasting, meeting summaries, benchmarks, link previews |
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
-| [docs/BILLING.md](docs/BILLING.md) | The rate card, plans, volume pricing, add-ons, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
+| [docs/BILLING.md](docs/BILLING.md) | The rate card, plans (Starter included), volume pricing, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
+| [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, error reports by email, daily usage counts, deleting a business, the agreements, deployment details, what to do before the first customer |
@@ -99,7 +100,9 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Help | `/help`, `/help/sensors`, `/api/help` | Customer questions answered from the code, what to check when a sensor is offline, and how to set each kind of sensor up |
 | Sales sheets | `/for/<industry>/sheet` | One printed page per industry: the problem, the fix, the alarm limits, an alert, the prices and the trial, all from the code |
 | API reference | `/developers` | Every customer-facing endpoint, its credential, parameters and an example body, rendered from the schema with no script |
-| Pricing page | `/pricing` | Every rate and a calculator, rendered from the rate card |
+| Pricing page | `/pricing` | Every rate, the Starter plan and a calculator, rendered from the rate card |
+| Bring a friend | `/api/referrals` | A referral code per business, a longer trial for the friend, a month's credit when they pay |
+| Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to OmniArmor, which fills in its temperature-log check |
 
 
 The landing page is at `/`, the console at `/console`, the reseller portal

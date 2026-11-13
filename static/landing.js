@@ -43,7 +43,10 @@ async function paintPlans() {
         <div>
           <div class="plan-name">${esc(p.name)}</div>
           <div class="plan-seats">Up to ${p.max_sensors.toLocaleString("en-US")}
-            sensor${p.max_sensors === 1 ? "" : "s"}</div>
+            sensor${p.max_sensors === 1 ? "" : "s"}${p.max_locations
+              ? ` at ${p.max_locations} location${p.max_locations === 1 ? "" : "s"}` : ""}</div>
+          ${p.monthly_usd != null
+            ? `<div class="plan-price">${money(p.monthly_usd)} a month, flat</div>` : ""}
         </div>
         <ul>
           <li>Breach detection on every reading</li>

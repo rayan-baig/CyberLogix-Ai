@@ -302,6 +302,7 @@ MUST_SEND = (
 MANAGED = {
     "licence-alert:": ("/console", "Change the licences we remind you about"),
     "digest:operator:": ("/book", "The same figures, and the settings behind them"),
+    "omniarmor-failing:": ("/console", "Each day sent to OmniArmor, and the connection"),
 }
 
 _URL = re.compile(r"https?://[^\s<>\"']+")

@@ -176,7 +176,10 @@ def faq() -> List[Dict[str, Any]]:
         ADD_ONS,
         ANNUAL_PREPAY_DISCOUNT_PERCENT,
         PRICE_BOOK,
+        REFERRAL_REWARDS_PER_YEAR,
+        REFERRAL_TRIAL_DAYS,
         headline,
+        starter_terms,
     )
     from sitewide import settings as site_wide_settings
     from store import MAX_READINGS_PER_SENSOR
@@ -190,7 +193,11 @@ def faq() -> List[Dict[str, Any]]:
     top_vertical, top = max(PRICE_BOOK.items(), key=lambda kv: kv[1]["monthly_usd"])
     per_site = [v for v, entry in PRICE_BOOK.items() if entry.get("per_site")]
     add_on_names = ", ".join(
-        f"{e(a['name'])} ({_money(a['monthly_usd'])} a month)" for a in ADD_ONS.values())
+        f"{e(a['name'])} ({_money(a['monthly_usd'])} a month"
+        + (" per location" if a["basis"] == "per location" else "") + ")"
+        for a in ADD_ONS.values())
+    starter = starter_terms()
+    bundle = next((a for a in ADD_ONS.values() if a.get("billed_while_connected")), None)
     cooldown_minutes = TEST_ALERT_COOLDOWN_SECONDS // 60
     contact = support_address()
 
@@ -228,6 +235,11 @@ def faq() -> List[Dict[str, Any]]:
                 f"{LICENCE_GRACE_DAYS} more days. To keep going after that, "
                 "the owner picks a paid plan under What you pay, in the "
                 "Money tab.",
+                f"Started with a friend's referral code? Your trial is "
+                f"{REFERRAL_TRIAL_DAYS} days. Your own code is under Bring a "
+                "friend, in the Money tab (owners only): when a business that "
+                "used it pays its first invoice, you get a month free on one "
+                f"location, up to {REFERRAL_REWARDS_PER_YEAR} times a year.",
             ],
         },
         {
@@ -238,6 +250,9 @@ def faq() -> List[Dict[str, Any]]:
                 f"trade: from {e(facts['from_label'])} a month per "
                 f"{e(facts['from_unit'])} up to {_money(top['monthly_usd'])} "
                 f"per {e(top['unit'])}.{restaurant_note}",
+                f"A small café or shop can take {e(starter['name'])} instead: "
+                f"{e(starter['monthly_label'])} a month for one location and "
+                f"up to {starter['max_units']} fridges or freezers.",
                 'Every rate is on the <a href="/pricing">pricing page</a>, '
                 "with a calculator that works out your monthly price.",
             ],
@@ -248,6 +263,11 @@ def faq() -> List[Dict[str, Any]]:
             "a": [
                 "Never a share of savings. The optional extras are flat "
                 f"monthly fees: {add_on_names}.",
+                *([f"The {e(bundle['name'])} sends each day's fridge and "
+                   "freezer record to OmniArmor, which fills in its "
+                   "temperature-log checks. Connect it under Setup, OmniArmor "
+                   "connection. It is free during the trial and billed while "
+                   "it is connected."] if bundle else []),
                 "Paying a year ahead takes "
                 f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}% off that year.",
             ],
@@ -262,6 +282,11 @@ def faq() -> List[Dict[str, Any]]:
                     + (", with phone calls." if t["voice_escalation"]
                        else ", text alerts only.")
                     for t in PLAN_TIERS.values()),
+                f"{e(starter['name'])} is {e(starter['monthly_label'])} a month "
+                f"for one location, with texts and the site-wide alert. A "
+                f"unit past {starter['max_units']}, or a second location, asks "
+                "you to move to Growth first; nothing is charged until you do, "
+                "and then only from the day you move.",
             ],
         },
         {
@@ -287,7 +312,8 @@ def faq() -> List[Dict[str, Any]]:
                 "people on call, in the order you set, until one of them "
                 "answers and presses 1. Phone calls come with the "
                 f"{e(' and '.join(with_calls))} plans; the "
-                f"{e(' and '.join(without_calls))} plan sends texts only.",
+                f"{e(' and '.join(without_calls))} "
+                f"plan{'s send' if len(without_calls) > 1 else ' sends'} texts only.",
                 "If a text fails to send, we try it again "
                 f"{_minutes(SMS_RETRY_AFTER_MINUTES)} minutes after the "
                 "problem opened.",

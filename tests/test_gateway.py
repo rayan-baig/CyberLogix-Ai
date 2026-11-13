@@ -29,7 +29,7 @@ def test_health_reports_subsystem_state(api):
     from main import MODULES_ACTIVE
 
     assert body["modules_active"] == len(MODULES_ACTIVE)
-    assert body["plan_tiers"] == ["trial", "growth", "enterprise"]
+    assert body["plan_tiers"] == ["trial", "starter", "growth", "enterprise"]
 
 
 def test_every_router_is_actually_mounted(api):

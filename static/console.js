@@ -624,6 +624,8 @@ const OPTIONAL_PANELS = {
   byodSeen: "byod-samples",
   knocking: "knock-body",
   pollers: "poller-body",
+  referrals: "referral-body",
+  omni: "omni-body",
   tasks: "task-body",
   peopleAlerts: "licence-alerts",
   peopleCal: "people-cal",
@@ -695,6 +697,11 @@ async function refresh() {
     knocking: () => api("/api/doorstep"),
     peopleAlerts: () => api("/api/people/alerts"),
     pollers: () => api("/api/pollers"),
+    // Owners only. Anyone else is told so on the card, not shown an error.
+    referrals: () => api("/api/referrals/me").catch((err) =>
+      (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
+    omni: () => api("/api/connections/omniarmor").catch((err) =>
+      (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     tasks: () => api("/api/tasks"),
     staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
@@ -741,6 +748,8 @@ async function refresh() {
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
   paint("knocking", () => renderKnocking(got.knocking));
   paint("pollers", () => renderPollers(got.pollers));
+  paint("referrals", () => renderReferrals(got.referrals));
+  paint("omni", () => renderOmni(got.omni));
   paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
     renderLicenceAlerts(got.peopleAlerts);
@@ -1616,10 +1625,14 @@ function upgradeBlock(tenant) {
     return `<div class="u-bt u-mt-9 u-pt-9 u-fs-12-5">
          <span class="s-good">You are on ${esc(tenant.plan_name || tenant.plan)}
            now.</span>
-         <span class="u-c-muted">Phone-call escalation and the
-           forecast are on. Your first invoice follows by email.</span>
+         <span class="u-c-muted">${tenant.voice_escalation
+           ? "Phone-call escalation and the forecast are on."
+           : "Texts and the site-wide alert are on."} Your first invoice
+           follows by email.</span>
        </div>`;
   }
+  const starter = (state.data && state.data.starter) || null;
+  if (tenant && tenant.plan === "starter") return starterBlock(tenant, starter);
   if (!tenant || tenant.plan !== "trial") return "";
 
   if (!(state.user && state.user.role === "owner")) {
@@ -1637,11 +1650,42 @@ function upgradeBlock(tenant) {
         invoiced afterwards — nothing is charged here and no card is asked
         for.</div>
       <div class="u-d-flex u-gap-8 u-flex-wrap">
+        ${starter ? `<button class="btn btn-sm" data-upgrade="starter">
+          Starter · ${esc(starter.monthly_label)} a month · 1 location,
+          ${esc(starter.max_units)} units</button>` : ""}
         <button class="btn btn-sm btn-primary" data-upgrade="growth">
           Growth · 50 units</button>
         <button class="btn btn-sm" data-upgrade="enterprise">
           Enterprise · 1000 units</button>
       </div>
+      ${starter ? `<div class="u-fs-11-5 u-c-muted u-mt-7">Starter is for a
+        caf&eacute; or shop: texts and the site-wide alert, no phone
+        calls.</div>` : ""}
+      <div id="upgrade-out" class="u-fs-11-5 u-mt-7"></div>
+    </div>`;
+}
+
+/* Starter's way up. The fourth unit and the second location are refused
+   with the same words; this is where the owner can act on them. */
+function starterBlock(tenant, starter) {
+  const units = starter ? starter.max_units : 3;
+  const price = starter ? starter.monthly_label : "";
+  const summary = `<div class="u-fs-12-5 u-c-ink-2 u-mb-3">Starter${
+      price ? ` · ${esc(price)} a month` : ""}</div>
+    <div class="u-fs-11-5 u-c-muted u-mb-8">One location and up to
+      ${esc(units)} fridges or freezers, texts and the site-wide alert
+      included. A fourth unit or a second location needs Growth, which adds
+      phone calls and the forecast. Moving bills the rate card from your
+      next invoice, for the days after the move only; nothing is charged
+      here.</div>`;
+  if (!(state.user && state.user.role === "owner")) {
+    return `<div class="u-bt u-mt-9 u-pt-10">${summary}
+      <div class="u-fs-11-5 u-c-muted">An owner can move the account to
+        Growth from here.</div></div>`;
+  }
+  return `<div class="u-bt u-mt-9 u-pt-10">${summary}
+      <button class="btn btn-sm btn-primary" data-upgrade="growth">Move to
+        Growth · 50 units</button>
       <div id="upgrade-out" class="u-fs-11-5 u-mt-7"></div>
     </div>`;
 }
@@ -2687,6 +2731,187 @@ $("poller-form").addEventListener("submit", async (event) => {
       .forEach((id) => { $(id).value = ""; });
     renderPollers(await api("/api/pollers"));
     toast("Added. Press Try now to see what comes back.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+/* ---------------- bring a friend ----------------
+   Owners only (the server refuses anyone else with 403, drawn here as a
+   sentence rather than an error). The business that joined is shown by
+   its name and nothing else. */
+
+function renderReferrals(seen) {
+  const body = $("referral-body");
+  if (!seen || seen.notOwner) {
+    $("referral-note").textContent = "Owners only";
+    body.innerHTML = `<div class="sub">Only an owner can see the referral
+      code and what it has earned.</div>`;
+    return;
+  }
+  $("referral-note").textContent = seen.earned_usd
+    ? `${money(seen.earned_usd)} earned`
+    : `${seen.joined.length} joined`;
+  // The configured address when there is one; this page's own otherwise,
+  // and the bare path where the page has no web address of its own.
+  const link = seen.link.url || (/^https?:$/.test(location.protocol)
+    ? location.origin + seen.link.path : seen.link.path);
+  const joined = seen.joined.length
+    ? seen.joined.map((j) => `
+      <div class="fc-row">
+        <span class="grow">
+          <span class="fc-id">${esc(j.business)}</span>
+          <span class="sub">${esc(j.status_words)}</span>
+        </span>
+        <span class="sub">${esc(String(j.joined_at || "").slice(0, 10))}</span>
+      </div>`).join("")
+    : `<div class="sub">Nobody has joined with your code yet.</div>`;
+  const earned = seen.earned.map((c) => `
+      <div class="fc-row">
+        <span class="fc-when">${money(c.amount_usd)}</span>
+        <span class="grow">
+          <span class="sub">${esc(c.reason)} · ${esc(c.state)}${
+            c.used_on.length ? ` · ${c.used_on.map((u) => esc(u.number)).join(", ")}` : ""}</span>
+        </span>
+      </div>`).join("");
+  body.innerHTML = `
+    <div class="u-d-flex u-gap-8 u-items-center u-flex-wrap u-mb-8">
+      <code class="u-ff-mono u-fs-16 u-fw-650" id="referral-code">${esc(seen.code)}</code>
+      <button class="btn btn-sm" type="button" id="referral-copy"
+              data-link="${esc(link)}">Copy the link</button>
+    </div>
+    <div class="u-fs-12 u-c-muted u-wb-break-all u-mb-8">${esc(link)}</div>
+    <div class="u-fs-12 u-c-ink-2 u-mb-8">They get a ${esc(seen.trial_days)}-day
+      trial. You get ${money(seen.reward_usd)} off, one month on one location,
+      when they pay their first invoice. ${esc(seen.rewards_left)} of
+      ${esc(seen.rewards_per_year)} rewards left this year.</div>
+    <div class="u-fs-12-5 u-c-ink-2 u-mt-10 u-mb-3">Who joined</div>${joined}
+    ${earned ? `<div class="u-fs-12-5 u-c-ink-2 u-mt-10 u-mb-3">What you earned</div>${earned}` : ""}
+    ${seen.credit_waiting_usd ? `<div class="sub u-mt-8">${money(seen.credit_waiting_usd)}
+      comes off your next invoice.</div>` : ""}`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("#referral-copy");
+  if (!button) return;
+  try {
+    await navigator.clipboard.writeText(button.dataset.link);
+    toast("Copied the link.", "ok");
+  } catch (_) {
+    toast(button.dataset.link);
+  }
+});
+
+/* ---------------- the OmniArmor connection ----------------
+   The form is filled from the server only when what the server holds has
+   changed and nobody is typing in it, so the poll never wipes a half
+   pasted key. The key itself never comes back: only its last four. */
+
+let omniSignature = null;
+
+function renderOmni(seen) {
+  const owner = Boolean(seen && !seen.notOwner);
+  $("omni-owner").hidden = !owner;
+  $("omni-not-owner").hidden = owner;
+  if (!owner) {
+    $("omni-note").textContent = "Owners only";
+    return;
+  }
+  $("omni-note").textContent = seen.connected ? seen.status : "Not connected";
+  const signature = [seen.connected, seen.address, seen.key_hint, seen.site_label,
+    seen.timezone, (seen.site_ids || []).join(","),
+    seen.sites.map((s) => s.site_id).join(",")].join("|");
+  if (signature !== omniSignature && !$("omni-form").contains(document.activeElement)) {
+    omniSignature = signature;
+    $("omni-address").value = seen.address || "";
+    $("omni-site-label").value = seen.site_label || "";
+    $("omni-tz").value = seen.timezone || "";
+    $("omni-key").value = "";
+    $("omni-key").placeholder = seen.key_hint
+      ? `Saved key ends ${seen.key_hint}. Paste a new one to replace it.`
+      : "clx_\u2026 from OmniArmor: Settings, Connections";
+    $("omni-sites").innerHTML = seen.sites.length > 1
+      ? `<div class="u-fs-12 u-c-muted u-mb-3">Sites to include (none ticked:
+           every unit, in one report)</div>`
+        + seen.sites.map((s) => `
+          <label class="u-d-flex u-gap-6 u-items-center u-fs-12-5">
+            <input type="checkbox" class="omni-site" value="${esc(s.site_id)}"${
+              (seen.site_ids || []).includes(s.site_id) ? " checked" : ""}>
+            ${esc(s.name)}</label>`).join("")
+      : "";
+  }
+  $("omni-test").disabled = !seen.connected;
+  $("omni-remove").disabled = !seen.connected;
+  const price = seen.price;
+  const days = seen.days.map((d) => {
+    const good = d.state === "sent";
+    const said = d.summary
+      ? `${esc(d.summary.units_in_range_all_day)} of ${esc(d.summary.units_total)}
+         in range all day${d.summary.breaches ? ` · ${esc(d.summary.breaches)} out of range` : ""}`
+      : esc(d.detail);
+    return `
+      <div class="fc-row">
+        <span class="fc-when ${good ? "" : "high"}">${esc(good ? "sent" : (d.outcome || d.state))}</span>
+        <span class="grow">
+          <span class="fc-id">${esc(d.date)}</span>
+          <span class="sub">${said}${d.corrections ? ` · corrected ${esc(d.corrections)}\u00D7` : ""}</span>
+        </span>
+      </div>`;
+  }).join("");
+  $("omni-body").innerHTML = `
+    <div class="u-fs-12-5 u-mb-8 ${seen.ok ? "s-good" : (seen.connected ? "s-warning" : "u-c-muted")}">${
+      esc(seen.connected ? seen.status : "Not connected yet")}</div>
+    ${seen.credential_key_configured ? "" : `<div class="sub u-mb-8">This server
+      cannot store a key yet: CYBERLOGIX_CREDENTIAL_KEY is not set.</div>`}
+    <div class="sub u-mb-8">${esc(price.label)}${price.free_now
+      ? ", free during your trial."
+      : ` · ${money(price.monthly_for_you_usd)} a month for you while connected.`}</div>
+    ${days}`;
+}
+
+$("omni-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const body = {
+    address: $("omni-address").value.trim(),
+    site_label: $("omni-site-label").value.trim(),
+    site_ids: [...document.querySelectorAll(".omni-site:checked")].map((b) => b.value),
+  };
+  if ($("omni-key").value.trim()) body.key = $("omni-key").value.trim();
+  if ($("omni-tz").value.trim()) body.timezone = $("omni-tz").value.trim();
+  try {
+    const seen = await api("/api/connections/omniarmor", {
+      method: "PUT", body: JSON.stringify(body),
+    });
+    $("omni-key").value = "";
+    omniSignature = null;
+    renderOmni(seen);
+    toast("Saved. The key is stored encrypted; only its last four are shown.", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+$("omni-test").addEventListener("click", async () => {
+  const button = $("omni-test");
+  button.disabled = true;
+  try {
+    const out = await api("/api/connections/omniarmor/test", { method: "POST" });
+    renderOmni(out.connection);
+    toast(out.message, out.status === "ok" || out.status === "already_sent" ? "ok" : "err");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("omni-remove").addEventListener("click", async () => {
+  if (!confirm("Disconnect OmniArmor? The key is deleted and nothing more is sent.")) return;
+  try {
+    const out = await api("/api/connections/omniarmor", { method: "DELETE" });
+    omniSignature = null;
+    renderOmni(out);
+    toast(out.message, "ok");
   } catch (err) {
     toast(err.message, "err");
   }

@@ -220,7 +220,7 @@ def arrears_lines(
     if STORE.active_contract(tenant.tenant_id) is not None:
         return []
 
-    from pricing import PRICE_BOOK, plural
+    from pricing import PRICE_BOOK, STARTER_PLAN, plural
 
     window_open = sub.period_start(index - 1)
     window_close = sub.period_start(index)
@@ -228,13 +228,29 @@ def arrears_lines(
     if span <= 0:
         return []
 
+    # Starter is one flat price whatever its three units do, so a period
+    # spent on it owes nothing for units added during it. A period in which
+    # the business moved up to Growth owes, from the day it moved, the rate
+    # card less the Starter price already billed for those days.
+    if tenant.plan == STARTER_PLAN:
+        return []
+    upgrade = starter_upgrade_in(tenant, window_open, window_close)
+    lines: List[Dict[str, Any]] = []
+    covered_until = window_open
+    if upgrade is not None:
+        covered_until = upgrade
+        lines += starter_upgrade_lines(tenant, sub, index, upgrade,
+                                       window_open, window_close)
+
     from pricing import branches, per_site
 
     def owed(joined: Optional[datetime]) -> float:
         # A thing registered before the window opened was on the invoice
         # that opened it; one registered after it closed belongs to this
-        # period, which this invoice already charges in full.
-        if joined is None or joined <= window_open or joined >= window_close:
+        # period, which this invoice already charges in full. On a period
+        # that began on Starter, the flat price covered everything until
+        # the move, so only what came after it owes a part period.
+        if joined is None or joined <= covered_until or joined >= window_close:
             return 0.0
         # Registered in the last moments of the period, it owes a fraction
         # of a cent. Counting it inflates the line's unit count against an
@@ -293,7 +309,6 @@ def arrears_lines(
     )
 
     multiplier = sub.rate_multiplier(index - 1)
-    lines: List[Dict[str, Any]] = []
     for vertical, fractions in sorted(late.items()):
         if vertical not in PRICE_BOOK:
             continue
@@ -359,6 +374,55 @@ def arrears_lines(
     return lines
 
 
+def starter_upgrade_in(tenant: Tenant, window_open: datetime,
+                       window_close: datetime) -> Optional[datetime]:
+    """When this business moved off Starter inside the window, if it did."""
+    from pricing import STARTER_PLAN
+
+    for change in STORE.plan_changes(tenant.tenant_id):
+        if change.get("from_plan") != STARTER_PLAN:
+            continue
+        at = datetime.fromisoformat(str(change["at"]).replace("Z", "+00:00"))
+        if window_open < at < window_close:
+            return at
+    return None
+
+
+def starter_upgrade_lines(tenant: Tenant, sub: Subscription, index: int,
+                          moved: datetime, window_open: datetime,
+                          window_close: datetime) -> List[Dict[str, Any]]:
+    """The part period after a move off Starter, at the rate card.
+
+    The invoice that opened the period charged the flat Starter price for
+    all of it. From the moment of the move the business is on Growth, so
+    it owes the rate card for the units it had then, less the Starter
+    price for the same days: the difference, never the whole card twice.
+    Units added after the move are caught up as ordinary arrears.
+    """
+    from pricing import STARTER_MONTHLY_USD, rate_card_monthly
+
+    span = (window_close - window_open).total_seconds()
+    fraction = max((window_close - moved).total_seconds() / span, 0.0)
+    present = [s for s in STORE.sensors_for(tenant.tenant_id)
+               if s.registered_at is None or s.registered_at <= moved]
+    multiplier = sub.rate_multiplier(index - 1)
+    difference = (rate_card_monthly(present) - STARTER_MONTHLY_USD) * multiplier
+    amount = round(difference * fraction * sub.months_per_period, 2)
+    if amount <= 0:
+        return []
+    plan_name = tenant.entitlements()["name"]
+    return [{
+        "kind": "arrears",
+        "description": (
+            f"Moved from Starter to {plan_name} on {moved.date().isoformat()}: "
+            f"the rate card less Starter, part period to "
+            f"{window_close.date().isoformat()}"),
+        "quantity": 1,
+        "unit_price_usd": round(difference, 2),
+        "amount_usd": amount,
+    }]
+
+
 def unsold_add_ons(
     tenant: Tenant, sub: Optional[Subscription], priced: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
@@ -368,15 +432,28 @@ def unsold_add_ons(
     operator's worklist, so the two can never quote different numbers for
     the same account.
     """
-    from pricing import ADD_ONS, add_on_price
+    from pricing import (
+        ADD_ONS,
+        STARTER_ADD_ONS,
+        STARTER_PLAN,
+        add_on_price,
+        auto_add_ons,
+        locations_billed,
+    )
 
     units = priced["units_total"]
     attached = set(sub.add_ons) if sub else set()
+    attached |= set(auto_add_ons(tenant))
+    places = max(locations_billed(tenant), 1)
     rows = []
     for key, entry in ADD_ONS.items():
         if key in attached:
             continue
-        monthly = add_on_price(key, units) if units else entry["monthly_usd"]
+        if tenant.plan == STARTER_PLAN and key not in STARTER_ADD_ONS:
+            continue  # not on Starter; moving up is the conversation
+        if entry.get("billed_while_connected"):
+            continue  # switched on by connecting it, not sold by attaching it
+        monthly = add_on_price(key, units, places) if units else entry["monthly_usd"]
         rows.append(
             {
                 "kind": "add_on",
@@ -460,9 +537,11 @@ def bill_period(
                         }
                     )
 
-            invoice = STORE.create_invoice(
-                tenant=tenant,
-                lines=lines,
+            from credits import create_invoice as create_with_credit
+
+            invoice = create_with_credit(
+                tenant,
+                lines,
                 # The real length of this period. A flat 30 a month made a
                 # year's prepayment buy 360 days, and a 31-day month bought
                 # 30, so a paid-up customer could lapse before the next bill.
@@ -872,6 +951,25 @@ def refuse_if_behind(tenant: Tenant, feature: str) -> None:
 # ---- routes ------------------------------------------------------------
 
 
+def refuse_off_plan_add_ons(tenant: Tenant, keys: Iterable[str]) -> None:
+    """Starter takes only the extras that fit one location."""
+    from pricing import ADD_ONS, STARTER_ADD_ONS, STARTER_PLAN
+
+    if tenant.plan != STARTER_PLAN:
+        return
+    refused = [k for k in keys if k not in STARTER_ADD_ONS]
+    if refused:
+        names = ", ".join(ADD_ONS[k]["name"] for k in refused if k in ADD_ONS)
+        allowed = ", ".join(ADD_ONS[k]["name"] for k in STARTER_ADD_ONS)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{names} is not on Starter, which takes {allowed}. Move to "
+                "Growth from What you pay to add it; nothing is charged until "
+                "you do."),
+        )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def sign(
     payload: SignRequest,
@@ -887,6 +985,7 @@ def sign(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
         )
+    refuse_off_plan_add_ons(tenant, payload.add_ons)
     if tenant.plan == "trial":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -966,12 +1065,14 @@ def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
     """Year-by-year contract value at the rates this contract will bill."""
     from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, build_subscription
 
-    from pricing import ADD_ONS, add_on_price
+    from pricing import ADD_ONS, add_on_price, auto_add_ons, locations_billed
 
     priced = build_subscription(tenant)
     base = priced["monthly_total_usd"]
     units = priced["units_total"]
-    base += sum(add_on_price(k, units) for k in sub.add_ons if k in ADD_ONS)
+    places = locations_billed(tenant)
+    keys = dict.fromkeys(list(sub.add_ons) + auto_add_ons(tenant))
+    base += sum(add_on_price(k, units, places) for k in keys if k in ADD_ONS)
 
     rows = []
     for year in range(1, sub.term_years + 1):
@@ -1053,6 +1154,7 @@ def set_add_ons(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
         )
+    refuse_off_plan_add_ons(tenant, wanted)
 
     before = set(sub.add_ons)
     updated = STORE.set_subscription_add_ons(sub, wanted)

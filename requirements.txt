@@ -4,3 +4,4 @@ google-genai==1.2.0
 pydantic[email]==2.10.4
 twilio==9.4.1
 tzdata==2026.1
+cryptography==50.0.2

@@ -608,7 +608,7 @@ class HubStore:
     # Never handed out in an export, even to the owner.
     _SECRET_FIELDS = frozenset({
         "password_hash", "key_hash", "api_key", "token", "token_hash",
-        "secret", "ingest_key", "ingest_key_hash",
+        "secret", "ingest_key", "ingest_key_hash", "key_ciphertext",
     })
 
     def _rows_of_tenant_locked(self, tenant_id: str) -> List[Tuple[str, str, Dict[str, Any]]]:
@@ -839,11 +839,27 @@ class HubStore:
     def change_plan(self, tenant: Tenant, plan: str, extend_term: bool = True) -> Tenant:
         """Move a tenant to a plan. `extend_term` also starts the plan's term."""
         with self._lock:
+            if tenant.plan != plan:
+                # Kept so the bill can tell when a business moved off a
+                # flat plan part-way through a period (pricing, contracts).
+                change_id = self._next_id("PLC")
+                self._db.put("plan_change", change_id, {
+                    "change_id": change_id,
+                    "tenant_id": tenant.tenant_id,
+                    "from_plan": tenant.plan,
+                    "to_plan": plan,
+                    "at": iso(utc_now()),
+                })
             tenant.plan = plan
             if extend_term:
                 tenant.expires_at = utc_now() + timedelta(days=PLAN_TIERS[plan]["term_days"])
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
+
+    def plan_changes(self, tenant_id: str) -> List[Dict[str, Any]]:
+        """Every change of plan this business has made, oldest first."""
+        rows = [r for r in self._db.all("plan_change") if r.get("tenant_id") == tenant_id]
+        return sorted(rows, key=lambda r: (r.get("at") or "", r.get("change_id") or ""))
 
     def grant_grace(self, tenant: Tenant, days: int) -> None:
         """An expired licence runs again until `days` from now. Never shortens one."""
@@ -2488,6 +2504,11 @@ class HubStore:
             invoice.state = "void"
             invoice.voided_at = utc_now()
             self._db.put("invoice", invoice.invoice_id, invoice.to_row())
+            # Any account credit it used goes back on the account, for the
+            # invoice that replaces it (credits.py).
+            from credits import release_for_invoice
+
+            release_for_invoice(invoice.invoice_id)
 
             if invoice.billing_period is not None:
                 sub = self._subscriptions.get(invoice.source)

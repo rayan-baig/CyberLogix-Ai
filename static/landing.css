@@ -154,6 +154,7 @@ h3 {
 .plan[data-featured="yes"] { border-color: var(--accent-deep); background: var(--raised); }
 .plan-name { font-family: var(--display); font-size: 26px; font-weight: 400; color: var(--ink); }
 .plan-seats { font-size: 14px; color: var(--muted); }
+.plan-price { font-size: 15px; color: var(--ink); margin-top: 4px; }
 .plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; flex: 1; }
 .plan li { font-size: 14px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start; }
 .plan li::before { content: "—"; color: var(--accent-deep); flex: none; }

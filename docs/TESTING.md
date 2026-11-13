@@ -41,8 +41,8 @@ sent twice), `tests/test_sweep_overlap.py` and `tests/test_oncall.py`.
 
 ## Types in the money code
 
-The seven modules that price, invoice, take payment and keep the books are
-type-checked in CI. Only those: `mypy.ini` lists them, so the check stays
+The nine modules that price, invoice, take payment, give credit and keep
+the books are type-checked in CI. Only those: `mypy.ini` lists them, so the check stays
 small enough that every finding gets read.
 
 ```bash

@@ -380,6 +380,11 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         from invoicing import send_receipt
 
         send_receipt(tenant, invoice, reference_used, invoice.state == "paid")
+        # A referred business's first invoice paid in full earns its
+        # referrer a credit (referrals.py). Never raises.
+        from referrals import after_settlement
+
+        after_settlement(tenant, invoice)
         logger.info(
             "Stripe %s settled %s with $%.2f; %s.",
             event_id, invoice.number, amount,

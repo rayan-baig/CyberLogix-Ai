@@ -78,6 +78,8 @@ import scheduler
 import usage
 from licenses import router as license_router
 from pricing import router as billing_router
+from referrals import router as referrals_router
+from omniarmor import router as omniarmor_router
 from shortcuts import router as shortcuts_router
 from signup import router as signup_router
 from simulator import router as simulator_router
@@ -273,6 +275,8 @@ app.include_router(tasks_router)
 app.include_router(watchdog_router)
 app.include_router(inspector_router)
 app.include_router(payments_router)
+app.include_router(referrals_router)
+app.include_router(omniarmor_router)
 app.include_router(margin_router)
 app.include_router(books_router)
 app.include_router(simulator_router)
@@ -314,6 +318,9 @@ MODULES_ACTIVE = [
     "payment_reconciliation",
     "margin_analysis",
     "books_and_ledger_export",
+    "starter_plan",
+    "bring_a_friend_referrals",
+    "kitchen_safety_bundle_omniarmor",
 ]
 
 
@@ -1110,8 +1117,16 @@ def _pricing_text() -> Dict[str, str]:
         headline,
     )
 
+    from pricing import REFERRAL_TRIAL_DAYS, bundle_price_label, starter_terms
+
     facts = headline()
+    starter = starter_terms()
     return {
+        "%%STARTER_PRICE%%": starter["monthly_label"],
+        "%%STARTER_RATE%%": repr(float(starter["monthly_usd"])),
+        "%%STARTER_UNITS%%": str(starter["max_units"]),
+        "%%BUNDLE_PRICE%%": bundle_price_label(),
+        "%%REFERRAL_DAYS%%": str(REFERRAL_TRIAL_DAYS),
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
         "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
@@ -1144,16 +1159,24 @@ def _pricing_markup() -> Dict[str, str]:
         f'<td>{e(r["unit"])}</td>'
         f'<td class="num">{money(r["monthly_usd"])}</td></tr>'
         for r in data["rates"])
+    def per(a) -> str:
+        return " per location" if a["basis"] == "per location" else ""
+
     addon_boxes = "".join(
         f'<label><input type="checkbox" class="calc-addon" value="{e(a["key"])}" '
-        f'data-rate="{a["monthly_usd"]!r}" data-name="{e(a["name"])}"> '
-        f'{e(a["name"])} · {money(a["monthly_usd"])} a month</label>'
+        f'data-rate="{a["monthly_usd"]!r}" data-name="{e(a["name"])}" '
+        f'data-basis="{e(a["basis"])}" data-starter="{"yes" if a["on_starter"] else "no"}"> '
+        f'{e(a["name"])} · {money(a["monthly_usd"])} a month{per(a)}'
+        f'{" (free on the trial)" if a["included_in_trial"] else ""}</label>'
         for a in data["add_ons"])
     addon_rows = "".join(
         f'<tr data-add-on="{e(a["key"])}"><td>{e(a["name"])}</td>'
-        f'<td>{e(a["description"])}</td>'
-        f'<td class="num">{money(a["monthly_usd"])}</td></tr>'
+        f'<td>{e(a["description"])}'
+        f'{"" if a["on_starter"] else " Not on Starter."}</td>'
+        f'<td class="num">{money(a["monthly_usd"])}{per(a)}</td></tr>'
         for a in data["add_ons"])
+    starter = data["starter"]
+    starter_points = "".join(f"<li>{e(item)}</li>" for item in starter["includes"])
 
     def term(days: int) -> str:
         if days % 365 == 0:
@@ -1161,17 +1184,26 @@ def _pricing_markup() -> Dict[str, str]:
             return f"{years} year" + ("" if years == 1 else "s")
         return f"{days} days, free"
 
+    def plan_price(key: str) -> str:
+        if key == "trial":
+            return "Free"
+        if key == starter["plan"]:
+            return f"{money(starter['monthly_usd'])}, one location"
+        return "The rate card"
+
     plan_rows = "".join(
         f'<tr><td>{e(t["name"])}</td><td class="num">{t["max_sensors"]:,}</td>'
         f'<td>{"Yes" if t["voice_escalation"] else "No, texts only"}</td>'
-        f'<td>{e(term(int(t["term_days"])))}</td></tr>'
-        for t in PLAN_TIERS.values())
+        f'<td>{e(term(int(t["term_days"])))}</td>'
+        f'<td>{e(plan_price(key))}</td></tr>'
+        for key, t in PLAN_TIERS.items())
     return {
         "%%RATE_OPTIONS%%": options,
         "%%RATE_ROWS%%": rate_rows,
         "%%ADDON_CHECKBOXES%%": addon_boxes,
         "%%ADDON_ROWS%%": addon_rows,
         "%%PLAN_ROWS%%": plan_rows,
+        "%%STARTER_POINTS%%": starter_points,
     }
 
 

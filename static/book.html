@@ -129,6 +129,19 @@
       <div class="totals" id="cash-totals"></div>
       <div id="cash-list"></div>
       <p class="note" id="cash-note"></p>
+
+      <h3 class="sub">A referred business was refunded</h3>
+      <p class="note">After giving a business its money back, take back what
+        is left of the month free its referrer earned for it. What already
+        came off an invoice stays off.</p>
+      <form class="entry" id="refund-form">
+        <label class="wide">Account ID of the business that was refunded
+          <input id="refund-tenant" type="text" maxlength="40" required
+                 placeholder="TEN-000123">
+        </label>
+        <button type="submit">Withdraw the referral reward</button>
+      </form>
+      <p class="said" id="refund-said"></p>
     </section>
 
     <section class="panel" id="panel-health" role="tabpanel" hidden>
