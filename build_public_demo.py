@@ -61,6 +61,8 @@ PATHS = [
     "/api/accounts/businesses",
     "/api/simulator",
     "/api/help/sensor-offline",
+    "/api/referrals/me",
+    "/api/connections/omniarmor",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
@@ -87,6 +89,7 @@ NOT_FETCHED = {
     "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
     "/api/contacts/test-alert", "/api/simulator/units",
     "/api/tasks/from-meeting",
+    "/api/connections/omniarmor/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
 }
@@ -340,6 +343,8 @@ def capture() -> dict:
                             "timezone": "America/New_York"},
         }).raise_for_status()
 
+        _bundle_and_referrals(client, head, home)
+
         for path in PATHS:
             got = client.get(path, headers=head)
             out[path] = {"status": got.status_code, "body": got.json()}
@@ -385,6 +390,65 @@ def capture() -> dict:
     if bad:
         raise SystemExit(f"Refusing to build a demo with broken panels: {bad}")
     return out
+
+
+def _bundle_and_referrals(client, head, home: str) -> None:
+    """The two money cards with something on them.
+
+    The OmniArmor connection, with last night's report sent to a stand-in
+    that answers the way OmniArmor's contract says it does (nothing leaves
+    this build), and two businesses that joined with the referral code,
+    one of which has paid its first invoice.
+    """
+    import secrets
+
+    import omniarmor
+    import referrals
+    from store import STORE
+
+    if not omniarmor.CREDENTIAL_KEY:
+        # A throwaway, for this build's throwaway database only.
+        omniarmor.CREDENTIAL_KEY = secrets.token_urlsafe(32)
+    client.put("/api/connections/omniarmor", headers=head, json={
+        "address": "https://omniarmor.example.com",
+        "key": "clx_" + secrets.token_urlsafe(32)[:43].ljust(43, "x"),
+        "site_label": "Main kitchen", "timezone": "America/New_York",
+    }).raise_for_status()
+
+    def stand_in(url, key, body):
+        return 200, {}, json.dumps({
+            "ok": True, "matched_checks": 1, "ticked": 1, "noted": 0, "unchanged": 0,
+            "checks": [{"industry": "RestoArmor", "check": "cold_holding",
+                        "title": "Cold holding at 41\u00b0F or below",
+                        "result": "ticked"}]}).encode()
+
+    # The seed puts a week of readings on units it registers today; date
+    # the units from before their readings, as real ones would be, so last
+    # night's report has them in it.
+    from datetime import timedelta
+
+    for sensor in STORE.sensors_for(home):
+        first = min((r.recorded_at for r in STORE.readings_for(sensor.sensor_id)),
+                    default=None)
+        if first is not None and (sensor.registered_at is None or sensor.registered_at > first):
+            sensor.registered_at = first - timedelta(hours=1)
+            STORE._db.put("sensor", sensor.sensor_id, sensor.to_row())
+    omniarmor.run_daily(transport=stand_in, sleep=lambda seconds: None)
+
+    tenant = STORE.get_tenant(home)
+    code = referrals.code_for(tenant)
+    for name, pays in (("Corner Cafe", True), ("Pier Street Deli", False)):
+        friend = STORE.create_tenant(
+            company_name=name, contact_name="Sam Lee", contact_phone="+1-555-0170",
+            contact_email=f"hello@{name.split()[0].lower()}.example", plan="trial")
+        referrals.record_signup(friend, tenant, code)
+        if pays:
+            STORE.change_plan(friend, "starter", extend_term=False)
+            invoice = STORE.create_invoice(tenant=friend, lines=[{
+                "kind": "subscription", "description": "Starter plan: 1 location",
+                "quantity": 1, "unit_price_usd": 79.0, "amount_usd": 79.0}])
+            invoice, _ = STORE.settle_invoice(invoice, "DEMO-WIRE-0002")
+            referrals.after_settlement(friend, invoice)
 
 
 def refuse_outbound(page: str) -> None:

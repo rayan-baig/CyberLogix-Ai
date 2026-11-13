@@ -158,6 +158,19 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     last = today.replace(day=1) - timedelta(days=1)
     monthly.send_for(the_tenant, first, last)                        # monthly
 
+    # The daily report to OmniArmor has not got through for two days.
+    import omniarmor
+
+    STORE._db.put(omniarmor.CONNECTION_KIND, the_tenant.tenant_id, {
+        "tenant_id": the_tenant.tenant_id, "base_url": "https://omniarmor.example.com",
+        "enabled": True, "last_detail": "OmniArmor answered 503."})
+    for back in (2, 1):
+        day = (today - timedelta(days=back)).isoformat()
+        STORE._db.put(omniarmor.DAY_KIND, f"{the_tenant.tenant_id}:{day}", {
+            "tenant_id": the_tenant.tenant_id, "date": day, "state": "failed",
+            "last_outcome": "failed", "sent_fingerprint": None})
+    assert omniarmor.maybe_email_owners(the_tenant)                  # omniarmor-failing
+
     # The bill goes unpaid.
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
     invoice.due_at = utc_now() - timedelta(days=30)
@@ -201,6 +214,7 @@ KINDS = {
     "error-report:": "must",
     "licence-alert:": "manage",
     "digest:operator:": "manage",
+    "omniarmor-failing:": "manage",
     "report:": "unsubscribe",
     "monthly:": "unsubscribe",
     "trial:": "unsubscribe",

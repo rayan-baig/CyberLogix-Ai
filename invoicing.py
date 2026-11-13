@@ -270,9 +270,20 @@ def build_lines(
     `months` bills several months on one document, which is what an annual
     prepay is: twelve months at the same year's rate, on one invoice.
     """
-    from pricing import ADD_ONS, SETUP_FEE_PER_SITE_USD, add_on_price, build_subscription
+    from pricing import (
+        ADD_ONS,
+        add_on_price,
+        auto_add_ons,
+        build_subscription,
+        locations_billed,
+        setup_fee_per_site,
+    )
 
     subscription = build_subscription(tenant)
+    # Picked add-ons, then any billed because they are switched on (the
+    # Kitchen Safety Bundle while OmniArmor is connected), each once.
+    add_on_keys = list(dict.fromkeys(list(add_on_keys) + auto_add_ons(tenant)))
+    places = locations_billed(tenant)
     lines: List[Dict[str, Any]] = []
     months = max(1, int(months))
     period_note = "" if months == 1 else f" × {months} months"
@@ -294,8 +305,12 @@ def build_lines(
     units = subscription["units_total"]
     for key in add_on_keys:
         entry = ADD_ONS[key]
-        amount = recurring(add_on_price(key, units))
-        quantity = units if entry["basis"] == "per covered unit" else 1
+        amount = recurring(add_on_price(key, units, places))
+        if not amount:
+            # A per-location extra on an estate with no location yet.
+            continue
+        quantity = (units if entry["basis"] == "per covered unit"
+                    else places if entry["basis"] == "per location" else 1)
         lines.append(
             {
                 "kind": "add_on",
@@ -306,7 +321,8 @@ def build_lines(
             }
         )
 
-    if include_setup:
+    fee = setup_fee_per_site(tenant)
+    if include_setup and fee > 0:
         sites = max(len(STORE.sites_for(tenant.tenant_id)), 1) if units else 0
         if sites:
             lines.append(
@@ -317,8 +333,8 @@ def build_lines(
                         f"{'' if sites == 1 else 's'}, one time"
                     ),
                     "quantity": sites,
-                    "unit_price_usd": SETUP_FEE_PER_SITE_USD,
-                    "amount_usd": round(SETUP_FEE_PER_SITE_USD * sites, 2),
+                    "unit_price_usd": fee,
+                    "amount_usd": round(fee * sites, 2),
                 }
             )
 
@@ -400,9 +416,11 @@ def issue_invoice(
                 ),
             )
 
-        invoice = STORE.create_invoice(
-            tenant=tenant,
-            lines=lines,
+        from credits import create_invoice as create_with_credit
+
+        invoice = create_with_credit(
+            tenant,
+            lines,
             period_days=payload.period_days,
             terms_days=PAYMENT_TERMS_DAYS,
             purchase_order=payload.purchase_order,
@@ -515,6 +533,11 @@ def mark_paid(
 
     settled = invoice.state == "paid"
     send_receipt(tenant, invoice, payload.reference, settled)
+    # A referred business's first invoice paid in full earns its referrer a
+    # credit (referrals.py). Never raises: the payment is what matters.
+    from referrals import after_settlement
+
+    after_settlement(tenant, invoice)
     write_audit(
         tenant, None,
         "invoice.paid" if settled else "invoice.part_paid",

@@ -232,7 +232,7 @@ def test_every_add_on_is_a_fixed_fee():
 
     for key, entry in ADD_ONS.items():
         assert entry["monthly_usd"] > 0, key
-        assert entry["basis"] in {"per estate", "per covered unit"}, key
+        assert entry["basis"] in {"per estate", "per covered unit", "per location"}, key
         # Nothing scales with a saving, only with the estate.
         assert "percent" not in entry["basis"]
         assert add_on_price(key, 0) >= 0

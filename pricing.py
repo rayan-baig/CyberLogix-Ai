@@ -236,14 +236,160 @@ ADD_ONS: Dict[str, Dict[str, Any]] = {
             "whole fleet, for anyone specifying what to buy next."
         ),
     },
+    # The CyberLogix half of the Kitchen Safety Bundle with OmniArmor
+    # (omniarmor.py). Billed while the connection is switched on rather
+    # than chosen from a list, so nobody pays for a connection they took
+    # off and nobody runs one that is not on the bill. Free on a trial,
+    # like everything else, so it can be tried before it is bought.
+    "kitchen_safety_bundle": {
+        "name": "Kitchen Safety Bundle",
+        "basis": "per location",
+        "monthly_usd": 29.0,
+        "included_in_trial": True,
+        "billed_while_connected": True,
+        "description": (
+            "Each day's fridge and freezer record sent to OmniArmor, which "
+            "fills in its temperature-log checks for you. Billed while the "
+            "connection is on; free during the trial."
+        ),
+    },
 }
 
+# The bundle's key, named once so the sender and the bill agree on it.
+BUNDLE_ADD_ON = "kitchen_safety_bundle"
 
-def add_on_price(key: str, units: int) -> float:
-    """What one add-on costs an estate of this size."""
+
+def bundle_price_label() -> str:
+    """The bundle's add-on price as words, for the MTRX Horizyn bundle page."""
+    entry = ADD_ONS[BUNDLE_ADD_ON]
+    return f"+${entry['monthly_usd']:,.0f} a month per location"
+
+
+def add_on_price(key: str, units: int, locations: int = 1) -> float:
+    """What one add-on costs an estate of this size.
+
+    `locations` matters only to an add-on priced per location (the
+    Kitchen Safety Bundle); everything else is per estate or per unit.
+    """
     entry = ADD_ONS[key]
-    multiplier = units if entry["basis"] == "per covered unit" else 1
+    if entry["basis"] == "per covered unit":
+        multiplier = units
+    elif entry["basis"] == "per location":
+        multiplier = max(0, int(locations))
+    else:
+        multiplier = 1
     return round(entry["monthly_usd"] * multiplier, 2)
+
+
+def locations_billed(tenant: Tenant) -> int:
+    """How many locations a per-location charge counts for this estate.
+
+    The same rule as the commissioning fee: the sites set up, and one
+    location for an estate that has units but never set up sites. Starter
+    covers one location and cannot set up a second (sites.py).
+    """
+    if not STORE.sensors_for(tenant.tenant_id):
+        return 0
+    return max(len(STORE.sites_for(tenant.tenant_id)), 1)
+
+
+def auto_add_ons(tenant: Tenant) -> List[str]:
+    """Add-ons billed because something is switched on, not because they
+    were picked: today, the Kitchen Safety Bundle while OmniArmor is
+    connected. Imported late: omniarmor imports this module."""
+    if tenant.plan == "trial":
+        return []  # included in the trial, so it can be tried first
+    import omniarmor
+
+    return [BUNDLE_ADD_ON] if omniarmor.bundle_active(tenant.tenant_id) else []
+
+
+# ---- the Starter plan -------------------------------------------------
+#
+# A flat price for a small cafe or shop: one location, up to three fridges
+# or freezers, texts and the site-wide alert included. The seat count and
+# the one-location limit are in domain.PLAN_TIERS["starter"]; the price,
+# and which trades and extras it is for, are here so the owner changes one
+# file. The fourth unit or a second location asks them to move to Growth
+# (licenses.py, sites.py) and charges nothing on its own.
+STARTER_PLAN = "starter"
+STARTER_MONTHLY_USD = 79.0
+# A cafe or shop's fridges and freezers, on the restaurant limits. A
+# vaccine fridge or a server rack is a different job at a different
+# price, and a $79 plan that took either would undercut the rate card by
+# more than the plan is worth.
+STARTER_VERTICALS = ("restaurant",)
+# The extras that fit a one-location plan. The per-estate extras (the
+# vault, benchmarks, equipment intelligence) cost more than the plan and
+# are for estates; moving to Growth opens them.
+STARTER_ADD_ONS = (BUNDLE_ADD_ON,)
+# No commissioning fee on Starter. The per-site fee funds an engineer
+# placing every unit and proving the alert path; a cafe plugging in three
+# sensors itself would meet a $1,500 charge on a $79 plan, which is the
+# surprise this plan is meant not to have.
+STARTER_SETUP_FEE_PER_SITE_USD = 0.0
+
+
+def setup_fee_per_site(tenant: Tenant) -> float:
+    """The one-time commissioning fee per site for this business's plan."""
+    if tenant.plan == STARTER_PLAN:
+        return STARTER_SETUP_FEE_PER_SITE_USD
+    return SETUP_FEE_PER_SITE_USD
+
+
+def starter_terms() -> Dict[str, Any]:
+    """Starter as the pages and the console describe it, from the code."""
+    tier = PLAN_TIERS[STARTER_PLAN]
+    return {
+        "plan": STARTER_PLAN,
+        "name": tier["name"],
+        "monthly_usd": STARTER_MONTHLY_USD,
+        "monthly_label": f"${STARTER_MONTHLY_USD:,.0f}",
+        "max_units": tier["max_sensors"],
+        "max_locations": tier["max_locations"],
+        "verticals": list(STARTER_VERTICALS),
+        "add_ons": list(STARTER_ADD_ONS),
+        "voice_escalation": tier["voice_escalation"],
+        "predictive_forecasting": tier["predictive_forecasting"],
+        "includes": [
+            "Text alerts to everyone on call",
+            "The site-wide alert when several units warm at once",
+            "The inspector's log and the monthly report",
+            "Tamper-evident readings and claim packets",
+        ],
+        "moves_to": "growth",
+    }
+
+
+# ---- bring a friend ---------------------------------------------------
+#
+# A business that signs up with another's referral code gets a longer
+# trial. When it pays its first invoice, the business that referred it
+# gets one month free on one location, as a credit on its next invoice
+# (referrals.py, credits.py).
+REFERRAL_TRIAL_DAYS = 30
+REFERRAL_REWARDS_PER_YEAR = 12
+
+
+def referral_credit_usd(tenant: Tenant) -> float:
+    """One month free on one location, for this referrer, today.
+
+    Starter: the plan's price, which is one location. A business billed per
+    location: that location's rate. A business billed per unit (a rack, a
+    tank) has no location price, so the reward is its cheapest unit for a
+    month. An estate with nothing billable yet gets the cheapest location
+    on the rate card, so the reward is never zero.
+    """
+    if tenant.plan == STARTER_PLAN:
+        return STARTER_MONTHLY_USD
+    verticals = {s.industry_vertical for s in STORE.sensors_for(tenant.tenant_id)
+                 if s.industry_vertical in PRICE_BOOK}
+    by_location = [unit_price(v) for v in verticals if per_site(v)]
+    if by_location:
+        return round(min(by_location), 2)
+    if verticals:
+        return round(min(unit_price(v) for v in verticals), 2)
+    return round(min(e["monthly_usd"] for v, e in PRICE_BOOK.items() if per_site(v)), 2)
 
 
 def escalated_schedule(
@@ -286,6 +432,10 @@ def headline() -> Dict[str, Any]:
         "trial_days": trial["term_days"],
         "trial_units": trial["max_sensors"],
         "industries": len(PRICE_BOOK),
+        # The flat plan for a small cafe or shop, beside the rate card.
+        "starter_usd": STARTER_MONTHLY_USD,
+        "starter_label": f"${STARTER_MONTHLY_USD:,.0f}",
+        "starter_units": PLAN_TIERS[STARTER_PLAN]["max_sensors"],
         # Signing up takes no payment details: SignupRequest has no field
         # for one. Stated here so the page says it from the code that
         # makes it true.
@@ -320,24 +470,45 @@ def calculator_rates() -> Dict[str, Any]:
         "add_ons": [
             {"key": key, "name": entry["name"], "basis": entry["basis"],
              "monthly_usd": entry["monthly_usd"],
-             "description": entry["description"]}
+             "description": entry["description"],
+             "on_starter": key in STARTER_ADD_ONS,
+             "included_in_trial": bool(entry.get("included_in_trial"))}
             for key, entry in ADD_ONS.items()
         ],
+        "starter": starter_terms(),
         "annual_prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
     }
 
 
-def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = ()) -> float:
+def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
+                  plan: Optional[str] = None,
+                  locations: Optional[int] = None) -> float:
     """The monthly price of an estate described as {vertical: units}.
 
     The calculator's sum, in Python: what build_subscription charges for
-    the same estate on the rate card, plus flat add-ons. The page's
-    JavaScript is tested against this.
+    the same estate on the rate card, plus add-ons. The page's JavaScript
+    is tested against this.
+
+    `plan="starter"` is the flat Starter price for one location instead of
+    the rate card, with only the extras Starter takes. `locations` counts
+    for an extra priced per location; left out, it is the restaurant
+    locations in the estate, or one.
     """
     estate = sum(max(0, int(count)) for count in units.values())
+    wanted = list(add_ons)
+    if plan == STARTER_PLAN:
+        refused = [key for key in wanted if key not in STARTER_ADD_ONS]
+        if refused:
+            raise ValueError(f"Starter does not take {refused}.")
+        total = STARTER_MONTHLY_USD
+        total += sum(add_on_price(key, estate, 1) for key in wanted)
+        return round(total, 2)
+    if locations is None:
+        locations = sum(max(0, int(count)) for vertical, count in units.items()
+                        if per_site(vertical)) or (1 if estate else 0)
     total = sum(unit_price(vertical) * max(0, int(count))
                 for vertical, count in units.items())
-    total += sum(add_on_price(key, estate) for key in add_ons)
+    total += sum(add_on_price(key, estate, locations) for key in wanted)
     return round(total, 2)
 
 
@@ -407,6 +578,15 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
     for sensor in sensors:
         by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
 
+    # Starter is one flat price for the cafe's fridges and freezers. Those
+    # sensors are taken out of the rate card here and billed as one line
+    # below; anything else (an operator-led change can leave one) is still
+    # priced at the card, so nothing is served for free.
+    starter_group: List[Any] = []
+    if tenant.plan == STARTER_PLAN:
+        for vertical in STARTER_VERTICALS:
+            starter_group += by_vertical.pop(vertical, [])
+
     # What each sector is billed on: its locations, or its sensors.
     counts: Dict[str, int] = {
         vertical: len(branches(group)) if per_site(vertical) else len(group)
@@ -414,6 +594,23 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
     }
 
     lines: List[Dict[str, Any]] = []
+    if starter_group:
+        cap = PLAN_TIERS[STARTER_PLAN]["max_sensors"]
+        vertical = starter_group[0].industry_vertical
+        lines.append(
+            {
+                "vertical": vertical,
+                "industry": INDUSTRY_PROFILES[vertical]["name"],
+                "unit": "location",
+                "units": 1,
+                "unit_price_usd": STARTER_MONTHLY_USD,
+                "line_total_usd": STARTER_MONTHLY_USD,
+                "plan": STARTER_PLAN,
+                "description": (
+                    f"Starter plan: 1 location, {len(starter_group)} of "
+                    f"{cap} units"),
+            }
+        )
     for vertical, count in sorted(
         counts.items(), key=lambda kv: -unit_price(kv[0]) * kv[1]
     ):
@@ -493,7 +690,7 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
         "company_name": tenant.company_name,
         "plan": tenant.plan,
         "plan_name": tier["name"],
-        "billing_model": "per_unit",
+        "billing_model": "starter" if starter_group else "per_unit",
         "billable": billable,
         "units_total": len(sensors),
         "seats_total": tier["max_sensors"],
@@ -506,10 +703,30 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
             "Trial estates are priced but not charged; the figure shows what "
             "the estate would cost on a paid contract."
             if not billable
-            else "Priced from the sensors currently registered."
+            else (f"Starter: one flat price for one location and up to "
+                  f"{PLAN_TIERS[STARTER_PLAN]['max_sensors']} units."
+                  if starter_group
+                  else "Priced from the sensors currently registered.")
         ),
         "generated_at": iso(utc_now()),
     }
+
+
+def rate_card_monthly(sensors: Iterable["Sensor"]) -> float:
+    """What these sensors cost a month on the rate card, ignoring the plan.
+
+    Used to price the part of a period after a business moves off Starter
+    (contracts.arrears_lines), from the units it had at that moment.
+    """
+    by_vertical: Dict[str, List[Any]] = {}
+    for sensor in sensors:
+        if sensor.industry_vertical in PRICE_BOOK:
+            by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
+    total = 0.0
+    for vertical, group in by_vertical.items():
+        count = len(branches(group)) if per_site(vertical) else len(group)
+        total += unit_price(vertical) * count
+    return round(total, 2)
 
 
 def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
@@ -598,11 +815,16 @@ def price_book():
                 "plan": key,
                 "name": tier["name"],
                 "max_units": tier["max_sensors"],
+                "max_locations": tier.get("max_locations"),
                 "term_days": tier["term_days"],
                 "charged": key != "trial",
+                # A flat price only where the plan has one: Starter. The
+                # others are priced by the rate card below.
+                "monthly_usd": STARTER_MONTHLY_USD if key == STARTER_PLAN else None,
             }
             for key, tier in PLAN_TIERS.items()
         ],
+        "starter": starter_terms(),
         "pricing": rows,
     }
 
@@ -624,6 +846,7 @@ def roi(days: int = 30, tenant: Tenant = Depends(require_tenant)):
 def list_add_ons(tenant: Tenant = Depends(require_tenant)):
     """The add-on catalogue, priced for this estate."""
     units = STORE.seat_count(tenant.tenant_id)
+    places = max(locations_billed(tenant), 1)
     return {
         "count": len(ADD_ONS),
         "units": units,
@@ -631,7 +854,9 @@ def list_add_ons(tenant: Tenant = Depends(require_tenant)):
             {
                 "key": key,
                 **entry,
-                "monthly_for_this_estate_usd": add_on_price(key, units),
+                "monthly_for_this_estate_usd": add_on_price(key, units, places),
+                "on_your_plan": (tenant.plan != STARTER_PLAN
+                                 or key in STARTER_ADD_ONS),
             }
             for key, entry in ADD_ONS.items()
         ],
@@ -676,12 +901,22 @@ def full_deal(
             detail=f"Unknown add-on(s) {unknown}. Allowed: {list(ADD_ONS)}",
         )
 
+    if tenant.plan == STARTER_PLAN:
+        refused = [key for key in wanted if key not in STARTER_ADD_ONS]
+        if refused:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Starter takes only {[ADD_ONS[k]['name'] for k in STARTER_ADD_ONS]}. "
+                    "Move to Growth for the others."),
+            )
+    places = locations_billed(tenant)
     add_on_lines = [
         {
             "key": key,
             "name": ADD_ONS[key]["name"],
             "basis": ADD_ONS[key]["basis"],
-            "monthly_usd": add_on_price(key, units),
+            "monthly_usd": add_on_price(key, units, places),
         }
         for key in wanted
     ]
@@ -692,7 +927,8 @@ def full_deal(
     # An estate with no sites recorded is still commissioned somewhere; one
     # location is the floor rather than a free installation.
     billable_sites = max(sites, 1) if units else 0
-    setup = round(SETUP_FEE_PER_SITE_USD * billable_sites, 2)
+    fee = setup_fee_per_site(tenant)
+    setup = round(fee * billable_sites, 2)
 
     schedule = escalated_schedule(monthly, years)
     total_contract = round(sum(row["annual_usd"] for row in schedule), 2)
@@ -713,7 +949,7 @@ def full_deal(
         "add_ons_monthly_usd": add_on_monthly,
         "monthly_usd": monthly,
         "setup": {
-            "per_site_usd": SETUP_FEE_PER_SITE_USD,
+            "per_site_usd": fee,
             "sites_billed": billable_sites,
             "one_time_usd": setup,
             "note": (

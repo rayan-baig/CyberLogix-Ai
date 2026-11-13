@@ -220,6 +220,13 @@ def summary(tenant: Tenant, first: date, last: date,
         {"unit": i.breach_details.rstrip("."), "since": iso(i.opened_at),
          "acknowledged": i.acknowledged_at is not None, "site_wide": True}
         for i in STORE.site_wide_alerts(tenant.tenant_id) if i.resolved_at is None]
+    # Bring a friend: what this business earned in the month, and what is
+    # still waiting to come off an invoice (referrals.py, credits.py).
+    import credits
+    from referrals import earned_between
+
+    earned = earned_between(tenant.tenant_id, iso(start) or "", iso(end) or "")
+
     offline = [{"unit": names[s.sensor_id], "last_seen": iso(s.last_seen)}
                for s in sensors if s.last_seen is not None and s.offline(now)]
     never = [names[s.sensor_id] for s in sensors if s.last_seen is None]
@@ -259,6 +266,9 @@ def summary(tenant: Tenant, first: date, last: date,
         "covers_the_whole_month": log["covers_the_whole_period"],
         "caveat": log["caveat"],
         "inspector_log": inspector_link(tenant, first, last),
+        "credits_earned": earned,
+        "credits_earned_usd": round(sum(float(c["amount_usd"]) for c in earned), 2),
+        "credit_waiting_usd": credits.balance(tenant.tenant_id),
     }
 
 
@@ -352,6 +362,16 @@ def render_text(report: Dict[str, Any]) -> str:
                          f"({', '.join(a['units'])}), {answer}")
         if count > LIST_AT_MOST:
             lines.append(f"  and {count - LIST_AT_MOST} more, all in the log below.")
+
+    if report.get("credits_earned"):
+        count = len(report["credits_earned"])
+        lines += ["", f"Bring a friend: {count} business{'' if count == 1 else 'es'} "
+                      f"you referred paid their first invoice, so you earned "
+                      f"${report['credits_earned_usd']:,.2f} of credit (a month free "
+                      "on one location each)."]
+        if report.get("credit_waiting_usd"):
+            lines.append(f"${report['credit_waiting_usd']:,.2f} comes off your next "
+                         "invoice.")
 
     problems = _problem_lines(report)
     lines += ["", "Open now:" if problems else "Open now: nothing."]

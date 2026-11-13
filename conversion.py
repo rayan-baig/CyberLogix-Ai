@@ -215,13 +215,17 @@ def welcome(tenant: Tenant) -> Dict[str, Any]:
     start the thing they just signed up for wastes the only moment they
     are certain to be paying attention.
     """
+    # The licence's own length, not the plan's: a trial started with a
+    # friend's referral code runs longer than the usual one.
+    days = round((tenant.expires_at - tenant.activated_at).total_seconds() / 86400) \
+        or tenant.entitlements()['term_days']
     return send_mail(
         to_address=tenant.contact_email,
         subject=f"{tenant.company_name}: your CyberLogix trial is live",
         body=(
             f"{tenant.contact_name},\n\n"
             "Your trial estate is up. It runs for "
-            f"{tenant.entitlements()['term_days']} days and needs no card.\n\n"
+            f"{days} days and needs no card.\n\n"
             "The fastest way to see whether this is useful is to put one "
             "real sensor on it — a fridge, a freezer, a server room, "
             "whatever would cost you the most to lose:\n\n"

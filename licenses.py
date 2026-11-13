@@ -47,7 +47,7 @@ class TenantCreate(BaseModel):
     contact_name: str = Field(..., min_length=1, max_length=120)
     contact_phone: str = Field(..., min_length=5, max_length=40)
     contact_email: EmailStr
-    plan: str = Field("trial", description="One of: trial, growth, enterprise")
+    plan: str = Field("trial", description="One of: trial, starter, growth, enterprise")
 
 
 class UnitPreference(BaseModel):
@@ -70,7 +70,7 @@ class PlanChange(BaseModel):
     #
     # On a money-bearing model a misspelt field has to be a 422.
     model_config = ConfigDict(extra="forbid")
-    plan: str = Field(..., description="One of: trial, growth, enterprise")
+    plan: str = Field(..., description="One of: trial, starter, growth, enterprise")
 
 
 class ThresholdOverride(BaseModel):
@@ -110,10 +110,18 @@ def _validate_plan(plan: str) -> str:
 
 @router.get("/plans")
 def list_plans():
-    """Public price-list style catalogue of the commercial tiers."""
+    """Public price-list style catalogue of the commercial tiers.
+
+    Starter carries its flat price; the other plans are priced by the
+    rate card, so theirs is null.
+    """
+    from pricing import STARTER_MONTHLY_USD, STARTER_PLAN
+
     return {
         "plans": [
-            {"plan": key, **tier} for key, tier in PLAN_TIERS.items()
+            {"plan": key, **tier,
+             "monthly_usd": STARTER_MONTHLY_USD if key == STARTER_PLAN else None}
+            for key, tier in PLAN_TIERS.items()
         ]
     }
 
@@ -216,17 +224,48 @@ def current_license(tenant: Tenant = Depends(require_tenant)):
 
 
 # Which tiers are above which. Self-service moves up this list and never
-# down it, and never back onto the trial at all.
-PLAN_RANK = {"trial": 0, "growth": 1, "enterprise": 2}
+# down it, and never back onto the trial at all. Starter sits between the
+# trial and Growth: a trial may choose it, and Starter moves up to Growth.
+PLAN_RANK = {"trial": 0, "starter": 1, "growth": 2, "enterprise": 3}
 
 
 def next_tier_above(plan: str) -> Optional[str]:
-    """The cheapest plan with more room than this one."""
+    """The cheapest plan with more room than this one.
+
+    More room means more sensors: a five-sensor trial is not offered the
+    three-unit Starter as the way past its limit.
+    """
     here = PLAN_RANK.get(plan, 0)
+    room = PLAN_TIERS.get(plan, {}).get("max_sensors", 0)
     above = sorted(
-        (rank, key) for key, rank in PLAN_RANK.items() if rank > here
+        (rank, key) for key, rank in PLAN_RANK.items()
+        if rank > here and PLAN_TIERS[key]["max_sensors"] > room
     )
     return above[0][1] if above else None
+
+
+def starter_refusal(tenant: Tenant, what: str) -> str:
+    """Why Starter cannot take this, and the way on, with no charge made.
+
+    The fourth unit, a second location or a trade Starter is not for. All
+    three are the same moment: the business has outgrown the flat plan.
+    Nothing is charged by being refused, and nothing is charged by the
+    move until the next invoice, at the rate card.
+    """
+    from pricing import PRICE_BOOK, STARTER_MONTHLY_USD
+
+    growth = PLAN_TIERS["growth"]
+    rate = PRICE_BOOK["restaurant"]
+    return (
+        f"{what} Starter covers one location and up to "
+        f"{PLAN_TIERS['starter']['max_sensors']} fridges or freezers for "
+        f"${STARTER_MONTHLY_USD:,.0f} a month. Move to {growth['name']} "
+        f"(up to {growth['max_sensors']:,} units, phone calls included; "
+        f"${rate['monthly_usd']:,.0f} a month per {rate['unit']} for a "
+        "restaurant) from What you pay in the console, or POST "
+        '/api/licenses/me/plan with {"plan": "growth"}, then try again. '
+        "Nothing has been charged, and nothing is until your next invoice."
+    )
 
 
 def seat_limit_message(tenant: Tenant, cap: int, vertical: str) -> str:
@@ -243,6 +282,9 @@ def seat_limit_message(tenant: Tenant, cap: int, vertical: str) -> str:
     """
     from pricing import PRICE_BOOK
 
+    if tenant.plan == "starter":
+        return starter_refusal(
+            tenant, f"This would be unit {cap + 1}, and Starter stops at {cap}.")
     here = tenant.entitlements()["name"]
     nxt = next_tier_above(tenant.plan)
     if nxt is None:
@@ -318,6 +360,50 @@ def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
         )
 
 
+def refuse_what_starter_cannot_hold(tenant: Tenant) -> None:
+    """Moving onto Starter: refuse an estate bigger than it covers.
+
+    Said in plain words, the same way the fourth unit is, rather than
+    letting the plan change and the bill quietly charge the card.
+    """
+    from pricing import STARTER_VERTICALS
+
+    sensors = STORE.sensors_for(tenant.tenant_id)
+    cap = PLAN_TIERS["starter"]["max_sensors"]
+    places = PLAN_TIERS["starter"]["max_locations"]
+    problems = []
+    if len(sensors) > cap:
+        problems.append(f"{len(sensors)} units are registered.")
+    if places is not None and len(STORE.sites_for(tenant.tenant_id)) > places:
+        problems.append(f"{len(STORE.sites_for(tenant.tenant_id))} locations are set up.")
+    other = sorted({s.industry_vertical for s in sensors} - set(STARTER_VERTICALS))
+    if other:
+        problems.append("Some units are on limits Starter is not for "
+                        f"({', '.join(other)}).")
+    if problems:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=starter_refusal(tenant, " ".join(problems)).replace(
+                "then try again. ", "instead. "),
+        )
+
+
+def refuse_off_starter_vertical(tenant: Tenant, vertical: str) -> None:
+    """A unit on limits Starter is not for asks for Growth, like a 4th."""
+    from pricing import STARTER_VERTICALS
+
+    if tenant.plan == "starter" and vertical not in STARTER_VERTICALS:
+        from store import INDUSTRY_PROFILES
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=starter_refusal(
+                tenant,
+                f"A unit on the {INDUSTRY_PROFILES[vertical]['name']} limits "
+                "is not a cafe or shop fridge."),
+        )
+
+
 @router.post("/me/plan")
 def change_plan(
     payload: PlanChange,
@@ -352,6 +438,9 @@ def change_plan(
 
     seats_used = STORE.seat_count(tenant.tenant_id)
     new_cap = PLAN_TIERS[plan]["max_sensors"]
+
+    if plan == "starter":
+        refuse_what_starter_cannot_hold(tenant)
 
     if seats_used > new_cap:
         raise HTTPException(
@@ -427,6 +516,7 @@ def register_sensor(
             ),
         )
 
+    refuse_off_starter_vertical(tenant, vertical)
     sensor_id = payload.sensor_id.strip()
     serial = (payload.external_device_sn or "").strip() or None
     cap = tenant.entitlements()["max_sensors"]

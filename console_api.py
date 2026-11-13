@@ -277,7 +277,7 @@ def console_overview(
 
     from firstday import checklist
     from helpdesk import support_address
-    from pricing import build_roi, build_subscription
+    from pricing import build_roi, build_subscription, starter_terms
 
     subscription = build_subscription(tenant)
     roi = build_roi(tenant, 30)
@@ -287,6 +287,8 @@ def console_overview(
         "tenant": tenant.public(sensor_count=len(sensors)),
         "account": account_state(tenant, now),
         "subscription": subscription,
+        # What the plan buttons on What you pay say, from pricing.py.
+        "starter": starter_terms(),
         "roi": roi,
         "entitlements": {
             "voice_escalation": entitlements["voice_escalation"],

@@ -438,17 +438,36 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
 }
 
 # Commercial plan tiers. Seat count is the number of registered sensors.
+#
+# `max_locations` is the number of sites a plan covers; None is no limit.
+# Only Starter sets one. Its price is not here: every price lives in
+# pricing.py (STARTER_MONTHLY_USD), so the owner changes one file.
 PLAN_TIERS: Dict[str, Dict[str, Any]] = {
     "trial": {
         "name": "Trial",
         "max_sensors": 5,
+        "max_locations": None,
         "term_days": 14,
+        "voice_escalation": False,
+        "predictive_forecasting": False,
+    },
+    # A small cafe or shop's first yes: one location, up to three fridges
+    # or freezers, a flat monthly price. Texts, the site-wide alert, the
+    # inspector's log and the monthly report are all on it, because the
+    # things that keep food safe are not upsells. Phone calls and the
+    # forecast are what moving up to Growth adds.
+    "starter": {
+        "name": "Starter",
+        "max_sensors": 3,
+        "max_locations": 1,
+        "term_days": 365,
         "voice_escalation": False,
         "predictive_forecasting": False,
     },
     "growth": {
         "name": "Growth",
         "max_sensors": 50,
+        "max_locations": None,
         "term_days": 365,
         "voice_escalation": True,
         "predictive_forecasting": True,
@@ -456,6 +475,7 @@ PLAN_TIERS: Dict[str, Dict[str, Any]] = {
     "enterprise": {
         "name": "Enterprise",
         "max_sensors": 1000,
+        "max_locations": None,
         "term_days": 365,
         "voice_escalation": True,
         "predictive_forecasting": True,

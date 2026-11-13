@@ -166,17 +166,28 @@ class SignupRequest(BaseModel):
     industry_vertical: Optional[str] = Field(
         None, description="Which sector, so the console opens on the right limits."
     )
+    referral_code: Optional[str] = Field(
+        None, max_length=40,
+        description=("A code from a business that already uses CyberLogix. "
+                     "It makes the trial longer."),
+    )
 
 
 @router.get("/sectors")
 def sectors():
     """What to offer in the sector picker, and the trial's shape."""
+    from pricing import REFERRAL_TRIAL_DAYS, starter_terms
+
     tier = PLAN_TIERS[PUBLIC_PLAN]
     return {
         "plan": PUBLIC_PLAN,
         "plan_name": tier["name"],
         "trial_days": tier["term_days"],
+        # With a friend's referral code the trial is this long instead.
+        "referral_trial_days": max(REFERRAL_TRIAL_DAYS, tier["term_days"]),
         "max_sensors": tier["max_sensors"],
+        # What a small cafe or shop can move onto after the trial.
+        "starter": starter_terms(),
         "min_password_length": MIN_PASSWORD_LENGTH,
         "sectors": [
             {
@@ -223,6 +234,15 @@ def start_trial(payload: SignupRequest, request: Request):
             ),
         )
 
+    # Checked before anything is made: a code that is wrong or is the
+    # caller's own is said so, and nothing is left behind.
+    referrer = None
+    code = (payload.referral_code or "").strip()
+    if code:
+        import referrals
+
+        referrer = referrals.check_at_signup(code, email, payload.contact_phone)
+
     tenant = STORE.create_tenant(
         company_name=payload.company_name.strip(),
         contact_name=payload.full_name.strip(),
@@ -257,6 +277,11 @@ def start_trial(payload: SignupRequest, request: Request):
     # through the front door.
     record_acceptance(tenant, user)
 
+    if referrer is not None:
+        import referrals
+
+        referrals.record_signup(tenant, referrer, code)
+
     import usage
 
     usage.count("signups")
@@ -284,11 +309,13 @@ def start_trial(payload: SignupRequest, request: Request):
 
     tier = PLAN_TIERS[PUBLIC_PLAN]
     example_vertical = vertical or "restaurant"
+    days = max(0, round((tenant.expires_at - tenant.activated_at).total_seconds() / 86400))
     return {
         "message": (
             f"{tenant.company_name} is live on a "
-            f"{tier['term_days']}-day trial. You are signed in."
+            f"{days or tier['term_days']}-day trial. You are signed in."
         ),
+        "referred": referrer is not None,
         "token": session.secret,
         "expires_at": iso(session.expires_at),
         "user": user.public(),

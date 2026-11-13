@@ -89,7 +89,21 @@ def create_site(
     tenant: Tenant = Depends(require_tenant),
     operator: User = Depends(require_role("operator")),
 ):
-    """Add a location."""
+    """Add a location.
+
+    Starter covers one. A second asks the owner to move to Growth, in
+    words, and charges nothing: a location billed because somebody typed
+    a name would be the surprise this plan exists to avoid.
+    """
+    limit = tenant.entitlements().get("max_locations")
+    if limit is not None and len(STORE.sites_for(tenant.tenant_id)) >= limit:
+        from licenses import starter_refusal
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=starter_refusal(
+                tenant, f"This would be location {limit + 1}."),
+        )
     site = STORE.create_site(
         tenant_id=tenant.tenant_id, name=payload.name, address=payload.address
     )

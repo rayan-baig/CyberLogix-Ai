@@ -19,8 +19,22 @@ async function boot() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const info = await resp.json();
 
+    // A link from a friend carries their code: fill it in, and say the
+    // longer trial it brings. The server checks the code either way.
+    const ref = new URLSearchParams(location.search).get("ref") || "";
+    if (ref) $("referral_code").value = ref.slice(0, 40);
+    const days = ref ? info.referral_trial_days : info.trial_days;
     $("sub").textContent =
-      `${info.trial_days} days, up to ${info.max_sensors} sensors, no card.`;
+      `${days} days, up to ${info.max_sensors} sensors, no card.`;
+    $("ref-hint").textContent =
+      `A friend's code makes the trial ${info.referral_trial_days} days.`;
+    if (info.starter) {
+      $("after-trial").textContent =
+        `After the trial, a small café or shop can stay on Starter: `
+        + `${info.starter.monthly_label} a month for one location and up to `
+        + `${info.starter.max_units} fridges or freezers, texts and the `
+        + `site-wide alert included. Bigger estates use the rate card.`;
+    }
     $("pw-hint").textContent =
       `At least ${info.min_password_length} characters.`;
     $("password").minLength = info.min_password_length;
@@ -139,6 +153,7 @@ $("form").addEventListener("submit", async (event) => {
   const form = new FormData(event.target);
   const payload = Object.fromEntries(form.entries());
   if (!payload.industry_vertical) delete payload.industry_vertical;
+  if (!String(payload.referral_code || "").trim()) delete payload.referral_code;
 
   try {
     const resp = await fetch("/api/signup", {

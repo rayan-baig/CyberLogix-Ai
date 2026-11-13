@@ -77,6 +77,7 @@ def run_money_pass() -> dict:
     flushed = {"attempted": 0, "sent": 0}
     licences = {"sent_count": 0, "skipped": "not_run"}
     texted = {"sent_count": 0}
+    bundle = {"sent": 0, "skipped": "not_run"}
     try:
         billed = run_billing()
     except Exception as exc:  # noqa: BLE001 - collections must still run
@@ -114,6 +115,16 @@ def run_money_pass() -> dict:
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Licence alert pass failed (%s).", exc)
     try:
+        # Each connected business's finished day, to OmniArmor (the
+        # Kitchen Safety Bundle). Hourly is soon enough after a site's
+        # midnight, and before the flush so a failure email it writes goes
+        # out in the same hour.
+        import omniarmor
+
+        bundle = omniarmor.run_daily()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("OmniArmor daily pass failed (%s).", exc)
+    try:
         # Last, so that anything the passes above queued against a mail
         # host that was briefly down gets one more attempt in the same
         # hour rather than waiting for the next.
@@ -143,6 +154,7 @@ def run_money_pass() -> dict:
         "digests": summarised,
         "licence_alerts": licences,
         "weekly_texts": texted,
+        "kitchen_safety_bundle": bundle,
         "backup": backed_up,
         "mail_queue": flushed,
     }

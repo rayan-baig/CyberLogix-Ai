@@ -58,10 +58,33 @@
     Start with a free %%TRIAL_DAYS%%-day trial on up to %%TRIAL_UNITS%%
     sensors, no card needed.</p>
 
+  <section class="panel starter-panel" id="starter" aria-labelledby="starter-title">
+    <h2 id="starter-title">Starter: %%STARTER_PRICE%% a month for a small caf&eacute; or shop</h2>
+    <p>One location and up to %%STARTER_UNITS%% fridges or freezers, at one
+      flat price. Everything that keeps the food safe is on it:</p>
+    <ul class="starter-points">%%STARTER_POINTS%%</ul>
+    <p class="muted small">Phone calls when a text goes unanswered, and the
+      forecast, come with Growth. Adding a fourth unit or a second location
+      asks you to move up first; nothing is charged until you do. A friend's
+      referral code makes the free trial %%REFERRAL_DAYS%% days.</p>
+  </section>
+
   <section class="panel" aria-labelledby="calc-title">
     <h2 id="calc-title" class="calc-heading">Work out your price</h2>
-    <form class="calc" id="calc" data-prepay-discount="%%PREPAY_DISCOUNT%%">
+    <form class="calc" id="calc" data-prepay-discount="%%PREPAY_DISCOUNT%%"
+          data-starter-rate="%%STARTER_RATE%%">
       <div>
+        <fieldset class="calc-plan">
+          <legend>Which plan</legend>
+          <label><input type="radio" name="calc-plan" value="card" checked>
+            The rate card: any trade, any size</label>
+          <label><input type="radio" name="calc-plan" value="starter">
+            Starter: %%STARTER_PRICE%% a month, one location, up to
+            %%STARTER_UNITS%% units</label>
+        </fieldset>
+        <p class="calc-sub small" id="calc-starter-note" hidden>Starter is for
+          a caf&eacute; or shop&rsquo;s fridges and freezers. The extras marked
+          for estates are on Growth.</p>
         <div id="calc-rows">
           <div class="calc-row">
             <div class="field">
@@ -77,8 +100,12 @@
         </div>
         <button class="btn btn-sm" type="button" id="calc-add">Add another trade</button>
         <fieldset class="calc-addons">
-          <legend>Optional extras, per business</legend>
+          <legend>Optional extras</legend>
           %%ADDON_CHECKBOXES%%
+          <div class="field" id="calc-locations-field">
+            <label>Locations, for an extra priced per location
+              <input id="calc-locations" type="number" min="1" max="10000" step="1" value="1" inputmode="numeric"></label>
+          </div>
         </fieldset>
       </div>
       <div class="calc-out" aria-live="polite">
@@ -103,15 +130,19 @@
 
   <h2>Plans</h2>
   <p class="muted">The plan sets how many sensors you can run and whether
-    we phone people when a text goes unanswered.</p>
+    we phone people when a text goes unanswered. Starter is one flat price;
+    Growth and Enterprise are priced by the rate card above.</p>
   <div class="panel scroll">
     <table class="table">
-      <thead><tr><th>Plan</th><th class="num">Sensors</th><th>Phone calls</th><th>Term</th></tr></thead>
+      <thead><tr><th>Plan</th><th class="num">Sensors</th><th>Phone calls</th><th>Term</th><th>Price</th></tr></thead>
       <tbody>%%PLAN_ROWS%%</tbody>
     </table>
   </div>
 
   <h2>Optional extras</h2>
+  <p class="muted">The Kitchen Safety Bundle (%%BUNDLE_PRICE%%) sends each
+    day&rsquo;s fridge and freezer record to OmniArmor, which fills in its
+    temperature-log checks. It is free during the trial, so you can try it.</p>
   <div class="panel scroll">
     <table class="table">
       <thead><tr><th>Extra</th><th>What it is</th><th class="num">A month</th></tr></thead>
@@ -120,7 +151,7 @@
   </div>
   <p class="muted small">Paying a year ahead takes %%PREPAY_DISCOUNT%%% off
     that year. A contract's first bill also has a one-time setup charge of
-    %%SETUP_FEE%% per site, and a term longer than a year rises
+    %%SETUP_FEE%% per site (none on Starter), and a term longer than a year rises
     %%ESCALATOR%%% a year. Questions? <a href="/help">Read the help page</a>.</p>
 </main>
 
