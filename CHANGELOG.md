@@ -3,6 +3,55 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.11.0 — 2026-11-13
+
+Three ways to earn: a $79 Starter plan, "bring a friend" referrals, and
+the CyberLogix side of the Kitchen Safety Bundle with OmniArmor.
+
+- **Starter, $79 a month.** One location and up to 3 fridges or freezers,
+  for a small cafe or shop's first yes. Texts, the site-wide alert, the
+  inspector's log and the monthly report are on it; phone calls and the
+  forecast come with Growth. A real plan beside the others
+  (`PLAN_TIERS["starter"]`), priced in `pricing.py`, with no setup fee.
+  The fourth unit, a second location, or a unit on another trade's limits
+  is refused with a sentence that names Growth and says nothing has been
+  charged. Invoices bill one flat line; a move to Growth part-way through
+  a period bills, on the next invoice, the rate card less Starter for the
+  days after the move, and nothing for the days before. The pricing page,
+  its calculator (still tested against `pricing.quote_monthly`), the front
+  page's plans, sign-up, the help page, the restaurant sales sheet and the
+  console's What you pay card all show it from the code.
+- **Bring a friend.** Each business has a referral code and link (Money,
+  Bring a friend, owners only). A business that signs up with it gets a
+  30-day trial. When it pays its first invoice in full, the referrer gets
+  one month free on one location, as a credit on its next invoice. Not for
+  yourself or a business that shares a person with yours, once per
+  business, nothing for a part payment or a business that cancelled first,
+  withdrawn if the payment is refunded (the operator records that on
+  /book), and at most 12 a year. A business a reseller partner manages
+  earns its partner the commission instead of anyone a referral credit.
+  The console shows who joined by business name only, and what was
+  earned; the monthly report says so too.
+- **Account credit,** which did not exist: a credit comes off the next
+  invoice as its own line, never below zero, carries what is left, pays a
+  $0 invoice outright so nobody is chased for it, and is given back if
+  the invoice it was used on is voided.
+- **The Kitchen Safety Bundle, +$29 a month per location,** free on the
+  trial. The owner pastes OmniArmor's address and connection key (Setup,
+  OmniArmor connection); the key is stored encrypted with AES-GCM under
+  the new CYBERLOGIX_CREDENTIAL_KEY setting and never shown again. After
+  each site's day ends, one combined report goes to OmniArmor exactly as
+  its contract describes: units in range all day, each breach with the
+  role that acknowledged it and what was done as fixed codes (never a
+  name), the warmest reading, and a link to that day's inspector log.
+  429 and 5xx are retried with backoff, respecting Retry-After; each day
+  is claimed before it is sent, so it goes once, and again only as a
+  correction when what it says has changed. "Last sent 2026-11-12 · OK"
+  on the card, a "Send a test report" button, and one email to the owners
+  when two days have not got through. The tests send every report through
+  OmniArmor's own validation, ported. docs/OMNIARMOR-CONNECTION.md has it
+  all.
+
 ## 3.10.0 — 2026-11-13
 
 A site-wide alert when many units warm up at once, and a section on the

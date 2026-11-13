@@ -1650,7 +1650,21 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
   display: flex; gap: 10px; align-items: baseline; padding: 6px 0;
   color: var(--ink-2); font-size: 14.5px;
 }
+.calc-plan, .calc-addons .field { border: none; padding: 0; margin: 0 0 14px; }
+.calc-plan legend { color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+.calc-plan label {
+  display: flex; gap: 10px; align-items: baseline; padding: 5px 0;
+  color: var(--ink-2); font-size: 14.5px;
+}
+.calc-addons .field { margin-top: 10px; }
+.calc-addons .field input { max-width: 120px; }
+.calc-addons label:has(input:disabled) { opacity: .55; }
 .calc-out { display: grid; gap: 14px; align-content: start; }
+
+/* --- Starter ------------------------------------------------------------ */
+.starter-panel h2 { margin-top: 0; }
+.starter-points { margin: 6px 0 12px; padding-left: 20px; color: var(--ink-2); }
+.starter-points li { padding: 2px 0; }
 .calc-total {
   font-family: var(--display); font-size: clamp(34px, 5vw, 46px);
   color: var(--ink); line-height: 1; margin: 0;
@@ -1747,12 +1761,12 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
   </div>
 
   <h2>Common questions</h2>
-  <details class="qa" id="trial"><summary>How long is the free trial, and do I need a card?</summary><div class="qa-body"><p>The trial lasts 14 days and covers up to 5 sensors. You do not give us a card to start it, and nothing is charged while it runs.</p><p>When it ends, your sensors are still watched for 14 more days. To keep going after that, the owner picks a paid plan under What you pay, in the Money tab.</p></div></details>
-<details class="qa" id="price"><summary>What does it cost?</summary><div class="qa-body"><p>One flat price a month for each thing watched, set by your trade: from $249 a month per location up to $4,999 per vessel. Restaurants pay per location, however many fridges and freezers are inside it.</p><p>Every rate is on the pricing page, with a calculator that works out your monthly price.</p></div></details>
-<details class="qa" id="extras"><summary>Are there extras, or a share of what you save me?</summary><div class="qa-body"><p>Never a share of savings. The optional extras are flat monthly fees: Certified Compliance Vault ($499 a month), Sector Benchmarks ($299 a month), Equipment Intelligence ($399 a month).</p><p>Paying a year ahead takes 10% off that year.</p></div></details>
-<details class="qa" id="plans"><summary>What is the difference between the plans?</summary><div class="qa-body"><p>Plans set how many sensors you can run and whether we phone people. Trial: up to 5 sensors, text alerts only. Growth: up to 50 sensors, with phone calls. Enterprise: up to 1,000 sensors, with phone calls.</p></div></details>
+  <details class="qa" id="trial"><summary>How long is the free trial, and do I need a card?</summary><div class="qa-body"><p>The trial lasts 14 days and covers up to 5 sensors. You do not give us a card to start it, and nothing is charged while it runs.</p><p>When it ends, your sensors are still watched for 14 more days. To keep going after that, the owner picks a paid plan under What you pay, in the Money tab.</p><p>Started with a friend's referral code? Your trial is 30 days. Your own code is under Bring a friend, in the Money tab (owners only): when a business that used it pays its first invoice, you get a month free on one location, up to 12 times a year.</p></div></details>
+<details class="qa" id="price"><summary>What does it cost?</summary><div class="qa-body"><p>One flat price a month for each thing watched, set by your trade: from $249 a month per location up to $4,999 per vessel. Restaurants pay per location, however many fridges and freezers are inside it.</p><p>A small café or shop can take Starter instead: $79 a month for one location and up to 3 fridges or freezers.</p><p>Every rate is on the pricing page, with a calculator that works out your monthly price.</p></div></details>
+<details class="qa" id="extras"><summary>Are there extras, or a share of what you save me?</summary><div class="qa-body"><p>Never a share of savings. The optional extras are flat monthly fees: Certified Compliance Vault ($499 a month), Sector Benchmarks ($299 a month), Equipment Intelligence ($399 a month), Kitchen Safety Bundle ($29 a month per location).</p><p>The Kitchen Safety Bundle sends each day's fridge and freezer record to OmniArmor, which fills in its temperature-log checks. Connect it under Setup, OmniArmor connection. It is free during the trial and billed while it is connected.</p><p>Paying a year ahead takes 10% off that year.</p></div></details>
+<details class="qa" id="plans"><summary>What is the difference between the plans?</summary><div class="qa-body"><p>Plans set how many sensors you can run and whether we phone people. Trial: up to 5 sensors, text alerts only. Starter: up to 3 sensors, text alerts only. Growth: up to 50 sensors, with phone calls. Enterprise: up to 1,000 sensors, with phone calls.</p><p>Starter is $79 a month for one location, with texts and the site-wide alert. A unit past 3, or a second location, asks you to move to Growth first; nothing is charged until you do, and then only from the day you move.</p></div></details>
 <details class="qa" id="alerts"><summary>What happens when a fridge goes out of range?</summary><div class="qa-body"><p>Every reading is checked against the safe range for your trade, or the one you set for that unit. When a reading is out of range we open one problem for it and text everyone on call, within 60 seconds. More readings from the same fridge update that problem instead of sending more texts.</p><p>If your team uses Slack, Teams or PagerDuty, a copy goes there as well.</p></div></details>
-<details class="qa" id="escalation"><summary>What if nobody answers the text?</summary><div class="qa-body"><p>If nobody acknowledges the problem within 10 minutes, we phone the people on call, in the order you set, until one of them answers and presses 1. Phone calls come with the Growth and Enterprise plans; the Trial plan sends texts only.</p><p>If a text fails to send, we try it again 1, 5 and 15 minutes after the problem opened.</p></div></details>
+<details class="qa" id="escalation"><summary>What if nobody answers the text?</summary><div class="qa-body"><p>If nobody acknowledges the problem within 10 minutes, we phone the people on call, in the order you set, until one of them answers and presses 1. Phone calls come with the Growth and Enterprise plans; the Trial and Starter plans send texts only.</p><p>If a text fails to send, we try it again 1, 5 and 15 minutes after the problem opened.</p></div></details>
 <details class="qa" id="test-alert"><summary>How do I check the alerts really reach us?</summary><div class="qa-body"><p>Send a test alert. In the console, open the People tab, find Who gets called and press Send a test alert. Everyone on the list gets a text that starts “TEST” and says nothing is wrong. On a plan with phone calls you can also ring the first person.</p><p>A test opens no problem and chases nobody. Owners and operators can send one every 10 minutes, up to 5 a day.</p></div></details>
 <details class="qa" id="offline"><summary>A sensor says offline. What do I do?</summary><div class="qa-body"><p>We have not heard from it for 30 minutes. Follow the <a href="#sensor-offline">steps below</a>: power, gateway, signal, key, and account.</p></div></details>
 <details class="qa" id="defrost"><summary>My freezer warmed up during defrost. Why no alert?</summary><div class="qa-body"><p>Freezers warm up for a while on a timer to defrost. Once we have seen a unit do this regularly, a warm spell that comes on time and is no warmer than usual is recorded but does not wake anybody. If it lasts too long or gets warmer than usual, the alert goes out as normal.</p></div></details>

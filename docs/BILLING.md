@@ -36,15 +36,56 @@ decommissioning a sensor reports what it adds to or removes from the bill.
 
 ### Plans are about contract, not price
 
-| Plan | Unit ceiling | Term | Charged |
-|---|---|---|---|
-| `trial` | 5 | 14 days | no |
-| `growth` | 50 | 365 days | yes |
-| `enterprise` | 1000 | 365 days | yes |
+| Plan | Unit ceiling | Locations | Term | Charged |
+|---|---|---|---|---|
+| `trial` | 5 | any | 14 days (30 with a referral code) | no |
+| `starter` | 3 | 1 | 365 days | yes, a flat $79 a month |
+| `growth` | 50 | any | 365 days | yes, the rate card |
+| `enterprise` | 1000 | any | 365 days | yes, the rate card |
 
 A trial estate is priced but not charged, so a prospect can see what their
 real fleet would cost. Downgrades that would strand units are refused with
 `409`; decommission sensors first.
+
+### Starter, for a small cafe or shop
+
+One location and up to three fridges or freezers for **$79 a month**, flat.
+The price is `STARTER_MONTHLY_USD` in `pricing.py`; the three units and the
+one location are `PLAN_TIERS["starter"]` in `domain.py`. Every page that
+names it (the pricing page and its calculator, the plan list on the front
+page, sign-up, the help page, the restaurant sales sheet, the console's
+What you pay card) reads those values.
+
+- **What is on it:** text alerts to the whole on-call list, the site-wide
+  alert when several units warm at once, the inspector's log, the monthly
+  report, tamper-evident readings and claim packets. Safety is never an
+  upsell.
+- **What moving up adds:** phone calls when a text goes unanswered, the
+  forecast, the per-estate extras (the vault, benchmarks, equipment
+  intelligence), and room for more units and locations. Starter takes one
+  extra, the Kitchen Safety Bundle.
+- **Which trades:** the restaurant limits (`STARTER_VERTICALS`). A vaccine
+  fridge or a rack is a different job at a different price.
+- **No setup fee** (`STARTER_SETUP_FEE_PER_SITE_USD = 0`). The $1,500
+  commissioning fee pays for an engineer placing units and proving the
+  alert path; a cafe plugging in three sensors itself should not meet it.
+- **The way up, with no surprise charge.** The fourth unit, a second site,
+  or a unit on another trade's limits is refused with `409` and a sentence
+  that names Growth, its price for a restaurant, the button or call that
+  moves, and says nothing has been charged. Moving onto Starter with more
+  than it holds is refused the same way. Growth cannot drop itself back to
+  Starter (an operator can).
+
+**On the invoice.** One line, "Starter plan: 1 location, 2 of 3 units",
+at $79. Units added during a period on Starter owe nothing extra. A
+business that moves to Growth part-way through a period owes, on the next
+invoice, the rate card for the units it had at the moment it moved, less
+the $79 already billed for those days, for the rest of that period
+("Moved from Starter to Growth on 2026-11-20: the rate card less Starter,
+part period to 2026-12-01"). From then on it is billed at the rate card
+in advance like everyone else, and a shop added after the move is caught
+up as ordinary mid-period arrears. Each plan change is recorded with its
+time (`plan_change` rows), which is what the bill reads.
 
 ### Enterprise volume brackets
 
@@ -91,6 +132,17 @@ for comparison rather than charged.
 | Certified Compliance Vault | per estate | $499 / month |
 | Sector Benchmarks | per estate | $299 / month |
 | Equipment Intelligence | per estate | $399 / month |
+| Kitchen Safety Bundle | per location | $29 / month |
+
+The **Kitchen Safety Bundle** is the CyberLogix half of the bundle with
+OmniArmor ([OMNIARMOR-CONNECTION.md](OMNIARMOR-CONNECTION.md)). It is
+billed while the OmniArmor connection is switched on, not picked from a
+list, so nobody pays for a connection they removed: connecting adds it to
+the next invoice at $29 for each location (the same location count as the
+setup fee: the sites set up, or one), disconnecting takes it off. It is
+free on a trial, so a kitchen can try it first, and it is the one extra
+Starter takes. The figure the MTRX Horizyn bundle page shows is
+`pricing.bundle_price_label()`: "+$29 a month per location".
 
 Every one is a fixed fee. A percentage of what a customer saved sounds
 aligned and is not: a quiet year pays nothing for the same standing
@@ -129,6 +181,54 @@ and art storage ($250,000), superyachts ($150,000), cannabis cultivation
 separately as `unquantified_saves`, never folded into the total with an
 invented number. Add a figure for one of those (`loss_avoided_usd` in
 `pricing.py`) and its incidents count too.
+
+## Account credit
+
+Money we owe a business comes off its next invoice as a line of its own,
+"Credit: ..." with a minus amount, after any prepayment discount
+(`credits.py`). Each credit is granted once per reason (its id is the
+reason, so a retried payment cannot grant it twice), never takes an
+invoice below zero, and carries what is left to the next invoice. An
+invoice the credit pays in full is recorded as paid by the credit, so
+nobody is chased for $0. Voiding an invoice gives back the credit it
+used, and the invoice that replaces it takes it again. Late charges take
+no credit. Both the billing run and a hand-issued invoice go through the
+same function, so neither can forget.
+
+## Bring a friend
+
+Each business has a referral code, which its owner sees under Money,
+Bring a friend (`GET /api/referrals/me`, owners only), with a link to the
+sign-up page that carries it (`/signup?ref=FRIEND-XXXX-XXXX`).
+
+- **The friend** gets a 30-day trial instead of 14 (`REFERRAL_TRIAL_DAYS`).
+- **The referrer** gets one month free on one location when the friend
+  pays its first invoice in full: a credit of the referrer's own location
+  price (Starter: $79; a restaurant on the rate card: $249; an estate
+  billed per unit: its cheapest unit), on its next invoice.
+- **Not yourself.** A code is refused at sign-up for the email or phone of
+  the business that owns it, and the reward is refused if the two
+  businesses share a person (one sign-in can open both). Adding a business
+  from your own sign-in takes no code.
+- **Once per business.** However often it pays, and however often the
+  same payment is delivered.
+- **Only real money.** Nothing for a part payment, a $0 invoice paid by
+  credit, or a business that cancelled before paying. If the friend's
+  payment is refunded, the operator records it on `/book`, Cash ("A
+  referred business was refunded", `POST /api/referrals/{tenant_id}/refunded`)
+  and what is left of the reward is withdrawn.
+- **A ceiling** of 12 rewards per referrer in any 365 days
+  (`REFERRAL_REWARDS_PER_YEAR`).
+- **Partners do not stack.** A business a reseller partner manages when it
+  pays its first invoice earns the partner its commission and earns nobody
+  a referral credit: one business, one reward, and the partner, who looks
+  after it, is the one paid. A partner-managed business can still refer
+  others; its credit lowers what it pays, and commission is on cash
+  received, so the two never land on the same money.
+
+The console lists who joined by business name only, never the person, and
+what was earned. The monthly report says what was earned that month and
+what is waiting to come off the next invoice.
 
 ## Invoicing
 
@@ -430,4 +530,5 @@ accounts need an engineer today, and one account in operational detail. A
 partner is a principal with narrower rights than a tenant owner: scoped to
 their own accounts, and shown what an engineer needs without the customer's
 roster or audit trail. Setting one up, step by step, is in
-[PARTNERS.md](PARTNERS.md).
+[PARTNERS.md](PARTNERS.md). A partner's commission and a referral credit
+never apply to the same business (see Bring a friend, above).

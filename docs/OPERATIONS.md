@@ -17,6 +17,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_ALLOWED_ORIGINS` | none | Exact origins whose pages may call the API from a browser; unset allows only this site's own pages. Never `*` or a sibling subdomain |
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
+| `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the OmniArmor key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
 | `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_SMS_PER_DAY` | `100` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY` | `30` | Per-tenant daily cap; `0` = unlimited |
