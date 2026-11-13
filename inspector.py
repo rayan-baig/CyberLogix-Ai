@@ -185,6 +185,34 @@ def build_log(tenant: Tenant, first: date, last: date) -> Dict[str, Any]:
             "days": _days(hours),
             "breaches": [_breach(i, readings, unit, above, below) for i in incidents],
         })
+    # The site-wide alerts in the period, apart from the units: each unit
+    # in one has its own entry above, and this says they went together.
+    site_wide = []
+    for incident in sorted(STORE.site_wide_alerts(tenant.tenant_id),
+                           key=lambda i: i.opened_at):
+        if not start <= incident.opened_at < end:
+            continue
+        answered = None
+        if incident.acknowledged_at is not None:
+            answered = round((incident.acknowledged_at - incident.opened_at)
+                             .total_seconds() / 60)
+        site_wide.append({
+            "incident_id": incident.incident_id,
+            "opened_at": iso(incident.opened_at),
+            "summary": incident.breach_details,
+            "scope": incident.group_scope,
+            "sites": sorted({u.get("site_name") or "" for u in incident.group_units} - {""}),
+            "units": [u.get("location_name") or u.get("sensor_id", "")
+                      for u in incident.group_units],
+            "unit_count": len(incident.group_units),
+            "total_units": incident.group_total_units,
+            "at_night": incident.group_night,
+            "acknowledged_by": incident.acknowledged_by or "",
+            "acknowledged_at": iso(incident.acknowledged_at),
+            "minutes_to_acknowledge": answered,
+            "closed_at": iso(incident.resolved_at),
+        })
+
     from automation import retention_coverage
 
     coverage = retention_coverage(tenant, start)
@@ -197,6 +225,7 @@ def build_log(tenant: Tenant, first: date, last: date) -> Dict[str, Any]:
         "units": units,
         "breaches": sum(len(u["breaches"]) for u in units),
         "unanswered": sum(1 for u in units for b in u["breaches"] if not b["acknowledged_by"]),
+        "site_wide_alerts": site_wide,
         "covers_the_whole_period": coverage["covers_the_whole_period"],
         "caveat": coverage["caveat"],
         "note": (

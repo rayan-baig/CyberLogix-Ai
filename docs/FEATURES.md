@@ -57,6 +57,13 @@ resolve or escalate. It polls every 20 seconds.
 A table view of the fleet is one click away for screen readers and for
 copying figures out.
 
+When many units warm up at once, a **site-wide alert** shows as a red
+banner above everything else, naming the units, with its own Acknowledge
+and Resolve buttons, and as a "Site-wide" card at the top of the incident
+feed. It is a different kind of incident from a unit's alarm: when it is
+raised and who it reaches are in
+[ALERTS.md](ALERTS.md#the-site-wide-alert).
+
 A new business sees a **first-day checklist** at the top: add a site, a
 sensor, someone to call, and send a test alert. Each box is ticked by the
 server from what the account holds (`first_day` in the overview), and the

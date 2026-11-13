@@ -208,6 +208,15 @@ def _mirror_payment(caller: "Invoice", live: "Invoice") -> None:
 # the sweep, on the minute, while the alert is open.
 ALERT_MAIL_KEYS = ("incident-alert:", "incident-undelivered:")
 
+# The sensor_id a site-wide alert carries. Not a sensor: the units are in
+# Incident.group_sensor_ids. Chosen so that nothing looking an incident up
+# by a real sensor's id can find it.
+SITE_WIDE_SENSOR_ID = "SITE-WIDE"
+
+# The contact_id of the business's own number when a site-wide alert
+# reaches it as well as the roster.
+OWNER_CONTACT_ID = "owner"
+
 
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
@@ -1033,6 +1042,7 @@ class HubStore:
             closed = []
             for incident in list(self._incidents.values()):
                 if (incident.sensor_id == sensor_id and incident.unresolved
+                        and not incident.site_wide
                         and incident.tenant_id == doomed.tenant_id):
                     incident.resolved_at = utc_now()
                     self._save_incident(incident)
@@ -1390,7 +1400,25 @@ class HubStore:
             incident.acknowledged_at = utc_now()
             incident.acknowledged_by = actor
             self._save_incident(incident)
+            if incident.site_wide:
+                # Whoever has the site-wide alert is on the way to every
+                # unit in it, so their own alarms stop calling too. One
+                # "1" in the middle of a site-wide problem, not six.
+                for unit in self._incidents.values():
+                    if (unit.tenant_id == incident.tenant_id and not unit.site_wide
+                            and unit.open and unit.sensor_id in incident.group_sensor_ids):
+                        unit.acknowledged_at = incident.acknowledged_at
+                        unit.acknowledged_by = (
+                            f"{actor}, with site-wide alert {incident.incident_id}")
+                        self._save_incident(unit)
             return incident, True
+
+    def covered_by_site_wide(self, incident: Incident) -> List[Incident]:
+        """The open site-wide alerts whose units include this unit's."""
+        with self._lock:
+            return [i for i in self._incidents.values()
+                    if i.site_wide and i.open and i.tenant_id == incident.tenant_id
+                    and incident.sensor_id in i.group_sensor_ids]
 
     EVIDENCE_HOURS_EACH_SIDE = 12.0
 
@@ -1420,7 +1448,8 @@ class HubStore:
         at = reading.recorded_at
         margin = timedelta(hours=self.EVIDENCE_HOURS_EACH_SIDE)
         for incident in self._incidents.values():
-            if incident.sensor_id != reading.sensor_id or incident.tenant_id != tenant_id:
+            if (incident.sensor_id != reading.sensor_id or incident.tenant_id != tenant_id
+                    or incident.site_wide):
                 continue
             closed = incident.resolved_at or incident.acknowledged_at
             # Every excursion while it ran, and everything either side of
@@ -1538,24 +1567,106 @@ class HubStore:
             return self._incidents.get(incident_id)
 
     def incidents_for(
-        self, tenant_id: str, since: Optional[datetime] = None
+        self, tenant_id: str, since: Optional[datetime] = None,
+        include_site_wide: bool = False,
     ) -> List[Incident]:
+        """This business's incidents, newest first.
+
+        One unit's alarms only, unless `include_site_wide`. A site-wide
+        alert is raised on top of the incidents of the units in it, so
+        every count of excursions (compliance, claims, the ROI figure,
+        benchmarks, the digests) would count the same warm spell twice if
+        it were in here by default. The callers that act on alerts (the
+        sweep, the text reply, the console) ask for it by name.
+        """
         with self._lock:
             found = [
                 incident
                 for incident in self._incidents.values()
                 if incident.tenant_id == tenant_id
+                and (include_site_wide or not incident.site_wide)
             ]
         if since is not None:
             found = [i for i in found if i.opened_at >= since]
         return sorted(found, key=lambda i: i.opened_at, reverse=True)
 
-    def open_incidents(self, tenant_id: Optional[str] = None) -> List[Incident]:
+    def open_incidents(
+        self, tenant_id: Optional[str] = None, include_site_wide: bool = False,
+    ) -> List[Incident]:
         with self._lock:
-            found = [i for i in self._incidents.values() if i.open]
+            found = [i for i in self._incidents.values() if i.open
+                     and (include_site_wide or not i.site_wide)]
         if tenant_id is not None:
             found = [i for i in found if i.tenant_id == tenant_id]
         return sorted(found, key=lambda i: i.opened_at)
+
+    def site_wide_alerts(self, tenant_id: str) -> List[Incident]:
+        """This business's site-wide alerts, newest first."""
+        with self._lock:
+            found = [i for i in self._incidents.values()
+                     if i.tenant_id == tenant_id and i.site_wide]
+        return sorted(found, key=lambda i: i.opened_at, reverse=True)
+
+    def open_site_wide_once(
+        self,
+        *,
+        tenant: Tenant,
+        lead: Sensor,
+        scope: str,
+        site_ids: List[Optional[str]],
+        units: List[Dict[str, Any]],
+        total_units: int,
+        night: bool,
+        temperature_fahrenheit: float,
+        summary: str,
+        sms_text: str,
+    ) -> "tuple[Incident, bool]":
+        """Open one site-wide alert, unless one is already live for it.
+
+        Returns (incident, created). The read and the write happen under
+        the one lock, as `open_incident_once` does for a unit, so two
+        sweeps at once -- the timer and the console's "run sweep now" --
+        open one alert between them, and only the caller that opened it
+        sends anything. "Already live" means an unresolved site-wide alert
+        of the same scope sharing a site with this one (for the whole
+        business, any unresolved one across sites).
+        """
+        with self._lock:
+            wanted = set(site_ids)
+            for existing in self._incidents.values():
+                if (existing.tenant_id != tenant.tenant_id or not existing.site_wide
+                        or not existing.unresolved or existing.group_scope != scope):
+                    continue
+                if scope == "business" or wanted & set(existing.group_site_ids):
+                    return existing, False
+            from records import SITE_WIDE_KIND
+
+            incident = Incident(
+                incident_id=self._next_id("INC"),
+                tenant_id=tenant.tenant_id,
+                # Not a real sensor id, so nothing that looks a unit's
+                # incident up by its sensor can ever land on this one.
+                sensor_id=SITE_WIDE_SENSOR_ID,
+                industry_vertical=lead.industry_vertical,
+                catastrophe=("Possible problem across several sites"
+                             if scope == "business"
+                             else "Possible site-wide problem"),
+                temperature_fahrenheit=temperature_fahrenheit,
+                breach_details=summary,
+                sms_text=sms_text,
+                sms_dispatch_source="site_wide_template",
+                opened_at=utc_now(),
+                kind=SITE_WIDE_KIND,
+                group_sensor_ids=[u["sensor_id"] for u in units],
+                group_site_ids=list(site_ids),
+                group_units=list(units),
+                group_scope=scope,
+                group_total_units=total_units,
+                group_night=night,
+            )
+            self._incidents[incident.incident_id] = incident
+            self._db.put("incident", incident.incident_id, incident.to_row())
+            return incident, True
 
     def latest_unresolved_incident(
         self, sensor_id: str, tenant_id: Optional[str] = None
@@ -1574,6 +1685,7 @@ class HubStore:
                 i
                 for i in self._incidents.values()
                 if i.sensor_id == sensor_id and i.unresolved
+                and not i.site_wide
                 and (tenant_id is None or i.tenant_id == tenant_id)
             ]
         if not candidates:
@@ -2614,6 +2726,57 @@ class HubStore:
             )
         ]
 
+    def site_wide_recipients(
+        self, tenant: Tenant, site_ids: List[Optional[str]], channel: str = "sms",
+    ) -> List[Contact]:
+        """Everyone a site-wide alert reaches, in escalation order.
+
+        The whole on-call list for those sites, and the estate-wide people,
+        whoever's turn it is in a rotation, and the business's own number
+        from sign-up (the owner) as well. Quiet hours do not narrow it:
+        a possible attack or a site-wide failure is the alert quiet hours
+        were never meant to hold back. For calls, the people in quiet hours
+        are still rung after everybody awake. Muted people (on leave) and
+        people who opted out of the channel are left out, as everywhere.
+        """
+        import oncall
+        from notifications import same_phone
+
+        now = utc_now()
+        wanted = set(site_ids)
+        roster = [c for c in self.contacts_for(tenant.tenant_id)
+                  if c.active and getattr(c, f"receives_{channel}")
+                  and (c.site_id is None or c.site_id in wanted)]
+        awake, asleep = oncall.awake_first(roster, now)
+        ordered = awake + asleep if channel == "voice" else roster
+        out: List[Contact] = []
+        for contact in ordered:
+            if contact.phone and not any(same_phone(c.phone, contact.phone) for c in out):
+                out.append(contact)
+        if tenant.contact_phone and not any(
+                same_phone(c.phone, tenant.contact_phone) for c in out):
+            out.append(Contact(
+                contact_id=OWNER_CONTACT_ID,
+                tenant_id=tenant.tenant_id,
+                full_name=tenant.contact_name or tenant.company_name,
+                phone=tenant.contact_phone,
+            ))
+        return out
+
+    def alert_recipients(self, tenant: Tenant, incident: Incident) -> List[Contact]:
+        """Who an incident's alert text goes to, read afresh (for re-sends)."""
+        if incident.site_wide:
+            return self.site_wide_recipients(tenant, incident.group_site_ids, "sms")
+        sensor = self.get_sensor(incident.sensor_id)
+        return self.sms_recipients(tenant, sensor.site_id if sensor else None)
+
+    def alert_ladder(self, tenant: Tenant, incident: Incident) -> List[Contact]:
+        """Who an incident's call goes to, in the order to try them."""
+        if incident.site_wide:
+            return self.site_wide_recipients(tenant, incident.group_site_ids, "voice")
+        sensor = self.get_sensor(incident.sensor_id)
+        return self.voice_ladder(tenant, sensor.site_id if sensor else None)
+
     # ---- sensor thresholds ----------------------------------------------
 
     def set_sensor_overrides(
@@ -3279,6 +3442,8 @@ class HubStore:
 # re-exports are deliberate.
 __all__ = [
     "ALERT_MAIL_KEYS",
+    "SITE_WIDE_SENSOR_ID",
+    "OWNER_CONTACT_ID",
     "DISPATCH_SLA_SECONDS",
     "SENSOR_OFFLINE_AFTER_MINUTES",
     "VOICE_ESCALATION_GRACE_MINUTES",

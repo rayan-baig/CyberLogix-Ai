@@ -226,10 +226,14 @@ def send_alert_email(tenant: Tenant, sensor, incident) -> dict:
     from notifications import PUBLIC_BASE_URL
 
     try:
-        subject, body = wording.alert_email(
-            tenant, sensor, incident, tenant.temperature_unit,
-            console_url=f"{PUBLIC_BASE_URL}/console" if PUBLIC_BASE_URL else "",
-        )
+        console_url = f"{PUBLIC_BASE_URL}/console" if PUBLIC_BASE_URL else ""
+        if incident.site_wide:
+            subject, body = wording.site_wide_email(tenant, incident, console_url)
+        else:
+            subject, body = wording.alert_email(
+                tenant, sensor, incident, tenant.temperature_unit,
+                console_url=console_url,
+            )
         return send_mail(
             to_address=tenant.contact_email or "",
             subject=subject,

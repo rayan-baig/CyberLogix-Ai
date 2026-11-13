@@ -366,6 +366,10 @@ class Reading:
         }
 
 
+# Incident.kind of the possible attack or site-wide failure alert.
+SITE_WIDE_KIND = "site_wide"
+
+
 @dataclass
 class Incident:
     """An open or historical catastrophe event."""
@@ -426,6 +430,28 @@ class Incident:
     sms_retries: List[Dict[str, Any]] = field(default_factory=list)
     # How many steps of VOICE_RETRY_AFTER_MINUTES have been claimed.
     voice_retry_step: int = 0
+    # "unit" for an alarm on one unit. "site_wide" for the possible
+    # attack or site-wide failure alert (sitewide.py): many units warming
+    # together, at one site or across several. A site-wide alert is not an
+    # excursion of its own -- each unit in it has its own incident -- so
+    # the store leaves it out of every count of excursions unless a caller
+    # asks for it (`incidents_for(..., include_site_wide=True)`).
+    kind: str = "unit"
+    # For a site-wide alert: the units that were warming, the sites they
+    # are at (None for units at no site), and the readings that made the
+    # case, so the console, the inspector's log and the monthly report can
+    # name them after the readings themselves have rolled off.
+    group_sensor_ids: List[str] = field(default_factory=list)
+    group_site_ids: List[Optional[str]] = field(default_factory=list)
+    group_units: List[Dict[str, Any]] = field(default_factory=list)
+    group_scope: str = ""
+    group_total_units: int = 0
+    group_night: bool = False
+
+    @property
+    def site_wide(self) -> bool:
+        """The possible attack or site-wide failure alert, not one unit's."""
+        return self.kind == SITE_WIDE_KIND
 
     def _sms_receipts(self) -> List[Dict[str, Any]]:
         receipts = list(self.sms_fanout) or (
@@ -582,6 +608,13 @@ class Incident:
             "sms_retry_step": self.sms_retry_step,
             "sms_retries": list(self.sms_retries),
             "voice_retry_step": self.voice_retry_step,
+            "kind": self.kind,
+            "group_sensor_ids": list(self.group_sensor_ids),
+            "group_site_ids": list(self.group_site_ids),
+            "group_units": list(self.group_units),
+            "group_scope": self.group_scope,
+            "group_total_units": self.group_total_units,
+            "group_night": self.group_night,
         }
 
     @classmethod
@@ -623,6 +656,15 @@ class Incident:
             sms_retry_step=int(row.get("sms_retry_step") or 0),
             sms_retries=list(row.get("sms_retries") or []),
             voice_retry_step=int(row.get("voice_retry_step") or 0),
+            # Defaulted: every incident written before site-wide alerts
+            # existed was one unit's.
+            kind=row.get("kind") or "unit",
+            group_sensor_ids=list(row.get("group_sensor_ids") or []),
+            group_site_ids=list(row.get("group_site_ids") or []),
+            group_units=list(row.get("group_units") or []),
+            group_scope=row.get("group_scope") or "",
+            group_total_units=int(row.get("group_total_units") or 0),
+            group_night=bool(row.get("group_night")),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -674,6 +716,14 @@ class Incident:
                     ("a manager's review", bool(self.reviewed_by)),
                 ) if not present
             ],
+            "kind": self.kind,
+            "site_wide": self.site_wide,
+            "group_sensor_ids": list(self.group_sensor_ids),
+            "group_site_ids": list(self.group_site_ids),
+            "group_units": list(self.group_units),
+            "group_scope": self.group_scope,
+            "group_total_units": self.group_total_units,
+            "group_night": self.group_night,
             "state": (
                 "resolved"
                 if self.resolved_at

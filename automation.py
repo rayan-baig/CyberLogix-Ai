@@ -516,7 +516,7 @@ def _retry_failed_alert_texts(tenant: Tenant, now, auto_escalate: bool) -> List[
     failure is the one tried.
     """
     actions: List[Dict[str, Any]] = []
-    for incident in STORE.open_incidents(tenant.tenant_id):
+    for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
         step = incident.sms_retry_due(now)
         if not step:
             if (incident.alert_texts_failed
@@ -544,8 +544,7 @@ def _retry_failed_alert_texts(tenant: Tenant, now, auto_escalate: bool) -> List[
             continue
         if not STORE.claim_sms_retry(incident, step):
             continue
-        sensor = STORE.get_sensor(incident.sensor_id)
-        recipients = STORE.sms_recipients(tenant, sensor.site_id if sensor else None)
+        recipients = STORE.alert_recipients(tenant, incident)
         deliveries = _resend(tenant, incident, recipients)
         STORE.record_sms_retry(incident, step, deliveries, now)
         landed = sum(1 for d in deliveries if d.get("delivered"))
@@ -577,14 +576,21 @@ def _tell_owner_nobody_was_texted(tenant: Tenant, incident) -> None:
     from notifications import PUBLIC_BASE_URL
 
     sensor = STORE.get_sensor(incident.sensor_id)
-    where = (f"{sensor.location_name or sensor.sensor_id} at "
-             f"{wording.place_of(sensor, tenant)}") if sensor else incident.sensor_id
+    if incident.site_wide:
+        what = incident.breach_details.rstrip(".")
+        subject = f"NOBODY HAS BEEN TEXTED: {what}"
+        opening = f"{what}. Raised at {iso(incident.opened_at)} (UTC)"
+    else:
+        where = (f"{sensor.location_name or sensor.sensor_id} at "
+                 f"{wording.place_of(sensor, tenant)}") if sensor else incident.sensor_id
+        subject = f"NOBODY HAS BEEN TEXTED: {where} is out of range"
+        opening = f"{where} went out of range at {iso(incident.opened_at)} (UTC)"
     console = f"{PUBLIC_BASE_URL}/console" if PUBLIC_BASE_URL else "the console"
     mail.send(
         to_address=tenant.contact_email or "",
-        subject=f"NOBODY HAS BEEN TEXTED: {where} is out of range",
+        subject=subject,
         body=(
-            f"{where} went out of range at {iso(incident.opened_at)} (UTC), "
+            f"{opening}, "
             f"alert {incident.incident_id}.\n\n"
             f"We tried to text your on-call team {1 + len(SMS_RETRY_AFTER_MINUTES)} "
             "times and the text message service failed every time, so nobody "
@@ -608,7 +614,7 @@ def _retry_failed_calls(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[s
     actions: List[Dict[str, Any]] = []
     if not auto_escalate or not tenant.entitlements()["voice_escalation"]:
         return actions
-    for incident in STORE.open_incidents(tenant.tenant_id):
+    for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
         step = incident.voice_retry_due(now)
         if not step or not STORE.claim_voice_retry(incident, step):
             continue
@@ -674,15 +680,30 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
                 }
             )
 
+    # Many units warming together: one urgent alert on top of theirs
+    # (sitewide.py). Before the escalation below, which calls it in this
+    # same pass. Guarded like everything else here: a fault in it must not
+    # stop the per-unit escalation, which is the alert that always works.
+    try:
+        import sitewide
+
+        actions.extend(sitewide.raise_alerts(tenant, now))
+    except Exception as exc:  # noqa: BLE001 - the sweep must carry on
+        logger.exception("Site-wide check failed for tenant %s (%s).",
+                         tenant.tenant_id, exc)
+
     actions.extend(_retry_failed_alert_texts(tenant, now, auto_escalate))
 
     voice_allowed = tenant.entitlements()["voice_escalation"]
     escalated = 0
 
-    for incident in STORE.open_incidents(tenant.tenant_id):
+    for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
         if incident.voice_escalated_at is not None:
             continue
-        if incident.minutes_open(now) < VOICE_ESCALATION_GRACE_MINUTES:
+        # A site-wide alert is called straight away: there is no grace in
+        # which a door might be shut, and every minute is more warm stock.
+        if (not incident.site_wide
+                and incident.minutes_open(now) < VOICE_ESCALATION_GRACE_MINUTES):
             continue
 
         if not auto_escalate:

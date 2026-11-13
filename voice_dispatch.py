@@ -91,6 +91,11 @@ def build_voice_script(incident: Incident, tenant: Tenant,
     """
     import wording
 
+    if incident.site_wide:
+        # No model line here: the words are fixed, and say the same to
+        # everybody on the list.
+        return (wording.site_wide_voice_script(tenant, incident, can_press),
+                "site_wide_template")
     sensor = STORE.get_sensor(incident.sensor_id)
     if sensor is None:  # pragma: no cover - a retired unit keeps its incidents
         location = "the monitored unit"
@@ -129,7 +134,11 @@ def _notify_hooks(
     from webhooks import dispatch_event, dispatch_event_later
 
     send = dispatch_event_later if background else dispatch_event
-    send(tenant, incident, STORE.get_sensor(incident.sensor_id), state, note)
+    sensor = STORE.get_sensor(incident.sensor_id)
+    if incident.site_wide and incident.group_sensor_ids:
+        # The channels covering the first unit's site, and the estate's.
+        sensor = STORE.get_sensor(incident.group_sensor_ids[0])
+    send(tenant, incident, sensor, state, note)
 
 
 def dispatch_voice_call(incident: Incident, tenant: Tenant,
@@ -151,19 +160,25 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant,
 
     # Walk the escalation ladder: stop at the first person actually reached,
     # so a wrong number or a dead line does not end the escalation.
-    sensor = STORE.get_sensor(incident.sensor_id)
-    ladder = STORE.voice_ladder(tenant, sensor.site_id if sensor else None)
+    #
+    # A site-wide alert rings everybody on it instead, one after another,
+    # each number once: it is meant to reach the whole on-call list and the
+    # owner. It stops early only if somebody acknowledges in the meantime.
+    ladder = STORE.alert_ladder(tenant, incident)
     fanout = []
     delivery = None
     for contact in ladder:
+        if incident.site_wide and fanout and incident.acknowledged_at is not None:
+            break
         attempt = dict(
             place_voice_call(contact.phone, script, tenant.tenant_id, action_url),
             contact_id=contact.contact_id,
             contact_name=contact.full_name,
         )
         fanout.append(attempt)
-        delivery = attempt
-        if attempt["delivered"]:
+        if delivery is None or not delivery.get("delivered"):
+            delivery = attempt
+        if attempt["delivered"] and not incident.site_wide:
             break
 
     STORE.record_voice_escalation(incident, script, source, delivery, fanout)
@@ -172,8 +187,10 @@ def dispatch_voice_call(incident: Incident, tenant: Tenant,
         tenant,
         incident,
         "escalated",
-        f"No acknowledgement after {int(incident.minutes_open())} minutes; "
-        "a voice call has been placed.",
+        ("Site-wide alert: calling everyone on call now."
+         if incident.site_wide else
+         f"No acknowledgement after {int(incident.minutes_open())} minutes; "
+         "a voice call has been placed."),
         background=hooks_in_background,
     )
 
@@ -353,13 +370,21 @@ def _alerted(tenant: Tenant, incident: Incident, phone: str):
             contact = STORE.get_contact(receipt.get("contact_id") or "")
             if contact is not None and contact.tenant_id == tenant.tenant_id and contact.active:
                 return contact
-    sensor = STORE.get_sensor(incident.sensor_id)
-    site_id = sensor.site_id if sensor else None
-    for contact in (STORE.sms_recipients(tenant, site_id)
-                    + STORE.voice_ladder(tenant, site_id)):
+    # A site-wide alert also goes to the business's own number; the
+    # recipients read afresh include it.
+    for contact in (STORE.alert_recipients(tenant, incident)
+                    + STORE.alert_ladder(tenant, incident)):
         if contact.phone and same_phone(contact.phone, phone):
             return contact
     return None
+
+
+def _reply_name(incident: Incident) -> str:
+    """What a text reply calls an alert: the unit, or the site-wide alert."""
+    if incident.site_wide:
+        return "the site-wide alert"
+    sensor = STORE.get_sensor(incident.sensor_id)
+    return sensor.location_name if sensor and sensor.location_name else incident.sensor_id
 
 
 def _on_any_roster(phone: str) -> bool:
@@ -405,7 +430,7 @@ async def sms_reply(request: Request) -> Response:
     # first, across every business that has them on a roster.
     mine = []
     for tenant in STORE.list_tenants():
-        for incident in STORE.incidents_for(tenant.tenant_id):
+        for incident in STORE.incidents_for(tenant.tenant_id, include_site_wide=True):
             if incident.resolved_at is not None:
                 continue
             contact = _alerted(tenant, incident, phone)
@@ -431,14 +456,22 @@ async def sms_reply(request: Request) -> Response:
                                "this number.", first_tenant)
 
     waiting = [row for row in mine if row[1].acknowledged_at is None]
+    # In a site-wide problem the same number holds the site-wide alert and
+    # the alerts of the units in it. A plain "1" is the answer to the
+    # site-wide one, and acknowledging it acknowledges those units too, so
+    # it does not ask "which one?" in the middle of an emergency.
+    site_wide = [row for row in waiting if row[1].site_wide]
+    if number is None and len(site_wide) == 1 and all(
+            row[1].site_wide or row[1].sensor_id in site_wide[0][1].group_sensor_ids
+            for row in waiting):
+        waiting = site_wide
     if not waiting:
         _, incident, _ = mine[0]
         return _sms_answer(f"CyberLogix: already acknowledged by "
                            f"{incident.acknowledged_by}.", first_tenant)
     if len(waiting) > 1:
         listed = "; ".join(
-            f"{_alert_number(i)} {(STORE.get_sensor(i.sensor_id).location_name if STORE.get_sensor(i.sensor_id) else i.sensor_id)}"
-            for _, i, _ in waiting[:4])
+            f"{_alert_number(i)} {_reply_name(i)}" for _, i, _ in waiting[:4])
         return _sms_answer(f"CyberLogix: {len(waiting)} alerts are open: {listed}. "
                            f"Reply ACK and the number, e.g. ACK "
                            f"{_alert_number(waiting[0][1])}.", first_tenant)
@@ -447,9 +480,7 @@ async def sms_reply(request: Request) -> Response:
     who = contact.full_name or "on-call contact"
     incident, claimed = STORE.acknowledge_incident(
         incident, f"{who}, by text reply ({contact.phone})")
-    sensor = STORE.get_sensor(incident.sensor_id)
-    where = (sensor.location_name if sensor and sensor.location_name
-             else incident.sensor_id)
+    where = _reply_name(incident)
     if not claimed:
         return _sms_answer(f"CyberLogix: already acknowledged by "
                            f"{incident.acknowledged_by}.", tenant.tenant_id)
@@ -460,8 +491,8 @@ async def sms_reply(request: Request) -> Response:
     await asyncio.to_thread(_notify_hooks, tenant, incident, "acknowledged",
                             f"Acknowledged by text by {who}.")
     logger.info("Incident %s acknowledged by text reply.", incident.incident_id)
-    return _sms_answer(f"CyberLogix: thanks, {who}. {where} is yours. No more "
-                       "calls for this alert.", tenant.tenant_id)
+    return _sms_answer(f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is "
+                       "yours. No more calls for this alert.", tenant.tenant_id)
 
 
 @router.get("/pending")
