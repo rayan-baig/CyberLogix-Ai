@@ -713,6 +713,36 @@ pre.snippet {
   border-color: rgba(224,83,79,0.42); background: rgba(224,83,79,0.09);
   color: #FFC9C6; padding: 13px 18px;
 }
+/* The site-wide alert: many units warming at once. Its own look, so it is
+   never read as one more unit's alarm: a solid critical edge, the units
+   listed, and the actions on the banner itself. */
+.banner.sitewide-banner {
+  border-color: rgba(224,83,79,0.55); background: rgba(224,83,79,0.12);
+  color: var(--ink); padding: 0; border-left: 4px solid var(--critical);
+}
+.sitewide { padding: 15px 18px; }
+.sitewide + .sitewide { border-top: 1px solid rgba(224,83,79,0.3); }
+.sitewide-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: #FFC9C6; margin-bottom: 6px;
+}
+.sitewide-title {
+  font-family: var(--display); font-size: 19px; line-height: 1.3;
+  color: var(--ink); overflow-wrap: anywhere;
+}
+.sitewide-why { margin: 6px 0 10px; color: var(--ink-2); line-height: 1.5; }
+.sitewide-units {
+  list-style: none; margin: 0 0 10px; padding: 0;
+  display: grid; gap: 4px;
+}
+.sitewide-units li { font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.sitewide-units li::before { content: "▲ "; color: var(--critical); }
+.sitewide-site { color: var(--muted); }
+.sitewide-reading { font-variant-numeric: tabular-nums; }
+.sitewide-meta { font-size: 12.5px; color: var(--muted); }
+.sitewide .incident-actions { margin-top: 10px; }
+.incident.sitewide-card { border-left-width: 4px; border-color: rgba(224,83,79,0.42); }
+.incident.sitewide-card.st-open { border-left-color: var(--critical); }
 .banner .banner-act {
   display: inline-block; margin-left: 10px; font-weight: 600;
   color: inherit; text-decoration: underline; cursor: pointer;
