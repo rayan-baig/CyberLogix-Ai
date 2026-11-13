@@ -200,6 +200,14 @@ def summary(tenant: Tenant, first: date, last: date,
         key=lambda row: (-row["acknowledged"], row["name"]),
     )
 
+    site_wide = [
+        {"summary": a["summary"], "opened_at": a["opened_at"],
+         "units": a["units"], "at_night": a["at_night"],
+         "acknowledged_by": _name(a["acknowledged_by"]) if a["acknowledged_by"] else "",
+         "minutes_to_acknowledge": a["minutes_to_acknowledge"]}
+        for a in log.get("site_wide_alerts", [])
+    ]
+
     sensors = STORE.sensors_for(tenant.tenant_id)
     names = {s.sensor_id: s.location_name or s.sensor_id for s in sensors}
     open_alerts = sorted(
@@ -208,6 +216,10 @@ def summary(tenant: Tenant, first: date, last: date,
          for i in STORE.incidents_for(tenant.tenant_id) if i.resolved_at is None),
         key=lambda row: row["since"] or "",
     )
+    open_alerts += [
+        {"unit": i.breach_details.rstrip("."), "since": iso(i.opened_at),
+         "acknowledged": i.acknowledged_at is not None, "site_wide": True}
+        for i in STORE.site_wide_alerts(tenant.tenant_id) if i.resolved_at is None]
     offline = [{"unit": names[s.sensor_id], "last_seen": iso(s.last_seen)}
                for s in sensors if s.last_seen is not None and s.offline(now)]
     never = [names[s.sensor_id] for s in sensors if s.last_seen is None]
@@ -233,6 +245,8 @@ def summary(tenant: Tenant, first: date, last: date,
             statistics.median(b["minutes_to_acknowledge"] for b in answered)
             if answered else None),
         "who_acknowledged": who,
+        "site_wide_alerts": site_wide,
+        "site_wide_count": len(site_wide),
         "open_problems": {
             "alerts": open_alerts,
             "offline": offline,
@@ -263,6 +277,12 @@ def _problem_lines(report: Dict[str, Any]) -> List[str]:
     found = report["open_problems"]
     lines = []
     for row in found["alerts"]:
+        if row.get("site_wide"):
+            lines.append(
+                f"{row['unit']}: site-wide alert since {_when(row['since'])}, "
+                + ("acknowledged, not yet closed" if row["acknowledged"]
+                   else "nobody has acknowledged it"))
+            continue
         lines.append(
             f"{row['unit']}: out of range since {_when(row['since'])}, "
             + ("acknowledged, not yet closed" if row["acknowledged"]
@@ -320,6 +340,18 @@ def render_text(report: Dict[str, Any]) -> str:
     else:
         lines.append("Nothing was recorded this month, so there is nothing "
                      "to report. That is not the same as nothing going wrong.")
+
+    if report.get("site_wide_alerts"):
+        count = report["site_wide_count"]
+        lines += ["", f"Site-wide alerts (many units warming at once): {count}"]
+        for a in report["site_wide_alerts"][:LIST_AT_MOST]:
+            answer = (f"acknowledged by {a['acknowledged_by']} in "
+                      f"{_minutes(a['minutes_to_acknowledge'])}"
+                      if a["acknowledged_by"] else "never acknowledged")
+            lines.append(f"  {_when(a['opened_at'])}: {a['summary'].rstrip('.')} "
+                         f"({', '.join(a['units'])}), {answer}")
+        if count > LIST_AT_MOST:
+            lines.append(f"  and {count - LIST_AT_MOST} more, all in the log below.")
 
     problems = _problem_lines(report)
     lines += ["", "Open now:" if problems else "Open now: nothing."]

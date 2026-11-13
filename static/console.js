@@ -921,8 +921,78 @@ function render(d, health) {
   const open = d.incidents.filter((i) => i.state !== "resolved").length;
   $("incident-note").textContent =
     d.incidents.length ? `${open} active, ${d.incidents.length} total` : "";
-  renderIncidents(d.incidents, d.entitlements);
+  renderSiteWide(d.site_wide_alerts || []);
+  renderIncidents(d.incidents, d.entitlements, d.site_wide_alerts || []);
   renderByod(d.sensors);
+}
+
+/* The possible attack or site-wide failure alert: many units warming at
+   once (sitewide.py). Its own banner, above everything, and its own card
+   type, so it can never be read as one more unit alarm. */
+function siteWideUnits(a) {
+  const u = a.temperature_unit || state.unit;
+  return `<ul class="sitewide-units">${(a.group_units || []).map((x) => {
+    const how = x.over_limit && x.limit_display !== null && x.limit_display !== undefined
+      ? `over its ${esc(x.limit_display)}°${esc(u)} limit` : "rising";
+    return `<li><b>${esc(x.location_name)}</b>`
+      + (x.site_name && a.group_scope === "business"
+          ? ` <span class="sitewide-site">${esc(x.site_name)}</span>` : "")
+      + ` <span class="sitewide-reading">${esc(x.temperature_display)}°${esc(u)}, ${how}</span></li>`;
+  }).join("")}</ul>`;
+}
+
+function siteWideReach(a) {
+  const texted = (a.sms_fanout || []).length;
+  const called = (a.voice_fanout || []).length;
+  const parts = [`Raised ${esc(stamp(a.opened_at))}`];
+  if (texted) parts.push(`texted ${texted} ${texted === 1 ? "person" : "people"}`);
+  if (called) parts.push(`called ${called}`);
+  if (a.acknowledged_by) parts.push(`acknowledged by ${esc(a.acknowledged_by)}`);
+  if (a.group_night) parts.push("at night");
+  return parts.join(" · ");
+}
+
+function siteWideActions(a) {
+  return `<div class="incident-actions">${
+    a.state === "open"
+      ? `<button class="btn btn-sm" data-ack="${esc(a.incident_id)}">Acknowledge</button>` : ""}${
+    a.state !== "resolved"
+      ? `<button class="btn btn-sm" data-resolve="${esc(a.incident_id)}">Resolve</button>` : ""}</div>`;
+}
+
+const SITE_WIDE_WHY = "This can mean a power cut, a door left open, or someone "
+  + "tampering with the fridge controls. Check now. Each unit also has its own alert below.";
+
+function renderSiteWide(alerts) {
+  const live = alerts.filter((a) => a.state !== "resolved");
+  const banner = $("site-wide-banner");
+  if (!live.length) { banner.hidden = true; banner.innerHTML = ""; return; }
+  banner.hidden = false;
+  banner.innerHTML = live.map((a) => `<div class="sitewide st-${esc(a.state)}">
+      <div class="sitewide-kicker">Site-wide alert · ${esc(a.state)}</div>
+      <div class="sitewide-title">${esc(a.breach_details)}</div>
+      <p class="sitewide-why">${esc(SITE_WIDE_WHY)}</p>
+      ${siteWideUnits(a)}
+      <div class="sitewide-meta">${siteWideReach(a)}</div>
+      ${siteWideActions(a)}
+    </div>`).join("");
+}
+
+function siteWideCard(a) {
+  return `<article class="incident sitewide-card st-${esc(a.state)}">
+      <div class="incident-top">
+        <span class="badge s-critical"><span class="dot" aria-hidden="true"></span>Site-wide</span>
+        ${badge(a.state === "open" ? "critical" : a.state === "acknowledged" ? "elevated" : "low", a.state)}
+        <span class="incident-title grow">${esc(a.catastrophe_type)}</span>
+        <span class="card-note">${esc((a.group_units || []).length)} units · ${esc(a.minutes_open)} min</span>
+      </div>
+      <div class="card-note">${esc(a.breach_details)}</div>
+      ${siteWideUnits(a)}
+      <div class="quote"><div class="quote-label">Text sent to everyone on call</div>${
+        esc(a.dispatched_sms_text)}</div>
+      <div class="card-note">${siteWideReach(a)}</div>
+      ${siteWideActions(a)}
+    </article>`;
 }
 
 /* The estate's own words. Every string that would otherwise say "sensor"
@@ -1392,7 +1462,12 @@ function incidentTimeline(i) {
     + `</li>`).join("")}</ul>`;
 }
 
-function renderIncidents(incidents, entitlements) {
+function renderIncidents(incidents, entitlements, siteWide) {
+  const groups = (siteWide || []).map(siteWideCard).join("");
+  if (!incidents.length && groups) {
+    $("incidents").innerHTML = groups;
+    return;
+  }
   if (!incidents.length) {
     const total = (state.data && state.data.sensors.length) || 0;
     $("incidents").innerHTML = `<div class="empty">${
@@ -1405,7 +1480,7 @@ function renderIncidents(incidents, entitlements) {
     return;
   }
 
-  $("incidents").innerHTML = incidents.map((i) => {
+  $("incidents").innerHTML = groups + incidents.map((i) => {
     const stateKind = i.state === "open" ? "critical"
                     : i.state === "acknowledged" ? "elevated" : "low";
     const canEscalate = i.state === "open" && !i.voice_escalated_at
@@ -3429,6 +3504,27 @@ async function openInspectorLog(from, to, print) {
     </section>`;
   }).join("");
 
+  const groups = (log.site_wide_alerts || []);
+  const groupSection = groups.length ? `<section class="log-unit log-sitewide">
+      <h3 class="log-unit-name">Site-wide alerts</h3>
+      <div class="log-meta">Many units warming at once. Each unit is also listed
+        below with its own entry.</div>
+      <div class="scrollx"><table class="log-table">
+        <thead><tr><th>When</th><th>What</th><th>Units</th>
+          <th>Acknowledged by</th><th>Closed</th></tr></thead>
+        <tbody>${groups.map((g) => `<tr class="log-out">
+          <td>${esc(stamp(g.opened_at))}${g.at_night ? `<span class="log-sub">at night</span>` : ""}</td>
+          <td>${esc(g.summary)}</td>
+          <td>${esc(g.units.join(", "))}</td>
+          <td>${g.acknowledged_by
+            ? `${esc(g.acknowledged_by)}${g.minutes_to_acknowledge !== null
+                ? `<span class="log-sub">after ${esc(g.minutes_to_acknowledge)} min</span>` : ""}`
+            : `<strong>Nobody</strong>`}</td>
+          <td>${g.closed_at ? esc(stamp(g.closed_at)) : "still open"}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </section>` : "";
+
   $("drawer").innerHTML = `
     <div class="drawer-head">
       <div class="grow">
@@ -3444,8 +3540,11 @@ async function openInspectorLog(from, to, print) {
       <div><span class="k">Units</span><span class="v">${esc(log.units.length)}</span></div>
       <div><span class="k">Times out of range</span><span class="v">${esc(log.breaches)}</span></div>
       <div><span class="k">Not acknowledged</span><span class="v">${esc(log.unanswered)}</span></div>
+      ${groups.length ? `<div><span class="k">Site-wide alerts</span><span class="v">${
+        esc(groups.length)}</span></div>` : ""}
     </div>
     ${log.covers_the_whole_period ? "" : `<div class="read-out no u-mt-10">${esc(log.caveat)}</div>`}
+    ${groupSection}
     ${sections || `<div class="card-note u-mt-10">No units yet.</div>`}
     <div class="card-note u-mt-16">${esc(log.note)} Made ${esc(stamp(log.generated_at))}
       by CyberLogix AI, a product of MTRX Horizyn.</div>

@@ -38,6 +38,12 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "night and somebody opens the door on Monday morning."
         ),
         "asks_after": "the health inspector",
+        # The one line about fridge controls being taken over (October
+        # 2026), on the pages of the trades it happened to.
+        "controls_line": (
+            "If someone takes over your fridge controls, our own sensors "
+            "still see the warming, and we call your team within minutes."
+        ),
         "licences": ["Food handler cards", "Food protection manager",
                      "Allergen awareness", "Alcohol service permits"],
     },
@@ -50,6 +56,10 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "decides whether anybody pays for the replacement."
         ),
         "asks_after": "the board of pharmacy, and the manufacturer",
+        "controls_line": (
+            "If someone takes over your fridge controls, our own sensors "
+            "still see the warming, and we call your team within minutes."
+        ),
         "licences": ["Pharmacist licence", "Pharmacy technician registration",
                      "Immunisation certification",
                      "Controlled substance registration"],

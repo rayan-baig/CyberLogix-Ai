@@ -43,6 +43,11 @@ h1.lede {
 /* The fix in one paragraph, above the detail: the sentence a reader
    who stops here still leaves with. */
 .slab .fix-line { color: var(--ink); font-size: 16.5px; margin-bottom: 18px; }
+/* One line, on the trades whose fridge controls were taken over in 2026. */
+.slab .controls-line {
+  color: var(--ink-2); font-size: 15px; margin: -6px 0 18px;
+  border-left: 2px solid var(--accent-deep); padding-left: 12px;
+}
 
 /* The four things, numbered, because it is a sequence. */
 .does { list-style: none; counter-reset: n; margin: 0; padding: 0; }

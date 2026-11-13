@@ -40,6 +40,7 @@ function renderIndustry(d) {
     <section class="slab" id="fix">
       <h2>The fix</h2>
       <p class="fix-line">${esc(d.fix)}</p>
+      ${d.controls_line ? `<p class="controls-line">${esc(d.controls_line)}</p>` : ""}
       <ol class="does">
         <li><b>We watch every ${esc(d.asset_noun)}, all night.</b>
           A small sensor reads the temperature every few minutes and sends

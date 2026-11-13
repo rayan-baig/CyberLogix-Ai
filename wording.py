@@ -281,3 +281,159 @@ def alert_email(tenant, sensor, incident, unit: str,
         f"Alert {incident.incident_id}, opened {iso(incident.opened_at)} (UTC).",
     ]
     return subject, "\n".join(line for line in lines if line is not None)
+
+
+# ---- the site-wide alert -------------------------------------------------
+#
+# Many units warming together (sitewide.py). Calm and plain, like the rest:
+# what is happening, where, what it can mean, and what to do. It names the
+# three ordinary causes alongside tampering, because a power cut or a door
+# is far more likely, and a text that cries "attack" is one that gets
+# argued with instead of acted on.
+
+# Trades whose units are fridges and freezers, so "the fridge controls"
+# is the plain phrase. Anywhere else it is "the cooling controls".
+FRIDGE_TRADES = ("restaurant", "pharmacy", "medical_lab", "country_club", "logistics")
+
+SITE_WIDE_CAUSES_SMS = "Power cut, open door or tampered controls?"
+
+
+def site_wide_place(scope: str, site_names) -> str:
+    """Where: the site, or how many sites."""
+    names = [n for n in site_names if n]
+    if scope == "business" and len(names) > 1:
+        return f"{len(names)} sites"
+    return names[0] if names else "your site"
+
+
+def site_wide_summary(scope: str, count: int, total: int, site_names) -> str:
+    """One line for the console, the log and the channels."""
+    place = site_wide_place(scope, site_names)
+    if scope == "business" and len([n for n in site_names if n]) > 1:
+        return (f"Possible problem across {place}: {count} units at "
+                f"{', '.join(n for n in site_names if n)} started warming at once.")
+    return f"Possible site-wide problem at {place}: {count} of {total} units warming at once."
+
+
+def site_wide_controls(verticals) -> str:
+    verticals = set(verticals)
+    if verticals and verticals <= set(FRIDGE_TRADES):
+        return "the fridge controls"
+    return "the cooling controls"
+
+
+def site_wide_sms(tenant, scope: str, count: int, total: int, site_names) -> str:
+    """The site-wide text, inside one segment.
+
+    Possible site-wide problem at Main Street: 5 of 7 units warming at
+    once. Power cut, open door or tampered controls? Check now. Reply 1
+    if you are on it.
+    """
+    from notifications import to_gsm7
+
+    many = scope == "business" and len([n for n in site_names if n]) > 1
+    place = site_wide_place(scope, site_names)
+    if many:
+        head, what = f"Possible problem across {place}", f"{count} units warming at once."
+    else:
+        head, what = (f"Possible site-wide problem at {place}",
+                      f"{count} of {total} units warming at once.")
+    for causes, ack in ((SITE_WIDE_CAUSES_SMS, SMS_ACK),
+                        (SITE_WIDE_CAUSES_SMS, "Reply 1 if on it."),
+                        ("", SMS_ACK)):
+        text = to_gsm7(" ".join(part for part in (
+            f"{head}: {what}", causes, "Check now.", ack) if part))
+        if _septets(text) <= SMS_LIMIT:
+            return text
+    # A very long site name is what gives; the count and "Reply 1" stay.
+    fixed = to_gsm7(f"Possible site-wide problem at : {what} Check now. {SMS_ACK}")
+    room = max(SMS_LIMIT - _septets(fixed), 8)
+    return _cut(to_gsm7(f"Possible site-wide problem at {_cut(to_gsm7(place), room)}: "
+                        f"{what} Check now. {SMS_ACK}"), SMS_LIMIT, mark="")
+
+
+def _site_wide_where(incident) -> "tuple[str, int, int]":
+    names = []
+    for unit in incident.group_units:
+        name = unit.get("site_name") or ""
+        if name not in names:
+            names.append(name)
+    return (site_wide_place(incident.group_scope, names), len(incident.group_units),
+            incident.group_total_units)
+
+
+def site_wide_voice_script(tenant, incident, can_press: bool = True) -> str:
+    """The call for a site-wide alert. Short, because it is read twice."""
+    place, count, total = _site_wide_where(incident)
+    controls = site_wide_controls(u.get("industry_vertical") for u in incident.group_units)
+    if incident.group_scope == "business" and place.endswith(" sites"):
+        where = f"Across {place}, {count} units started warming at the same time."
+    else:
+        where = f"At {place}, {count} of {total} units started warming at the same time."
+    lines = [
+        f"This is CyberLogix AI with an urgent alert for {tenant.company_name}.",
+        where,
+        "This can mean a power cut, a door left open, or someone tampering "
+        f"with {controls}.",
+        "Please check the site now.",
+    ]
+    if can_press:
+        lines.append("Press 1 now to say you are dealing with it, "
+                     "and the calls will stop.")
+    else:
+        lines.append("To stop these calls, reply 1 to the alert text, "
+                     "or acknowledge it in the console.")
+    return " ".join(lines)
+
+
+def site_wide_email(tenant, incident, console_url: str = "") -> Tuple[str, str]:
+    """The site-wide alert by email, to the business's own address."""
+    from store import iso
+
+    unit = tenant.temperature_unit
+    place, count, total = _site_wide_where(incident)
+    controls = site_wide_controls(u.get("industry_vertical") for u in incident.group_units)
+    many = incident.group_scope == "business" and place.endswith(" sites")
+    headline = (f"possible problem across {place}, {count} units warming at once"
+                if many else
+                f"possible site-wide problem at {place}, {count} of {total} units "
+                "warming at once")
+    subject = f"URGENT: {headline}"
+    texts_failed = bool(getattr(incident, "alert_texts_failed", False)) and any(
+        (r or {}).get("status") != "not_configured" for r in incident._sms_receipts())
+    if texts_failed:
+        subject = "TEXTS FAILED - " + subject
+    rows = []
+    for u in incident.group_units:
+        reading = f"{_number(u['temperature_display'])}°{unit}"
+        how = (f"over its {_number(u['limit_display'])}°{unit} limit"
+               if u.get("over_limit") and u.get("limit_display") is not None
+               else "rising")
+        site = f" at {u['site_name']}" if many and u.get("site_name") else ""
+        rows.append(f"  {u['location_name']} ({u['sensor_id']}){site}: {reading}, {how}")
+    lines = [
+        *(["We could not text your on-call team about this: the text message "
+           "service failed. Phone whoever is on call now. We keep trying the "
+           "texts.", ""] if texts_failed else []),
+        incident.breach_details,
+        "",
+        f"This can mean a power cut, a door left open, or someone tampering "
+        f"with {controls}. Check now.",
+        "",
+        "Units warming:",
+        *rows,
+        "",
+        "Each of these units has its own alert as well. This one goes to "
+        "everyone on call for the site and to this address straight away, "
+        "and we phone them now rather than after the usual wait.",
+        "",
+        "CyberLogix reads its own sensors and never controls a fridge, so "
+        "these readings are what is really happening even if the controls "
+        "say otherwise.",
+        "",
+        "To stop the calls, reply 1 to the text message, or acknowledge it "
+        "in the console" + (f": {console_url}" if console_url else "."),
+        "",
+        f"Alert {incident.incident_id}, opened {iso(incident.opened_at)} (UTC).",
+    ]
+    return subject, "\n".join(lines)

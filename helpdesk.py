@@ -178,8 +178,10 @@ def faq() -> List[Dict[str, Any]]:
         PRICE_BOOK,
         headline,
     )
+    from sitewide import settings as site_wide_settings
     from store import MAX_READINGS_PER_SENSOR
 
+    sw = site_wide_settings()
     e = html.escape
     facts = headline()
     trial = PLAN_TIERS["trial"]
@@ -323,6 +325,29 @@ def faq() -> List[Dict[str, Any]]:
                 "on time and is no warmer than usual is recorded but does "
                 "not wake anybody. If it lasts too long or gets warmer than "
                 "usual, the alert goes out as normal.",
+            ],
+        },
+        {
+            "id": "site-wide",
+            "q": "What if many fridges warm up at once?",
+            "a": [
+                "When several units at one site start warming at about the "
+                f"same time (by default {sw['min_units']} or more, or half of "
+                f"the site's units, within {sw['window_minutes']:g} minutes, "
+                f"and {sw['min_units_night']} at night), or units at several "
+                "of your sites do, we send one urgent site-wide alert on top "
+                "of each unit's own. It can mean a power cut, a door left "
+                "open, or someone tampering with the fridge controls.",
+                "It goes straight away to everyone on call for that site and "
+                "to the business's own number, quiet hours or not, and on a "
+                "plan with calls we phone every one of them straight away "
+                f"rather than after the usual {VOICE_ESCALATION_GRACE_MINUTES} "
+                "minutes. Reply 1 "
+                "or press Acknowledge to stop it.",
+                "We read our own sensors and never control a fridge, so we "
+                "still see the warming if the fridge's own controls have been "
+                "taken over, and nobody can use us to change one. We find out "
+                "in minutes and call your team; we cannot stop an attack.",
             ],
         },
         {

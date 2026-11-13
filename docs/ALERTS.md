@@ -186,6 +186,128 @@ silence somebody else's alarm. Set `PUBLIC_BASE_URL` to switch it on;
 without it the call behaves as it always did rather than advertising a
 keypress that goes nowhere.
 
+## The site-wide alert
+
+When many units warm up together, CyberLogix raises one urgent alert on
+top of each unit's own: a **possible attack or site-wide failure**.
+
+On 11 October 2026 attackers took over the refrigeration controllers at
+hundreds of supermarkets in France and switched them to defrost
+overnight. A monitor that asks the fridge's own controller hears whatever
+the controller is told to say. CyberLogix reads its own, separate sensors,
+so it sees the warming however the controls were changed; and it only
+reads, so nobody can use it to change a fridge. It cannot stop an attack.
+What it does is find out in minutes and call people.
+
+The text, in one segment:
+
+    Possible site-wide problem at Main Street: 5 of 7 units warming at
+    once. Power cut, open door or tampered controls? Check now. Reply 1
+    if you are on it.
+
+The call says the same: "At Main Street, 5 of 7 units started warming at
+the same time. This can mean a power cut, a door left open, or someone
+tampering with the fridge controls. Please check the site now." The email
+to the business's address lists every unit with its reading.
+
+### When it is raised
+
+The sweep checks every minute (`sitewide.py`). A unit counts as
+**warming** when it crossed its upper limit, or rose by 5°F (about 3°C)
+or more in the last hour without crossing it yet, and that started in
+the last hour. Then:
+
+| Rule | Default | Setting |
+|---|---|---|
+| Units at one site that started warming within the window | 3 | `CYBERLOGIX_GROUP_ALERT_MIN_UNITS` (`0` turns the alert off) |
+| ...or this share of the site's units, never fewer than 2 | 50% | `CYBERLOGIX_GROUP_ALERT_MIN_SHARE_PERCENT` |
+| ...at night | 2 units | `CYBERLOGIX_GROUP_ALERT_MIN_UNITS_NIGHT` |
+| How close together they started | 20 minutes | `CYBERLOGIX_GROUP_ALERT_WINDOW_MINUTES` |
+| A rise that counts before the limit is crossed | 5°F | `CYBERLOGIX_GROUP_ALERT_RISE_F` |
+| Across sites: sites of one business with warming units | 2 | `CYBERLOGIX_GROUP_ALERT_MIN_SITES` |
+| ...and units in all, by day | 4 | `CYBERLOGIX_GROUP_ALERT_CROSS_SITE_UNITS` |
+| ...and units in all, at night | 3 | `CYBERLOGIX_GROUP_ALERT_CROSS_SITE_UNITS_NIGHT` |
+| Night, on the site's clock | 22:00-06:00 | `CYBERLOGIX_GROUP_ALERT_NIGHT` |
+| The clock when the account names none | UTC | `CYBERLOGIX_GROUP_ALERT_TIMEZONE` |
+
+Why these. Three units at once is rare by chance and common in a power
+cut; two can be a delivery with the doors propped. Half of a small site
+(two of four) is as telling as three of a large one, but one unit is
+never enough: that is one faulty unit, and it has its own alert. Twenty
+minutes is wide enough for a freezer and a fridge, which warm at
+different speeds, to land together, and narrow enough that two unrelated
+faults an hour apart are not joined up. At night a site is shut and
+nobody opens doors, so two units warming together is enough. Across
+sites, two warming units at each of two sites is a pattern no single
+site would show; one at each of three is too, at night.
+
+The account does not know a business's opening hours, so "night" is a
+fixed window on the site's clock. A site has no time zone field; its
+clock is its on-call rotation's time zone, else the estate's rotation,
+else the time zone of a contact's quiet hours, else
+`CYBERLOGIX_GROUP_ALERT_TIMEZONE`.
+
+Change a default by setting the variable (see `.env.example`) and
+restarting. The help page quotes the current figures.
+
+### What does not count
+
+* **A planned defrost.** A unit in its own learned defrost (on time, no
+  warmer than usual; see the ladder above), or one whose learned defrost
+  is due now and is warming toward it, is not counted. Many stores time
+  a row of cases to defrost together; that is not a site-wide problem.
+  A defrost switched on hours early, which is what the attackers did,
+  does not fit the rhythm and counts.
+* **An outage.** A sensor that has gone silent reports no warming, so it
+  never counts. When half or more of a site's sensors have gone silent
+  together, that is the gateway, its power or the internet, not warming:
+  the site gets no site-wide alert, and the quiet-sensor text (below)
+  tells the roster as it always has.
+* **An old fault.** A unit warm since before the last hour is a fault
+  somebody already knows about.
+* **The same event twice.** Warming that started before the last
+  site-wide alert for that site is not counted again, and while one is
+  unresolved no second one opens for the same site.
+* **Another business.** Everything is read through the one account.
+
+There is no maintenance window or snooze in the product today. When there
+is, it belongs in `sitewide._excused`, beside the defrost.
+
+### What it does
+
+* **Straight away, to everyone.** It goes to the whole on-call list for
+  the sites involved and the estate-wide people, whoever's turn it is in
+  a rotation, and to the business's own number from sign-up (the owner),
+  and by email to the business's address. Muted people and people who
+  opted out of texts or calls are left out, as everywhere.
+* **No grace.** On a plan with calls, the same sweep phones every person
+  on that list, one after another, rather than waiting ten minutes and
+  stopping at the first answer. It stops early only if somebody
+  acknowledges.
+* **Quiet hours do not silence it.** Everyone is texted, asleep or not;
+  people in quiet hours are rung after those awake, never left out.
+* **The same send path.** Texts and calls go through `send_sms` and
+  `place_voice_call`, so the daily spend caps, the one-segment rule, the
+  premium-number refusals, dry run, the 1/5/15-minute text re-sends, the
+  call-ladder retries and the owner's `TEXTS FAILED` and
+  `NOBODY HAS BEEN TEXTED` emails all apply as for a unit.
+* **Claimed once.** The alert is opened under the store's lock, and only
+  the sweep that opened it sends anything, so two sweeps at once (the
+  timer and "run sweep now") send it once. The call is claimed like any
+  other. The fleet sweep lock is unchanged.
+* **Acknowledging.** A reply of `1` (from anybody it reached, the owner
+  included), the keypress, or the Acknowledge button stops it, and also
+  acknowledges the open alerts of the units in it: whoever has the
+  site-wide alert is on the way to all of them. With a site-wide alert
+  and its units' alerts open, a plain `1` answers the site-wide one
+  rather than asking which.
+* **Shown apart.** The console shows a red banner above everything with
+  the units in it and its own buttons, and a "Site-wide" card at the top
+  of the incident list. The inspector's log lists it in its own section,
+  and the monthly summary counts it separately. It is not an excursion of
+  its own, so it is never in the compliance figures, the claim packet,
+  the ROI figure or the benchmarks: each unit's own incident is.
+
 ## The watchdog
 
 Escalation is the product's whole promise, and it only holds if something

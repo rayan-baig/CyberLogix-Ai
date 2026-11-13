@@ -347,3 +347,32 @@ def defrost_in_progress(
             "its cycles do."
         ),
     }
+
+
+def defrost_due(
+    readings: List[Reading],
+    above: float,
+    now: datetime,
+) -> bool:
+    """Whether this unit's learned defrost is due about now.
+
+    For a unit that is warming but has not crossed its line yet, which
+    `defrost_in_progress` cannot answer (it needs a reading over the line).
+    The site-wide check asks it so that a row of cases whose defrosts are
+    timed together, which is how many stores set them up, is not taken
+    for a site-wide problem in the minutes before they cross the line.
+
+    The same strictness as `defrost_in_progress`: a learned rhythm from at
+    least three earlier spells that all came back down, and the next one
+    due within INTERVAL_TOLERANCE_HOURS of now. Anything else is no.
+    """
+    events = [e for e in _warm_events(readings, above)
+              if e["minutes"] >= MIN_EVENT_MINUTES and not e["ongoing"]]
+    rhythm = _rhythm(events)
+    if rhythm is None:
+        return False
+    recent = events[-MIN_EVENTS_FOR_RHYTHM:]
+    if not all(e["recovered"] for e in recent):
+        return False
+    since_last = (now - events[-1]["started_at"]).total_seconds() / 3600.0
+    return abs(since_last - rhythm["interval_hours"]) <= INTERVAL_TOLERANCE_HOURS

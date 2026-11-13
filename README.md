@@ -43,7 +43,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Document | What is in it |
 |---|---|
 | [docs/FEATURES.md](docs/FEATURES.md) | The console, the industry profiles and their limits, Fahrenheit or Celsius, sites, sector paperwork, several businesses, your own hardware (BYOD), forecasting, meeting summaries, benchmarks, link previews |
-| [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
+| [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
 | [docs/BILLING.md](docs/BILLING.md) | The rate card, plans, volume pricing, add-ons, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |

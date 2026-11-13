@@ -227,6 +227,23 @@ def console_overview(
         )
         row["temperature_unit"] = unit
         incidents.append(row)
+    # The possible attack or site-wide failure alerts, apart from the
+    # units' own: the console shows them as one banner each, above
+    # everything, with the units in them. Live ones and the last week's.
+    week_ago = now - timedelta(days=7)
+    site_wide = []
+    for incident in STORE.site_wide_alerts(tenant.tenant_id):
+        if not incident.unresolved and incident.opened_at < week_ago:
+            continue
+        row = incident.public()
+        row["temperature_unit"] = unit
+        # In the scale the account reads now, whatever it was when raised.
+        row["group_units"] = [
+            dict(u, temperature_display=display_temperature(u.get("temperature_f"), unit),
+                 limit_display=display_temperature(u.get("limit_f"), unit))
+            for u in incident.group_units]
+        row["sites"] = sorted({u.get("site_name") or "" for u in incident.group_units} - {""})
+        site_wide.append(row)
     open_incidents = STORE.open_incidents(tenant.tenant_id)
     escalation_due = sum(
         1
@@ -309,6 +326,7 @@ def console_overview(
         },
         "sensors": sensors,
         "incidents": incidents,
+        "site_wide_alerts": site_wide,
         "grace_window_minutes": VOICE_ESCALATION_GRACE_MINUTES,
         # The first-day checklist, ticked from what the account holds.
         "first_day": checklist(tenant),

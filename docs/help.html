@@ -712,6 +712,36 @@ pre.snippet {
   border-color: rgba(224,83,79,0.42); background: rgba(224,83,79,0.09);
   color: #FFC9C6; padding: 13px 18px;
 }
+/* The site-wide alert: many units warming at once. Its own look, so it is
+   never read as one more unit's alarm: a solid critical edge, the units
+   listed, and the actions on the banner itself. */
+.banner.sitewide-banner {
+  border-color: rgba(224,83,79,0.55); background: rgba(224,83,79,0.12);
+  color: var(--ink); padding: 0; border-left: 4px solid var(--critical);
+}
+.sitewide { padding: 15px 18px; }
+.sitewide + .sitewide { border-top: 1px solid rgba(224,83,79,0.3); }
+.sitewide-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: #FFC9C6; margin-bottom: 6px;
+}
+.sitewide-title {
+  font-family: var(--display); font-size: 19px; line-height: 1.3;
+  color: var(--ink); overflow-wrap: anywhere;
+}
+.sitewide-why { margin: 6px 0 10px; color: var(--ink-2); line-height: 1.5; }
+.sitewide-units {
+  list-style: none; margin: 0 0 10px; padding: 0;
+  display: grid; gap: 4px;
+}
+.sitewide-units li { font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.sitewide-units li::before { content: "▲ "; color: var(--critical); }
+.sitewide-site { color: var(--muted); }
+.sitewide-reading { font-variant-numeric: tabular-nums; }
+.sitewide-meta { font-size: 12.5px; color: var(--muted); }
+.sitewide .incident-actions { margin-top: 10px; }
+.incident.sitewide-card { border-left-width: 4px; border-color: rgba(224,83,79,0.42); }
+.incident.sitewide-card.st-open { border-left-color: var(--critical); }
 .banner .banner-act {
   display: inline-block; margin-left: 10px; font-weight: 600;
   color: inherit; text-decoration: underline; cursor: pointer;
@@ -1726,6 +1756,7 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 <details class="qa" id="test-alert"><summary>How do I check the alerts really reach us?</summary><div class="qa-body"><p>Send a test alert. In the console, open the People tab, find Who gets called and press Send a test alert. Everyone on the list gets a text that starts “TEST” and says nothing is wrong. On a plan with phone calls you can also ring the first person.</p><p>A test opens no problem and chases nobody. Owners and operators can send one every 10 minutes, up to 5 a day.</p></div></details>
 <details class="qa" id="offline"><summary>A sensor says offline. What do I do?</summary><div class="qa-body"><p>We have not heard from it for 30 minutes. Follow the <a href="#sensor-offline">steps below</a>: power, gateway, signal, key, and account.</p></div></details>
 <details class="qa" id="defrost"><summary>My freezer warmed up during defrost. Why no alert?</summary><div class="qa-body"><p>Freezers warm up for a while on a timer to defrost. Once we have seen a unit do this regularly, a warm spell that comes on time and is no warmer than usual is recorded but does not wake anybody. If it lasts too long or gets warmer than usual, the alert goes out as normal.</p></div></details>
+<details class="qa" id="site-wide"><summary>What if many fridges warm up at once?</summary><div class="qa-body"><p>When several units at one site start warming at about the same time (by default 3 or more, or half of the site's units, within 20 minutes, and 2 at night), or units at several of your sites do, we send one urgent site-wide alert on top of each unit's own. It can mean a power cut, a door left open, or someone tampering with the fridge controls.</p><p>It goes straight away to everyone on call for that site and to the business's own number, quiet hours or not, and on a plan with calls we phone every one of them straight away rather than after the usual 10 minutes. Reply 1 or press Acknowledge to stop it.</p><p>We read our own sensors and never control a fridge, so we still see the warming if the fridge's own controls have been taken over, and nobody can use us to change one. We find out in minutes and call your team; we cannot stop an attack.</p></div></details>
 <details class="qa" id="units"><summary>Can I see temperatures in Celsius?</summary><div class="qa-body"><p>Yes. Press the °F button at the top of the console to switch between Fahrenheit and Celsius. Reports and documents use the unit you pick.</p></div></details>
 <details class="qa" id="export"><summary>How do I download our data?</summary><div class="qa-body"><p>An owner opens the Setup tab, finds Download or delete everything, and presses Download everything. You get one file with every record we keep for the business. Passwords and keys are never included.</p><p>We keep the newest 500 readings for each sensor, plus the readings around every alert. Download regularly if you need a longer history.</p></div></details>
 <details class="qa" id="delete"><summary>How do I delete our account and data?</summary><div class="qa-body"><p>An owner opens the Setup tab, finds Download or delete everything, types the business's name and their password, and presses Delete everything. It happens straight away and cannot be undone, so download a copy first.</p><p>Anything owed must be paid first. We keep only the bills already sent, because the law says we must.</p></div></details>

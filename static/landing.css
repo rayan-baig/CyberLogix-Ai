@@ -131,6 +131,17 @@ h3 {
 .proof-item { border-left: 2px solid var(--accent-deep); padding-left: 20px; }
 .proof-item p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.62; }
 
+/* --- controls hacked ------------------------------------------------ */
+/* The kicker sits inside a band here, so it keeps the band's rhythm
+   rather than the hero's. The limit is said plainly, in the body face,
+   under the three points: it is part of the claim, not a footnote. */
+#controls .kicker { margin-bottom: 14px; }
+.controls-limit {
+  margin: 30px 0 0; max-width: 62ch; color: var(--ink-2);
+  font-size: 15.5px; line-height: 1.6;
+  border-top: 1px solid var(--border); padding-top: 18px;
+}
+
 /* --- plans ---------------------------------------------------------- */
 .plans { display: grid; gap: 14px; }
 @media (min-width: 800px) { .plans { grid-template-columns: repeat(3, 1fr); } }

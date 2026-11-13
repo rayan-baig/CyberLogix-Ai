@@ -3,6 +3,47 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.10.0 — 2026-11-13
+
+A site-wide alert when many units warm up at once, and a section on the
+landing page about fridge controls being taken over.
+
+- **The site-wide alert.** When 3 or more units at one site (or half of
+  a site's units, never fewer than 2; 2 at night) start warming within
+  20 minutes of each other, or 4 units across 2 or more of a business's
+  sites (3 at night), the sweep raises one urgent alert on top of each
+  unit's own: "Possible site-wide problem at Main Street: 5 of 7 units
+  warming at once. Power cut, open door or tampered controls? Check now."
+  It goes straight away to the whole on-call list for those sites and to
+  the business's own number, by text, email and, on plans with calls, a
+  call to every one of them with no ten-minute wait. Quiet hours do not
+  hold it back. It uses the same send path, so spend caps, re-sends and
+  outage handling apply, and it is claimed once, so two sweeps at once
+  send it once.
+- **It is not fooled by a defrost or an outage.** A unit in its own
+  learned defrost, or whose defrost is due, is not counted; a defrost
+  switched on hours early is. Sensors that have gone silent never count,
+  and when half of a site's sensors go silent together it is treated as
+  an outage and left to the quiet-sensor text. Another business's units
+  never count.
+- **"1" acknowledges it,** from anyone it reached including the owner,
+  and so do the keypress and the Acknowledge button. Acknowledging it
+  also acknowledges the open alerts of the units in it, so one answer
+  stops every call for that site.
+- **Shown as its own thing:** a red banner above everything in the
+  console listing the units, a "Site-wide" card in the incident feed, its
+  own section in the inspector's log, and its own lines in the monthly
+  summary. It is never counted as an extra excursion.
+- **Every figure is a setting** (`CYBERLOGIX_GROUP_ALERT_*`), explained in
+  docs/ALERTS.md, and the help page has a new question about it.
+- **The landing page** has a section, "Your fridges can be hacked. Your
+  alarm shouldn't be.": in October 2026 attackers took over the fridge
+  controls at hundreds of supermarkets in France; CyberLogix watches with
+  its own sensors and only ever reads, so it still sees the warming and
+  cannot be used to change a fridge. It says plainly that it cannot stop
+  an attack: it finds out in minutes and calls your team. The restaurant
+  and pharmacy pages carry one line saying the same.
+
 ## 3.9.0 — 2026-11-03
 
 Server errors reported to one inbox, privacy-friendly usage counts, one
