@@ -231,8 +231,9 @@ class FakeOmniArmor:
         self.accepted = []       # the validated reports that changed something
         self.reports = {}        # date -> fingerprint, as OmniArmor keeps them
 
-    def __call__(self, url, key, body):
-        self.calls.append({"url": url, "key": key, "body": body})
+    def __call__(self, url, key, body, headers=None):
+        self.calls.append({"url": url, "key": key, "body": body,
+                           "headers": dict(headers or {})})
         assert url == self.host + "/api/connect/cyberlogix/daily", url
         if self.script:
             status, headers = self.script.pop(0)

@@ -92,7 +92,7 @@ def test_year_two_bills_the_escalated_rate(api, tenant_factory, sensor_factory,
     tenant_obj = STORE.get_tenant(tenant["tenant_id"])
 
     first = bill_period(tenant_obj, sub, 0)
-    assert first.total_usd == pytest.approx(899.0 + 1500.0)  # + commissioning
+    assert first.total_usd == pytest.approx(899.0)  # no setup fee
 
     # Skip ahead to the first period of contract year two.
     sub.periods_billed = 12
@@ -106,7 +106,7 @@ def test_year_two_bills_the_escalated_rate(api, tenant_factory, sensor_factory,
     )
 
 
-def test_commissioning_is_billed_once_and_never_escalates(
+def test_no_setup_fee_is_billed_on_the_first_invoice_or_after(
     api, tenant_factory, sensor_factory, owner_headers
 ):
     headers, tenant = tenant_factory(plan="enterprise")
@@ -118,9 +118,8 @@ def test_commissioning_is_billed_once_and_never_escalates(
     tenant_obj = STORE.get_tenant(tenant["tenant_id"])
 
     first = bill_period(tenant_obj, sub, 0)
-    setup = [line for line in first.lines if line["kind"] == "setup"]
-    assert len(setup) == 1
-    assert setup[0]["amount_usd"] == 1500.0
+    assert not [line for line in first.lines if line["kind"] == "setup"]
+    assert first.total_usd == pytest.approx(899.0)
 
     second = bill_period(tenant_obj, sub, 1)
     assert not [line for line in second.lines if line["kind"] == "setup"]
@@ -142,7 +141,7 @@ def test_annual_prepay_bills_twelve_months_with_the_discount(
 
     recurring = 899.0 * 12
     discount = round(recurring * 0.10, 2)
-    assert invoice.total_usd == pytest.approx(recurring - discount + 1500.0)
+    assert invoice.total_usd == pytest.approx(recurring - discount)  # no setup fee
     kinds = {line["kind"] for line in invoice.lines}
     assert "discount" in kinds
 
@@ -529,7 +528,10 @@ def test_the_late_fee_is_a_separate_invoice_issued_once(
         if i.source.startswith("late_fee:")
     ]
     assert len(fees) == 1
-    assert fees[0].total_usd == pytest.approx(round(original_total * 0.015, 2))
+    from contracts import LATE_FEE_MINIMUM_USD
+
+    assert fees[0].total_usd == pytest.approx(
+        max(round(original_total * 0.015, 2), LATE_FEE_MINIMUM_USD))
 
 
 def test_paying_a_late_fee_does_not_buy_a_month_of_service(

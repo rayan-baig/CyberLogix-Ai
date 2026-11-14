@@ -276,10 +276,11 @@ window.fetch = function (input, init) {
   // other combination says so instead of showing a price that belongs to
   // a different estate.
   if (url.pathname === "/api/v1/enterprise-billing/quote") {
-    return reply({ detail: "This demo holds one worked price per "
-                           + "industry, at 10 branches and 3 units each. "
-                           + "Change the industry to see others; other "
-                           + "numbers need the live app." }, 404);
+    return reply({ detail: "This demo holds one worked price for each "
+                           + "industry with a published price, "
+                           + "at 10 branches and 3 units each. Every other "
+                           + "industry is priced by quote; other numbers "
+                           + "need the live app." }, 404);
   }
   return reply({ detail: "Not captured in this demo." }, 404);
 };
@@ -378,7 +379,11 @@ def capture() -> dict:
         # different branch count needs the live server, and the stub
         # below says so in words rather than answering with a price it
         # worked out for some other estate.
+        # Only the industries with a published price: this page is public,
+        # and the rest are priced by quote, so their rates are not put in it.
         for row in client.get("/api/industries", headers=head).json()["industries"]:
+            if row["monthly_usd"] is None:
+                continue
             key = row["vertical"]
             path = (f"/api/v1/enterprise-billing/quote?industry_vertical={key}"
                     f"&total_branch_locations={CALC_DEFAULT_BRANCHES}"
@@ -403,6 +408,7 @@ def _bundle_and_referrals(client, head, home: str) -> None:
     import secrets
 
     import omniarmor
+    import pricing
     import referrals
     from store import STORE
 
@@ -415,7 +421,7 @@ def _bundle_and_referrals(client, head, home: str) -> None:
         "site_label": "Main kitchen", "timezone": "America/New_York",
     }).raise_for_status()
 
-    def stand_in(url, key, body):
+    def stand_in(url, key, body, headers=None):
         return 200, {}, json.dumps({
             "ok": True, "matched_checks": 1, "ticked": 1, "noted": 0, "unchanged": 0,
             "checks": [{"industry": "RestoArmor", "check": "cold_holding",
@@ -446,7 +452,8 @@ def _bundle_and_referrals(client, head, home: str) -> None:
             STORE.change_plan(friend, "starter", extend_term=False)
             invoice = STORE.create_invoice(tenant=friend, lines=[{
                 "kind": "subscription", "description": "Starter plan: 1 location",
-                "quantity": 1, "unit_price_usd": 79.0, "amount_usd": 79.0}])
+                "quantity": 1, "unit_price_usd": pricing.STARTER_MONTHLY_USD,
+                "amount_usd": pricing.STARTER_MONTHLY_USD}])
             invoice, _ = STORE.settle_invoice(invoice, "DEMO-WIRE-0002")
             referrals.after_settlement(friend, invoice)
 

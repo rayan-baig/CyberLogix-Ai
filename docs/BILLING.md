@@ -6,40 +6,90 @@ report; and the reseller channel.
 
 ## Pricing
 
-Priced per unit, per month, by vertical — a rack is not a reefer truck and
-is not billed like one. The invoice is derived from the sensors actually
-registered, so a customer with three racks and two hangar bays pays
-3 × $899 + 2 × $1,999 = $6,695 a month.
+Restaurants and pharmacies have a published price, per location. Every
+other trade is priced by quote.
 
-| Sector | Price | Protects against |
+| Trade | Price | What it covers |
 |---|---|---|
-| Luxury Superyachts | **$4,999** / vessel / month | Engine-room thermal fires; $150k charter guest freezers at sea |
-| IVF Clinics & Cryostorage | **$2,999** / tank / month | Embryos, eggs and cell lines that cannot be replaced at any price |
-| Fine Wine & Art Storage | **$2,499** / cellar / month | Provenance, which is most of what the collection is worth |
-| Private Aviation Hangars | **$1,999** / bay / month | Moisture corrosion of multi-million-dollar avionics |
-| Medical Labs & Blood Banks | **$1,499** / vault / month | OSHA/FDA chain-of-custody; automated audit reports |
-| High-End Country Clubs | **$1,499** / kitchen / month | Holiday dining inventory lost to compressor failure |
-| Retail & Hospital Pharmacies | **$1,299** / pharmacy / month | The continuous-monitoring requirement for vaccine storage |
-| Licensed Cannabis Cultivation | **$1,199** / room / month | Environmental control a licence renewal is judged against |
-| Franchise Restaurants | **$999** / location / month | $15,000 walk-in spoilage; health department logs |
-| CyberTech Data Centers | **$899** / rack / month | $50,000+ server meltdowns and SLA contract breaches |
-| Solar Infrastructure | **$899** / enclosure / month | Battery-bank thermal runaway and fire liability |
-| Cold-Chain Logistics | **$749** / reefer truck / month | Dock cargo rejection disputes; tamper-proof handover passes |
+| Starter (a small cafe or shop) | **$59** a month, flat | 1 location, up to 3 fridges or freezers |
+| Franchise Restaurants | **$149** / location / month | up to 10 units at that location |
+| Retail & Hospital Pharmacies | **$199** / pharmacy / month | up to 10 units at that pharmacy |
+| A unit past 10 at one location | **+$15** / unit / month | restaurants and pharmacies |
+| Kitchen Safety Bundle | **+$29** / location / month | the daily OmniArmor report, and OmniArmor Pro for that location |
+| Every other trade | **Custom pricing — ask for a quote** | sized to what is run |
+| Setup | **No setup fee** | on any plan |
 
-Rates are set for the pinnacle of each market rather than its volume. An
-owner who spends millions a year on a vessel reads a $399 service as a toy,
-and a price below the value at risk attracts exactly the buyer who haggles.
+The prices are `PRICE_BOOK`, `STARTER_MONTHLY_USD`,
+`UNITS_PER_LOCATION`, `EXTRA_UNIT_MONTHLY_USD` and `ADD_ONS` in
+`pricing.py`, and every page reads them from there: the pricing page and
+its calculator, the front page, the help page, the industry pages and the
+sales sheets.
 
-The rate card is public at `GET /api/billing/pricing` and on the sign-in
-screen. `GET /api/billing` itemises a tenant's own estate; registering or
+### The eleventh unit at a location
+
+A location's price covers up to ten fridges and freezers there. Each unit
+past ten **at the same location** is a flat **$15 a month**, on its own
+invoice line ("2 extra units past 10 at a location, $15 each"), so the
+location line keeps saying what it always said. $15 is a tenth of $149
+rounded up: the eleventh unit costs about what each of the first ten
+does, rather than a whole second location for one more fridge. Eleven
+units at one shop and nine at another is one extra unit, not ten. A unit
+not filed under any location, where locations are set up, is counted at
+none of them (the customer gets the benefit of the doubt, as for the
+location count). An extra unit added part-way through a period starts on
+the next invoice; there is no part-period catch-up for it. The chain
+quote (`/api/v1/enterprise-billing/quote`) adds the same charge to the
+rate-card side when `units_per_branch` is over ten. A volume contract
+covers every sensor in an enrolled branch, so it has no extra units.
+
+### The trades priced by quote
+
+Data centres, aviation hangars, superyachts, solar and storage, medical
+labs, cryostorage, country clubs, cold-chain logistics, wine and art, and
+cannabis cultivation are `custom_quote` in `PRICE_BOOK`. Their per-unit
+rates stay in the code, because a business already on one of them is
+invoiced from that figure, and keeps being. No public page, sales sheet
+or unauthenticated catalogue (`GET /api/industries`,
+`GET /api/billing/pricing`) shows the figure: they say "Custom pricing —
+ask for a quote" and offer **Talk to us**, a mail to
+`CYBERLOGIX_SUPPORT_EMAIL` (or `MAIL_REPLY_TO`) with the address also
+printed as text that can be selected and copied. With no address set,
+the link goes to the help page. The calculator says "Ask for a quote"
+instead of a total when one of these trades is picked.
+
+### Businesses already on the old prices
+
+Every price went down on 2026-11-14 (`PRICES_CHANGED_AT`). An invoice is
+priced from `pricing.py` on the day it is issued, so a business already
+on the old prices **pays the new, lower price from its next invoice**:
+nothing to migrate, and every invoice already issued stays exactly as it
+was sent (invoices are frozen at issue). Starter $79 becomes $59, a
+restaurant location $249 becomes $149, a pharmacy $199 a pharmacy instead
+of $1,299 a fridge, and no setup fee is charged on a contract's first
+bill, even one signed before the change. A contract's escalator applies
+to the new rate.
+
+The one way the new card could cost somebody more is a restaurant with
+more than ten units at one shop, which paid a flat $249 for the shop. For
+a business that signed up before the change, the extra-unit charge at a
+location is held so that the location never costs more than its old
+$249 (`OLD_LOCATION_PRICE_USD`); the invoice line says so. New businesses
+pay the card.
+
+### Invoices
+
+The invoice is derived from the sensors actually registered.
+`GET /api/billing` itemises a tenant's own estate; registering or
 decommissioning a sensor reports what it adds to or removes from the bill.
+A business on a trade priced by quote is billed per unit (a rack, a
+vessel, a tank) at its rate in `PRICE_BOOK`.
 
 ### Plans are about contract, not price
 
 | Plan | Unit ceiling | Locations | Term | Charged |
 |---|---|---|---|---|
 | `trial` | 5 | any | 14 days (30 with a referral code) | no |
-| `starter` | 3 | 1 | 365 days | yes, a flat $79 a month |
+| `starter` | 3 | 1 | 365 days | yes, a flat $59 a month |
 | `growth` | 50 | any | 365 days | yes, the rate card |
 | `enterprise` | 1000 | any | 365 days | yes, the rate card |
 
@@ -49,7 +99,7 @@ real fleet would cost. Downgrades that would strand units are refused with
 
 ### Starter, for a small cafe or shop
 
-One location and up to three fridges or freezers for **$79 a month**, flat.
+One location and up to three fridges or freezers for **$59 a month**, flat.
 The price is `STARTER_MONTHLY_USD` in `pricing.py`; the three units and the
 one location are `PLAN_TIERS["starter"]` in `domain.py`. Every page that
 names it (the pricing page and its calculator, the plan list on the front
@@ -66,9 +116,7 @@ What you pay card) reads those values.
   extra, the Kitchen Safety Bundle.
 - **Which trades:** the restaurant limits (`STARTER_VERTICALS`). A vaccine
   fridge or a rack is a different job at a different price.
-- **No setup fee** (`STARTER_SETUP_FEE_PER_SITE_USD = 0`). The $1,500
-  commissioning fee pays for an engineer placing units and proving the
-  alert path; a cafe plugging in three sensors itself should not meet it.
+- **No setup fee**, like every plan.
 - **The way up, with no surprise charge.** The fourth unit, a second site,
   or a unit on another trade's limits is refused with `409` and a sentence
   that names Growth, its price for a restaurant, the button or call that
@@ -77,10 +125,10 @@ What you pay card) reads those values.
   Starter (an operator can).
 
 **On the invoice.** One line, "Starter plan: 1 location, 2 of 3 units",
-at $79. Units added during a period on Starter owe nothing extra. A
+at $59. Units added during a period on Starter owe nothing extra. A
 business that moves to Growth part-way through a period owes, on the next
 invoice, the rate card for the units it had at the moment it moved, less
-the $79 already billed for those days, for the rest of that period
+the $59 already billed for those days, for the rest of that period
 ("Moved from Starter to Growth on 2026-11-20: the rate card less Starter,
 part period to 2026-12-01"). From then on it is billed at the rate card
 in advance like everyone else, and a shop added after the move is caught
@@ -92,13 +140,13 @@ time (`plan_change` rows), which is what the bill reads.
 A chain is billed by enrolled branch count rather than per unit, and the
 contract covers every sensor inside those branches:
 
-| Units | Volume discount | Restaurant @ $999 | Vessel @ $4,999 |
+| Units | Volume discount | Restaurant @ $149 | Vessel (by quote) |
 |---|---|---|---|
-| 1–9 | list | $999 | $4,999 |
-| 10–19 | −2.5% | $974 | $4,874 |
-| 20–29 | −5% | $949 | $4,749 |
-| 30–39 | −7.5% | $924 | $4,624 |
-| 40+ | −10% | $899 | $4,499 |
+| 1–9 | list | $149 | list |
+| 10–19 | −2.5% | $145.28 | −2.5% |
+| 20–29 | −5% | $141.55 | −5% |
+| 30–39 | −7.5% | $137.82 | −7.5% |
+| 40+ | −10% | $134.10 | −10% |
 
 One ladder serves every vertical: the discount is a percentage of that
 vertical's own rate, not a fixed dollar step. It caps at 10% deliberately —
@@ -132,17 +180,21 @@ for comparison rather than charged.
 | Certified Compliance Vault | per estate | $499 / month |
 | Sector Benchmarks | per estate | $299 / month |
 | Equipment Intelligence | per estate | $399 / month |
-| Kitchen Safety Bundle | per location | $29 / month |
+| Kitchen Safety Bundle | per location | $29 / month, includes OmniArmor Pro for that location |
 
 The **Kitchen Safety Bundle** is the CyberLogix half of the bundle with
 OmniArmor ([OMNIARMOR-CONNECTION.md](OMNIARMOR-CONNECTION.md)). It is
 billed while the OmniArmor connection is switched on, not picked from a
 list, so nobody pays for a connection they removed: connecting adds it to
-the next invoice at $29 for each location (the same location count as the
-setup fee: the sites set up, or one), disconnecting takes it off. It is
+the next invoice at $29 for each location (the sites set up, or one),
+disconnecting takes it off. It **includes OmniArmor Pro for that
+location**: OmniArmor waives its own Pro fee for a workspace whose daily
+reports arrive signed by this server (`KITCHEN_BUNDLE_SECRET`,
+[OMNIARMOR-CONNECTION.md](OMNIARMOR-CONNECTION.md#the-signature)). It is
 free on a trial, so a kitchen can try it first, and it is the one extra
 Starter takes. The figure the MTRX Horizyn bundle page shows is
-`pricing.bundle_price_label()`: "+$29 a month per location".
+`pricing.bundle_price_label()`: "+$29 a month per location", and
+`bundle_includes_label()` is "Includes OmniArmor Pro for that location".
 
 Every one is a fixed fee. A percentage of what a customer saved sounds
 aligned and is not: a quiet year pays nothing for the same standing
@@ -153,9 +205,10 @@ the customer. A test asserts no add-on can be priced any other way.
 
 The rate card is half of what an estate is worth.
 
-- **$1,500 per site at commissioning**, once. It funds acquisition on the
-  day of signature rather than eleven months later, and a customer who paid
-  to be installed does not churn casually.
+- **No setup fee.** It was $1,500 a site at commissioning; it is now $0
+  on every plan, so the first bill is the first month and nothing else.
+  `SETUP_FEE_PER_SITE_USD` is still the one setting the deal, the invoice
+  and a contract's first bill read, so all three say $0 together.
 - **10% for annual prepay.** Worth more than it costs: it removes the
   collections problem and fixes the customer for twelve months.
 - **A 5% annual escalator** on multi-year contracts. Uncontroversial at
@@ -163,9 +216,9 @@ The rate card is half of what an estate is worth.
   no additional delivery.
 
 `GET /api/billing/deal?years=3&annual_prepay=true&include_add_ons=assurance,vault`
-returns the whole thing in one figure, so nobody discovers a setup fee or an
-escalator afterwards. That is the only way those terms survive a renewal
-conversation.
+returns the whole thing in one figure (its setup block reads $0, "No setup
+fee."), so nobody discovers an escalator afterwards. That is the only way
+that term survives a renewal conversation.
 
 ### Return on the subscription
 
@@ -204,8 +257,9 @@ sign-up page that carries it (`/signup?ref=FRIEND-XXXX-XXXX`).
 - **The friend** gets a 30-day trial instead of 14 (`REFERRAL_TRIAL_DAYS`).
 - **The referrer** gets one month free on one location when the friend
   pays its first invoice in full: a credit of the referrer's own location
-  price (Starter: $79; a restaurant on the rate card: $249; an estate
-  billed per unit: its cheapest unit), on its next invoice.
+  price (Starter: $59; a restaurant on the rate card: $149; a pharmacy:
+  $199; an estate billed per unit: its cheapest unit), on its next
+  invoice.
 - **Not yourself.** A code is refused at sign-up for the email or phone of
   the business that owns it, and the reward is refused if the two
   businesses share a person (one sign-in can open both). Adding a business
@@ -261,8 +315,8 @@ actually settled, gets recorded.
 ## Contracts that bill themselves
 
 Everything above this could *quote*: a three-year term, a five percent
-annual escalator, a $1,500 commissioning fee, ten percent off for paying
-a year up front. Nothing carried any of it into an invoice. Billing was a
+annual escalator, a one-time setup fee (there is none now), ten percent
+off for paying a year up front. Nothing carried any of it into an invoice. Billing was a
 button somebody had to remember to press, at the month-one rate, forever.
 On a $4,000-a-month estate signed to three escalating years the gap
 between the deal as quoted and the deal as billed is $7,320.
@@ -459,10 +513,10 @@ not the one anybody guesses, per restaurant location per year:
 
 | line | cost | of revenue |
 |---|---|---|
-| Annual prepay discount (10%) | $1,198.80 | 10.00% |
-| Bad debt (3%) | $359.64 | 3.00% |
-| Card fees (2.9% + 30¢) | $351.25 | 2.93% |
-| Metered usage (AI, SMS, voice) | $5.60 | 0.05% |
+| Annual prepay discount (10%) | $178.80 | 10.00% |
+| Bad debt (3%) | $53.64 | 3.00% |
+| Card fees (2.9% + 30¢) | $55.45 | 3.10% |
+| Metered usage (AI, SMS, voice) | $5.64 | 0.32% |
 
 The discount we *choose* to give away costs more than every real cost
 combined, and no statement shows it, because nobody invoices you for
@@ -511,7 +565,7 @@ operating cost put together and belongs to an accountant.
 The one cut actually made: invoices now lead with bank transfer and
 offer card second. Most finance departments pay by whichever method the
 invoice leads with, and a card processor takes 2.9% of everything it
-touches — $348 a year per location for a convenience nobody asked for on
+touches — about $52 a year per location for a convenience nobody asked for on
 contracts that settle by wire anyway.
 
 ## The reseller channel

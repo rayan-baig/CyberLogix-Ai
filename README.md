@@ -34,8 +34,9 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   Dickson, a vendor's cloud, or anything that sends JSON. Also at
   `/help/sensors`.
 
-The app has the same answers at `/help`, and every rate with a price
-calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
+The app has the same answers at `/help`, and the prices (restaurants and
+pharmacies per location, a quote for every other trade, no setup fee)
+with a calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
 each version; the number in use is in `VERSION` and at `/api/health`.
 
 ## Where the docs are
@@ -45,8 +46,8 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/FEATURES.md](docs/FEATURES.md) | The console, the industry profiles and their limits, Fahrenheit or Celsius, sites, sector paperwork, several businesses, your own hardware (BYOD), forecasting, meeting summaries, benchmarks, link previews |
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
-| [docs/BILLING.md](docs/BILLING.md) | The rate card, plans (Starter included), volume pricing, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
-| [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), retries, corrections, and the price |
+| [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), volume pricing, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
+| [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), the signature that unlocks OmniArmor Pro, retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every setting, where the state lives, backups and the ten-minute restore checklist, the Twilio and mail outage drill, the dead man's switch, error reports by email, daily usage counts, deleting a business, the agreements, deployment details, what to do before the first customer |

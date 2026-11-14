@@ -89,6 +89,9 @@
   line-height: 1.1; margin-bottom: 2px !important;
 }
 .sheet-big span { font-family: var(--sans); font-size: 9.6pt; font-weight: 400; color: #3B4250; }
+/* A trade priced by quote: words, not a figure, so a smaller size. */
+.sheet-big.sheet-custom { font-size: 14pt; }
+.talk-address { user-select: all; }
 .sheet-table { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 8.6pt; }
 .sheet-table th, .sheet-table td {
   text-align: left; padding: 3px 4px; border-bottom: 1px solid #DDE1E7; color: #15181E;

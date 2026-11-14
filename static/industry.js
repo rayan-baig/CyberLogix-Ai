@@ -74,6 +74,16 @@ function renderIndustry(d) {
          the insurance &mdash; and how much of it is still going out.</p>
     </section>
 
+    ${d.price_label ? `<section class="slab" id="cost">
+      <h2>What it costs</h2>
+      <p class="price-line"><strong>${esc(d.price_label)}</strong></p>
+      ${d.price_note ? `<p>${esc(d.price_note)}</p>` : ""}
+      ${d.price_custom ? `<p><a class="talk-link" href="${esc(d.talk_href)}">Talk to us</a>${
+        d.talk_address
+          ? ` <span class="talk-address">${esc(d.talk_address)}</span>` : ""}</p>`
+        : `<p><a href="/pricing">Work out your price</a></p>`}
+    </section>` : ""}
+
     <div class="foot">
       <a class="btn btn-sm btn-primary u-w-auto" href="/signup">
         Start watching</a>

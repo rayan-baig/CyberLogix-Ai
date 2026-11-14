@@ -120,16 +120,21 @@ def facts(vertical: str) -> Dict[str, Any]:
         VOICE_ESCALATION_GRACE_MINUTES,
     )
     from industries import page
+    from helpdesk import talk_to_us
     from pricing import (
         ADD_ONS,
         ANNUAL_ESCALATOR_PERCENT,
         ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        CUSTOM_PRICE_LABEL,
+        EXTRA_UNIT_MONTHLY_USD,
         PRICE_BOOK,
         SETUP_FEE_PER_SITE_USD,
         STARTER_VERTICALS,
         headline,
         per_site,
+        public_price,
         starter_terms,
+        units_per_location,
     )
 
     words = page(vertical)
@@ -146,10 +151,17 @@ def facts(vertical: str) -> Dict[str, Any]:
             "sms_retry_minutes": tuple(SMS_RETRY_AFTER_MINUTES),
             "offline_after_minutes": SENSOR_OFFLINE_AFTER_MINUTES,
         },
+        # A trade priced by quote carries no figure here: the sheet is
+        # handed to strangers. `monthly_usd` is None and `custom` says why.
         "price": {
-            "monthly_usd": rate["monthly_usd"],
+            "monthly_usd": public_price(vertical),
+            "custom": public_price(vertical) is None,
+            "custom_label": CUSTOM_PRICE_LABEL,
+            "talk": talk_to_us(),
             "unit": rate["unit"],
             "per_site": per_site(vertical),
+            "units_per_location": units_per_location(vertical),
+            "extra_unit_usd": EXTRA_UNIT_MONTHLY_USD if per_site(vertical) else None,
             "setup_per_site_usd": SETUP_FEE_PER_SITE_USD,
             "prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
             "escalator_percent": ANNUAL_ESCALATOR_PERCENT,
@@ -160,7 +172,8 @@ def facts(vertical: str) -> Dict[str, Any]:
             for t in PLAN_TIERS.values()
         ],
         "add_ons": [
-            {"name": a["name"], "monthly_usd": a["monthly_usd"], "basis": a["basis"]}
+            {"name": a["name"], "monthly_usd": a["monthly_usd"], "basis": a["basis"],
+             "includes": a.get("includes")}
             for a in ADD_ONS.values()
         ],
         # Starter is offered on the sheets for the trades it is for.
@@ -188,9 +201,22 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
         return "".join(f"<li>{item}</li>" for item in items)
 
     per = f"a month per {e(p['unit'])}"
-    price_note = (f"Priced per {e(p['unit'])}, however many sensors it has."
-                  if p["per_site"] else
-                  f"Each sensor is billed as one {e(p['unit'])}.")
+    if p["custom"]:
+        talk = p["talk"]
+        contact = (f'<a href="{e(talk["href"])}">Talk to us</a>'
+                   + (f': <span class="sheet-mono talk-address">{e(talk["address"])}</span>'
+                      if talk["address"] else f" ({e(base)}/help)"))
+        price_big = f'<p class="sheet-big sheet-custom">{e(p["custom_label"])}</p>'
+        price_note = ("Priced for what you run, by quote. " + contact + ".")
+    else:
+        price_big = (f'<p class="sheet-big">{_money(p["monthly_usd"])} '
+                     f'<span>{per}</span></p>')
+        price_note = (
+            f"Priced per {e(p['unit'])}, for up to {p['units_per_location']} "
+            f"fridges and freezers there; each one past {p['units_per_location']} "
+            f"is {_money(p['extra_unit_usd'])} a month."
+            if p["per_site"] else
+            f"Each sensor is billed as one {e(p['unit'])}.")
 
     plan_rows = "".join(
         f"<tr><td>{e(plan['name'])}</td>"
@@ -200,8 +226,12 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
         for plan in f["plans"])
     extras = "".join(
         f"<li>{e(a['name'])}: {_money(a['monthly_usd'])} a month"
-        f"{' per location' if a['basis'] == 'per location' else ''}</li>"
+        f"{' per location' if a['basis'] == 'per location' else ''}"
+        f"{(', includes ' + e(a['includes'])) if a.get('includes') else ''}</li>"
         for a in f["add_ons"])
+    setup_line = ("<li>No setup fee.</li>" if not p["setup_per_site_usd"] else
+                  f"<li>Setup: {_money(p['setup_per_site_usd'])} per site, once, "
+                  "on a contract's first bill.</li>")
     starter = f["starter"]
     starter_line = (
         f'<p class="sheet-small sheet-starter">A small caf&eacute; or shop? '
@@ -278,7 +308,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
     </section>
     <section class="sheet-block sheet-price">
       <h2>What it costs</h2>
-      <p class="sheet-big">{_money(p['monthly_usd'])} <span>{per}</span></p>
+      {price_big}
       <p class="sheet-small">{price_note} In US dollars.</p>
       {starter_line}
       <table class="sheet-table">
@@ -288,8 +318,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
       </table>
       <ul class="sheet-list sheet-small">
         <li>Pay a year ahead: {p['prepay_discount_percent']:g}% off that year.</li>
-        <li>Setup: {_money(p['setup_per_site_usd'])} per site, once, on a
-          contract's first bill.</li>
+        {setup_line}
         <li>Terms longer than a year rise {p['escalator_percent']:g}% a year.</li>
         {extras}
       </ul>

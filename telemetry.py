@@ -127,8 +127,12 @@ class SensorReading(BaseModel):
 
 @router.get("/industries")
 def list_industries():
-    """Full vertical catalogue with pricing, for a sector selector."""
-    from pricing import PRICE_BOOK
+    """Full vertical catalogue with pricing, for a sector selector.
+
+    Public, so only published rates carry a figure: a trade priced by
+    quote has `monthly_usd` null and says so in `price_label`.
+    """
+    from pricing import PRICE_BOOK, custom_quote, public_price, public_price_label
 
     return {
         "count": len(INDUSTRY_PROFILES),
@@ -148,11 +152,9 @@ def list_industries():
                 "asset_noun": profile["asset_noun"],
                 "asset_plural": profile["asset_plural"],
                 "billing_unit": PRICE_BOOK[key]["unit"],
-                "monthly_usd": PRICE_BOOK[key]["monthly_usd"],
-                "price_label": (
-                    f"${PRICE_BOOK[key]['monthly_usd']:,.0f} / "
-                    f"{PRICE_BOOK[key]['unit']} / month"
-                ),
+                "monthly_usd": public_price(key),
+                "custom_pricing": custom_quote(key),
+                "price_label": public_price_label(key),
                 "pitch": PRICE_BOOK[key]["pitch"],
             }
             for key, profile in INDUSTRY_PROFILES.items()

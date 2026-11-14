@@ -134,7 +134,7 @@ def test_a_partner_from_first_day_to_last(api):
     assert api.post("/api/contracts", headers=owner,
                     json={"term_years": 1}).status_code == 201
     assert api.get("/api/partners/me", headers=portal).json()[
-        "book"][0]["run_rate_monthly_usd"] == 249.0
+        "book"][0]["run_rate_monthly_usd"] == 149.0
     run_billing()
     invoice = STORE.invoices_for(tenant_id)[0]
     paid = api.post(f"/api/invoices/{invoice.invoice_id}/paid",

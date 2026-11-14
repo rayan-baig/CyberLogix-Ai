@@ -56,10 +56,10 @@ def test_the_correctly_named_field_still_works(api, billed):
         f"/api/invoices/{invoice.invoice_id}/paid",
         params={"tenant_id": tenant["tenant_id"]},
         headers=ADMIN,
-        json={"reference": "WIRE-1", "amount_usd": 500.0},
+        json={"reference": "WIRE-1", "amount_usd": 100.0},
     )
     assert resp.status_code == 200
-    assert STORE.get_invoice(invoice.invoice_id).amount_paid_usd == 500.0
+    assert STORE.get_invoice(invoice.invoice_id).amount_paid_usd == 100.0
     assert STORE.get_invoice(invoice.invoice_id).state == "part_paid"
 
 

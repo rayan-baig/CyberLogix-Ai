@@ -13,10 +13,12 @@ part it does not know: what is lost when it goes wrong, who turns up
 afterwards asking questions, and what paperwork the people working there
 have to hold.
 
-No prices and no invented statistics. Every line is either a fact about
-the product or a description of the failure, because a page of numbers
-somebody made up is the fastest way to lose the one reader who knows the
-industry.
+No invented statistics. Every line is either a fact about the product or
+a description of the failure, because a page of numbers somebody made up
+is the fastest way to lose the one reader who knows the industry. The one
+price line is read from pricing.py: a published rate for restaurants and
+pharmacies, and "Custom pricing — ask for a quote" with a way to talk to
+us for every other trade, whose figure is never shown here.
 """
 
 from __future__ import annotations
@@ -234,8 +236,30 @@ def page(vertical: str) -> Dict[str, Any]:
         "unit": unit,
         "paperwork": profile.get("shortcut_name", ""),
         "paperwork_detail": profile.get("shortcut_description", ""),
+        **price(vertical),
         **extra,
     }
+
+
+def price(vertical: str) -> Dict[str, Any]:
+    """The page's one price line, from the rate card, as flat fields."""
+    from helpdesk import talk_to_us
+    from pricing import (CUSTOM_PRICE_LABEL, EXTRA_UNIT_MONTHLY_USD, PRICE_BOOK,
+                         SETUP_FEE_PER_SITE_USD, public_price, units_per_location)
+
+    rate = public_price(vertical)
+    unit = PRICE_BOOK[vertical]["unit"]
+    setup = "No setup fee." if not SETUP_FEE_PER_SITE_USD else ""
+    if rate is None:
+        talk = talk_to_us()
+        return {"price_custom": True, "price_label": CUSTOM_PRICE_LABEL,
+                "price_note": f"Priced for what you run. {setup}".strip(),
+                "talk_href": talk["href"], "talk_address": talk["address"]}
+    cap = units_per_location(vertical)
+    note = (f"For up to {cap} fridges and freezers at that {unit}; each one "
+            f"past {cap} is ${EXTRA_UNIT_MONTHLY_USD:,.0f} a month. " if cap else "")
+    return {"price_custom": False, "price_label": f"${rate:,.0f} a month per {unit}",
+            "price_note": (note + setup).strip(), "talk_href": "", "talk_address": ""}
 
 
 def index() -> List[Dict[str, str]]:

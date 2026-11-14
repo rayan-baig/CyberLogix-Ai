@@ -170,6 +170,131 @@ def test_a_clean_day_is_exactly_the_contracts_shape(kitchen, fake, mailbox):
     assert row["state"] == "sent" and row["answer"]["ticked"] == 1
 
 
+# ---- the signature (KITCHEN_BUNDLE_SECRET) ---------------------------------
+#
+# X-CyberLogix-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret,
+# f"{t}." + raw body bytes)>. OmniArmor checks it the same way and waives
+# its Pro fee for a workspace whose reports arrive signed. Verified here
+# with the algorithm written out again, not by calling sign().
+
+SECRET = "test-kitchen-bundle-secret-not-a-real-one"
+
+
+def _verify(header, body, secret=SECRET):
+    import hashlib
+    import hmac
+
+    match = re.fullmatch(r"t=(\d+),v1=([0-9a-f]{64})", header)
+    assert match, header
+    t, digest = match.group(1), match.group(2)
+    expected = hmac.new(secret.encode("utf-8"), f"{t}.".encode("ascii") + body,
+                        hashlib.sha256).hexdigest()
+    return int(t), hmac.compare_digest(digest, expected)
+
+
+def _signature(call):
+    found = {k.lower(): v for k, v in call["headers"].items()}
+    return found.get("x-cyberlogix-signature")
+
+
+def test_every_report_is_signed_over_the_exact_bytes_sent(kitchen, fake, mailbox, monkeypatch):
+    monkeypatch.setattr(omniarmor, "KITCHEN_BUNDLE_SECRET", SECRET)
+    day = _today_utc() - timedelta(days=1)
+    _clean_day(day)
+    before = int(time.time())
+    omniarmor.run_daily(now=_now_after(day), sleep=lambda s: None)
+    [call] = fake.calls
+    header = _signature(call)
+    assert header is not None
+    t, ok = _verify(header, call["body"])
+    assert ok, "the signature does not match HMAC-SHA256(secret, t + '.' + body)"
+    assert before <= t <= int(time.time())
+    # Over the body as sent, not a re-serialisation of it.
+    assert not _verify(header, json.dumps(json.loads(call["body"])).encode())[1]
+    # A different secret does not verify.
+    assert not _verify(header, call["body"], secret="another-secret")[1]
+
+
+def test_a_retry_is_signed_again(kitchen, monkeypatch, mailbox):
+    monkeypatch.setattr(omniarmor, "KITCHEN_BUNDLE_SECRET", SECRET)
+    server = FakeOmniArmor(KEY, _today_utc(), script=[(503, {})])
+    monkeypatch.setattr(omniarmor, "TRANSPORT", server)
+    day = _today_utc() - timedelta(days=1)
+    _clean_day(day)
+    omniarmor.run_daily(now=_now_after(day), sleep=lambda s: None)
+    assert len(server.calls) == 2
+    for call in server.calls:
+        assert _verify(_signature(call), call["body"])[1]
+
+
+def test_without_the_secret_no_signature_header_is_sent(kitchen, fake, mailbox, monkeypatch):
+    monkeypatch.setattr(omniarmor, "KITCHEN_BUNDLE_SECRET", "")
+    day = _today_utc() - timedelta(days=1)
+    _clean_day(day)
+    result = omniarmor.run_daily(now=_now_after(day), sleep=lambda s: None)
+    # The report still goes, and is accepted; it is just not signed.
+    assert result["sent"] == 1 and fake.accepted
+    [call] = fake.calls
+    assert _signature(call) is None
+    assert call["headers"] == {}
+
+
+def test_the_signature_value_is_the_specified_format():
+    import hashlib
+    import hmac
+
+    body = b'{"date":"2026-11-13","units_total":2}'
+    value = omniarmor.sign(body, timestamp=1763078400, secret="s3cret")
+    expected = hmac.new(b"s3cret", b"1763078400." + body, hashlib.sha256).hexdigest()
+    assert value == f"t=1763078400,v1={expected}"
+    assert omniarmor.sign(body, secret="") is None
+    assert omniarmor.SIGNATURE_HEADER == "X-CyberLogix-Signature"
+
+
+def test_the_real_sender_puts_the_header_on_the_request(monkeypatch):
+    """_post, the transport used in production, sends what it is handed."""
+    import pollers
+
+    seen = {}
+
+    class Response:
+        status = 200
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, limit):
+            return b'{"ok": true}'
+
+    class Opener:
+        def open(self, request, timeout):
+            seen["headers"] = {k.lower(): v for k, v in request.header_items()}
+            seen["body"] = request.data
+            return Response()
+
+    monkeypatch.setattr(pollers, "_resolve_to_public", lambda host: None)
+    monkeypatch.setattr(pollers, "_OPENER", Opener())
+    monkeypatch.setattr(omniarmor, "KITCHEN_BUNDLE_SECRET", SECRET)
+    body = b'{"date":"2026-11-13"}'
+    omniarmor._post(ADDRESS + omniarmor.PATH, KEY, body, omniarmor.signature_headers(body))
+    assert seen["body"] == body
+    assert _verify(seen["headers"]["x-cyberlogix-signature"], body)[1]
+    assert seen["headers"]["authorization"] == f"Bearer {KEY}"
+
+
+def test_the_secret_is_a_documented_secret_setting():
+    env = (ROOT / ".env.example").read_text()
+    blueprint = (ROOT / "render.yaml").read_text()
+    docs = (ROOT / "docs" / "OMNIARMOR-CONNECTION.md").read_text()
+    assert "\nKITCHEN_BUNDLE_SECRET=\n" in env
+    assert re.search(r"- key: KITCHEN_BUNDLE_SECRET\n\s+sync: false", blueprint)
+    assert "KITCHEN_BUNDLE_SECRET" in docs and "X-CyberLogix-Signature" in docs
+
+
 def test_a_breach_day_carries_the_breach_mapped_to_the_lists(kitchen, fake, mailbox):
     day = _today_utc() - timedelta(days=1)
     _clean_day(day)
@@ -382,7 +507,7 @@ def test_a_network_failure_is_retried(kitchen, monkeypatch, mailbox):
     server = FakeOmniArmor(KEY, _today_utc())
     calls = []
 
-    def flaky(url, key, body):
+    def flaky(url, key, body, headers=None):
         calls.append(1)
         if len(calls) < 3:
             raise OSError("connection reset")
@@ -467,7 +592,7 @@ def test_a_day_another_pass_holds_is_left_alone(kitchen, fake, mailbox):
 def test_two_passes_at_once_send_once(kitchen, monkeypatch, mailbox):
     server = FakeOmniArmor(KEY, _today_utc())
 
-    def slow(url, key, body):
+    def slow(url, key, body, headers=None):
         time.sleep(0.2)
         return server(url, key, body)
 
@@ -544,7 +669,7 @@ def test_an_old_day_is_not_reopened(kitchen, fake, mailbox):
 
 def test_two_days_of_failure_email_the_owners_once(kitchen, monkeypatch, mailbox):
     monkeypatch.setattr(omniarmor, "TRANSPORT",
-                        lambda url, key, body: (503, {}, b'{"ok": false}'))
+                        lambda url, key, body, headers=None: (503, {}, b'{"ok": false}'))
     tenant_id = kitchen["tenant"].tenant_id
     conn = omniarmor.connection(tenant_id)
     conn["connected_at"] = (utc_now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")

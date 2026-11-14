@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CyberLogix AI — Pricing</title>
-<meta name="description" content="One flat monthly price for each thing watched, set by your trade. Work out what your business would pay.">
+<meta name="description" content="One flat monthly price per location for restaurants and pharmacies, and a quote for every other trade. No setup fee. Work out what your business would pay.">
 <!-- Every figure on this page is rendered from pricing.py at serve time.
      The calculator (static/pricing.js) reads them back out of this markup
      and keeps no number of its own. -->
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CyberLogix AI">
 <meta property="og:title" content="CyberLogix AI pricing">
-<meta property="og:description" content="One flat monthly price for each thing watched, set by your trade. Work out what your business would pay.">
+<meta property="og:description" content="One flat monthly price per location for restaurants and pharmacies, and a quote for every other trade. No setup fee. Work out what your business would pay.">
 <meta property="og:url" content="%%BASE_URL%%/pricing">
 <meta property="og:image" content="%%BASE_URL%%/static/og.png">
 <meta property="og:image:width" content="1200">
@@ -20,7 +20,7 @@
 <meta property="og:image:alt" content="CyberLogix AI — a freezer fails at 3am, somebody answers.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="CyberLogix AI pricing">
-<meta name="twitter:description" content="One flat monthly price for each thing watched, set by your trade.">
+<meta name="twitter:description" content="One flat monthly price per location for restaurants and pharmacies. No setup fee.">
 <meta name="twitter:image" content="%%BASE_URL%%/static/og.png">
 <meta name="theme-color" content="%%THEME_COLOR%%">
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
@@ -51,12 +51,14 @@
 
 <main class="wrap page">
   <p class="kicker">Pricing</p>
-  <h1>One flat price for each thing watched.</h1>
-  <p class="lede">Your trade sets the rate: a rack, a vaccine fridge and a
-    wine cellar are not the same job. Restaurants pay per location, however
-    many fridges are inside. Never a share of what the monitoring saved.
-    Start with a free %%TRIAL_DAYS%%-day trial on up to %%TRIAL_UNITS%%
-    sensors, no card needed.</p>
+  <h1>One flat price for each location.</h1>
+  <p class="lede">Restaurants pay %%RESTAURANT_PRICE%% a month per location
+    and pharmacies %%PHARMACY_PRICE%% a month per pharmacy, each for up to
+    %%UNITS_PER_LOCATION%% fridges and freezers there, and
+    %%EXTRA_UNIT_PRICE%% a month for each one past that. Every other trade is
+    priced by quote. No setup fee, and never a share of what the monitoring
+    saved. Start with a free %%TRIAL_DAYS%%-day trial on up to
+    %%TRIAL_UNITS%% sensors, no card needed.</p>
 
   <section class="panel starter-panel" id="starter" aria-labelledby="starter-title">
     <h2 id="starter-title">Starter: %%STARTER_PRICE%% a month for a small caf&eacute; or shop</h2>
@@ -72,7 +74,7 @@
   <section class="panel" aria-labelledby="calc-title">
     <h2 id="calc-title" class="calc-heading">Work out your price</h2>
     <form class="calc" id="calc" data-prepay-discount="%%PREPAY_DISCOUNT%%"
-          data-starter-rate="%%STARTER_RATE%%">
+          data-starter-rate="%%STARTER_RATE%%" data-extra-rate="%%EXTRA_UNIT_RATE%%">
       <div>
         <fieldset class="calc-plan">
           <legend>Which plan</legend>
@@ -95,6 +97,10 @@
               <label><span class="calc-unit">How many</span>
                 <input class="calc-count" type="number" min="0" max="10000" step="1" value="1" inputmode="numeric"></label>
             </div>
+            <div class="field calc-each-field">
+              <label>Fridges and freezers at each
+                <input class="calc-each" type="number" min="1" max="10000" step="1" value="3" inputmode="numeric"></label>
+            </div>
             <button class="btn btn-sm calc-remove" type="button" hidden>Remove</button>
           </div>
         </div>
@@ -113,6 +119,9 @@
         <p class="calc-total" id="calc-total">—</p>
         <ul class="calc-lines" id="calc-lines"></ul>
         <p class="calc-sub" id="calc-year"></p>
+        <p class="calc-sub calc-custom" id="calc-custom" hidden>%%CUSTOM_LABEL%%.
+          A trade without a published price gets a quote for the whole
+          business. %%TALK_LINK%%</p>
         <a class="btn btn-primary" href="/signup">Start the free trial</a>
         <p class="calc-sub small">Prices in US dollars, before any tax.
           A chain buying many branches can ask about volume pricing.</p>
@@ -121,6 +130,9 @@
   </section>
 
   <h2>Every rate</h2>
+  <p class="muted">Restaurants and pharmacies are priced per location. Every
+    other trade is priced by quote, sized to what you run:
+    %%TALK_LINK%%</p>
   <div class="panel scroll">
     <table class="table" id="rate-table">
       <thead><tr><th>Trade</th><th>Priced per</th><th class="num">A month</th></tr></thead>
@@ -142,7 +154,8 @@
   <h2>Optional extras</h2>
   <p class="muted">The Kitchen Safety Bundle (%%BUNDLE_PRICE%%) sends each
     day&rsquo;s fridge and freezer record to OmniArmor, which fills in its
-    temperature-log checks. It is free during the trial, so you can try it.</p>
+    temperature-log checks. %%BUNDLE_INCLUDES%%. It is free during the
+    trial, so you can try it.</p>
   <div class="panel scroll">
     <table class="table">
       <thead><tr><th>Extra</th><th>What it is</th><th class="num">A month</th></tr></thead>
@@ -150,9 +163,8 @@
     </table>
   </div>
   <p class="muted small">Paying a year ahead takes %%PREPAY_DISCOUNT%%% off
-    that year. A contract's first bill also has a one-time setup charge of
-    %%SETUP_FEE%% per site (none on Starter), and a term longer than a year rises
-    %%ESCALATOR%%% a year. Questions? <a href="/help">Read the help page</a>.</p>
+    that year. There is no setup fee on any plan. A term longer than a year
+    rises %%ESCALATOR%%% a year. Questions? <a href="/help">Read the help page</a>.</p>
 </main>
 
 <footer class="site">

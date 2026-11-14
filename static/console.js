@@ -491,9 +491,9 @@ $("pricing-btn").addEventListener("click", async () => {
           <span class="u-d-block u-fs-12 u-c-muted u-mt-2 u-maxw-52ch">${esc(row.pitch)}</span>
         </span>
         <span class="u-ws-nowrap u-fs-13-5 u-fw-650 u-tnum">
-          $${row.monthly_usd.toLocaleString()}
+          ${row.monthly_usd == null ? esc(row.price_label) : `$${row.monthly_usd.toLocaleString()}
           <span class="u-c-muted u-fw-400 u-fs-12">
-            / ${esc(row.unit)} / mo</span>
+            / ${esc(row.unit)} / mo</span>`}
         </span>
       </div>`).join("");
     card.hidden = false;
@@ -511,7 +511,8 @@ async function loadIndustries() {
   fillKnockIndustries();
   $("add-vertical").innerHTML = body.industries
     .map((i) => `<option value="${esc(i.vertical)}">`
-      + `${esc(i.name)} — $${i.monthly_usd} / ${esc(i.billing_unit)}</option>`)
+      + `${esc(i.name)} — ${i.monthly_usd == null ? esc(i.price_label)
+        : `$${i.monthly_usd} / ${esc(i.billing_unit)}`}</option>`)
     .join("");
   const plain = body.industries
     .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`)

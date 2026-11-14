@@ -63,7 +63,7 @@ def test_an_invoice_totals_its_lines(api, operator_factory, sensor_factory):
         sum(line["amount_usd"] for line in invoice["lines"]), 2)
 
 
-def test_add_ons_and_setup_appear_as_their_own_lines(
+def test_add_ons_appear_as_their_own_lines_and_there_is_no_setup_line(
     api, operator_factory, sensor_factory
 ):
     headers = estate(api, operator_factory, sensor_factory, units=2, sites=2)
@@ -73,11 +73,8 @@ def test_add_ons_and_setup_appear_as_their_own_lines(
     kinds = [line["kind"] for line in invoice["lines"]]
     assert kinds.count("subscription") == 1
     assert kinds.count("add_on") == 2
-    assert kinds.count("setup") == 1
-
-    setup = next(l for l in invoice["lines"] if l["kind"] == "setup")
-    assert setup["quantity"] == 2
-    assert setup["amount_usd"] == 3000.0
+    # Asked for, and still not there: there is no setup fee.
+    assert kinds.count("setup") == 0
     # Read from the rate card rather than typed in. The figures used to
     # be literals, and when an add-on was withdrawn the test failed on
     # arithmetic rather than on the thing it is about, which is that each
@@ -88,7 +85,7 @@ def test_add_ons_and_setup_appear_as_their_own_lines(
     assert all(ADD_ONS[key]["basis"] == "per estate"
                for key in ("vault", "benchmarks")), (
         "a per-unit add-on would need multiplying by the unit count here")
-    assert invoice["total_usd"] == round(2 * RATE + add_ons + 3000.0, 2)
+    assert invoice["total_usd"] == round(2 * RATE + add_ons, 2)
 
 
 def test_the_figures_never_move_after_issue(

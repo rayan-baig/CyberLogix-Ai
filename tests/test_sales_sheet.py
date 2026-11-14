@@ -44,14 +44,30 @@ def _text(page: str) -> str:
 def test_every_industry_has_a_sheet_with_its_own_price(api, vertical):
     words = _text(_sheet(api, vertical))
     rate = pricing.PRICE_BOOK[vertical]
-    assert f"{_money(rate['monthly_usd'])} a month per {rate['unit']}" in words
+    big = words.split("What it costs", 1)[1].split("Pay a year ahead", 1)[0]
+    if pricing.custom_quote(vertical):
+        # Priced by quote: the words and a way to ask, never the figure.
+        assert pricing.CUSTOM_PRICE_LABEL in big
+        assert "Talk to us" in big
+        assert _money(rate["monthly_usd"]) not in words
+    else:
+        assert f"{_money(rate['monthly_usd'])} a month per {rate['unit']}" in words
     assert domain.INDUSTRY_PROFILES[vertical]["name"] in words
     assert domain.INDUSTRY_PROFILES[vertical]["slogan"] in words
     # Another trade's price is not on it.
     others = {_money(r["monthly_usd"]) for v, r in pricing.PRICE_BOOK.items()
               if r["monthly_usd"] != rate["monthly_usd"]}
-    big = words.split("What it costs", 1)[1].split("Pay a year ahead", 1)[0]
     assert not [o for o in others if o in big]
+
+
+@pytest.mark.parametrize("vertical", known())
+def test_no_sheet_shows_a_custom_trades_rate(api, vertical):
+    """A sheet is handed to strangers: no rate kept for billing appears on
+    any of them, whichever trade it is for."""
+    words = _text(_sheet(api, vertical))
+    for other, rate in pricing.PRICE_BOOK.items():
+        if pricing.custom_quote(other):
+            assert f"{_money(rate['monthly_usd'])} a month" not in words, other
 
 
 @pytest.mark.parametrize("vertical", known())
@@ -101,18 +117,33 @@ def test_the_plans_terms_and_trial_are_the_codes(api):
     for tier in domain.PLAN_TIERS.values():
         assert f"{tier['name']} {tier['max_sensors']:,} " in words
     assert f"{pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT:g}% off that year" in words
-    assert f"{_money(pricing.SETUP_FEE_PER_SITE_USD)} per site, once" in words
+    assert "No setup fee." in words and "per site, once" not in words
     assert f"rise {pricing.ANNUAL_ESCALATOR_PERCENT:g}% a year" in words
     for add_on in pricing.ADD_ONS.values():
         assert f"{add_on['name']}: {_money(add_on['monthly_usd'])} a month" in words
+    assert ("Kitchen Safety Bundle: $29 a month per location, includes "
+            "OmniArmor Pro for that location") in words
 
 
-def test_a_per_location_price_says_so_and_a_per_unit_one_says_so(api):
-    assert "however many sensors it has" in _text(_sheet(api, "restaurant"))
-    assert pricing.per_site("restaurant")
+def test_a_per_location_price_says_so_and_a_custom_one_offers_a_quote(api):
+    for vertical in ("restaurant", "pharmacy"):
+        assert pricing.per_site(vertical)
+        words = _text(_sheet(api, vertical))
+        unit = pricing.PRICE_BOOK[vertical]["unit"]
+        assert (f"Priced per {unit}, for up to 10 fridges and freezers there; "
+                "each one past 10 is $15 a month.") in words
     words = _text(_sheet(api, "cybersecurity"))
-    assert not pricing.per_site("cybersecurity")
-    assert "Each sensor is billed as one rack." in words
+    assert "Custom pricing \u2014 ask for a quote" in words
+    assert "Priced for what you run, by quote. Talk to us" in words
+
+
+def test_the_quote_link_is_the_support_address_and_can_be_copied(api, monkeypatch):
+    import helpdesk
+
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@cyberlogix.example")
+    page = _sheet(api, "superyacht")
+    assert 'href="mailto:sales@cyberlogix.example?subject=' in page
+    assert '<span class="sheet-mono talk-address">sales@cyberlogix.example</span>' in page
 
 
 def test_a_changed_price_or_timing_changes_the_sheet(api, monkeypatch):
@@ -125,6 +156,7 @@ def test_a_changed_price_or_timing_changes_the_sheet(api, monkeypatch):
     words = _text(_sheet(api, "restaurant"))
     assert "$251 a month per location" in words
     assert "Nobody answers in 7 minutes" in words
+    # The setting is still read: set one, and the sheet would say so.
     assert "$1,234 per site" in words
 
 

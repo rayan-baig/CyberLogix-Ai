@@ -3,8 +3,9 @@
 The price book called a restaurant unit a "location" and the billing
 counted sensors, so one sandwich shop with a walk-in freezer, a walk-in
 cooler and a reach-in was invoiced "3 locations" -- $2,997 a month at the
-old $999. The price is now $249 per location, and a location is a shop
-however many thermometers are inside it.
+old $999. The price is now $149 per location, and a location is a shop,
+for up to ten thermometers inside it (units past ten are a small extra
+line of their own, pinned in tests/test_price_change.py).
 
 Every place that turned sensors into money had to agree: the monthly
 bill, the part-period catch-up for things added mid-month, the "this
@@ -20,7 +21,7 @@ import pytest
 from contracts import run_billing
 from store import STORE, add_months, utc_now
 
-SHOP = 249.0
+SHOP = 149.0
 
 
 def _file(api, headers, sensor_id, site_id):
@@ -131,7 +132,7 @@ def _register(api, headers, sensor_id):
 def test_the_first_thermometer_adds_a_shop_and_the_second_adds_nothing(
         api, tenant_factory):
     """Read off the rate card, the second one was announced as another
-    $249 a month. It costs nothing: the shop was already on the bill."""
+    $149 a month. It costs nothing: the shop was already on the bill."""
     headers, _ = tenant_factory()
 
     first = _register(api, headers, "FRZ-1")
@@ -258,13 +259,16 @@ def test_a_per_unit_add_on_is_still_caught_up_per_thermometer(
 # ---- the chain quote ---------------------------------------------------------
 
 
-def test_the_chain_quote_bills_restaurants_per_branch(api):
+def test_the_chain_quote_bills_restaurants_per_branch(api, tenant_factory):
     """Multiplying by thermometers per branch quoted a rate card nobody is
     ever charged, and made the volume contract look like a saving."""
+    key_headers, _ = tenant_factory()
     one_each = api.get("/api/v1/enterprise-billing/quote?industry_vertical="
-                       "restaurant&total_branch_locations=10&units_per_branch=1").json()
+                       "restaurant&total_branch_locations=10&units_per_branch=1",
+                       headers=key_headers).json()
     four_each = api.get("/api/v1/enterprise-billing/quote?industry_vertical="
-                        "restaurant&total_branch_locations=10&units_per_branch=4").json()
+                        "restaurant&total_branch_locations=10&units_per_branch=4",
+                        headers=key_headers).json()
 
     assert one_each["per_unit"]["monthly_usd"] == 10 * SHOP
     assert four_each["per_unit"]["monthly_usd"] == 10 * SHOP

@@ -267,7 +267,9 @@ def test_the_card_fee_follows_who_actually_used_a_card(api):
 def test_the_target_is_missed_honestly_and_the_gap_is_named(api):
     _traded(STORE)
 
-    verdict = margin.target("restaurant", 1)
+    # Three shops: at $149 a location one shop's biggest lever is the
+    # shared hosting (the test below), not collections.
+    verdict = margin.target("restaurant", 3)
 
     assert verdict["met"] is False
     assert verdict["gap_points"] > 0
@@ -277,13 +279,13 @@ def test_the_target_is_missed_honestly_and_the_gap_is_named(api):
 def test_good_collection_meets_the_target_without_touching_a_setting(api):
     """Which is the only way it is allowed to be met.
 
-    Two shops, not one: at $249 a location a single shop carrying the whole
-    hosting bill cannot reach the target however well it is collected --
-    see the test below, which pins that on purpose.
+    Three shops, not one: at $149 a location a single shop, or two,
+    carrying the whole hosting bill cannot reach the target however well
+    it is collected -- see the test below, which pins that on purpose.
     """
     _traded(STORE, invoices=40, unpaid=0)
 
-    verdict = margin.target("restaurant", 2)
+    verdict = margin.target("restaurant", 3)
 
     assert verdict["achieved_percent"] >= 95.0
     assert verdict["met"] is True
@@ -292,12 +294,13 @@ def test_good_collection_meets_the_target_without_touching_a_setting(api):
 def test_one_shop_alone_cannot_carry_the_hosting_at_the_target(api):
     """A fact about the price, pinned so it cannot be edited away.
 
-    Restaurants moved from $999 per sensor to $249 per location. Hosting is
-    $14.65 a month for the whole company, and the target is computed as if
-    the estate named were the whole company. At $999 one shop carried that
-    as 1.5% of its payment; at $249 it is 5.9%, and even with every invoice
-    paid on time and by transfer one shop keeps 93.9%. The second shop is
-    what meets the target (96.9%) -- the business growing, not a changed
+    Restaurants moved from $999 per sensor to $249 per location, and then
+    to $149. Hosting is $14.65 a month for the whole company, and the
+    target is computed as if the estate named were the whole company. At
+    $999 one shop carried that as 1.5% of its payment; at $249, 5.9%; at
+    $149 it is 9.8%, and even with every invoice paid on time and by
+    transfer one shop keeps 89.9% and two keep 94.8%. The third shop is
+    what meets the target (96.4%) -- the business growing, not a changed
     assumption. If someone makes this pass by editing a cost constant, that
     is the thing the margin module says it must never be.
     """
@@ -305,10 +308,12 @@ def test_one_shop_alone_cannot_carry_the_hosting_at_the_target(api):
 
     alone = margin.target("restaurant", 1)
     two = margin.target("restaurant", 2)
+    three = margin.target("restaurant", 3)
 
     assert alone["met"] is False
     assert alone["biggest_lever"]["line"] == "fixed costs"
-    assert two["met"] is True
+    assert two["met"] is False
+    assert three["met"] is True
 
 
 def test_it_says_what_bad_debt_rate_would_meet_the_target(api):
