@@ -124,7 +124,7 @@ def facts(vertical: str) -> Dict[str, Any]:
     from pricing import (
         ADD_ONS,
         ANNUAL_ESCALATOR_PERCENT,
-        ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        CHAIN_DISCOUNT_TIERS,
         CUSTOM_PRICE_LABEL,
         EXTRA_UNIT_MONTHLY_USD,
         PRICE_BOOK,
@@ -135,6 +135,7 @@ def facts(vertical: str) -> Dict[str, Any]:
         public_price,
         starter_terms,
         units_per_location,
+        yearly_terms,
     )
 
     words = page(vertical)
@@ -163,7 +164,14 @@ def facts(vertical: str) -> Dict[str, Any]:
             "units_per_location": units_per_location(vertical),
             "extra_unit_usd": EXTRA_UNIT_MONTHLY_USD if per_site(vertical) else None,
             "setup_per_site_usd": SETUP_FEE_PER_SITE_USD,
-            "prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+            "yearly": yearly_terms(),
+            # Chain discounts are for the per-location trades with a
+            # published price; a trade priced by quote gets its own quote.
+            "chain_tiers": ([{"from": start, "percent": off,
+                              "each_usd": round(public_price(vertical) * (1 - off / 100.0), 2)}
+                             for start, off in CHAIN_DISCOUNT_TIERS]
+                            if per_site(vertical) and public_price(vertical) is not None
+                            else []),
             "escalator_percent": ANNUAL_ESCALATOR_PERCENT,
         },
         "plans": [
@@ -229,9 +237,13 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
         f"{' per location' if a['basis'] == 'per location' else ''}"
         f"{(', includes ' + e(a['includes'])) if a.get('includes') else ''}</li>"
         for a in f["add_ons"])
-    setup_line = ("<li>No setup fee.</li>" if not p["setup_per_site_usd"] else
-                  f"<li>Setup: {_money(p['setup_per_site_usd'])} per site, once, "
-                  "on a contract's first bill.</li>")
+    setup_line = ("No setup fee." if not p["setup_per_site_usd"] else
+                  f"Setup: {_money(p['setup_per_site_usd'])} per site, once, "
+                  "on a contract's first bill.")
+    chain_line = (
+        "<li>Chains: " + ", ".join(f"{t['from']}+ {t['percent']:g}% off"
+                                   for t in p["chain_tiers"])
+        + " each location.</li>" if p["chain_tiers"] else "")
     starter = f["starter"]
     starter_line = (
         f'<p class="sheet-small sheet-starter">A small caf&eacute; or shop? '
@@ -317,8 +329,8 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
         <tbody>{plan_rows}</tbody>
       </table>
       <ul class="sheet-list sheet-small">
-        <li>Pay a year ahead: {p['prepay_discount_percent']:g}% off that year.</li>
-        {setup_line}
+        <li>{setup_line} Yearly: {e(p['yearly']['label'])}.</li>
+        {chain_line}
         <li>Terms longer than a year rise {p['escalator_percent']:g}% a year.</li>
         {extras}
       </ul>

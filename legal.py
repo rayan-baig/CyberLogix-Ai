@@ -46,6 +46,8 @@ from contracts import (
 )
 from backup import BACKUP_KEEP
 from invoicing import COMPANY, PAYMENT_TERMS_DAYS, issuer_block
+from pricing import (CANCELLATION_RULE, YEARLY_MONTHS_CHARGED,
+                     YEARLY_MONTHS_COVERED, YEARLY_RENEWAL_REMINDER_DAYS)
 from usage import KEEP_DAYS as USAGE_KEEP_DAYS
 from store import (
     DISPATCH_SLA_SECONDS,
@@ -75,8 +77,12 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # 2.3 spells the company MTRX Horizyn, as it is now named, in place of the earlier spelling.
 # 2.4 says that a few actions are counted as daily totals, with nothing
 # about who did them (usage.py).
-TERMS_VERSION = "2.4"
-EFFECTIVE_DATE = "2026-11-03"
+# 2.5 says how paying yearly works (one bill for the year, a prorated bill
+# for what is added part-way through, reminders before it renews) and what
+# cancelling does: nothing more is billed, the service runs to the end of
+# what was paid for, and what was paid is not refunded.
+TERMS_VERSION = "2.5"
+EFFECTIVE_DATE = "2026-11-14"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -98,6 +104,12 @@ DISCLAIMER = (
     "code, so they match what the service really does. It is not "
     "reviewed by a lawyer."
 )
+
+
+def _days(values) -> str:
+    """(30, 7) -> "30 and 7"."""
+    words = [str(v) for v in values]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
 
 
 def _fmt_money(value: float) -> str:
@@ -167,6 +179,15 @@ Prices are on your order. Bills are due net {PAYMENT_TERMS_DAYS} days.
 Late bills get a late charge of {LATE_FEE_MONTHLY_PERCENT:g}% per month,
 or less if the law where you are says so.
 
+You pay monthly or yearly. Monthly is one bill at the start of each
+month. Yearly is one bill at the start of each year, for
+{YEARLY_MONTHS_COVERED} months at the price of {YEARLY_MONTHS_CHARGED}.
+If you add a location or units part-way through a paid year, we bill the
+rest of that year for them, at the yearly price, when you add them. We
+email you {_days(YEARLY_RENEWAL_REMINDER_DAYS)} days before a yearly plan
+renews. You can switch between monthly and yearly at renewal; the switch
+starts when what you have paid for runs out.
+
 If a bill is more than {DELINQUENT_AFTER_DAYS} days late, reports,
 certificates and downloads pause until it is paid.
 
@@ -216,6 +237,8 @@ never have a bug.
 Your order says how long the deal runs. Either of us can end it if the
 other breaks it in a big way and does not fix it within thirty days of
 being told. You pay bills already sent; we stop billing you after that.
+
+**If you cancel:** {CANCELLATION_RULE}
 
 ## 10. Everything else
 

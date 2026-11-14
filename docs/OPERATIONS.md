@@ -61,7 +61,7 @@ rather than SQL, entities are stored as JSON documents keyed by `(kind, id)`
 
 The shape of each record (`Tenant`, `Sensor`, `Invoice` and the rest) and
 its `to_row`/`from_row` are in `records.py`; the fixed rules it applies
-(industry profiles, plans, the breach check, volume pricing, temperature
+(industry profiles, plans, the breach check, temperature
 units) are in `domain.py`. `store.py` re-exports both, so code imports
 everything from `store`.
 

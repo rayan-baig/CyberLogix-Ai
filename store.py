@@ -8,7 +8,7 @@ one change required to scale horizontally.
 
 The record shapes (Tenant, Sensor, Invoice and the rest) live in
 records.py, and the fixed rules (industry profiles, plans, the breach
-check, volume pricing, temperature units) in domain.py. Both are
+check, temperature units) in domain.py. Both are
 re-exported from here, so every existing `from store import ...` works.
 Settings that tests adjust on this module (MAX_READINGS_PER_SENSOR,
 MAX_CACHE_ENTRIES, SCRYPT_N and the like) stay here, beside the code that
@@ -58,17 +58,6 @@ from domain import (
     resolve_vertical,
     evaluate_breach,
     evaluate_sensor_breach,
-    VOLUME_DISCOUNT_STEP_PERCENT,
-    VOLUME_DISCOUNT_EVERY_UNITS,
-    MAX_VOLUME_DISCOUNT_PERCENT,
-    ENTERPRISE_MONTHLY_CAP,
-    volume_discount_percent,
-    _raw_total,
-    calculate_volume_tier_price,
-    volume_band,
-    volume_tier_label,
-    next_volume_tier,
-    volume_band_table,
 )
 from records import (
     Tenant,
@@ -3416,16 +3405,23 @@ class HubStore:
             self._db.put("subscription", live.subscription_id, live.to_row())
             return live
 
-    def renew_subscription(self, sub: Subscription, term_years: int) -> Subscription:
+    def renew_subscription(self, sub: Subscription, term_years: int,
+                           annual_prepay: Optional[bool] = None,
+                           carried_multiplier: Optional[float] = None,
+                           reason: str = "superseded by renewal") -> Subscription:
         """Start a fresh term at the rate the last one ended on.
 
         A renewal that reset to the year-one rate would hand back every
         point of the escalator the term was signed to earn, which is the
         single most expensive thing a renewal can quietly do.
+
+        `annual_prepay` switches between monthly and yearly at the renewal;
+        left out, the new term is billed as the old one was.
         """
         with self._lock:
             live = self._subscriptions.get(sub.subscription_id) or sub
-            carried = live.rate_multiplier(max(0, live.periods_billed - 1))
+            carried = (carried_multiplier if carried_multiplier is not None
+                       else live.rate_multiplier(max(0, live.periods_billed - 1)))
             now = utc_now()
             # The new term picks up where the old one's invoices stop.
             # Starting it "now" on an early renewal billed again the part
@@ -3434,14 +3430,16 @@ class HubStore:
             # starts today, never back-dated into months nobody was served.
             covered_to = live.period_start(live.periods_billed)
             live.cancelled_at = now
-            live.cancellation_reason = "superseded by renewal"
+            live.cancellation_reason = reason
+            live.next_interval = None
             self._db.put("subscription", live.subscription_id, live.to_row())
         tenant = self.get_tenant(live.tenant_id)
         fresh = self.create_subscription(
             tenant=tenant,
             term_years=term_years,
             escalator_percent=live.escalator_percent,
-            annual_prepay=live.annual_prepay,
+            annual_prepay=(live.annual_prepay if annual_prepay is None
+                           else bool(annual_prepay)),
             add_ons=list(live.add_ons),
             purchase_order=live.purchase_order,
             auto_renew=live.auto_renew,
@@ -3494,17 +3492,6 @@ __all__ = [
     "resolve_vertical",
     "evaluate_breach",
     "evaluate_sensor_breach",
-    "VOLUME_DISCOUNT_STEP_PERCENT",
-    "VOLUME_DISCOUNT_EVERY_UNITS",
-    "MAX_VOLUME_DISCOUNT_PERCENT",
-    "ENTERPRISE_MONTHLY_CAP",
-    "volume_discount_percent",
-    "_raw_total",
-    "calculate_volume_tier_price",
-    "volume_band",
-    "volume_tier_label",
-    "next_volume_tier",
-    "volume_band_table",
     "Tenant",
     "Sensor",
     "Reading",

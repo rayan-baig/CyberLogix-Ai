@@ -1,7 +1,7 @@
 """The fixed rules the store applies.
 
 Service times, temperature units, the industry profiles and plans, the
-breach check and volume pricing: plain values and pure functions, with no
+breach check: plain values and pure functions, with no
 state and no lock. They used to sit at the top of store.py, above three
 thousand lines of state; here they can be read, and changed, on their own.
 
@@ -15,7 +15,7 @@ import hashlib
 import re
 import math
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from records import Sensor
@@ -544,125 +544,6 @@ def evaluate_sensor_breach(
     )
 
 
-# Enterprise volume pricing.
-#
-# A contract is the vertical's own unit price times the enrolled count, less
-# a volume discount that deepens every ten units. The discount is a
-# percentage rather than a fixed dollar step, so one ladder serves all eight
-# verticals whatever their rate.
-#
-# The cap is deliberately shallow. At the top of a market a deep discount
-# reads as eagerness, and every point of it comes straight off the largest
-# accounts — the ones worth the most.
-VOLUME_DISCOUNT_STEP_PERCENT = 2.5
-VOLUME_DISCOUNT_EVERY_UNITS = 10
-MAX_VOLUME_DISCOUNT_PERCENT = 10.0
-
-# A flat ceiling on a contract, or None for no ceiling. A cap is a hard stop
-# on revenue from exactly the accounts worth most: at these rates a chain of
-# eleven vessels would hit $50,000 and every vessel after that would be free.
-ENTERPRISE_MONTHLY_CAP: Optional[float] = None
-
-
-def volume_discount_percent(units: int) -> float:
-    """The volume discount an estate of this size earns."""
-    if units <= 0:
-        return 0.0
-    steps = units // VOLUME_DISCOUNT_EVERY_UNITS
-    return min(MAX_VOLUME_DISCOUNT_PERCENT, VOLUME_DISCOUNT_STEP_PERCENT * steps)
-
-
-def _raw_total(units: int, unit_price: float) -> float:
-    return units * unit_price * (1 - volume_discount_percent(units) / 100.0)
-
-
-def calculate_volume_tier_price(units: int, unit_price: float) -> float:
-    """Monthly price for an enrolled unit count at a vertical's rate.
-
-    The discount deepens a whole band at a time, so the ladder alone is not
-    monotonic: 40 units at 10% off can undercut 39 at 7.5% off. A customer
-    would find that and rightly demand the lower figure, so no estate is
-    charged more than a larger estate would pay.
-    """
-    if units <= 0:
-        return 0.0
-    horizon = units + 2 * VOLUME_DISCOUNT_EVERY_UNITS
-    best = min(_raw_total(n, unit_price) for n in range(units, horizon + 1))
-    if ENTERPRISE_MONTHLY_CAP is not None:
-        best = min(best, ENTERPRISE_MONTHLY_CAP)
-    return round(best, 2)
-
-
-def volume_band(units: int) -> tuple:
-    """The (low, high) unit counts sharing this estate's discount."""
-    if units <= 0:
-        return (0, 0)
-    plateau = int(
-        MAX_VOLUME_DISCOUNT_PERCENT / VOLUME_DISCOUNT_STEP_PERCENT
-    ) * VOLUME_DISCOUNT_EVERY_UNITS
-    if units >= plateau:
-        return (plateau, None)
-    index = units // VOLUME_DISCOUNT_EVERY_UNITS
-    low = 1 if index == 0 else index * VOLUME_DISCOUNT_EVERY_UNITS
-    return (low, index * VOLUME_DISCOUNT_EVERY_UNITS + 9)
-
-
-def volume_tier_label(units: int) -> str:
-    """Which discount band a unit count lands in."""
-    if units <= 0:
-        return "no units enrolled"
-    low, high = volume_band(units)
-    discount = volume_discount_percent(units)
-    span = f"{low}+" if high is None else f"{low}-{high}"
-    if discount == 0:
-        return f"{span} units at list"
-    return f"{span} units, {discount:g}% volume discount"
-
-
-def next_volume_tier(units: int, unit_price: float) -> Optional[Dict[str, Any]]:
-    """The next discount step, and what the estate would pay there."""
-    if units <= 0 or volume_discount_percent(units) >= MAX_VOLUME_DISCOUNT_PERCENT:
-        return None
-
-    _, high = volume_band(units)
-    boundary = high + 1
-    here = calculate_volume_tier_price(units, unit_price)
-    there = calculate_volume_tier_price(boundary, unit_price)
-    return {
-        "units_until_next_discount": boundary - units,
-        "next_discount_at_units": boundary,
-        "next_discount_label": volume_tier_label(boundary),
-        "next_discount_percent": volume_discount_percent(boundary),
-        "next_tier_monthly_usd": there,
-        "monthly_increase_usd": round(there - here, 2),
-    }
-
-
-def volume_band_table(unit_price: float) -> List[Dict[str, Any]]:
-    """The discount ladder, priced against one vertical's rate."""
-    bands = int(MAX_VOLUME_DISCOUNT_PERCENT / VOLUME_DISCOUNT_STEP_PERCENT) + 1
-    rows = []
-    for index in range(bands):
-        low = 1 if index == 0 else index * VOLUME_DISCOUNT_EVERY_UNITS
-        plateau = index * VOLUME_DISCOUNT_STEP_PERCENT >= MAX_VOLUME_DISCOUNT_PERCENT
-        high = None if plateau else index * VOLUME_DISCOUNT_EVERY_UNITS + 9
-        example = high if high is not None else low
-        rows.append(
-            {
-                "band": f"{low}+" if high is None else f"{low}-{high}",
-                "from_units": low,
-                "to_units": high,
-                "discount_percent": volume_discount_percent(low),
-                "effective_unit_price_usd": round(
-                    unit_price * (1 - volume_discount_percent(low) / 100.0), 2
-                ),
-                "example_units": example,
-                "example_monthly_usd": calculate_volume_tier_price(
-                    example, unit_price
-                ),
-                "example_annual_usd": round(
-                    calculate_volume_tier_price(example, unit_price) * 12, 2
-                ),
-            }
-        )
-    return rows
+# Volume pricing for chains lives in pricing.py (CHAIN_DISCOUNT_TIERS), the
+# one place every price is set. The enterprise ladder that used to be here
+# (2.5% off for every ten units, up to 10%) was replaced by it.

@@ -95,11 +95,14 @@ def test_a_trade_priced_by_quote_offers_a_way_to_talk_to_us(api, monkeypatch):
     assert '<a class="talk-link" href="/help#help">Talk to us</a>' in page
 
 
-def test_every_add_on_and_the_discount_are_the_rate_card(api):
+def test_every_add_on_and_the_yearly_months_are_the_rate_card(api):
     page = api.get("/pricing").text
     assert _add_on_boxes(page) == {k: v["monthly_usd"] for k, v in pricing.ADD_ONS.items()}
-    assert (f'data-prepay-discount="{pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT:g}"'
-            in page)
+    assert f'data-months-charged="{pricing.YEARLY_MONTHS_CHARGED}"' in page
+    assert f'data-months-covered="{pricing.YEARLY_MONTHS_COVERED}"' in page
+    tiers = ",".join(f"{a}:{b:g}" for a, b in pricing.CHAIN_DISCOUNT_TIERS)
+    assert f'data-chain="{tiers}"' in page
+    assert "prepay" not in page
 
 
 def test_no_setup_fee_and_the_escalator_are_on_the_page(api):
@@ -145,7 +148,7 @@ def _run_script(cases):
         f"const cases = {json.dumps(cases)};\n"
         "console.log(JSON.stringify(cases.map((c) => {\n"
         "  const m = calc.monthlyTotal(c.lines, c.addOns);\n"
-        "  return { monthly: m, year: calc.yearly(m, c.discount) };\n"
+        "  return { monthly: m, year: calc.yearly(m, c.charged, c.covered) };\n"
         "})));\n"
     )
     done = subprocess.run([node, "-e", harness], capture_output=True, text=True,
@@ -171,15 +174,17 @@ def test_the_calculator_and_pricing_py_agree(api):
     cases = [
         {"lines": [{"rate": options[v]["rate"], "count": n} for v, n in units.items()],
          "addOns": [{"rate": boxes[k]} for k in add_ons],
-         "discount": pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT}
+         "charged": pricing.YEARLY_MONTHS_CHARGED,
+         "covered": pricing.YEARLY_MONTHS_COVERED}
         for units, add_ons in ESTATES
     ]
     for (units, add_ons), got in zip(ESTATES, _run_script(cases)):
-        expected = pricing.quote_monthly(units, add_ons)
+        # monthlyTotal is the plain sum, before any chain discount.
+        expected = round(sum(pricing.unit_price(v) * n for v, n in units.items())
+                         + sum(pricing.ADD_ONS[k]["monthly_usd"] for k in add_ons), 2)
         assert got["monthly"] == pytest.approx(expected, abs=0.001), units
         assert got["year"]["full"] == pytest.approx(expected * 12, abs=0.01)
-        assert got["year"]["prepaid"] == pytest.approx(
-            expected * 12 * (1 - pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT / 100), abs=0.01)
+        assert got["year"]["yearly"] == pytest.approx(pricing.yearly_price(expected), abs=0.01)
 
 
 def test_quote_monthly_is_what_an_estate_is_billed(api, operator_factory, sensor_factory):
@@ -195,7 +200,7 @@ def test_quote_monthly_is_what_an_estate_is_billed(api, operator_factory, sensor
 def test_bad_counts_count_as_nothing():
     assert _run_script([{"lines": [{"rate": 10, "count": -4}, {"rate": 10, "count": "x"},
                                    {"rate": 10, "count": 2.7}],
-                         "addOns": [], "discount": 0}])[0]["monthly"] == 20
+                         "addOns": [], "charged": 0, "covered": 0}])[0]["monthly"] == 20
 
 
 def test_pricing_is_linked_from_the_landing_page_and_listed(api):

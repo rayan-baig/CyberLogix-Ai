@@ -116,7 +116,9 @@ def test_the_plans_terms_and_trial_are_the_codes(api):
     assert "phone calls start on a paid plan" in words
     for tier in domain.PLAN_TIERS.values():
         assert f"{tier['name']} {tier['max_sensors']:,} " in words
-    assert f"{pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT:g}% off that year" in words
+    assert f"Yearly: {pricing.yearly_label()}." in words
+    assert "Chains: 5+ 10% off, 20+ 20% off each location." in words
+    assert "Chains:" not in _text(_sheet(api, "cybersecurity"))
     assert "No setup fee." in words and "per site, once" not in words
     assert f"rise {pricing.ANNUAL_ESCALATOR_PERCENT:g}% a year" in words
     for add_on in pricing.ADD_ONS.values():

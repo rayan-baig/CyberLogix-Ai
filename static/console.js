@@ -1733,7 +1733,11 @@ function renderBilling(subscription, roi, tenant) {
     return;
   }
 
-  const lines = subscription.line_items.map((l) => `
+  const lines = subscription.line_items.map((l) => l.chain_discount ? `
+    <div class="u-d-flex u-justify-between u-gap-10 u-p-5-0 u-fs-12-5">
+      <span class="s-good">${esc(l.description)}</span>
+      <span class="u-tnum s-good">−$${Math.abs(l.line_total_usd).toLocaleString()}</span>
+    </div>` : `
     <div class="u-d-flex u-justify-between u-gap-10 u-p-5-0 u-fs-12-5">
       <span class="u-c-ink-2">${esc(l.industry)}
         <span class="u-c-muted">· ${esc(l.description)}
@@ -1766,7 +1770,10 @@ function renderBilling(subscription, roi, tenant) {
            $${subscription.monthly_total_usd.toLocaleString()}</span>
        </div>`
     + `<div class="u-ta-right u-fs-11-5 u-c-muted">
-         $${subscription.annual_total_usd.toLocaleString()} a year</div>`
+         $${subscription.annual_total_usd.toLocaleString()} a year paid monthly${
+           subscription.yearly_total_usd !== undefined
+             ? `, or $${subscription.yearly_total_usd.toLocaleString()} paid yearly
+                (${esc(subscription.yearly_label || "")})` : ""}</div>`
     + saved
     + upgradeBlock(tenant);
 }
@@ -2138,6 +2145,7 @@ function renderContract(contract, pipeline, tenant) {
   const c = contract.contract;
   const money0 = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
 
+  const yearly = (contract.yearly || {});
   const collections = (contract.collections || {});
   const behind = collections.overdue_usd > 0
     ? `<div class="card-note u-c-critical u-mt-10">
@@ -2185,8 +2193,11 @@ function renderContract(contract, pipeline, tenant) {
          </div>
          <label class="row u-mt-8 u-fs-12 u-c-muted">
            <input type="checkbox" id="term-prepay" class="u-w-auto">
-           Pay annually — 10% off, one invoice a year
+           ${esc(yearly.headline || "Pay yearly")}${yearly.yearly_usd
+             ? ` — ${money(yearly.yearly_usd)} a year instead of ${
+                 money(yearly.twelve_months_usd)}` : ""}, one invoice a year
          </label>
+         <div class="u-fs-11-5 u-c-muted u-mt-7">${esc(yearly.cancellation || "")}</div>
        </form>` + behind + opportunities(pipeline, null);
     wireContractForm();
     return;
@@ -2205,15 +2216,23 @@ function renderContract(contract, pipeline, tenant) {
     </tr>`).join("");
 
   const renewal = (pipeline.renewal || {});
+  const isYearly = c.billing_interval === "annual";
+  const other = isYearly ? "monthly" : "yearly";
+  const switching = c.switching_to
+    ? `<div class="card-note u-mt-9">Switching to ${esc(c.switching_to)} billing on
+         ${esc((c.switches_at || "").slice(0, 10))}, when what you have paid
+         for runs out.</div>`
+    : "";
   body.innerHTML = `
     <div class="u-fs-12-5 u-c-muted u-lh-1-6">
-      ${esc(c.billing_interval === "annual" ? "Billed annually" : "Billed monthly")},
+      ${esc(isYearly ? `Billed yearly (${yearly.label || ""})` : "Billed monthly")},
       ${c.escalator_percent}% a year, ${
         c.auto_renew ? "renews automatically" : "does not auto-renew"}.
       Next invoice ${esc((c.next_billing_at || "").slice(0, 10))}.
     </div>
+    ${switching}
     <table class="term-table">
-      <thead><tr><th>Term</th><th>Rate</th><th>Prepay</th><th>Payable</th></tr></thead>
+      <thead><tr><th>Term</th><th>Rate</th><th>Months free</th><th>Payable</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="card-note u-mt-9">
@@ -2225,9 +2244,23 @@ function renderContract(contract, pipeline, tenant) {
     <div class="row u-mt-12">
       <button class="btn btn-sm" id="contract-bill">Bill what is due</button>
       <button class="btn btn-sm" id="contract-renew">Renew</button>
-    </div>`;
+      <button class="btn btn-sm" id="contract-interval">${
+        c.switching_to ? `Stay ${isYearly ? "yearly" : "monthly"}`
+                       : `Switch to ${other} at renewal`}</button>
+    </div>
+    <div class="u-fs-11-5 u-c-muted u-mt-7">${esc(yearly.cancellation || "")}</div>`;
 
   wireAddOnButtons(c);
+
+  $("contract-interval").addEventListener("click", async () => {
+    const wanted = c.switching_to ? (isYearly ? "yearly" : "monthly") : other;
+    try {
+      const out = await api("/api/contracts/billing-interval", {
+        method: "POST", body: JSON.stringify({ billing_interval: wanted }) });
+      toast(out.message, "ok");
+      refresh();
+    } catch (err) { toast(err.message, "err"); }
+  });
 
   $("contract-bill").addEventListener("click", async () => {
     try {

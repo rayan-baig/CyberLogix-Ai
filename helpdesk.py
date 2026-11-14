@@ -72,7 +72,8 @@ def talk_to_us_html(text: str = "Talk to us") -> str:
 
 
 def _money(amount: float) -> str:
-    return f"${amount:,.0f}"
+    """Whole dollars as "$149", anything else to the cent: "$119.20"."""
+    return f"${amount:,.0f}" if amount == int(amount) else f"${amount:,.2f}"
 
 
 def _minutes(values: Tuple[int, ...]) -> str:
@@ -209,16 +210,22 @@ def faq() -> List[Dict[str, Any]]:
     from firstday import TEST_ALERT_COOLDOWN_SECONDS, TEST_ALERTS_PER_DAY
     from pricing import (
         ADD_ONS,
-        ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        CANCELLATION_RULE,
         CUSTOM_PRICE_LABEL,
+        YEARLY_MONTHS_CHARGED,
+        YEARLY_MONTHS_COVERED,
+        YEARLY_RENEWAL_REMINDER_DAYS,
         EXTRA_UNIT_MONTHLY_USD,
         PRICE_BOOK,
         REFERRAL_REWARDS_PER_YEAR,
         REFERRAL_TRIAL_DAYS,
         SETUP_FEE_PER_SITE_USD,
         UNITS_PER_LOCATION,
+        chain_example,
+        chain_words,
         custom_quote,
         starter_terms,
+        yearly_label,
     )
     from sitewide import settings as site_wide_settings
     from store import MAX_READINGS_PER_SENSOR
@@ -296,9 +303,32 @@ def faq() -> List[Dict[str, Any]]:
                 f"up to {starter['max_units']} fridges or freezers.",
                 f"Every other trade: {e(CUSTOM_PRICE_LABEL.lower())}. "
                 f"{talk_to_us_html()}.",
+                f"{e(chain_words())} For example, {chain_example()['locations']} "
+                f"restaurants pay {_money(chain_example()['each_usd'])} each, "
+                f"{_money(chain_example()['monthly_usd'])} a month. It comes "
+                "off automatically, on its own line of the invoice.",
                 f"{setup_words} The published prices are on the "
                 '<a href="/pricing">pricing page</a>, with a calculator that '
-                "works out your monthly price.",
+                "works out your monthly or yearly price.",
+            ],
+        },
+        {
+            "id": "yearly",
+            "q": "Can I pay yearly, and what if I cancel?",
+            "a": [
+                f"Yes. Paying yearly costs {YEARLY_MONTHS_CHARGED} times the "
+                f"monthly price and covers {YEARLY_MONTHS_COVERED} months: "
+                f"{e(yearly_label())}. It covers everything on the bill, after "
+                "any chain discount. You get one invoice for the year and "
+                "nothing until it renews, except a prorated charge for the "
+                "rest of the year if you add a location or units.",
+                "We email "
+                + " and ".join(str(d) for d in YEARLY_RENEWAL_REMINDER_DAYS)
+                + " days before the year renews. You can switch between "
+                "monthly and yearly at renewal: an owner changes it under "
+                "Money, Contract, and the change starts when what you have "
+                "paid for runs out.",
+                f"<b>Cancelling:</b> {e(CANCELLATION_RULE)}",
             ],
         },
         {
@@ -313,8 +343,8 @@ def faq() -> List[Dict[str, Any]]:
                    f"{e(bundle['includes'])}. Connect it under Setup, "
                    "OmniArmor connection. It is free during the trial and "
                    "billed while it is connected."] if bundle else []),
-                "Paying a year ahead takes "
-                f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}% off that year.",
+                f"Paying yearly makes the extras {e(yearly_label())} too, "
+                "like everything else on the bill.",
             ],
         },
         {

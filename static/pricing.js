@@ -5,7 +5,8 @@
  * data-rate attribute, and this file only adds them up. The sum lives in
  * the two functions below, which tests/test_pricing_page.py also runs
  * under Node against pricing.quote_monthly, so the page and the invoice
- * cannot quietly disagree.
+ * cannot quietly disagree. The chain discount tiers and the yearly months
+ * are read from the page the same way.
  */
 "use strict";
 
@@ -26,14 +27,58 @@ function monthlyTotal(lines, addOns) {
   return cents / 100;
 }
 
+/* "5:10,20:20" (from this many locations, percent off) -> [[5, 10], [20, 20]].
+   The tiers are rendered into the page from pricing.CHAIN_DISCOUNT_TIERS. */
+function parseTiers(text) {
+  return String(text || "").split(",").filter(Boolean).map((pair) => {
+    const [from, off] = pair.split(":");
+    return [Number(from), Number(off)];
+  });
+}
+
+/* The chain discount, as pricing.chain_discount works it out, in cents:
+   percent off the location prices for a chain of `locations`, and no
+   chain paying more than a bigger one would. Returns {percent, cents,
+   cappedAt}: cents is the discount, cappedAt the bigger chain whose price
+   this one was held to (or null). */
+function chainDiscount(totalCents, locations, tiers) {
+  const places = whole(locations);
+  let percent = 0;
+  for (const [from, off] of tiers || []) {
+    if (places >= from) percent = off;
+  }
+  let after = totalCents - Math.round(totalCents * percent / 100);
+  let cappedAt = null;
+  if (places) {
+    for (const [from, off] of tiers || []) {
+      if (from <= places) continue;
+      const ceiling = Math.round(totalCents * from * (100 - off) / (places * 100));
+      if (ceiling < after) { after = ceiling; cappedAt = from; }
+    }
+  }
+  return { percent, cents: totalCents - after, cappedAt };
+}
+
+/* The per-location trades on the rate card: the lines the chain discount
+   comes off, their locations counted together. */
+function chainOf(spec) {
+  const lines = (spec.lines || []).filter((line) => !line.custom
+    && line.included !== undefined && line.included !== null);
+  const locations = lines.reduce((n, line) => n + whole(line.count), 0);
+  const cents = lines.reduce(
+    (sum, line) => sum + Math.round(Number(line.rate) * 100) * whole(line.count), 0);
+  return chainDiscount(cents, locations, spec.chain);
+}
+
 /* The whole quote, as pricing.quote_monthly works it out.
    spec: {starter: rate or null,
           lines: [{rate, count, custom?, included?, each?}],
-          addOns: [{rate, basis}], locations, extraRate}
+          addOns: [{rate, basis}], locations, extraRate, chain}
    On Starter the flat rate is the one line and every extra is for its one
    location; on the rate card an extra priced per location is counted
    once per location. A per-location trade (a line with `included`) adds
-   extraRate for each unit past `included` at each of its locations.
+   extraRate for each unit past `included` at each of its locations, and
+   its location prices take the chain discount (`chain`: the tiers).
    A trade priced by quote (`custom`) has no figure on the page, so a quote
    with any of it in is null: the page says "custom" instead of a total. */
 function quote(spec) {
@@ -51,10 +96,11 @@ function quote(spec) {
       rate: spec.extraRate,
       count: whole(line.count) * Math.max(0, whole(line.each) - whole(line.included)),
     }));
-  return monthlyTotal(priced.concat(pastAllowance), extras.map((a) => ({
+  const gross = monthlyTotal(priced.concat(pastAllowance), extras.map((a) => ({
     rate: a.rate,
     count: a.basis === "per location" ? whole(spec.locations) : 1,
   })));
+  return Math.round(gross * 100 - chainOf(spec).cents) / 100;
 }
 
 /* Units past the allowance on one line, for the breakdown. */
@@ -63,15 +109,19 @@ function extraUnits(line) {
   return whole(line.count) * Math.max(0, whole(line.each) - whole(line.included));
 }
 
-/* A year, at the monthly price, with and without paying ahead. */
-function yearly(monthly, discountPercent) {
-  const full = Math.round(monthly * 12 * 100) / 100;
-  const off = Math.round(full * Number(discountPercent || 0)) / 100;
-  return { full, prepaid: Math.round((full - off) * 100) / 100 };
+/* A year at the monthly price: twelve monthly bills (`full`), or paid
+   yearly (`yearly`), which is `charged` months for `covered`. Both counts
+   come from the page (pricing.YEARLY_MONTHS_CHARGED and _COVERED). */
+function yearly(monthly, charged, covered) {
+  const cents = Math.round(Number(monthly) * 100);
+  const full = cents * whole(covered) / 100;
+  const paid = cents * whole(charged) / 100;
+  return { full, yearly: paid, saving: Math.round((full - paid) * 100) / 100 };
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { monthlyTotal, quote, yearly, extraUnits };
+  module.exports = { monthlyTotal, quote, yearly, extraUnits, chainDiscount,
+                     parseTiers, chainOf };
 }
 
 if (typeof document !== "undefined") {
@@ -136,11 +186,20 @@ if (typeof document !== "undefined") {
     const starterRate = starter ? form.dataset.starterRate : null;
 
     const extraRate = form.dataset.extraRate;
-    const monthly = quote({ starter: starterRate, lines, addOns: extras, locations,
-                            extraRate });
+    const chain = parseTiers(form.dataset.chain);
+    const spec = { starter: starterRate, lines, addOns: extras, locations,
+                   extraRate, chain };
+    const monthly = quote(spec);
     const custom = monthly === null;
+    const charged = form.dataset.monthsCharged;
+    const covered = form.dataset.monthsCovered;
+    const picked = form.querySelector('input[name="calc-pay"]:checked');
+    const payYearly = Boolean(picked && picked.value === "yearly");
+    const year = custom ? null : yearly(monthly, charged, covered);
+    document.getElementById("calc-period").textContent =
+      payYearly ? "Each year, paid up front" : "Each month";
     document.getElementById("calc-total").textContent =
-      custom ? "Ask for a quote" : money(monthly);
+      custom ? "Ask for a quote" : money(payYearly ? year.yearly : monthly);
     document.getElementById("calc-custom").hidden = !custom;
 
     const list = document.getElementById("calc-lines");
@@ -172,6 +231,16 @@ if (typeof document !== "undefined") {
         }
       }
     }
+    if (!starter) {
+      const off = chainOf(spec);
+      if (off.cents > 0) {
+        const places = lines.filter((line) => !line.custom && line.included !== null)
+          .reduce((n, line) => n + whole(line.count), 0);
+        add(`Chain discount (${places} locations): \u2212${off.percent}%`
+              + (off.cappedAt ? `, held to the ${off.cappedAt}-location price` : ""),
+            "\u2212" + money(off.cents / 100));
+      }
+    }
     for (const extra of extras) {
       const places = starter ? 1 : whole(locations);
       const count = extra.basis === "per location" ? places : 1;
@@ -180,10 +249,11 @@ if (typeof document !== "undefined") {
           money(monthlyTotal([], [{ rate: extra.rate, count }])));
     }
 
-    document.getElementById("calc-year").textContent = custom ? "" : (() => {
-      const year = yearly(monthly, form.dataset.prepayDiscount);
-      return `${money(year.full)} a year, or ${money(year.prepaid)} paid a year ahead.`;
-    })();
+    document.getElementById("calc-year").textContent = custom ? "" : (payYearly
+      ? `${money(monthly)} a month × ${whole(charged)} months, covering ${whole(covered)}. `
+        + `${money(year.saving)} less than paying monthly.`
+      : `${money(year.full)} a year paid monthly, or ${money(year.yearly)} paid yearly `
+        + `(${whole(covered) - whole(charged)} months free).`);
 
     rows.querySelectorAll(".calc-remove").forEach((button) => {
       button.hidden = rows.children.length < 2;

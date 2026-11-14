@@ -176,7 +176,8 @@ class SignupRequest(BaseModel):
 @router.get("/sectors")
 def sectors():
     """What to offer in the sector picker, and the trial's shape."""
-    from pricing import REFERRAL_TRIAL_DAYS, starter_terms
+    from pricing import (REFERRAL_TRIAL_DAYS, chain_words, starter_terms,
+                         yearly_terms)
 
     tier = PLAN_TIERS[PUBLIC_PLAN]
     return {
@@ -188,6 +189,10 @@ def sectors():
         "max_sensors": tier["max_sensors"],
         # What a small cafe or shop can move onto after the trial.
         "starter": starter_terms(),
+        # How paying works once the trial is over, from pricing.py: two
+        # months free on a yearly plan, and the chain discounts.
+        "yearly": yearly_terms(),
+        "chain_discounts": chain_words(),
         "min_password_length": MIN_PASSWORD_LENGTH,
         "sectors": [
             {

@@ -22,9 +22,10 @@ def _answer(item_id):
     return " ".join(item["a"])
 
 
-def test_there_are_twelve_to_fifteen_real_questions():
+def test_there_are_twelve_to_sixteen_real_questions():
+    # Sixteen since paying yearly and cancelling got a question of their own.
     items = helpdesk.faq()
-    assert 12 <= len(items) <= 15
+    assert 12 <= len(items) <= 16
     assert len({i["id"] for i in items}) == len(items)
     for item in items:
         assert item["q"].strip() and item["a"]
@@ -82,14 +83,41 @@ def test_the_prices_are_the_rate_card():
             assert f"${entry['monthly_usd']:,.0f}" not in text, vertical
 
 
-def test_the_extras_and_the_prepay_discount_are_the_rate_card():
-    from pricing import ADD_ONS, ANNUAL_PREPAY_DISCOUNT_PERCENT
+def test_the_extras_and_the_yearly_offer_are_the_rate_card():
+    from pricing import ADD_ONS, yearly_label
 
     text = _answer("extras")
     for add_on in ADD_ONS.values():
         assert add_on["name"] in text
         assert f"${add_on['monthly_usd']:,.0f}" in text
-    assert f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}%" in text
+    assert yearly_label() in text
+
+
+def test_the_yearly_answer_states_the_offer_and_the_cancellation_rule():
+    import html
+
+    from pricing import (CANCELLATION_RULE, YEARLY_MONTHS_CHARGED,
+                         YEARLY_MONTHS_COVERED, YEARLY_RENEWAL_REMINDER_DAYS,
+                         yearly_label)
+
+    text = _answer("yearly")
+    assert (f"costs {YEARLY_MONTHS_CHARGED} times the monthly price and covers "
+            f"{YEARLY_MONTHS_COVERED} months: {yearly_label()}") in text
+    assert html.escape(CANCELLATION_RULE) in text
+    assert "not refunded" in CANCELLATION_RULE
+    days = " and ".join(str(d) for d in YEARLY_RENEWAL_REMINDER_DAYS)
+    assert f"We email {days} days before" in text
+    assert "switch between monthly and yearly at renewal" in text
+
+
+def test_the_price_answer_states_the_chain_discounts():
+    from pricing import chain_example
+
+    text = _answer("price")
+    example = chain_example()
+    assert "10% off each location from 5 locations, 20% off from 20" in text
+    assert (f"{example['locations']} restaurants pay $119.20 each, "
+            f"$2,384 a month") in text
 
 
 def test_the_plans_answer_lists_every_plan_and_who_gets_calls():

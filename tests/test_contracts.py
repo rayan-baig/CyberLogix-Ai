@@ -125,7 +125,7 @@ def test_no_setup_fee_is_billed_on_the_first_invoice_or_after(
     assert not [line for line in second.lines if line["kind"] == "setup"]
 
 
-def test_annual_prepay_bills_twelve_months_with_the_discount(
+def test_yearly_bills_twelve_months_with_two_free(
     api, tenant_factory, sensor_factory, owner_headers
 ):
     headers, tenant = tenant_factory(plan="enterprise")
@@ -140,10 +140,12 @@ def test_annual_prepay_bills_twelve_months_with_the_discount(
     invoice = bill_period(tenant_obj, sub, 0)
 
     recurring = 899.0 * 12
-    discount = round(recurring * 0.10, 2)
+    discount = round(899.0 * 2, 2)       # two months free
     assert invoice.total_usd == pytest.approx(recurring - discount)  # no setup fee
-    kinds = {line["kind"] for line in invoice.lines}
-    assert "discount" in kinds
+    assert invoice.total_usd == pytest.approx(899.0 * 10)
+    (free,) = [line for line in invoice.lines if line["kind"] == "discount"]
+    assert free["description"] == "Paid yearly: 12 months for the price of 10 (2 months free)"
+    assert free["amount_usd"] == -discount
 
     # And the second period is a year later, not a month.
     assert sub.period_start(1) == add_months(sub.period_start(0), 12)

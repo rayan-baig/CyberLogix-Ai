@@ -4,7 +4,8 @@ The gap this closes is the most expensive one in the product.
 
 Everything before this could *quote* beautifully: a three-year term, a
 five percent annual escalator, a one-time setup fee (there is none now),
-ten percent off for paying a year up front. `GET /api/billing/deal` would price all of it
+a discount for paying a year up front (now two months free).
+`GET /api/billing/deal` would price all of it
 to the cent. And then nothing carried any of it into an invoice. Billing
 was a button somebody had to remember to press, at the month-one rate,
 forever. On a $48,000-a-year estate signed to a three-year escalating
@@ -15,7 +16,7 @@ remembered to bill at all.
 Three things live here:
 
 **The contract.** A `Subscription` is the countersigned deal made durable:
-term, escalator, prepay, attached add-ons, and a count of periods already
+term, escalator, monthly or yearly, attached add-ons, and a count of periods already
 invoiced.
 
 **The billing run.** Issues what is due and nothing else. The claim on a
@@ -43,7 +44,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -172,6 +173,16 @@ class RenewRequest(BaseModel):
     # On a money-bearing model a misspelt field has to be a 422.
     model_config = ConfigDict(extra="forbid")
     term_years: int = Field(1, ge=1, le=MAX_TERM_YEARS)
+    # Switch between monthly and yearly at the renewal. Left out, the new
+    # term is billed as the old one was.
+    billing_interval: Optional[Literal["monthly", "yearly"]] = None
+
+
+class IntervalRequest(BaseModel):
+    """Switch between monthly and yearly billing at renewal."""
+
+    model_config = ConfigDict(extra="forbid")
+    billing_interval: Literal["monthly", "yearly"]
 
 
 class CancelRequest(BaseModel):
@@ -212,6 +223,11 @@ def arrears_lines(
     and nobody gets a month free for adding it on the 2nd.
     """
     if index <= 0 or sub.started_at is None:
+        return []
+    # A yearly plan does not wait for its next invoice, a year away, to
+    # charge for what was added: bill_mid_year_changes issues the rest of
+    # the year's share as soon as it appears, so nothing is owed here.
+    if sub.annual_prepay:
         return []
     # A volume contract covers every sensor inside its branches, and is
     # what the invoice charges (pricing.build_subscription). A sensor added
@@ -313,12 +329,21 @@ def arrears_lines(
     )
 
     multiplier = sub.rate_multiplier(index - 1)
+    # A late location is caught up at the price the estate is billed per
+    # location, after the chain discount, not at the list price.
+    from pricing import chain_factor
+
+    chain = chain_factor({
+        vertical: len(branches([s for s in group if s.registered_at is None
+                                or s.registered_at < window_close]))
+        for vertical, group in by_vertical.items() if per_site(vertical)})
     for vertical, fractions in sorted(late.items()):
         if vertical not in PRICE_BOOK:
             continue
         # Per-location sectors carry the add-on on their own line, below.
         folded = 0.0 if per_site(vertical) else per_unit_rate
-        rate = (PRICE_BOOK[vertical]["monthly_usd"] + folded) * multiplier
+        list_rate = PRICE_BOOK[vertical]["monthly_usd"] * (chain if per_site(vertical) else 1.0)
+        rate = (list_rate + folded) * multiplier
         # Priced at the *previous* period's rate, because that is the
         # period being caught up on. Using this period's rate would apply
         # an escalator to days before it took effect.
@@ -471,6 +496,147 @@ def unsold_add_ons(
     return rows
 
 
+# The invoice lines that recur every month: what the two free months of a
+# yearly plan are worked out on. A chain discount is one of them, so the
+# free months come off the discounted price. A recovery share or a setup
+# fee is not recurring and gets no free months.
+RECURRING_KINDS = ("subscription", "add_on", "chain_discount")
+
+
+def recurring_total(lines: Iterable[Dict[str, Any]]) -> float:
+    return round(sum(line["amount_usd"] for line in lines
+                     if line["kind"] in RECURRING_KINDS), 2)
+
+
+def yearly_free_months_line(lines: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The two free months of a yearly invoice, as their own line.
+
+    The lines above it are twelve months of everything recurring; this
+    takes two of them off, so the invoice totals ten months' price.
+    """
+    from pricing import (YEARLY_MONTHS_CHARGED, YEARLY_MONTHS_COVERED,
+                         YEARLY_MONTHS_FREE)
+
+    twelve = recurring_total(lines)
+    free = round(twelve * YEARLY_MONTHS_FREE / YEARLY_MONTHS_COVERED, 2)
+    if free <= 0:
+        return None
+    return {
+        "kind": "discount",
+        "description": (
+            f"Paid yearly: {YEARLY_MONTHS_COVERED} months for the price of "
+            f"{YEARLY_MONTHS_CHARGED} ({YEARLY_MONTHS_FREE} months free)"),
+        "quantity": YEARLY_MONTHS_FREE,
+        "unit_price_usd": -round(free / YEARLY_MONTHS_FREE, 2),
+        "amount_usd": -free,
+    }
+
+
+def monthly_recurring(tenant: Tenant, sub: Subscription, index: int) -> float:
+    """What this estate's recurring lines come to for one month of period
+    `index`, at that period's rate, after any chain discount."""
+    return recurring_total(build_lines(
+        tenant, list(sub.add_ons), False,
+        rate_multiplier=sub.rate_multiplier(index), months=1))
+
+
+def _estate_size(tenant: Tenant) -> Dict[str, int]:
+    from pricing import locations_billed
+
+    return {"locations": locations_billed(tenant),
+            "units": len(STORE.sensors_for(tenant.tenant_id))}
+
+
+def record_year_covered(tenant: Tenant, sub: Subscription, index: int) -> None:
+    """Note what the year's invoice paid for, by the month."""
+    with STORE._lock:
+        live = STORE.get_subscription(sub.subscription_id) or sub
+        live.year_covered = {"period": index,
+                             "monthly_usd": monthly_recurring(tenant, live, index),
+                             **_estate_size(tenant)}
+        STORE.save_subscription(live)
+        if live is not sub:
+            sub.year_covered = dict(live.year_covered)
+
+
+def bill_mid_year_changes(tenant: Tenant, sub: Subscription,
+                          now: Optional[datetime] = None) -> Optional[Invoice]:
+    """Charge a yearly plan for a location or units added part-way through.
+
+    The year's invoice paid for the estate as it was. When it grows, this
+    issues one invoice for the difference: the yearly price of what was
+    added (ten months for twelve, after any chain discount) for the days
+    left of the paid year. Nothing else is billed until the renewal.
+
+    Shrinking refunds nothing, and the higher figure is kept, so taking a
+    unit off and putting it back is not charged twice. A year billed
+    before this was tracked starts from the estate as it is now, charging
+    nothing: an existing customer is never sent a surprise bill for it.
+    """
+    from pricing import YEARLY_MONTHS_CHARGED
+
+    now = now or utc_now()
+    if (not sub.active or not sub.annual_prepay or sub.started_at is None
+            or sub.periods_billed <= 0):
+        return None
+    index = sub.periods_billed - 1
+    start, end = sub.period_start(index), sub.period_start(index + 1)
+    if not (start <= now < end):
+        return None
+    with STORE._lock:
+        live = STORE.get_subscription(sub.subscription_id) or sub
+        covered = dict(live.year_covered or {})
+        current = monthly_recurring(tenant, live, index)
+        size = _estate_size(tenant)
+        if covered.get("period") != index:
+            live.year_covered = {"period": index, "monthly_usd": current, **size}
+            STORE.save_subscription(live)
+            return None
+        before = float(covered.get("monthly_usd") or 0.0)
+        grew = round(current - before, 2)
+        if grew < 0.01:
+            return None
+        days_left = (end.date() - now.date()).days
+        period_days = max((end - start).days, 1)
+        amount = round(grew * YEARLY_MONTHS_CHARGED * days_left / period_days, 2)
+        live.year_covered = {
+            "period": index, "monthly_usd": current,
+            "locations": max(size["locations"], int(covered.get("locations") or 0)),
+            "units": max(size["units"], int(covered.get("units") or 0)),
+        }
+        STORE.save_subscription(live)
+        if days_left <= 0 or amount < 0.01:
+            return None
+
+        def changed(word: str, was: Any, now_: int) -> str:
+            return f"{was} to {now_} {word}" if was is not None and was != now_ else ""
+
+        what = ", ".join(p for p in (
+            changed("locations", covered.get("locations"), size["locations"]),
+            changed("units", covered.get("units"), size["units"])) if p)
+        line = {
+            "kind": "mid_year",
+            "description": (
+                f"Added part-way through the paid year"
+                f"{' (' + what + ')' if what else ''}: ${grew:,.2f} a month "
+                f"more, at the yearly price, for the {days_left} days left "
+                f"to {end.date().isoformat()}"),
+            "quantity": 1,
+            "unit_price_usd": amount,
+            "amount_usd": amount,
+        }
+        from credits import create_invoice as create_with_credit
+
+        invoice = create_with_credit(
+            tenant, [line], period_days=days_left, terms_days=PAYMENT_TERMS_DAYS,
+            purchase_order=live.purchase_order,
+            source=f"midyear:{live.subscription_id}", billing_period=None)
+    logger.info("Mid-year charge on %s: %s for $%.2f",
+                sub.subscription_id, invoice.number, invoice.total_usd)
+    send_invoice(tenant, invoice)
+    return invoice
+
+
 def bill_period(
     tenant: Tenant, sub: Subscription, index: int
 ) -> Optional[Invoice]:
@@ -513,33 +679,10 @@ def bill_period(
                 STORE.release_billing_period(sub, index)
                 return None
 
-            from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT
-
             if sub.annual_prepay:
-                recurring = round(
-                    sum(
-                        line["amount_usd"]
-                        for line in lines
-                        if line["kind"] in ("subscription", "add_on")
-                    ),
-                    2,
-                )
-                discount = round(
-                    recurring * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2
-                )
-                if discount:
-                    lines.append(
-                        {
-                            "kind": "discount",
-                            "description": (
-                                f"Annual prepayment discount "
-                                f"({ANNUAL_PREPAY_DISCOUNT_PERCENT:g}%)"
-                            ),
-                            "quantity": 1,
-                            "unit_price_usd": -discount,
-                            "amount_usd": -discount,
-                        }
-                    )
+                free = yearly_free_months_line(lines)
+                if free is not None:
+                    lines.append(free)
 
             from credits import create_invoice as create_with_credit
 
@@ -563,6 +706,11 @@ def bill_period(
     # clearing it first and then failing would lose the period for good,
     # which is the bug this list was added to fix.
     STORE.clear_rebill(sub, index)
+
+    # What this year's invoice paid for, so a location added in March is
+    # charged for March to the renewal and nothing else.
+    if sub.annual_prepay and index == sub.periods_billed - 1:
+        record_year_covered(tenant, sub, index)
 
     if include_setup:
         STORE.mark_setup_billed(sub)
@@ -665,6 +813,16 @@ def run_billing(now: Optional[datetime] = None) -> Dict[str, Any]:
         if tenant is None:
             continue
         try:
+            # A switch between monthly and yearly starts when what was paid
+            # for runs out: the old contract hands over to a new one there.
+            switched = apply_interval_switch(tenant, sub, now)
+            if switched is not None:
+                sub = switched
+            # Something added part-way through a paid year.
+            extra = bill_mid_year_changes(tenant, sub, now)
+            if extra is not None:
+                issued.append(extra.number)
+                total += extra.total_usd
             due = sub.due_periods(now)
             if len(due) >= MAX_CATCHUP_PERIODS:
                 # Either the clock moved or the contract was backdated.
@@ -689,13 +847,149 @@ def run_billing(now: Optional[datetime] = None) -> Dict[str, Any]:
             )
             failures.append(sub.subscription_id)
 
+    try:
+        reminded = run_renewal_reminders(now)
+    except Exception as exc:  # noqa: BLE001 - a reminder must not stop billing
+        logger.exception("Renewal reminders failed (%s).", exc)
+        reminded = {"sent": 0}
+
     return {
         "invoices_issued": len(issued),
         "numbers": issued,
         "billed_usd": round(total, 2),
         "failed_subscriptions": failures,
         "catchup_capped": capped,
+        "renewal_reminders_sent": reminded["sent"],
     }
+
+
+# ---- yearly plans: switching and renewal reminders ----------------------
+
+
+def _months_between(earlier: datetime, later: datetime) -> int:
+    months = (later.year - earlier.year) * 12 + later.month - earlier.month
+    if later.day < earlier.day:
+        months -= 1
+    return max(0, months)
+
+
+def apply_interval_switch(tenant: Tenant, sub: Subscription,
+                          now: Optional[datetime] = None) -> Optional[Subscription]:
+    """Carry out a switch between monthly and yearly, once it is due.
+
+    Due when what has been paid for runs out: the end of the paid month,
+    or of the paid year. The old contract hands over to a new one starting
+    exactly there, billed the new way, at the rate the old one would have
+    charged next, for what was left of its term (at least a year). Nothing
+    is refunded and nothing is billed twice. Returns the new contract, or
+    None when no switch is due.
+    """
+    now = now or utc_now()
+    wanted = sub.next_interval
+    if not sub.active or wanted not in ("monthly", "yearly") or sub.started_at is None:
+        return None
+    if wanted == sub.interval:
+        sub.next_interval = None
+        STORE.save_subscription(sub)
+        return None
+    if sub.periods_billed == 0:
+        # Nothing paid yet, so nothing to wait for.
+        sub.annual_prepay = wanted == "yearly"
+        sub.next_interval = None
+        sub.year_covered = {}
+        STORE.save_subscription(sub)
+        return sub
+    boundary = sub.period_start(sub.periods_billed)
+    if boundary > now:
+        return None
+    settle_outstanding_rebills(tenant, sub)
+    left = _months_between(boundary, sub.ends_at)
+    term = sub.term_years if left <= 0 else max(1, math.ceil(left / 12))
+    fresh = STORE.renew_subscription(
+        sub, min(term, MAX_TERM_YEARS), annual_prepay=(wanted == "yearly"),
+        carried_multiplier=sub.rate_multiplier(sub.periods_billed),
+        reason=f"switched to {wanted} billing")
+    logger.info("%s switched to %s billing as %s from %s.", sub.subscription_id,
+                wanted, fresh.subscription_id, iso(fresh.started_at))
+    return fresh
+
+
+def send_renewal_reminder(tenant: Tenant, sub: Subscription, stage: int,
+                          renews: datetime, days_left: Optional[int] = None) -> Dict[str, Any]:
+    """Tell the customer a yearly plan renews soon, and what it will cost.
+
+    Keyed on the contract, the year and the reminder, so each is sent once.
+    """
+    from pricing import (CANCELLATION_RULE, YEARLY_MONTHS_CHARGED,
+                         YEARLY_MONTHS_COVERED, yearly_label, yearly_price)
+
+    monthly = monthly_recurring(tenant, sub, sub.periods_billed)
+    when = invoice_date(renews)
+    if sub.next_interval == "monthly":
+        cost = (f"You asked to switch to monthly billing, so from that day "
+                f"we will invoice about ${monthly:,.2f} a month instead of "
+                "once a year.")
+    else:
+        cost = (f"On that day we will send one invoice for the next "
+                f"{YEARLY_MONTHS_COVERED} months: about "
+                f"${yearly_price(monthly):,.2f}, which is {YEARLY_MONTHS_COVERED} "
+                f"months for the price of {YEARLY_MONTHS_CHARGED} "
+                f"({yearly_label()}) for what you have today. "
+                "Nothing else is billed until the year after, unless you add "
+                "a location or units.")
+    body = (
+        f"{tenant.contact_name},\n\n"
+        f"Your yearly CyberLogix plan renews on {when}, in "
+        f"{days_left or stage} day{'' if (days_left or stage) == 1 else 's'}.\n\n"
+        f"{cost}\n\n"
+        "Nothing to do if you want to carry on. To switch to monthly billing "
+        "from that day, or to cancel, an owner can do it in the console under "
+        "Money, Contract, before then.\n\n"
+        f"If you cancel: {CANCELLATION_RULE}"
+    )
+    return send_mail(
+        to_address=tenant.contact_email,
+        subject=f"{tenant.company_name}: your yearly plan renews on {when}",
+        body=body,
+        dedupe_key=f"renewal:{sub.subscription_id}:{sub.periods_billed}:{stage}",
+        klass="transactional",
+        tenant_id=tenant.tenant_id,
+    )
+
+
+def run_renewal_reminders(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Email each yearly plan 30 days and 7 days before it renews.
+
+    One message per reminder, ever: the key is the contract, the year and
+    the reminder. A plan first seen 5 days out gets the 7-day reminder
+    only, not both at once. A plan that will not renew gets none.
+    """
+    from pricing import YEARLY_RENEWAL_REMINDER_DAYS
+
+    now = now or utc_now()
+    sent: List[Dict[str, Any]] = []
+    for sub in STORE.all_subscriptions():
+        try:
+            if not sub.active or not sub.annual_prepay or sub.periods_billed <= 0:
+                continue
+            renews = sub.paid_until
+            if renews is None or sub.expired(renews):
+                continue
+            days = math.ceil((renews - now).total_seconds() / 86400)
+            if days <= 0 or days > max(YEARLY_RENEWAL_REMINDER_DAYS):
+                continue
+            stage = min(d for d in YEARLY_RENEWAL_REMINDER_DAYS if days <= d)
+            tenant = STORE.get_tenant(sub.tenant_id)
+            if tenant is None:
+                continue
+            delivery = send_renewal_reminder(tenant, sub, stage, renews, days)
+            if delivery.get("status") != "duplicate":
+                sent.append({"subscription_id": sub.subscription_id,
+                             "days": stage, "status": delivery.get("status")})
+        except Exception as exc:  # noqa: BLE001 - one account must not stop the rest
+            logger.exception("Renewal reminder failed for %s (%s).",
+                             sub.subscription_id, exc)
+    return {"sent": len(sent), "reminders": sent}
 
 
 # ---- collections -------------------------------------------------------
@@ -1038,12 +1332,15 @@ def sign(
         operator,
         "contract.signed",
         f"{sub.term_years}-year term, {sub.escalator_percent:g}% escalator, "
-        f"{'annual prepay' if sub.annual_prepay else 'monthly'}.",
+        f"{'yearly' if sub.annual_prepay else 'monthly'}.",
     )
+    from pricing import CANCELLATION_RULE
+
     return {
         "message": "Contract signed. Invoices now issue themselves.",
         "contract": sub.public(),
         "schedule": term_schedule(tenant, sub),
+        "cancellation": CANCELLATION_RULE,
     }
 
 
@@ -1056,6 +1353,9 @@ def read(tenant: Tenant = Depends(require_tenant_any_state)):
         "schedule": term_schedule(tenant, sub) if sub else [],
         "history": [s.public() for s in STORE.subscriptions_for(tenant.tenant_id)],
         "collections": delinquency(tenant.tenant_id),
+        # The yearly offer and the cancellation rule, stated where the
+        # contract is signed, from pricing.py.
+        "yearly": _yearly_offer(tenant),
         "note": (
             "Without a signed contract nothing bills automatically and "
             "invoices must be raised by hand."
@@ -1065,9 +1365,19 @@ def read(tenant: Tenant = Depends(require_tenant_any_state)):
     }
 
 
+def _yearly_offer(tenant: Tenant) -> Dict[str, Any]:
+    from pricing import build_subscription, yearly_terms
+
+    priced = build_subscription(tenant)
+    return {**yearly_terms(),
+            "monthly_usd": priced["monthly_total_usd"],
+            "yearly_usd": priced["yearly_total_usd"],
+            "twelve_months_usd": priced["annual_total_usd"]}
+
+
 def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
     """Year-by-year contract value at the rates this contract will bill."""
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, build_subscription
+    from pricing import build_subscription, yearly_price
 
     from pricing import ADD_ONS, add_on_price, auto_add_ons, locations_billed
 
@@ -1083,8 +1393,9 @@ def term_schedule(tenant: Tenant, sub: Subscription) -> List[Dict[str, Any]]:
         index = (year - 1) * (12 // sub.months_per_period)
         multiplier = sub.rate_multiplier(index)
         annual = round(base * multiplier * 12, 2)
+        # Yearly: two months free, so the year is ten of its months.
         discount = (
-            round(annual * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+            round(annual - yearly_price(base * multiplier), 2)
             if sub.annual_prepay
             else 0.0
         )
@@ -1204,13 +1515,15 @@ def renew(
             detail="There is no live contract to renew.",
         )
     reissued = settle_outstanding_rebills(tenant, sub)
-    fresh = STORE.renew_subscription(sub, payload.term_years)
+    yearly = (None if payload.billing_interval is None
+              else payload.billing_interval == "yearly")
+    fresh = STORE.renew_subscription(sub, payload.term_years, annual_prepay=yearly)
     write_audit(
         tenant,
         operator,
         "contract.renewed",
         f"{payload.term_years}-year term at "
-        f"x{fresh.carried_multiplier:g} of the rate card.",
+        f"x{fresh.carried_multiplier:g} of the rate card, billed {fresh.interval}.",
     )
     return {
         "message": f"Renewed for {payload.term_years} year(s)."
@@ -1235,21 +1548,78 @@ def cancel(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="There is no live contract to cancel.",
         )
+    from pricing import CANCELLATION_RULE
+
     reissued = settle_outstanding_rebills(tenant, sub)
     STORE.cancel_subscription(sub, payload.reason or "cancelled by customer")
     write_audit(tenant, operator, "contract.cancelled", payload.reason or "")
     outstanding = round(
         sum(i.balance_usd for i in STORE.open_invoices(tenant.tenant_id)), 2
     )
+    until = sub.service_until
     return {
-        "message": "Contract cancelled. Automatic billing has stopped.",
+        "message": (
+            "Contract cancelled. Nothing more will be billed, and the service "
+            f"carries on until {invoice_date(until)}, the end of what you "
+            "have already paid for."),
         "contract": sub.public(),
         "reissued": reissued,
         "still_owed_usd": outstanding,
+        # The rule: no refund for the rest of the paid month or year, and
+        # the service runs to its end.
+        "refund_usd": 0.0,
+        "service_until": iso(until),
+        "rule": CANCELLATION_RULE,
         "note": (
             "Cancelling stops future invoices. Invoices already issued "
             "remain payable."
         ),
+    }
+
+
+@router.post("/billing-interval")
+def switch_interval(
+    payload: IntervalRequest,
+    tenant: Tenant = Depends(require_tenant_any_state),
+    operator: User = Depends(require_role("owner")),
+):
+    """Switch between monthly and yearly billing, at renewal.
+
+    The switch waits for what has been paid for to run out: the end of the
+    paid month, or of the paid year. Then the next invoice is the new kind:
+    one bill for twelve months at the price of ten, or a bill a month.
+    Asking for the interval the contract already has cancels a pending
+    switch.
+    """
+    from pricing import yearly_price
+
+    sub = STORE.active_subscription(tenant.tenant_id)
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="There is no live contract to switch.",
+        )
+    wanted = payload.billing_interval
+    with STORE._lock:
+        sub.next_interval = None if wanted == sub.interval else wanted
+        STORE.save_subscription(sub)
+    when = sub.paid_until if sub.periods_billed else sub.started_at
+    monthly = monthly_recurring(tenant, sub, sub.periods_billed)
+    write_audit(tenant, operator, "contract.interval",
+                f"{sub.interval} to {wanted} from {iso(when)}"
+                if sub.next_interval else f"stays {sub.interval}")
+    if sub.next_interval is None:
+        message = f"Billing stays {sub.interval}."
+    else:
+        message = (f"Billing switches to {wanted} on {invoice_date(when)}, when "
+                   "what you have paid for runs out.")
+    return {
+        "message": message,
+        "billing_interval": sub.interval,
+        "switching_to": sub.next_interval,
+        "switches_at": iso(when) if sub.next_interval else None,
+        "next_invoice_usd": (yearly_price(monthly) if wanted == "yearly" else monthly),
+        "contract": sub.public(),
     }
 
 
@@ -1271,6 +1641,10 @@ def billing_run(
             detail="There is no signed contract for this estate to bill.",
         )
     issued = []
+    sub = apply_interval_switch(tenant, sub) or sub
+    extra = bill_mid_year_changes(tenant, sub)
+    if extra is not None:
+        issued.append(extra.public())
     for index in sub.due_periods():
         invoice = bill_period(tenant, sub, index)
         if invoice is not None:

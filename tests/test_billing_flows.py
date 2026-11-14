@@ -23,7 +23,7 @@ from contracts import (
     run_billing,
     run_dunning,
 )
-from pricing import ADD_ONS, ANNUAL_PREPAY_DISCOUNT_PERCENT, PRICE_BOOK, SETUP_FEE_PER_SITE_USD
+from pricing import ADD_ONS, PRICE_BOOK, SETUP_FEE_PER_SITE_USD, YEARLY_MONTHS_CHARGED
 from store import STORE, add_months, utc_now
 from tests.test_payments import post
 
@@ -118,16 +118,15 @@ def test_the_first_invoice_adds_up_with_add_ons_and_no_setup_fee(api, estate):
     assert second.total_usd == pytest.approx(expected)
 
 
-def test_an_annual_prepay_bills_twelve_months_less_the_discount(api, estate):
+def test_a_yearly_plan_bills_ten_months_for_twelve(api, estate):
     headers, owner, tenant = estate
     _sign(api, headers, owner, term_years=2, annual_prepay=True, add_ons=["vault"])
     run_billing()
 
     (invoice,) = _main_invoices(tenant["tenant_id"])
-    recurring = (2 * RACK + ADD_ONS["vault"]["monthly_usd"]) * 12
-    discount = round(recurring * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+    monthly = 2 * RACK + ADD_ONS["vault"]["monthly_usd"]
     assert invoice.total_usd == pytest.approx(
-        round(recurring - discount + SETUP_FEE_PER_SITE_USD, 2))
+        round(monthly * YEARLY_MONTHS_CHARGED + SETUP_FEE_PER_SITE_USD, 2))
     # A year paid up front buys a year, not 360 days.
     assert invoice.period_days in (365, 366)
 
@@ -569,7 +568,7 @@ def test_an_auto_renewing_term_keeps_escalating_past_its_end(api, estate):
     del tenant_obj
 
 
-def test_an_annual_prepay_escalates_on_the_second_years_invoice(api, estate):
+def test_a_yearly_plan_escalates_on_the_second_years_invoice(api, estate):
     headers, owner, tenant = estate
     sub = _sign(api, headers, owner, term_years=3, escalator_percent=5.0,
                 annual_prepay=True)
@@ -581,8 +580,7 @@ def test_an_annual_prepay_escalates_on_the_second_years_invoice(api, estate):
     billed = {i.billing_period: i for i in _main_invoices(tenant["tenant_id"])}
     assert sorted(billed) == [0, 1, 2]
     for year, invoice in billed.items():
-        gross = round(2 * RACK * 1.05 ** year * 12, 2)
-        discount = round(gross * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+        paid = round(2 * RACK * 1.05 ** year * YEARLY_MONTHS_CHARGED, 2)
         setup = SETUP_FEE_PER_SITE_USD if year == 0 else 0.0
-        assert invoice.total_usd == pytest.approx(gross - discount + setup, abs=0.02), year
+        assert invoice.total_usd == pytest.approx(paid + setup, abs=0.02), year
     del tenant_obj

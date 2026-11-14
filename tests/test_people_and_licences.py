@@ -954,8 +954,8 @@ def test_a_trial_is_never_charged_the_share(api, tenant_factory, owner_headers,
 
 
 def test_the_share_is_not_inflated_by_subscription_terms(api, departed):
-    """On an annual prepay the subscription is billed twelve months at a
-    time and discounted ten percent. Neither applies to a share of money
+    """On a yearly plan the subscription is billed twelve months at a
+    time with two of them free. Neither applies to a share of money
     already refunded: it is fifteen percent of the refund, once."""
     from contracts import run_billing
     from store import STORE
@@ -972,13 +972,13 @@ def test_the_share_is_not_inflated_by_subscription_terms(api, departed):
     issued = [i.public() for i in STORE.invoices_for(tenant_id)]
     shares = [line for inv in issued for line in _share_lines(inv)]
     assert len(shares) == 1
-    assert shares[0]["amount_usd"] == 150.0      # not x12, not less 10%
+    assert shares[0]["amount_usd"] == 150.0      # not x12, not less 2 months
     discount = [line for inv in issued for line in inv["lines"]
                 if line["kind"] == "discount"]
     subscription = sum(line["amount_usd"] for inv in issued for line in inv["lines"]
                        if line["kind"] in ("subscription", "add_on"))
-    assert discount, "the prepay discount should still apply to the subscription"
-    assert abs(discount[0]["amount_usd"]) == round(subscription * 0.10, 2)
+    assert discount, "the two free months should still apply to the subscription"
+    assert abs(discount[0]["amount_usd"]) == round(subscription * 2 / 12, 2)
 
 
 def test_a_refund_corrected_down_never_bills_negative(api, departed):

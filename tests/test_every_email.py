@@ -130,6 +130,11 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
                     json={"sensor_id": "RACK-01", "temperature_fahrenheit": 140.0})
     assert resp.status_code in (200, 201), resp.text                 # incident-alert
     the_tenant = STORE.get_tenant(tenant["tenant_id"])
+    import contracts
+
+    contracts.send_renewal_reminder(                                 # renewal
+        the_tenant, STORE.active_subscription(tenant["tenant_id"]), 30,
+        utc_now() + timedelta(days=30))
     incident = STORE.incidents_for(tenant["tenant_id"])[0]
     automation._tell_owner_nobody_was_texted(the_tenant, incident)  # incident-undelivered
     pollers._tell_the_owner_it_stopped(the_tenant, {                 # poller-stopped
@@ -210,6 +215,7 @@ KINDS = {
     "poller-stopped:": "must",
     "roster-gap:": "must",
     "dunning:": "must",
+    "renewal:": "must",
     "reset:": "must",
     "error-report:": "must",
     "licence-alert:": "manage",

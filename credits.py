@@ -13,8 +13,8 @@ How it works, in four rules:
   payments recorded at the same moment.
 * **It comes off the next invoice, as a line of its own.** Never by
   editing a figure: the invoice shows ``Credit: ...`` with a minus amount,
-  and the total is what is owed after it. Applied after any prepayment
-  discount, so a credit is worth what it says.
+  and the total is what is owed after it. Applied after any yearly or
+  chain discount, so a credit is worth what it says.
 * **It never takes an invoice below zero.** What the invoice cannot use
   stays on the account for the next one. An invoice the credit pays in
   full is recorded as paid by the credit, so nobody is chased for $0.

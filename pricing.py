@@ -25,10 +25,10 @@ because an ROI page built on invented figures is worse than one that says
 
 from __future__ import annotations
 
-import os
+import math
 from datetime import datetime, timezone
 
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -313,21 +313,246 @@ def extra_units_charge(vertical: str, counts: Iterable[int],
 # no setup line at all.
 SETUP_FEE_PER_SITE_USD = 0.0
 
-# Paying a year up front removes the collections problem on that unit and
-# fixes the customer for twelve months. Whether it is worth ten percent
-# is a different question, and `margin.prepay_verdict()` answers it with
-# arithmetic rather than the assertion this comment used to make: the
-# discount buys the bad debt it avoids, the card fees it avoids, and
-# whatever holding the cash early is worth. At the current defaults that
-# is 5.9%, so ten is four points of pure gift — the largest cost in the
-# business and the only one nobody sends an invoice for.
+# ---- paying yearly: pay for 10 months, get 12 ----------------------------
 #
-# Left at ten, and made a setting instead of a constant, because a
-# smaller discount is only a saving if the customer still prepays. That
-# is a commercial call, not a code change.
-ANNUAL_PREPAY_DISCOUNT_PERCENT = float(
-    os.environ.get("CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT", "10.0")
-)
+# The one yearly offer. Paying a year up front costs ten times the monthly
+# price and covers twelve months: "2 months free", about 16.7% off. It
+# applies to everything recurring on the bill (Starter, the location
+# prices, extra units, the Kitchen Safety Bundle and the other extras),
+# after any chain discount, so a chain on yearly pays ten months of its
+# already-discounted price.
+#
+# This replaced a 10% annual prepayment discount, which was a setting
+# (CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT). It is a fixed rule now, so
+# the pricing page, the help page, the sheets, the invoice and the margin
+# report all say the same thing: two months free.
+#
+# One invoice for the year, then nothing until the year renews, apart
+# from a prorated charge if a location or units are added part-way
+# through (contracts.bill_mid_year_changes). Reminders go out
+# YEARLY_RENEWAL_REMINDER_DAYS before the renewal. Switching between
+# monthly and yearly happens when what has been paid for runs out.
+YEARLY_MONTHS_COVERED = 12
+YEARLY_MONTHS_CHARGED = 10
+YEARLY_MONTHS_FREE = YEARLY_MONTHS_COVERED - YEARLY_MONTHS_CHARGED
+# For the pages and the margin report only; bills use the months above.
+YEARLY_DISCOUNT_PERCENT = round(100.0 * YEARLY_MONTHS_FREE / YEARLY_MONTHS_COVERED, 2)
+YEARLY_RENEWAL_REMINDER_DAYS = (30, 7)
+
+# What happens when a business cancels, in the words every page uses.
+CANCELLATION_RULE = (
+    "Cancel any time. Nothing more is billed after you cancel, and the "
+    "service carries on to the end of the month or year you have already "
+    "paid for. What you have already paid is not refunded, in part or in "
+    "full.")
+
+
+def yearly_price(monthly_usd: float) -> float:
+    """A year paid up front: ten months of the monthly price."""
+    return round(float(monthly_usd) * YEARLY_MONTHS_CHARGED, 2)
+
+
+def yearly_saving(monthly_usd: float) -> float:
+    """What paying yearly saves against twelve monthly bills."""
+    return round(float(monthly_usd) * YEARLY_MONTHS_FREE, 2)
+
+
+def yearly_label() -> str:
+    """'2 months free', from the numbers above."""
+    return f"{YEARLY_MONTHS_FREE} months free"
+
+
+def yearly_terms() -> Dict[str, Any]:
+    """The yearly offer as the pages, the console and the API state it."""
+    return {
+        "months_covered": YEARLY_MONTHS_COVERED,
+        "months_charged": YEARLY_MONTHS_CHARGED,
+        "months_free": YEARLY_MONTHS_FREE,
+        "discount_percent": YEARLY_DISCOUNT_PERCENT,
+        "label": yearly_label(),
+        "headline": (f"Pay yearly: {YEARLY_MONTHS_COVERED} months for the "
+                     f"price of {YEARLY_MONTHS_CHARGED} ({yearly_label()})"),
+        "applies_to": ("Starter, every location price, extra units and the "
+                       "extras, after any chain discount"),
+        "billing": ("One invoice for the year, then nothing until it "
+                    "renews. Adding a location or units part-way through "
+                    "adds a prorated charge for the rest of the paid year. "
+                    "We email "
+                    + " and ".join(f"{d}" for d in YEARLY_RENEWAL_REMINDER_DAYS)
+                    + " days before it renews."),
+        "switching": ("Switch between monthly and yearly at renewal: the "
+                      "change starts when what you have paid for runs out."),
+        "reminder_days": list(YEARLY_RENEWAL_REMINDER_DAYS),
+        "cancellation": CANCELLATION_RULE,
+    }
+
+
+# ---- chain discounts -----------------------------------------------------
+#
+# A business with many restaurants or pharmacies pays less for each one:
+# (from this many locations, percent off each location's price). Self
+# serve, worked out from the locations on the account, and shown on the
+# invoice as its own line: "Chain discount (20 locations): −20%".
+#
+# What it applies to, and what it does not:
+#   * The location prices of the per-location trades (restaurants and
+#     pharmacies), counted together: a business with 12 restaurants and
+#     8 pharmacies is a 20-location chain.
+#   * Not Starter, which is one location.
+#   * Not the $15 extra-unit fee or the extras. "The price of each
+#     location drops" is the whole rule, and it is the one a customer can
+#     check on the invoice: 20 × $149 × 20%.
+#   * Yearly is worked out on the discounted price.
+#
+# No business pays more than a bigger chain would. Twenty locations at
+# 20% off cost less than eighteen or nineteen at 10% off, so those two
+# pay the twenty-location price instead (the invoice says so).
+#
+# This is the only volume discount. It replaced the enterprise ladder
+# (2.5% off for every ten units, up to 10%), which priced volume
+# contracts: those contracts now use these tiers too, and a business on
+# one is billed from the contract alone, so nobody gets both.
+CHAIN_DISCOUNT_TIERS: Tuple[Tuple[int, float], ...] = ((5, 10.0), (20, 20.0))
+
+
+def _half_up(value: float) -> int:
+    """Round to a whole number, halves up, as the page's Math.round does."""
+    return int(math.floor(value + 0.5 + 1e-9))
+
+
+def chain_discount_percent(locations: int) -> float:
+    """Percent off each location's price for a chain this size."""
+    percent = 0.0
+    for start, off in CHAIN_DISCOUNT_TIERS:
+        if int(locations) >= start:
+            percent = off
+    return percent
+
+
+def chain_tier_label(locations: int) -> str:
+    """'5–19 locations: 10% off', or the list price below the first tier."""
+    starts = [start for start, _ in CHAIN_DISCOUNT_TIERS]
+    if int(locations) < starts[0]:
+        return f"1–{starts[0] - 1} locations: list price"
+    for index, (start, off) in enumerate(CHAIN_DISCOUNT_TIERS):
+        nxt = starts[index + 1] if index + 1 < len(starts) else None
+        if int(locations) >= start and (nxt is None or int(locations) < nxt):
+            span = f"{start}+" if nxt is None else f"{start}–{nxt - 1}"
+            return f"{span} locations: {off:g}% off"
+    return ""  # unreachable: every count >= the first start is in a tier
+
+
+def chain_discount(location_total: float, locations: int) -> Dict[str, Any]:
+    """The chain discount on `locations` locations costing `location_total`.
+
+    Worked in cents, rounded half up, the same way static/pricing.js
+    does, so the page and the invoice agree to the cent. `capped_at` is
+    the bigger chain whose price this one was held to, if any.
+    """
+    locations = max(0, int(locations))
+    total_cents = _half_up(float(location_total) * 100)
+    percent = chain_discount_percent(locations)
+    after = total_cents - _half_up(total_cents * percent / 100.0)
+    capped_at: Optional[int] = None
+    if locations:
+        for start, off in CHAIN_DISCOUNT_TIERS:
+            if start <= locations:
+                continue
+            ceiling = _half_up(total_cents * start * (100.0 - off)
+                               / (locations * 100.0))
+            if ceiling < after:
+                after, capped_at = ceiling, start
+    return {
+        "locations": locations,
+        "percent": percent,
+        "amount_usd": round((total_cents - after) / 100.0, 2),
+        "after_usd": round(after / 100.0, 2),
+        "capped_at": capped_at,
+    }
+
+
+def chain_locations_price(locations: int, location_price: float) -> float:
+    """What `locations` locations at `location_price` cost after the chain
+    discount. Also what an enterprise volume contract charges per month."""
+    if int(locations) <= 0:
+        return 0.0
+    return chain_discount(location_price * int(locations), locations)["after_usd"]
+
+
+def chain_line_description(discount: Dict[str, Any]) -> str:
+    """'Chain discount (20 locations): −20%', as the invoice prints it."""
+    text = (f"Chain discount ({discount['locations']} locations): "
+            f"−{discount['percent']:g}%")
+    if discount["capped_at"]:
+        text += (f", held to the {discount['capped_at']}-location price so "
+                 "a bigger chain never pays less")
+    return text
+
+
+def next_chain_tier(locations: int, location_price: float) -> Optional[Dict[str, Any]]:
+    """The next chain tier, and what the business would pay there."""
+    upcoming = [(start, off) for start, off in CHAIN_DISCOUNT_TIERS
+                if start > int(locations)]
+    if int(locations) <= 0 or not upcoming:
+        return None
+    start, off = upcoming[0]
+    here = chain_locations_price(locations, location_price)
+    there = chain_locations_price(start, location_price)
+    return {
+        "units_until_next_discount": start - int(locations),
+        "next_discount_at_units": start,
+        "next_discount_label": chain_tier_label(start),
+        "next_discount_percent": off,
+        "next_tier_monthly_usd": there,
+        "monthly_increase_usd": round(there - here, 2),
+    }
+
+
+def chain_tiers(vertical: str = "restaurant") -> List[Dict[str, Any]]:
+    """The tiers as the pricing page's table shows them, priced for one
+    trade: each tier's price per location, and a whole-chain example."""
+    price = unit_price(vertical)
+    starts = [start for start, _ in CHAIN_DISCOUNT_TIERS]
+    rows: List[Dict[str, Any]] = [{"from": 1, "to": starts[0] - 1, "percent": 0.0,
+                                   "label": chain_tier_label(1)}]
+    for index, (start, off) in enumerate(CHAIN_DISCOUNT_TIERS):
+        nxt = starts[index + 1] - 1 if index + 1 < len(starts) else None
+        rows.append({"from": start, "to": nxt, "percent": off,
+                     "label": chain_tier_label(start)})
+    for row in rows:
+        each = round(price * (1 - row["percent"] / 100.0), 2)
+        monthly = chain_locations_price(row["from"], price)
+        row.update({
+            "vertical": vertical,
+            "each_usd": each,
+            "each_yearly_usd": yearly_price(each),
+            "example_locations": row["from"],
+            "example_monthly_usd": monthly,
+            "example_yearly_usd": yearly_price(monthly),
+        })
+    return rows
+
+
+def chain_example(vertical: str = "restaurant",
+                  locations: Optional[int] = None) -> Dict[str, Any]:
+    """The worked example the pricing page prints, computed: by default
+    the top tier, '20 restaurants: $149 → $119.20 each, $2,384 a month,
+    or $23,840 a year'."""
+    if locations is None:
+        locations = CHAIN_DISCOUNT_TIERS[-1][0]
+    price = unit_price(vertical)
+    monthly = chain_locations_price(locations, price)
+    return {
+        "vertical": vertical,
+        "locations": locations,
+        "plural": plural(vertical, locations),
+        "list_usd": price,
+        "percent": chain_discount_percent(locations),
+        "each_usd": round(monthly / locations, 2) if locations else 0.0,
+        "monthly_usd": monthly,
+        "yearly_usd": yearly_price(monthly),
+        "twelve_monthly_usd": round(monthly * YEARLY_MONTHS_COVERED, 2),
+    }
 
 # Written into multi-year contracts. Uncontroversial at signature and
 # compounding: three years at five percent is sixteen percent more
@@ -579,6 +804,10 @@ def headline() -> Dict[str, Any]:
         "starter_usd": STARTER_MONTHLY_USD,
         "starter_label": f"${STARTER_MONTHLY_USD:,.0f}",
         "starter_units": PLAN_TIERS[STARTER_PLAN]["max_sensors"],
+        # Paying yearly, and the chain discounts, for the front page.
+        "yearly_label": yearly_label(),
+        "chain_top_percent": CHAIN_DISCOUNT_TIERS[-1][1],
+        "chain_first_locations": CHAIN_DISCOUNT_TIERS[0][0],
         # Signing up takes no payment details: SignupRequest has no field
         # for one. Stated here so the page says it from the code that
         # makes it true.
@@ -626,7 +855,9 @@ def calculator_rates() -> Dict[str, Any]:
             for key, entry in ADD_ONS.items()
         ],
         "starter": starter_terms(),
-        "annual_prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        "yearly": yearly_terms(),
+        "chain_tiers": [{"from": start, "percent": off}
+                        for start, off in CHAIN_DISCOUNT_TIERS],
         "units_per_location": UNITS_PER_LOCATION,
         "extra_unit_usd": EXTRA_UNIT_MONTHLY_USD,
         "custom_label": CUSTOM_PRICE_LABEL,
@@ -636,7 +867,8 @@ def calculator_rates() -> Dict[str, Any]:
 def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
                   plan: Optional[str] = None,
                   locations: Optional[int] = None,
-                  units_at_each_location: Optional[Dict[str, int]] = None) -> float:
+                  units_at_each_location: Optional[Dict[str, int]] = None,
+                  yearly: bool = False) -> float:
     """The monthly price of an estate described as {vertical: units}.
 
     The calculator's sum, in Python: what build_subscription charges for
@@ -652,7 +884,15 @@ def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
     each of its locations has; past UNITS_PER_LOCATION, each one adds
     EXTRA_UNIT_MONTHLY_USD, as it does on the invoice. Left out, every
     location is within its allowance.
+
+    The chain discount comes off the per-location trades' location prices
+    together, as build_subscription takes it off. `yearly=True` is the
+    price of a year paid up front instead: ten of these months.
     """
+    if yearly:
+        return yearly_price(quote_monthly(units, add_ons, plan=plan,
+                                          locations=locations,
+                                          units_at_each_location=units_at_each_location))
     estate = sum(max(0, int(count)) for count in units.values())
     wanted = list(add_ons)
     if plan == STARTER_PLAN:
@@ -667,6 +907,12 @@ def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
                         if per_site(vertical)) or (1 if estate else 0)
     total = sum(unit_price(vertical) * max(0, int(count))
                 for vertical, count in units.items())
+    chain_places = sum(max(0, int(count)) for vertical, count in units.items()
+                       if per_site(vertical))
+    total -= chain_discount(
+        sum(unit_price(vertical) * max(0, int(count))
+            for vertical, count in units.items() if per_site(vertical)),
+        chain_places)["amount_usd"]
     for vertical, each in (units_at_each_location or {}).items():
         places = max(0, int(units.get(vertical, 0)))
         total += extra_units_charge(vertical, [max(0, int(each))] * places)["amount_usd"]
@@ -808,6 +1054,12 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
             if extra["units"] and extra["amount_usd"] > 0:
                 lines.append(extra_units_line(vertical, extra))
 
+    # The chain discount, on its own line, off the per-location trades'
+    # location prices counted together (not Starter, not extra units).
+    chain = chain_discount_line(counts)
+    if chain is not None:
+        lines.append(chain)
+
     mrr = round(sum(line["line_total_usd"] for line in lines), 2)
     tier = tenant.entitlements()
     billable = tenant.plan != "trial"
@@ -842,13 +1094,16 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
             ],
             "monthly_total_usd": contract.monthly_usd,
             "annual_total_usd": contract.annual_contract_value_usd,
+            "yearly_total_usd": yearly_price(contract.monthly_usd),
+            "yearly_label": yearly_label(),
             "effective_monthly_usd": 0.0 if not billable else contract.monthly_usd,
             "rate_card_equivalent_usd": mrr,
             "currency": "USD",
             "note": (
                 f"Billed on volume contract {contract.account_id} "
                 f"({contract.tier_label}); covers every sensor inside an "
-                "enrolled branch."
+                "enrolled branch. Its price already carries the chain "
+                "discount, so no second discount is added."
             ),
             "generated_at": iso(utc_now()),
         }
@@ -865,6 +1120,9 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
         "line_items": lines,
         "monthly_total_usd": mrr,
         "annual_total_usd": round(mrr * 12, 2),
+        # The same estate paid yearly: ten months for twelve.
+        "yearly_total_usd": yearly_price(mrr),
+        "yearly_label": yearly_label(),
         "effective_monthly_usd": 0.0 if not billable else mrr,
         "currency": "USD",
         "note": (
@@ -877,6 +1135,32 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
                   else "Priced from the sensors currently registered.")
         ),
         "generated_at": iso(utc_now()),
+    }
+
+
+def chain_discount_line(counts: Dict[str, int]) -> Optional[Dict[str, Any]]:
+    """The invoice line for the chain discount, or None below the first tier.
+
+    `counts` is what each trade is billed on; only the per-location trades
+    count, and only their location prices are discounted.
+    """
+    places = sum(n for vertical, n in counts.items() if per_site(vertical))
+    total = sum(unit_price(vertical) * n for vertical, n in counts.items()
+                if per_site(vertical))
+    discount = chain_discount(total, places)
+    if discount["amount_usd"] <= 0:
+        return None
+    return {
+        "vertical": None,
+        "industry": "Chain discount",
+        "unit": "location",
+        "units": places,
+        "unit_price_usd": -round(discount["amount_usd"] / places, 2),
+        "line_total_usd": -discount["amount_usd"],
+        "chain_discount": True,
+        "percent": discount["percent"],
+        "capped_at": discount["capped_at"],
+        "description": chain_line_description(discount),
     }
 
 
@@ -918,12 +1202,29 @@ def rate_card_monthly(sensors: Iterable["Sensor"]) -> float:
         if sensor.industry_vertical in PRICE_BOOK:
             by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
     total = 0.0
+    counts: Dict[str, int] = {}
     for vertical, group in by_vertical.items():
         count = len(branches(group)) if per_site(vertical) else len(group)
+        counts[vertical] = count
         total += unit_price(vertical) * count
         if per_site(vertical):
             total += extra_units_charge(vertical, location_unit_counts(group))["amount_usd"]
+    chain = chain_discount_line(counts)
+    if chain is not None:
+        total += chain["line_total_usd"]
     return round(total, 2)
+
+
+def chain_factor(counts: Dict[str, int]) -> float:
+    """What share of the location price this estate pays after the chain
+    discount: 0.8 for a twenty-location chain, 1.0 below five. Used to
+    price a part period for a location added mid-month at the rate the
+    estate is actually billed."""
+    total = sum(unit_price(v) * n for v, n in counts.items() if per_site(v))
+    if total <= 0:
+        return 1.0
+    places = sum(n for v, n in counts.items() if per_site(v))
+    return chain_discount(total, places)["after_usd"] / total
 
 
 def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
@@ -1017,7 +1318,10 @@ def price_book():
             "Restaurants and pharmacies: per location, per month, for up to "
             f"{UNITS_PER_LOCATION} units there, and ${EXTRA_UNIT_MONTHLY_USD:,.0f} "
             "a month for each unit past that. Every other trade: "
-            f"{CUSTOM_PRICE_LABEL.lower()}. No setup fee."),
+            f"{CUSTOM_PRICE_LABEL.lower()}. No setup fee. "
+            + chain_words() + " " + yearly_terms()["headline"] + "."),
+        "yearly": yearly_terms(),
+        "chain_discounts": chain_tiers("restaurant"),
         "plans": [
             {
                 "plan": key,
@@ -1035,6 +1339,15 @@ def price_book():
         "starter": starter_terms(),
         "pricing": rows,
     }
+
+
+def chain_words() -> str:
+    """'Chain discounts: 10% off each location from 5 locations, 20% off
+    from 20.' Read from CHAIN_DISCOUNT_TIERS."""
+    parts = [f"{off:g}% off each location from {start} locations"
+             if index == 0 else f"{off:g}% off from {start}"
+             for index, (start, off) in enumerate(CHAIN_DISCOUNT_TIERS)]
+    return "Chain discounts for restaurants and pharmacies: " + ", ".join(parts) + "."
 
 
 @router.get("")
@@ -1080,7 +1393,8 @@ def list_add_ons(tenant: Tenant = Depends(require_tenant)):
 def full_deal(
     years: int = Query(1, ge=1, le=MAX_CONTRACT_YEARS),
     annual_prepay: bool = Query(
-        False, description="Pay year one up front for a discount."
+        False, description=(
+            "Pay yearly: each year up front, ten months' price for twelve."),
     ),
     include_add_ons: str = Query(
         "", description="Comma-separated add-on keys, e.g. vault"
@@ -1143,8 +1457,9 @@ def full_deal(
     total_contract = round(sum(row["annual_usd"] for row in schedule), 2)
 
     year_one = schedule[0]["annual_usd"]
+    # Two months free: a year paid up front is ten of its months.
     prepay_discount = (
-        round(year_one * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
+        round(year_one - yearly_price(schedule[0]["monthly_usd"]), 2)
         if annual_prepay
         else 0.0
     )
@@ -1172,7 +1487,10 @@ def full_deal(
         },
         "annual_prepay": {
             "elected": annual_prepay,
-            "discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+            "months_charged": YEARLY_MONTHS_CHARGED,
+            "months_free": YEARLY_MONTHS_FREE,
+            "label": yearly_label(),
+            "discount_percent": YEARLY_DISCOUNT_PERCENT,
             "discount_usd": prepay_discount,
             "year_one_due_usd": round(year_one - prepay_discount + setup, 2),
         },
@@ -1183,6 +1501,7 @@ def full_deal(
             2,
         ),
         "total_first_year_usd": round(year_one - prepay_discount + setup, 2),
+        "cancellation": CANCELLATION_RULE,
         "currency": "USD",
         "generated_at": iso(utc_now()),
     }

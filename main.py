@@ -1117,11 +1117,18 @@ def favicon():
 def _pricing_text() -> Dict[str, str]:
     from pricing import (
         ANNUAL_ESCALATOR_PERCENT,
-        ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        CANCELLATION_RULE,
+        CHAIN_DISCOUNT_TIERS,
         EXTRA_UNIT_MONTHLY_USD,
         PRICE_BOOK,
         UNITS_PER_LOCATION,
+        YEARLY_MONTHS_CHARGED,
+        YEARLY_MONTHS_COVERED,
+        YEARLY_RENEWAL_REMINDER_DAYS,
+        chain_example,
         headline,
+        yearly_label,
+        yearly_price,
     )
 
     from pricing import (REFERRAL_TRIAL_DAYS, bundle_includes_label,
@@ -1129,6 +1136,12 @@ def _pricing_text() -> Dict[str, str]:
 
     facts = headline()
     starter = starter_terms()
+    example = chain_example("restaurant")
+
+    def money(amount: float) -> str:
+        return f"${amount:,.0f}" if amount == int(amount) else f"${amount:,.2f}"
+
+    first, top = CHAIN_DISCOUNT_TIERS[0], CHAIN_DISCOUNT_TIERS[-1]
     return {
         "%%STARTER_PRICE%%": starter["monthly_label"],
         "%%STARTER_RATE%%": repr(float(starter["monthly_usd"])),
@@ -1138,7 +1151,22 @@ def _pricing_text() -> Dict[str, str]:
         "%%REFERRAL_DAYS%%": str(REFERRAL_TRIAL_DAYS),
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
-        "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
+        "%%YEARLY_LABEL%%": yearly_label(),
+        "%%MONTHS_CHARGED%%": str(YEARLY_MONTHS_CHARGED),
+        "%%MONTHS_COVERED%%": str(YEARLY_MONTHS_COVERED),
+        "%%STARTER_YEARLY%%": money(yearly_price(starter["monthly_usd"])),
+        "%%RESTAURANT_YEARLY%%": money(yearly_price(PRICE_BOOK["restaurant"]["monthly_usd"])),
+        "%%CHAIN_DATA%%": ",".join(f"{start}:{off:g}" for start, off in CHAIN_DISCOUNT_TIERS),
+        "%%CHAIN_FIRST%%": str(first[0]),
+        "%%CHAIN_FIRST_OFF%%": f"{first[1]:g}",
+        "%%CHAIN_TOP%%": str(top[0]),
+        "%%CHAIN_TOP_OFF%%": f"{top[1]:g}",
+        "%%CHAIN_EXAMPLE%%": (
+            f"{example['locations']} restaurants: {money(example['list_usd'])} → "
+            f"{money(example['each_usd'])} each, {money(example['monthly_usd'])} a "
+            f"month, or {money(example['yearly_usd'])} a year"),
+        "%%CANCELLATION%%": CANCELLATION_RULE,
+        "%%REMINDER_DAYS%%": " and ".join(str(d) for d in YEARLY_RENEWAL_REMINDER_DAYS),
         "%%RESTAURANT_PRICE%%": f"${PRICE_BOOK['restaurant']['monthly_usd']:,.0f}",
         "%%PHARMACY_PRICE%%": f"${PRICE_BOOK['pharmacy']['monthly_usd']:,.0f}",
         "%%UNITS_PER_LOCATION%%": str(UNITS_PER_LOCATION),
@@ -1156,7 +1184,8 @@ def _pricing_markup() -> Dict[str, str]:
     and offers the Talk to us link.
     """
     from helpdesk import talk_to_us_html
-    from pricing import (EXTRA_UNIT_MONTHLY_USD, calculator_rates, headline)
+    from pricing import (EXTRA_UNIT_MONTHLY_USD, calculator_rates, chain_tiers,
+                         headline, yearly_price)
 
     e = html.escape
     data = calculator_rates()
@@ -1186,8 +1215,10 @@ def _pricing_markup() -> Dict[str, str]:
 
     def price_cell(r) -> str:
         if r["custom"]:
-            return f'<td class="num custom-price">{e(data["custom_label"])}</td>'
-        return f'<td class="num">{money(r["monthly_usd"])}</td>'
+            return (f'<td class="num custom-price" colspan="2">'
+                    f'{e(data["custom_label"])}</td>')
+        return (f'<td class="num">{money(r["monthly_usd"])}</td>'
+                f'<td class="num">{money(yearly_price(r["monthly_usd"]))}</td>')
 
     options = "".join(option(r) for r in data["rates"])
     custom_attr = ' data-custom="yes"'
@@ -1225,8 +1256,30 @@ def _pricing_markup() -> Dict[str, str]:
         if key == "trial":
             return "Free"
         if key == starter["plan"]:
-            return f"{money(starter['monthly_usd'])}, one location"
+            return (f"{money(starter['monthly_usd'])} a month, or "
+                    f"{money(yearly_price(starter['monthly_usd']))} a year; "
+                    "one location")
         return "The rate card"
+
+    # The chain discount table: each tier, what a restaurant and a
+    # pharmacy cost there each month, and paid yearly.
+    restaurant, pharmacy = chain_tiers("restaurant"), chain_tiers("pharmacy")
+
+    def span(row) -> str:
+        return (f'{row["from"]}+' if row["to"] is None
+                else f'{row["from"]}&ndash;{row["to"]}')
+
+    def off(row) -> str:
+        return f'{row["percent"]:g}% off' if row["percent"] else "List price"
+
+    chain_rows = "".join(
+        f'<tr data-chain-from="{r["from"]}"><td>{span(r)}</td>'
+        f'<td class="num">{off(r)}</td>'
+        f'<td class="num">{money(r["each_usd"])}'
+        f'<span class="per-year">{money(r["each_yearly_usd"])} a&nbsp;year</span></td>'
+        f'<td class="num">{money(ph["each_usd"])}'
+        f'<span class="per-year">{money(ph["each_yearly_usd"])} a&nbsp;year</span></td></tr>'
+        for r, ph in zip(restaurant, pharmacy))
 
     plan_rows = "".join(
         f'<tr><td>{e(t["name"])}</td><td class="num">{t["max_sensors"]:,}</td>'
@@ -1240,6 +1293,7 @@ def _pricing_markup() -> Dict[str, str]:
         "%%ADDON_CHECKBOXES%%": addon_boxes,
         "%%ADDON_ROWS%%": addon_rows,
         "%%PLAN_ROWS%%": plan_rows,
+        "%%CHAIN_ROWS%%": chain_rows,
         "%%STARTER_POINTS%%": starter_points,
         "%%TALK_LINK%%": talk,
         "%%CUSTOM_LABEL%%": e(data["custom_label"]),
