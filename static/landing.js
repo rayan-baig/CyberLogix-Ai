@@ -14,15 +14,25 @@ async function paintSectors() {
     if (!res.ok) throw new Error(res.status);
     const body = await res.json();
     const rows = body.industries || body;
+    // A trade priced by quote has no figure in the catalogue at all; its
+    // card says so and offers the support address (set on the grid by the
+    // server), as a link and as text that can be copied.
+    const talkHref = grid.dataset.talkHref || "/help#help";
+    const talkAddress = grid.dataset.talkAddress || "";
+    const talk = `<a class="talk-link" href="${esc(talkHref)}">Talk to us</a>${
+      talkAddress ? ` <span class="talk-address">${esc(talkAddress)}</span>` : ""}`;
     grid.innerHTML = rows.map(r => `
       <article class="sector">
         <p class="sector-fault">${esc(r.catastrophe)}</p>
         <h3>${esc(r.name)}</h3>
         <p class="sector-line">${esc(r.slogan)}</p>
-        <div class="sector-price">
-          <b>${r.monthly_usd != null ? money(r.monthly_usd) : "—"}</b>
+        ${r.monthly_usd != null ? `<div class="sector-price">
+          <b>${money(r.monthly_usd)}</b>
           <span>per ${esc(r.billing_unit || r.asset_noun || "unit")} / month</span>
-        </div>
+        </div>` : `<div class="sector-price sector-custom">
+          <b>Custom pricing</b>
+          <span>Ask for a quote. ${talk}</span>
+        </div>`}
       </article>`).join("");
   } catch (err) {
     // A blank grid would read as "no sectors". Say what actually happened.

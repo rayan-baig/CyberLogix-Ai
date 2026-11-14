@@ -89,3 +89,8 @@ h1.lede {
 .ind b { display: block; font-family: var(--display); font-size: 18px;
          font-weight: 400; color: var(--ink); margin-bottom: 6px; }
 .ind span { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+/* What it costs: a published price, or a quote and how to ask for one. */
+.slab .price-line { color: var(--ink); font-size: 17px; }
+.talk-link { font-weight: 500; }
+.talk-address { font-family: var(--mono); font-size: .92em; user-select: all; overflow-wrap: anywhere; }

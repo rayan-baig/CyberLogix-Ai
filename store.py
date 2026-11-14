@@ -3449,9 +3449,9 @@ class HubStore:
             started_at=max(covered_to, now),
             carried_multiplier=carried,
         )
-        # Commissioning was done once, for the estate, and charged then. A
-        # renewal is the same equipment carrying on; charging it again was
-        # a second $1,500 for nothing.
+        # A setup fee, when there was one, was charged once for the estate.
+        # A renewal is the same equipment carrying on, so it never charges
+        # one again. (There is no setup fee now; the record is kept.)
         if live.setup_billed:
             self.mark_setup_billed(fresh)
         return fresh

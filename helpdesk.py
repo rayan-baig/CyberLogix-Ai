@@ -36,6 +36,41 @@ def support_address() -> str:
     return SUPPORT_EMAIL or MAIL_REPLY_TO
 
 
+# What the help page calls the trades with a published price.
+TRADE_WORDS = {"restaurant": "Restaurants", "pharmacy": "Pharmacies"}
+
+
+def _trade_name(vertical: str) -> str:
+    from domain import INDUSTRY_PROFILES
+
+    return str(INDUSTRY_PROFILES[vertical]["name"])
+
+
+def talk_to_us() -> Dict[str, str]:
+    """Where a "Talk to us" link goes, for a trade priced by quote.
+
+    There is no demo-booking page, so it is a mail to the support address,
+    with the address also printed as text a reader can select and copy
+    (a mailto link does nothing on a computer with no mail app). With no
+    address set, it is the help page's "How do I get help?".
+    """
+    address = support_address()
+    if address:
+        return {"href": f"mailto:{address}?subject=A%20quote%20for%20CyberLogix",
+                "address": address}
+    return {"href": "/help#help", "address": ""}
+
+
+def talk_to_us_html(text: str = "Talk to us") -> str:
+    """The link and the selectable address, escaped, for a page."""
+    contact = talk_to_us()
+    link = (f'<a class="talk-link" href="{html.escape(contact["href"])}">'
+            f'{html.escape(text)}</a>')
+    if contact["address"]:
+        link += f' <span class="talk-address">{html.escape(contact["address"])}</span>'
+    return link
+
+
 def _money(amount: float) -> str:
     return f"${amount:,.0f}"
 
@@ -175,10 +210,14 @@ def faq() -> List[Dict[str, Any]]:
     from pricing import (
         ADD_ONS,
         ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        CUSTOM_PRICE_LABEL,
+        EXTRA_UNIT_MONTHLY_USD,
         PRICE_BOOK,
         REFERRAL_REWARDS_PER_YEAR,
         REFERRAL_TRIAL_DAYS,
-        headline,
+        SETUP_FEE_PER_SITE_USD,
+        UNITS_PER_LOCATION,
+        custom_quote,
         starter_terms,
     )
     from sitewide import settings as site_wide_settings
@@ -186,12 +225,10 @@ def faq() -> List[Dict[str, Any]]:
 
     sw = site_wide_settings()
     e = html.escape
-    facts = headline()
     trial = PLAN_TIERS["trial"]
     with_calls = [t["name"] for t in PLAN_TIERS.values() if t["voice_escalation"]]
     without_calls = [t["name"] for t in PLAN_TIERS.values() if not t["voice_escalation"]]
-    top_vertical, top = max(PRICE_BOOK.items(), key=lambda kv: kv[1]["monthly_usd"])
-    per_site = [v for v, entry in PRICE_BOOK.items() if entry.get("per_site")]
+    published = [v for v in PRICE_BOOK if not custom_quote(v)]
     add_on_names = ", ".join(
         f"{e(a['name'])} ({_money(a['monthly_usd'])} a month"
         + (" per location" if a["basis"] == "per location" else "") + ")"
@@ -216,12 +253,16 @@ def faq() -> List[Dict[str, Any]]:
         "If a page showed an error with a reference code, include the code: "
         "it lets us find exactly what went wrong.")
 
-    restaurant_note = ""
-    if per_site:
-        names = ", ".join(e(PRICE_BOOK[v]["unit"]) for v in per_site)
-        restaurant_note = (
-            f" Restaurants pay per {names}, however many fridges and "
-            "freezers are inside it.")
+    # The published rates, in words: "Restaurants: $149 a month per
+    # location", read from the rate card. The rest are priced by quote,
+    # and the page never names their figures.
+    rate_words = "; ".join(
+        f"{e(TRADE_WORDS.get(v, _trade_name(v)))}: "
+        f"{_money(PRICE_BOOK[v]['monthly_usd'])} a month per {e(PRICE_BOOK[v]['unit'])}"
+        for v in sorted(published, key=lambda v: PRICE_BOOK[v]["monthly_usd"]))
+    setup_words = ("There is no setup fee." if not SETUP_FEE_PER_SITE_USD
+                   else f"A one-time setup fee of {_money(SETUP_FEE_PER_SITE_USD)} "
+                        "per site is on the first bill.")
 
     return [
         {
@@ -246,15 +287,18 @@ def faq() -> List[Dict[str, Any]]:
             "id": "price",
             "q": "What does it cost?",
             "a": [
-                "One flat price a month for each thing watched, set by your "
-                f"trade: from {e(facts['from_label'])} a month per "
-                f"{e(facts['from_unit'])} up to {_money(top['monthly_usd'])} "
-                f"per {e(top['unit'])}.{restaurant_note}",
+                f"{rate_words}. Each price covers up to "
+                f"{UNITS_PER_LOCATION} fridges and freezers at that location; "
+                f"each one past {UNITS_PER_LOCATION} at the same location is "
+                f"{_money(EXTRA_UNIT_MONTHLY_USD)} a month.",
                 f"A small café or shop can take {e(starter['name'])} instead: "
                 f"{e(starter['monthly_label'])} a month for one location and "
                 f"up to {starter['max_units']} fridges or freezers.",
-                'Every rate is on the <a href="/pricing">pricing page</a>, '
-                "with a calculator that works out your monthly price.",
+                f"Every other trade: {e(CUSTOM_PRICE_LABEL.lower())}. "
+                f"{talk_to_us_html()}.",
+                f"{setup_words} The published prices are on the "
+                '<a href="/pricing">pricing page</a>, with a calculator that '
+                "works out your monthly price.",
             ],
         },
         {
@@ -265,9 +309,10 @@ def faq() -> List[Dict[str, Any]]:
                 f"monthly fees: {add_on_names}.",
                 *([f"The {e(bundle['name'])} sends each day's fridge and "
                    "freezer record to OmniArmor, which fills in its "
-                   "temperature-log checks. Connect it under Setup, OmniArmor "
-                   "connection. It is free during the trial and billed while "
-                   "it is connected."] if bundle else []),
+                   "temperature-log checks, and includes "
+                   f"{e(bundle['includes'])}. Connect it under Setup, "
+                   "OmniArmor connection. It is free during the trial and "
+                   "billed while it is connected."] if bundle else []),
                 "Paying a year ahead takes "
                 f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}% off that year.",
             ],

@@ -27,21 +27,40 @@ function monthlyTotal(lines, addOns) {
 }
 
 /* The whole quote, as pricing.quote_monthly works it out.
-   spec: {starter: rate or null, lines: [{rate, count}],
-          addOns: [{rate, basis}], locations}
+   spec: {starter: rate or null,
+          lines: [{rate, count, custom?, included?, each?}],
+          addOns: [{rate, basis}], locations, extraRate}
    On Starter the flat rate is the one line and every extra is for its one
    location; on the rate card an extra priced per location is counted
-   once per location. */
+   once per location. A per-location trade (a line with `included`) adds
+   extraRate for each unit past `included` at each of its locations.
+   A trade priced by quote (`custom`) has no figure on the page, so a quote
+   with any of it in is null: the page says "custom" instead of a total. */
 function quote(spec) {
   const extras = spec.addOns || [];
   if (spec.starter !== null && spec.starter !== undefined) {
     return monthlyTotal([{ rate: spec.starter, count: 1 }],
       extras.map((a) => ({ rate: a.rate, count: 1 })));
   }
-  return monthlyTotal(spec.lines || [], extras.map((a) => ({
+  const lines = spec.lines || [];
+  if (lines.some((line) => line.custom && whole(line.count))) return null;
+  const priced = lines.filter((line) => !line.custom);
+  const pastAllowance = priced
+    .filter((line) => line.included !== undefined && line.included !== null)
+    .map((line) => ({
+      rate: spec.extraRate,
+      count: whole(line.count) * Math.max(0, whole(line.each) - whole(line.included)),
+    }));
+  return monthlyTotal(priced.concat(pastAllowance), extras.map((a) => ({
     rate: a.rate,
     count: a.basis === "per location" ? whole(spec.locations) : 1,
   })));
+}
+
+/* Units past the allowance on one line, for the breakdown. */
+function extraUnits(line) {
+  if (line.included === undefined || line.included === null) return 0;
+  return whole(line.count) * Math.max(0, whole(line.each) - whole(line.included));
 }
 
 /* A year, at the monthly price, with and without paying ahead. */
@@ -52,12 +71,14 @@ function yearly(monthly, discountPercent) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { monthlyTotal, quote, yearly };
+  module.exports = { monthlyTotal, quote, yearly, extraUnits };
 }
 
 if (typeof document !== "undefined") {
+  // Whole dollars as "$446", anything else to the cent: "$4,816.80".
   const money = (n) => "$" + Number(n).toLocaleString("en-US", {
-    minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
+    maximumFractionDigits: 2 });
 
   const form = document.getElementById("calc");
   const rows = document.getElementById("calc-rows");
@@ -71,6 +92,9 @@ if (typeof document !== "undefined") {
     const option = optionOf(row);
     row.querySelector(".calc-unit").textContent =
       "How many " + (option ? option.dataset.plural : "units");
+    // Units at each location matter only where a location has an allowance.
+    row.querySelector(".calc-each-field").hidden =
+      !(option && option.dataset.included);
   };
 
   const onStarter = () => {
@@ -93,11 +117,15 @@ if (typeof document !== "undefined") {
     });
     const lines = [...rows.querySelectorAll(".calc-row")].map((row) => {
       const option = optionOf(row);
+      const data = option ? option.dataset : {};
       return {
-        name: option ? option.textContent : "",
-        unit: option ? option.dataset.unit : "",
-        plural: option ? option.dataset.plural : "",
-        rate: option ? option.dataset.rate : 0,
+        name: option ? option.textContent.replace(/ \(custom pricing\)$/, "") : "",
+        unit: data.unit || "",
+        plural: data.plural || "",
+        rate: data.rate || 0,
+        custom: data.custom === "yes",
+        included: data.included === undefined ? null : data.included,
+        each: row.querySelector(".calc-each").value,
         count: row.querySelector(".calc-count").value,
       };
     });
@@ -107,9 +135,13 @@ if (typeof document !== "undefined") {
     const locations = document.getElementById("calc-locations").value;
     const starterRate = starter ? form.dataset.starterRate : null;
 
-    const monthly = quote({ starter: starterRate, lines, addOns: extras, locations });
-    const year = yearly(monthly, form.dataset.prepayDiscount);
-    document.getElementById("calc-total").textContent = money(monthly);
+    const extraRate = form.dataset.extraRate;
+    const monthly = quote({ starter: starterRate, lines, addOns: extras, locations,
+                            extraRate });
+    const custom = monthly === null;
+    document.getElementById("calc-total").textContent =
+      custom ? "Ask for a quote" : money(monthly);
+    document.getElementById("calc-custom").hidden = !custom;
 
     const list = document.getElementById("calc-lines");
     list.replaceChildren();
@@ -127,8 +159,17 @@ if (typeof document !== "undefined") {
       for (const line of lines) {
         const count = whole(line.count);
         if (!count) continue;
-        add(`${line.name}: ${count} ${count === 1 ? line.unit : line.plural}`,
-            money(monthlyTotal([line], [])));
+        const what = `${line.name}: ${count} ${count === 1 ? line.unit : line.plural}`;
+        if (line.custom) {
+          add(what, "Quote");
+          continue;
+        }
+        add(what, money(monthlyTotal([line], [])));
+        const past = extraUnits(line);
+        if (past) {
+          add(`${past} extra unit${past === 1 ? "" : "s"} past ${whole(line.included)} at a ${line.unit}`,
+              money(monthlyTotal([{ rate: extraRate, count: past }], [])));
+        }
       }
     }
     for (const extra of extras) {
@@ -139,8 +180,10 @@ if (typeof document !== "undefined") {
           money(monthlyTotal([], [{ rate: extra.rate, count }])));
     }
 
-    document.getElementById("calc-year").textContent =
-      `${money(year.full)} a year, or ${money(year.prepaid)} paid a year ahead.`;
+    document.getElementById("calc-year").textContent = custom ? "" : (() => {
+      const year = yearly(monthly, form.dataset.prepayDiscount);
+      return `${money(year.full)} a year, or ${money(year.prepaid)} paid a year ahead.`;
+    })();
 
     rows.querySelectorAll(".calc-remove").forEach((button) => {
       button.hidden = rows.children.length < 2;

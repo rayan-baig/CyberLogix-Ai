@@ -64,13 +64,22 @@ def test_the_trial_really_takes_no_card():
 
 
 def test_the_prices_are_the_rate_card():
-    from pricing import PRICE_BOOK, headline
+    from pricing import (CUSTOM_PRICE_LABEL, EXTRA_UNIT_MONTHLY_USD, PRICE_BOOK,
+                         UNITS_PER_LOCATION, custom_quote, headline)
 
     text = _answer("price")
     assert headline()["from_label"] in text
-    top = max(entry["monthly_usd"] for entry in PRICE_BOOK.values())
-    assert f"${top:,.0f}" in text
+    assert "Restaurants: $149 a month per location" in text
+    assert "Pharmacies: $199 a month per pharmacy" in text
+    assert (f"up to {UNITS_PER_LOCATION} fridges and freezers" in text
+            and f"${EXTRA_UNIT_MONTHLY_USD:,.0f} a month" in text)
+    assert CUSTOM_PRICE_LABEL.lower() in text and "Talk to us" in text
+    assert "There is no setup fee." in text
     assert 'href="/pricing"' in text
+    # No rate kept for a trade priced by quote is printed.
+    for vertical, entry in PRICE_BOOK.items():
+        if custom_quote(vertical):
+            assert f"${entry['monthly_usd']:,.0f}" not in text, vertical
 
 
 def test_the_extras_and_the_prepay_discount_are_the_rate_card():

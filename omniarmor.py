@@ -23,6 +23,12 @@ What it promises:
   CYBERLOGIX_CREDENTIAL_KEY, bound to the business it belongs to, never
   logged, never shown again after it is pasted (the last four characters
   are). Without that setting nothing can be connected.
+* **Signed.** With KITCHEN_BUNDLE_SECRET set (the same value as
+  OmniArmor's), every report carries `X-CyberLogix-Signature:
+  t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>` over the
+  exact bytes sent. OmniArmor waives its Pro fee for a workspace whose
+  reports arrive signed, which only a server billing the bundle can do.
+  Unset, no header is sent and reports work as before.
 * **One send per day.** Each day is claimed before it is sent, under the
   store lock, with a lease, so two passes cannot both send it. A day sent
   is not sent again unless what it says has changed since (an alarm
@@ -81,6 +87,15 @@ PATH = "/api/connect/cyberlogix/daily"
 # of it) is the thing the contract asks us not to do.
 CREDENTIAL_KEY = os.environ.get("CYBERLOGIX_CREDENTIAL_KEY", "").strip()
 
+# Signs every daily report, so OmniArmor can tell a report from a real
+# CyberLogix server -- which bills the +$29 Kitchen Safety Bundle -- from
+# one anybody could post with a key. OmniArmor waives its own Pro fee for
+# a workspace whose reports arrive signed. The same value is set in both
+# apps. Unset, reports go unsigned: they still work, and OmniArmor charges
+# its Pro fee as usual.
+KITCHEN_BUNDLE_SECRET = os.environ.get("KITCHEN_BUNDLE_SECRET", "").strip()
+SIGNATURE_HEADER = "X-CyberLogix-Signature"
+
 # ---- the contract (OmniArmor docs/CYBERLOGIX-CONNECTION.md) --------------
 KEY_RE = re.compile(r"^clx_[A-Za-z0-9_-]{43}$")
 ROLES = ("owner", "manager", "chef", "shift lead", "on-call staff",
@@ -125,7 +140,9 @@ DEFAULT_ROLE = "on-call staff"
 
 _pass_lock = threading.Lock()
 
-Transport = Callable[[str, str, bytes], Tuple[int, Dict[str, str], bytes]]
+# (url, key, body, extra headers) -> (status, headers, body). The extra
+# headers are the signature, when there is one.
+Transport = Callable[[str, str, bytes, Dict[str, str]], Tuple[int, Dict[str, str], bytes]]
 
 
 # ---- the key, sealed -------------------------------------------------------
@@ -460,7 +477,35 @@ def fingerprint(report: Dict[str, Any]) -> str:
 # ---- sending ---------------------------------------------------------------
 
 
-def _post(url: str, key: str, body: bytes) -> Tuple[int, Dict[str, str], bytes]:
+def sign(body: bytes, timestamp: Optional[int] = None,
+         secret: Optional[str] = None) -> Optional[str]:
+    """The X-CyberLogix-Signature value for these exact bytes, or None.
+
+    `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, b"<t>." + body)>`: the
+    timestamp, a full stop, then the body exactly as it goes on the wire,
+    never re-serialised. None when KITCHEN_BUNDLE_SECRET is unset, and
+    then no header is sent at all.
+    """
+    import hmac
+
+    key = KITCHEN_BUNDLE_SECRET if secret is None else secret
+    if not key:
+        return None
+    t = int(time.time()) if timestamp is None else int(timestamp)
+    digest = hmac.new(key.encode("utf-8"), f"{t}.".encode("ascii") + body,
+                      hashlib.sha256).hexdigest()
+    return f"t={t},v1={digest}"
+
+
+def signature_headers(body: bytes) -> Dict[str, str]:
+    """The header to add to a report, or nothing when there is no secret."""
+    value = sign(body)
+    return {SIGNATURE_HEADER: value} if value else {}
+
+
+def _post(url: str, key: str, body: bytes,
+          extra_headers: Optional[Dict[str, str]] = None
+          ) -> Tuple[int, Dict[str, str], bytes]:
     """One POST to OmniArmor. Raises on a network failure.
 
     Through the poller's opener, so it follows no redirect (a redirect
@@ -475,6 +520,8 @@ def _post(url: str, key: str, body: bytes) -> Tuple[int, Dict[str, str], bytes]:
     request.add_header("Content-Type", "application/json; charset=utf-8")
     request.add_header("Accept", "application/json")
     request.add_header("User-Agent", "CyberLogix-KitchenSafetyBundle/1")
+    for name, value in (extra_headers or {}).items():
+        request.add_header(name, value)
     try:
         with pollers._OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
             return response.status, dict(response.headers), response.read(65536)
@@ -521,7 +568,9 @@ def deliver(url: str, key: str, report: Dict[str, Any],
         attempts += 1
         wait: Optional[float] = None
         try:
-            code, headers, raw = send(url, key, body)
+            # Signed afresh on each try, so a retry after a long wait still
+            # carries a current timestamp. Over `body`, the bytes sent.
+            code, headers, raw = send(url, key, body, signature_headers(body))
         except Exception as exc:  # noqa: BLE001 - a network failure is a Tuesday
             last = {"outcome": "failed", "status": None,
                     "detail": f"Could not reach OmniArmor ({type(exc).__name__})."}

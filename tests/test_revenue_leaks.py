@@ -172,9 +172,15 @@ def test_voiding_an_invoice_puts_its_period_back_to_be_billed(
     assert reissued[0].billing_period == original.billing_period
 
 
-def test_the_commissioning_fee_is_not_charged_twice_on_a_re_bill(
-    api, admin_headers, tenant_factory, owner_headers, sensor_factory
+def test_a_setup_fee_would_not_be_charged_twice_on_a_re_bill(
+    api, admin_headers, tenant_factory, owner_headers, sensor_factory, monkeypatch
 ):
+    """There is no setup fee today. The setting is still read by the first
+    bill, so if one is ever set again it must still be charged once: set
+    one here and check the re-bill leaves it off."""
+    import pricing
+
+    monkeypatch.setattr(pricing, "SETUP_FEE_PER_SITE_USD", 1500.0)
     headers, owner, tenant = _estate(
         api, tenant_factory, owner_headers, sensor_factory, units=3, tag="A"
     )
@@ -395,7 +401,7 @@ def test_nobody_is_billed_for_days_before_the_contract_existed(
     assert not [l for l in first.lines if l["kind"] == "arrears"], (
         "The first invoice charged for evaluation days before the contract."
     )
-    assert first.total_usd == pytest.approx(4 * 899.0 + 1500.0)
+    assert first.total_usd == pytest.approx(4 * 899.0)  # no setup fee
 
 
 def test_a_part_paid_invoice_that_is_voided_earns_no_commission(

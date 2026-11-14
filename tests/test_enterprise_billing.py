@@ -26,27 +26,27 @@ def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",
 @pytest.mark.parametrize(
     "branches,monthly,discount,tier",
     [
-        # branches x $249, less the ladder. The ladder itself is unchanged.
-        (1, 249.0, 0.0, "1-9 units at list"),
-        (9, 2241.0, 0.0, "1-9 units at list"),
-        (10, 2427.75, 2.5, "10-19 units, 2.5% volume discount"),
-        (19, 4612.72, 2.5, "10-19 units, 2.5% volume discount"),
-        (20, 4731.0, 5.0, "20-29 units, 5% volume discount"),
-        (30, 6909.75, 7.5, "30-39 units, 7.5% volume discount"),
-        (40, 8964.0, 10.0, "40+ units, 10% volume discount"),
-        (100, 22410.0, 10.0, "40+ units, 10% volume discount"),
+        # branches x $149, less the ladder. The ladder itself is unchanged.
+        (1, 149.0, 0.0, "1-9 units at list"),
+        (9, 1341.0, 0.0, "1-9 units at list"),
+        (10, 1452.75, 2.5, "10-19 units, 2.5% volume discount"),
+        (19, 2760.22, 2.5, "10-19 units, 2.5% volume discount"),
+        (20, 2831.0, 5.0, "20-29 units, 5% volume discount"),
+        (30, 4134.75, 7.5, "30-39 units, 7.5% volume discount"),
+        (40, 5364.0, 10.0, "40+ units, 10% volume discount"),
+        (100, 13410.0, 10.0, "40+ units, 10% volume discount"),
     ],
 )
 def test_volume_discounts(
     api, operator_factory, branches, monthly, discount, tier
 ):
-    """Restaurants list at $249 a location, less the volume ladder."""
+    """Restaurants list at $149 a location, less the volume ladder."""
     headers, _, _ = operator_factory()
     body = provision(api, headers, branches=branches).json()["financial_summary"]
     assert body["monthly_subscription_usd"] == monthly
     assert body["annual_contract_value_usd"] == round(monthly * 12, 2)
     assert body["volume_discount_percent"] == discount
-    assert body["unit_price_usd"] == 249.0
+    assert body["unit_price_usd"] == 149.0
     assert body["pricing_tier_applied"] == "Custom Enterprise Volume Bracket"
     assert body["pricing_bracket"] == tier
 
@@ -67,13 +67,13 @@ def test_the_next_boundary_is_stated_up_front(api, operator_factory):
     headers, _, _ = operator_factory()
     body = provision(api, headers, branches=25).json()["financial_summary"]
     assert body["volume_discount_percent"] == 5.0
-    assert body["monthly_subscription_usd"] == pytest.approx(5913.75)
+    assert body["monthly_subscription_usd"] == pytest.approx(3538.75)
 
     step = body["next_tier"]
     assert step["units_until_next_discount"] == 5
     assert step["next_discount_at_units"] == 30
     assert step["next_discount_percent"] == 7.5
-    assert step["next_tier_monthly_usd"] == pytest.approx(6909.75)
+    assert step["next_tier_monthly_usd"] == pytest.approx(4134.75)
 
 
 def test_max_discount_has_no_further_step(api, operator_factory):
@@ -82,7 +82,7 @@ def test_max_discount_has_no_further_step(api, operator_factory):
     body = provision(api, headers, branches=80).json()["financial_summary"]
     assert body["next_tier"] is None
     assert body["volume_discount_percent"] == 10.0
-    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(224.1)
+    assert body["effective_monthly_rate_per_branch_usd"] == pytest.approx(134.1)
 
 
 def test_revenue_is_uncapped(api, operator_factory):
@@ -207,14 +207,14 @@ def test_contract_supersedes_the_per_unit_rate_card(
 
     before = api.get("/api/billing", headers=headers).json()
     assert before["billing_model"] == "per_unit"
-    assert before["monthly_total_usd"] == pytest.approx(3 * 249.0)
+    assert before["monthly_total_usd"] == pytest.approx(3 * 149.0)
 
     provision(api, headers, branches=6)
     after = api.get("/api/billing", headers=headers).json()
     assert after["billing_model"] == "enterprise_volume"
-    assert after["monthly_total_usd"] == 6 * 249.0
+    assert after["monthly_total_usd"] == 6 * 149.0
     # The rate-card figure is kept for comparison, not charged.
-    assert after["rate_card_equivalent_usd"] == pytest.approx(3 * 249.0)
+    assert after["rate_card_equivalent_usd"] == pytest.approx(3 * 149.0)
     assert after["line_items"][0]["description"] == (
         "6 branches · 1-9 units at list"
     )
@@ -243,8 +243,8 @@ def test_branch_count_can_be_changed(api, operator_factory):
         f"/api/v1/enterprise-billing/account/{account}/branches",
         headers={**headers, **ADMIN}, json={"total_branch_locations": 11},
     ).json()
-    assert body["previous_monthly_usd"] == 6 * 249.0
-    assert body["financial_summary"]["monthly_subscription_usd"] == pytest.approx(2670.53)
+    assert body["previous_monthly_usd"] == 6 * 149.0
+    assert body["financial_summary"]["monthly_subscription_usd"] == pytest.approx(1598.02)
 
 
 def test_quote_compares_both_models(api, operator_factory):
@@ -256,8 +256,8 @@ def test_quote_compares_both_models(api, operator_factory):
         "?industry_vertical=restaurant&total_branch_locations=5&units_per_branch=1",
         headers=headers,
     ).json()
-    assert single["per_unit"]["monthly_usd"] == pytest.approx(1245.0)
-    assert single["enterprise_volume"]["monthly_usd"] == pytest.approx(1245.0)
+    assert single["per_unit"]["monthly_usd"] == pytest.approx(745.0)
+    assert single["enterprise_volume"]["monthly_usd"] == pytest.approx(745.0)
     # At one unit per branch the two models now agree exactly, since the
     # location rate is the branch ladder's opening rate.
     assert single["cheaper_model"] == "per_unit"
@@ -329,7 +329,7 @@ def test_contract_survives_a_restart(tmp_path):
     assert restored is not None
     assert restored.account_id == contract.account_id
     assert restored.enrolled_branches == 12
-    assert restored.monthly_usd == pytest.approx(2913.3)
+    assert restored.monthly_usd == pytest.approx(1743.3)
 
 
 def test_an_owner_alone_cannot_set_their_own_cluster_price(api, operator_factory):

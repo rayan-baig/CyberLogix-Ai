@@ -3,8 +3,8 @@
 The gap this closes is the most expensive one in the product.
 
 Everything before this could *quote* beautifully: a three-year term, a
-five percent annual escalator, a $1,500 commissioning fee, ten percent off
-for paying a year up front. `GET /api/billing/deal` would price all of it
+five percent annual escalator, a one-time setup fee (there is none now),
+ten percent off for paying a year up front. `GET /api/billing/deal` would price all of it
 to the cent. And then nothing carried any of it into an invoice. Billing
 was a button somebody had to remember to press, at the month-one rate,
 forever. On a $48,000-a-year estate signed to a three-year escalating
@@ -31,7 +31,7 @@ long-overdue account is marked delinquent.
 What delinquency does *not* do is switch off monitoring. A freezer full of
 embryos does not stop being somebody's freezer full of embryos because
 their finance department is slow, and the company that let a $40,000 loss
-happen over a $1,299 invoice would deserve everything that came next.
+happen over a $199 invoice would deserve everything that came next.
 Alerting, escalation and telemetry run for a delinquent account exactly as
 they run for a paid one. What is withheld is the reporting: benchmarks,
 attestations, exports — the things whose absence costs money and nothing
@@ -262,6 +262,10 @@ def arrears_lines(
     for sensor in STORE.sensors_for(tenant.tenant_id):
         by_vertical.setdefault(sensor.industry_vertical, []).append(sensor)
 
+    # Units past a location's allowance (pricing.UNITS_PER_LOCATION) are
+    # not caught up here: an eleventh fridge added part-way through a
+    # period starts its extra-unit charge on the next invoice, in advance
+    # like the rest. Small, and kinder than a part-period line for $15.
     late: Dict[str, List[float]] = {}
     # Per-location sectors, sensor by sensor: what a per-unit add-on is owed
     # on. The subscription is caught up per late shop, but an add-on priced
@@ -489,7 +493,7 @@ def bill_period(
         with STORE._lock:
             multiplier = sub.rate_multiplier(index)
             months = sub.months_per_period
-            # Not on a re-bill of period 0: the commissioning fee was already
+            # Not on a re-bill of period 0: a setup fee (none today) was already
             # charged on the invoice that was voided, or it was not, and
             # `setup_billed` is the record of which.
             include_setup = index == 0 and not sub.setup_billed

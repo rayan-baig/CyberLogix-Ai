@@ -124,6 +124,11 @@ h3 {
 }
 .sector-price b { font-family: var(--display); font-size: 22px; font-weight: 400; color: var(--ink); }
 .sector-price span { font-size: 12.5px; color: var(--muted); }
+/* Priced by quote: the words wrap, and the address can be copied. */
+.sector-custom { flex-wrap: wrap; }
+.sector-custom b { font-size: 19px; }
+.talk-link { font-weight: 500; }
+.talk-address { font-family: var(--mono); font-size: .92em; user-select: all; overflow-wrap: anywhere; }
 
 /* --- proof ---------------------------------------------------------- */
 .proof { display: grid; gap: 22px; }

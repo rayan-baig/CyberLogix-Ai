@@ -46,7 +46,7 @@ def test_the_seat_limit_names_the_plan_the_price_and_the_route(
 
     assert "Growth" in detail, "the refusal does not say which plan to move to"
     assert "50" in detail, "it does not say how much room that buys"
-    assert "$249" in detail, "it does not say what a unit costs"
+    assert "$149" in detail, "it does not say what a unit costs"
     assert "/api/licenses/me/plan" in detail, "it does not say how"
     assert "nothing is lost" in detail
 

@@ -252,7 +252,7 @@ def starter_refusal(tenant: Tenant, what: str) -> str:
     Nothing is charged by being refused, and nothing is charged by the
     move until the next invoice, at the rate card.
     """
-    from pricing import PRICE_BOOK, STARTER_MONTHLY_USD
+    from pricing import PRICE_BOOK, STARTER_MONTHLY_USD, UNITS_PER_LOCATION
 
     growth = PLAN_TIERS["growth"]
     rate = PRICE_BOOK["restaurant"]
@@ -262,7 +262,8 @@ def starter_refusal(tenant: Tenant, what: str) -> str:
         f"${STARTER_MONTHLY_USD:,.0f} a month. Move to {growth['name']} "
         f"(up to {growth['max_sensors']:,} units, phone calls included; "
         f"${rate['monthly_usd']:,.0f} a month per {rate['unit']} for a "
-        "restaurant) from What you pay in the console, or POST "
+        f"restaurant, for up to {UNITS_PER_LOCATION} units there) from What "
+        "you pay in the console, or POST "
         '/api/licenses/me/plan with {"plan": "growth"}, then try again. '
         "Nothing has been charged, and nothing is until your next invoice."
     )
@@ -280,7 +281,7 @@ def seat_limit_message(tenant: Tenant, cap: int, vertical: str) -> str:
     Every figure here comes from the price book and the plan tiers, so it
     cannot promise a number the invoice will not honour.
     """
-    from pricing import PRICE_BOOK
+    from pricing import PRICE_BOOK, public_price
 
     if tenant.plan == "starter":
         return starter_refusal(
@@ -295,12 +296,14 @@ def seat_limit_message(tenant: Tenant, cap: int, vertical: str) -> str:
         )
 
     tier = PLAN_TIERS[nxt]
-    rate = PRICE_BOOK.get(vertical, {}).get("monthly_usd")
+    # Only a published rate is quoted; a trade priced by quote says so.
+    rate = public_price(vertical) if vertical in PRICE_BOOK else None
     price = (
         f" A {PRICE_BOOK[vertical]['unit']} is ${rate:,.0f} a month at the "
         "rate card."
         if rate
-        else ""
+        else (" Pricing for this trade is by quote: get in touch."
+              if vertical in PRICE_BOOK else "")
     )
     return (
         f"Seat limit reached: the {here} plan allows {cap} sensors and all "

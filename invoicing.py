@@ -199,8 +199,11 @@ class InvoiceRequest(BaseModel):
     include_add_ons: str = Field(
         "", description="Comma-separated add-on keys billed this period."
     )
+    # There is no setup fee (pricing.SETUP_FEE_PER_SITE_USD is $0), so this
+    # adds nothing. Still accepted, because the model refuses unknown
+    # fields and callers written when there was a fee still send it.
     include_setup: bool = Field(
-        False, description="Add the one-time per-site commissioning fee."
+        False, description="Add the one-time setup fee. There is none: adds nothing."
     )
     period_days: int = Field(30, ge=1, le=366)
     purchase_order: Optional[str] = Field(None, max_length=64)
@@ -263,9 +266,8 @@ def build_lines(
     a new customer pays today; a customer three years into a term with a
     five percent escalator pays 1.1025 times it, and billing them the card
     rate is a discount nobody agreed to give. It applies to recurring
-    lines only — commissioning is a one-time fee at the price it was
-    quoted at, and escalating it would be charging interest on a job
-    already done.
+    lines only. (A one-time setup line would not be escalated either;
+    there is no setup fee now, so none is added.)
 
     `months` bills several months on one document, which is what an annual
     prepay is: twelve months at the same year's rate, on one invoice.
@@ -339,8 +341,8 @@ def build_lines(
             )
 
     # The share of money recovered for staff who have left. After the
-    # recurring lines and outside `recurring()` on purpose, like the setup
-    # fee: it is a share of refunds already received, so the contract
+    # recurring lines and outside `recurring()` on purpose, like a setup
+    # fee would be: it is a share of refunds already received, so the contract
     # escalator does not apply and it is not multiplied by the months of
     # an annual prepay. Its kind keeps it out of the prepay discount too.
     from people import recovery_share_line

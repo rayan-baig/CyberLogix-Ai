@@ -16,22 +16,32 @@ def test_every_vertical_is_priced():
 
 
 def test_price_book_matches_the_agreed_rate_card(api):
-    rows = {r["vertical"]: r for r in api.get("/api/billing/pricing").json()["pricing"]}
+    """The owner's prices: restaurants $149 and pharmacies $199 a location,
+    published; every other trade by quote, its rate kept in the code for
+    the invoices of businesses already on it."""
     expected = {
         "superyacht": (4999.0, "vessel"),
         "private_aviation": (1999.0, "bay"),
         "medical_lab": (1499.0, "vault"),
         "country_club": (1499.0, "kitchen"),
-        # Per shop, whatever is inside it -- the price set for a single site.
-        "restaurant": (249.0, "location"),
+        "restaurant": (149.0, "location"),
+        "pharmacy": (199.0, "pharmacy"),
         "cybersecurity": (899.0, "rack"),
         "solar_infrastructure": (899.0, "enclosure"),
         "logistics": (749.0, "reefer truck"),
     }
     for vertical, (price, unit) in expected.items():
-        assert rows[vertical]["monthly_usd"] == price, vertical
-        assert rows[vertical]["unit"] == unit, vertical
-    assert rows["cybersecurity"]["price_label"] == "$899 / rack / month"
+        assert PRICE_BOOK[vertical]["monthly_usd"] == price, vertical
+        assert PRICE_BOOK[vertical]["unit"] == unit, vertical
+
+    rows = {r["vertical"]: r for r in api.get("/api/billing/pricing").json()["pricing"]}
+    assert rows["restaurant"]["monthly_usd"] == 149.0
+    assert rows["restaurant"]["price_label"] == "$149 / location / month"
+    assert rows["pharmacy"]["price_label"] == "$199 / pharmacy / month"
+    # Published, so the trades priced by quote carry no figure at all.
+    assert rows["cybersecurity"]["monthly_usd"] is None
+    assert rows["cybersecurity"]["custom_pricing"] is True
+    assert rows["cybersecurity"]["price_label"] == "Custom pricing \u2014 ask for a quote"
 
 
 def test_price_list_is_public_and_ordered_by_value(api):
@@ -39,8 +49,12 @@ def test_price_list_is_public_and_ordered_by_value(api):
 
     body = api.get("/api/billing/pricing").json()
     assert body["count"] == len(INDUSTRY_PROFILES)
-    prices = [r["monthly_usd"] for r in body["pricing"]]
-    assert prices == sorted(prices, reverse=True)
+    priced = [r["monthly_usd"] for r in body["pricing"] if not r["custom_pricing"]]
+    assert priced == sorted(priced, reverse=True) == [199.0, 149.0]
+    # The published rates first, then every trade priced by quote.
+    flags = [r["custom_pricing"] for r in body["pricing"]]
+    assert flags == sorted(flags)
+    assert "No setup fee" in body["billing"]
 
 
 def test_a_mixed_estate_is_billed_per_unit(api, tenant_factory, sensor_factory):
@@ -89,7 +103,7 @@ def test_trial_is_priced_but_not_charged(api, tenant_factory, sensor_factory):
 
     invoice = api.get("/api/billing", headers=headers).json()
     assert invoice["billable"] is False
-    assert invoice["monthly_total_usd"] == 249.0
+    assert invoice["monthly_total_usd"] == 149.0
     assert invoice["effective_monthly_usd"] == 0.0
     assert "not charged" in invoice["note"]
 
@@ -118,12 +132,14 @@ def test_decommissioning_reports_what_it_removes(
 
     resp = api.delete("/api/licenses/me/sensors/RACK-01", headers=headers).json()
     assert resp["billing"]["removes_monthly_usd"] == 899.0
-    assert resp["billing"]["new_monthly_total_usd"] == 249.0
+    assert resp["billing"]["new_monthly_total_usd"] == 149.0
 
 
 def test_industry_picker_carries_the_price(api):
     rows = {r["vertical"]: r for r in api.get("/api/industries").json()["industries"]}
-    assert rows["logistics"]["price_label"] == "$749 / reefer truck / month"
+    assert rows["restaurant"]["price_label"] == "$149 / location / month"
+    assert rows["logistics"]["price_label"] == "Custom pricing \u2014 ask for a quote"
+    assert rows["logistics"]["monthly_usd"] is None
     assert "cargo rejection" in rows["logistics"]["pitch"]
 
 
@@ -147,9 +163,9 @@ def test_roi_counts_only_answered_incidents(
     answered = api.get("/api/billing/roi", headers=headers).json()
     assert answered["quantified_saves"] == 1
     assert answered["loss_avoided_usd"] == 15000.0
-    assert answered["subscription_cost_usd"] == 249.0
-    # One saved walk-in against one month: $15,000 / $249.
-    assert answered["return_multiple"] == pytest.approx(15000.0 / 249.0, abs=0.1)
+    assert answered["subscription_cost_usd"] == 149.0
+    # One saved walk-in against one month: $15,000 / $149.
+    assert answered["return_multiple"] == pytest.approx(15000.0 / 149.0, abs=0.1)
 
 
 def test_roi_never_invents_a_figure(api, tenant_factory, sensor_factory):
@@ -272,7 +288,7 @@ def test_nothing_on_the_rate_card_is_priced_per_unit_by_accident():
     assert per_unit == []
 
 
-def test_the_deal_ties_setup_term_and_add_ons_together(
+def test_the_deal_ties_term_and_add_ons_together_with_no_setup_fee(
     api, operator_factory, sensor_factory
 ):
     headers, _, _ = operator_factory(plan="enterprise")
@@ -289,33 +305,33 @@ def test_the_deal_ties_setup_term_and_add_ons_together(
     deal = api.get("/api/billing/deal?years=3&annual_prepay=true"
                    "&include_add_ons=vault,benchmarks", headers=headers).json()
 
-    assert deal["subscription_monthly_usd"] == 2 * 249.0
+    assert deal["subscription_monthly_usd"] == 2 * 149.0
     assert deal["add_ons_monthly_usd"] == 499.0 + 299.0
-    assert deal["setup"]["sites_billed"] == 2
-    assert deal["setup"]["one_time_usd"] == 3000.0
+    assert deal["setup"]["per_site_usd"] == 0.0
+    assert deal["setup"]["one_time_usd"] == 0.0
+    assert deal["setup"]["note"] == "No setup fee."
     assert deal["term"]["years"] == 3
     assert deal["term"]["escalator_percent"] == 5.0
     assert len(deal["term"]["schedule"]) == 3
     assert deal["annual_prepay"]["discount_percent"] == 10.0
     assert deal["annual_prepay"]["discount_usd"] > 0
-    # Setup is never discounted by the prepay.
+    # The first year is the year less the prepay discount, and nothing else.
     year_one = deal["term"]["schedule"][0]["annual_usd"]
-    assert deal["total_first_year_usd"] == round(
-        year_one * 0.9 + 3000.0, 2
-    )
+    assert deal["total_first_year_usd"] == round(year_one * 0.9, 2)
+    assert deal["first_invoice_usd"] == round(year_one * 0.9, 2)
 
 
-def test_an_estate_with_no_recorded_sites_still_pays_one_setup(
+def test_no_estate_pays_a_setup_fee(
     api, operator_factory, sensor_factory
 ):
-    """Every estate is commissioned somewhere."""
+    """With sites or without, on any plan: the first bill is one month."""
     headers, _, _ = operator_factory(plan="enterprise")
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
 
     deal = api.get("/api/billing/deal", headers=headers).json()
     assert deal["sites"] == 0
-    assert deal["setup"]["sites_billed"] == 1
-    assert deal["setup"]["one_time_usd"] == 1500.0
+    assert deal["setup"]["one_time_usd"] == 0.0
+    assert deal["first_invoice_usd"] == deal["monthly_usd"] == 149.0
 
 
 def test_an_unknown_add_on_is_refused(api, operator_factory):
@@ -325,13 +341,15 @@ def test_an_unknown_add_on_is_refused(api, operator_factory):
     assert resp.status_code == 400
 
 
-def test_the_new_verticals_are_priced_for_their_market():
-    """Wine and art is the highest per-asset price in the book."""
-    from pricing import PRICE_BOOK
+def test_the_custom_verticals_keep_their_rates_for_billing():
+    """Priced by quote in public, and still billed from these figures."""
+    from pricing import PRICE_BOOK, custom_quote
 
     assert PRICE_BOOK["wine_and_art"]["monthly_usd"] == 2499.0
-    assert PRICE_BOOK["pharmacy"]["monthly_usd"] == 1299.0
     assert PRICE_BOOK["cannabis"]["monthly_usd"] == 1199.0
+    assert custom_quote("wine_and_art") and custom_quote("cannabis")
+    assert PRICE_BOOK["pharmacy"]["monthly_usd"] == 199.0
+    assert not custom_quote("pharmacy") and not custom_quote("restaurant")
 
 
 # ---- the pricing invariants, computed rather than assumed ----------------
@@ -401,14 +419,11 @@ def test_zero_and_negative_estates_price_at_zero():
         assert calculate_volume_tier_price(units, 999.0) == 0.0
 
 
-def test_the_prepay_discount_never_touches_the_setup_fee():
-    """Commissioning is work already done; it is not discounted for paying
-    early."""
+def test_the_prepay_discount_is_ten_percent_and_there_is_no_setup_fee():
     from pricing import (ANNUAL_PREPAY_DISCOUNT_PERCENT,
                          SETUP_FEE_PER_SITE_USD, escalated_schedule)
 
     year_one = escalated_schedule(5000.0, 1)[0]["annual_usd"]
     discount = round(year_one * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
     assert abs(discount - year_one * 0.10) < 0.005
-    # And the setup fee is untouched by it.
-    assert SETUP_FEE_PER_SITE_USD * 3 == 4500.0
+    assert SETUP_FEE_PER_SITE_USD == 0.0

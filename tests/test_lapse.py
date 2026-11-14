@@ -249,8 +249,8 @@ def test_the_console_prices_carrying_on(api, trial):
     key, _, tenant = trial
     _shift_expiry(tenant["tenant_id"], 2)
     account = api.get("/api/console/overview", headers=key).json()["account"]
-    assert account["monthly_if_paid_usd"] == 1299.0
-    assert account["annual_if_paid_usd"] == 1299.0 * 12
+    assert account["monthly_if_paid_usd"] == 199.0
+    assert account["annual_if_paid_usd"] == 199.0 * 12
     assert account["on_trial"] is True
     assert account["has_contract"] is False
 

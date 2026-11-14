@@ -85,7 +85,7 @@ def estate(api, tenant_factory, owner_headers, sensor_factory, mailbox):
 # ---- what the first invoice says ----------------------------------------
 
 
-def test_the_first_invoice_adds_up_with_add_ons_and_commissioning(api, estate):
+def test_the_first_invoice_adds_up_with_add_ons_and_no_setup_fee(api, estate):
     headers, owner, tenant = estate
     _sign(api, headers, owner, add_ons=["vault", "benchmarks"])
     run_billing()
@@ -98,10 +98,11 @@ def test_the_first_invoice_adds_up_with_add_ons_and_commissioning(api, estate):
     assert sum(l["amount_usd"] for l in kinds["subscription"]) == pytest.approx(2 * RACK)
     assert sorted(l["amount_usd"] for l in kinds["add_on"]) == sorted(
         [ADD_ONS["vault"]["monthly_usd"], ADD_ONS["benchmarks"]["monthly_usd"]])
-    assert [l["amount_usd"] for l in kinds["setup"]] == [SETUP_FEE_PER_SITE_USD]
+    # No setup fee: the first bill is the first month and nothing else.
+    assert SETUP_FEE_PER_SITE_USD == 0.0
+    assert "setup" not in kinds
     expected = round(2 * RACK + ADD_ONS["vault"]["monthly_usd"]
-                     + ADD_ONS["benchmarks"]["monthly_usd"]
-                     + SETUP_FEE_PER_SITE_USD, 2)
+                     + ADD_ONS["benchmarks"]["monthly_usd"], 2)
     assert invoice.total_usd == pytest.approx(expected)
     assert invoice.total_usd == pytest.approx(
         round(sum(l["amount_usd"] for l in invoice.lines), 2))
@@ -110,11 +111,11 @@ def test_the_first_invoice_adds_up_with_add_ons_and_commissioning(api, estate):
 
     assert f"${expected:,.2f}" in render_invoice(invoice, STORE.get_tenant(tenant["tenant_id"]))
 
-    # Commissioning is once: the second month is recurring lines only.
+    # The second month is the same recurring lines.
     sub = STORE.active_subscription(tenant["tenant_id"])
     second = bill_period(STORE.get_tenant(tenant["tenant_id"]), sub, 1)
     assert not [l for l in second.lines if l["kind"] == "setup"]
-    assert second.total_usd == pytest.approx(expected - SETUP_FEE_PER_SITE_USD)
+    assert second.total_usd == pytest.approx(expected)
 
 
 def test_an_annual_prepay_bills_twelve_months_less_the_discount(api, estate):

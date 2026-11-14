@@ -80,8 +80,9 @@
           restaurants, pharmacies, labs, data centres and
           %%INDUSTRIES_MORE%% more. <a href="/for">Find yours</a></dd></div>
       <div><dt>What it costs</dt>
-        <dd>From %%FROM_PRICE%% a month per %%FROM_UNIT%%. Each trade has its
-          own rate: <a href="/pricing">work out yours</a>.</dd></div>
+        <dd>From %%FROM_PRICE%% a month per %%FROM_UNIT%%, with no setup fee.
+          Restaurants and pharmacies have a set price; every other trade gets
+          a quote: <a href="/pricing">work out yours</a>.</dd></div>
       <div><dt>Free trial</dt>
         <dd>%%TRIAL_DAYS%% days on up to %%TRIAL_UNITS%% sensors. No card.</dd></div>
     </dl>
@@ -182,12 +183,13 @@
       <h2>Twelve sectors, each with its own way of going wrong.</h2>
       <p>
         Thresholds, the language of the alert, the unit on the invoice and the
-        paperwork produced afterwards are all specific to the trade. One flat
-        price a month for each thing watched — for a restaurant, each shop —
-        never a share of what the monitoring saved.
+        paperwork produced afterwards are all specific to the trade. A flat
+        monthly price per location for restaurants and pharmacies, a quote
+        for every other trade, and never a share of what the monitoring saved.
       </p>
     </div>
-    <div class="sectors" id="sectors-grid">
+    <div class="sectors" id="sectors-grid" data-talk-href="%%TALK_HREF%%"
+         data-talk-address="%%TALK_ADDRESS%%">
       <p class="loading">Loading sectors…</p>
     </div>
   </div>
@@ -232,7 +234,7 @@
   <div class="wrap">
     <div class="band-head">
       <h2>Plans</h2>
-      <p>Seats are sensors. The per-unit price for your sector is above; the
+      <p>Seats are sensors. The price for your trade is above; the
          plan decides how many you can run and what the system is allowed to
          do when one of them fails.</p>
     </div>

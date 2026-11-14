@@ -119,7 +119,11 @@ def test_the_sector_is_priced_and_named_like_the_others(api):
     row = next(i for i in listed if i["vertical"] == "cryostorage")
     assert row["name"] == "IVF Clinics & Cryostorage"
     assert row["asset_noun"] == "tank"
-    assert row["monthly_usd"] == entry["monthly_usd"]
+    # Priced by quote: the public catalogue carries no figure for it, and
+    # the invoice still bills from the rate card's.
+    assert row["monthly_usd"] is None
+    assert row["custom_pricing"] is True
+    assert row["price_label"] == "Custom pricing \u2014 ask for a quote"
 
 
 def test_every_vertical_is_complete(api):

@@ -77,11 +77,12 @@
 .calc { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 28px; }
 @media (max-width: 820px) { .calc { grid-template-columns: 1fr; } }
 .calc-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) 132px auto; gap: 10px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 112px 150px auto; gap: 10px;
   align-items: end; margin-bottom: 12px;
 }
 @media (max-width: 520px) {
   .calc-row { grid-template-columns: minmax(0, 1fr) 80px; }
+  .calc-row .calc-each-field { grid-column: 1 / -1; }
   .calc-row .calc-remove { grid-column: 1 / -1; justify-self: start; }
 }
 .calc-row .field { margin: 0; }
@@ -117,6 +118,13 @@
 .calc-lines li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
 .calc-lines li span:last-child { font-family: var(--mono); white-space: nowrap; }
 .calc-out .btn-primary { width: auto; }
+
+/* --- priced by quote ---------------------------------------------------- */
+.table .custom-price { font-family: inherit; white-space: normal; color: var(--ink); }
+.talk-link { font-weight: 500; }
+/* The address as text, so it can be selected and copied where a mail
+   link opens nothing. */
+.talk-address { font-family: var(--mono); font-size: .92em; user-select: all; overflow-wrap: anywhere; }
 
 /* --- help --------------------------------------------------------------- */
 .qa {

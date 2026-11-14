@@ -44,9 +44,9 @@ def test_the_plan_is_in_the_plan_structure_with_the_owners_price():
     tier = PLAN_TIERS["starter"]
     assert tier["max_sensors"] == 3 and tier["max_locations"] == 1
     assert tier["voice_escalation"] is False
-    assert pricing.STARTER_MONTHLY_USD == 79.0
+    assert pricing.STARTER_MONTHLY_USD == 59.0
     terms = pricing.starter_terms()
-    assert terms["monthly_label"] == "$79" and terms["max_units"] == 3
+    assert terms["monthly_label"] == "$59" and terms["max_units"] == 3
     # Safety is not paywalled: texts and the site-wide alert are on it.
     assert any("site-wide" in item for item in terms["includes"])
     assert any("Text alerts" in item for item in terms["includes"])
@@ -84,9 +84,9 @@ def test_the_pricing_page_shows_starter_from_the_code(api):
     page = api.get("/pricing").text
     assert "%%" not in page
     assert f'data-starter-rate="{STARTER!r}"' in page
-    assert "Starter: $79 a month" in page
+    assert "Starter: $59 a month" in page
     assert "<td>Starter</td><td class=\"num\">3</td>" in page
-    assert "$79, one location" in page
+    assert "$59, one location" in page
 
 
 def test_signup_the_help_page_and_the_sales_sheet_show_starter(api):
@@ -97,13 +97,13 @@ def test_signup_the_help_page_and_the_sales_sheet_show_starter(api):
 
     price = " ".join(next(i for i in helpdesk.faq() if i["id"] == "price")["a"])
     plans = " ".join(next(i for i in helpdesk.faq() if i["id"] == "plans")["a"])
-    assert "$79 a month for one location and up to 3 fridges" in price
+    assert "$59 a month for one location and up to 3 fridges" in price
     assert "Starter: up to 3 sensors" in plans
     assert "nothing is charged until you do" in plans
     sheet = re.sub(r"\s+", " ", api.get("/for/restaurant/sheet").text)
-    assert "Starter: $79 a month for one location and up to 3 fridges" in sheet
+    assert "Starter: $59 a month for one location and up to 3 fridges" in sheet
     # Not offered on the sheet for a trade it is not for.
-    assert "Starter: $79" not in api.get("/for/cybersecurity/sheet").text
+    assert "Starter: $59" not in api.get("/for/cybersecurity/sheet").text
 
 
 # ---- the calculator agrees with pricing.py --------------------------------
@@ -139,7 +139,6 @@ def test_the_calculator_prices_starter_and_the_bundle_as_pricing_py(api):
         ("starter", {"restaurant": 3}, [bundle], None),
         (None, {"restaurant": 4}, [bundle], 4),
         (None, {"restaurant": 2, "pharmacy": 1}, [bundle, "vault"], 3),
-        (None, {"cybersecurity": 5}, ["benchmarks"], 1),
     ]
     cases = [{
         "starter": starter_rate if plan == "starter" else None,

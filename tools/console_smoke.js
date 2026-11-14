@@ -212,7 +212,8 @@ async function utilitiesHold(page) {
    refusal, no script error, no utility class losing to a rule. */
 async function checkPages(browser, base, token) {
   const pages = ["/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant",
-                 "/for/pharmacy", "/for/restaurant/sheet", "/for/cryostorage/sheet",
+                 "/for/pharmacy", "/for/superyacht", "/for/restaurant/sheet",
+                 "/for/cryostorage/sheet",
                  "/developers", "/legal", "/reset", "/partners", "/book",
                  "/today", "/offline", "/proof/not-a-real-token", "/no-such-page"];
   for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {

@@ -111,13 +111,13 @@ def test_the_first_screen_says_who_it_is_for_the_price_and_the_trial(api):
 def test_the_figures_come_off_the_rate_card_not_the_page(api, monkeypatch):
     """Change the rate card and the trial, and the front page follows.
     A figure typed into the HTML would not."""
-    monkeypatch.setitem(PRICE_BOOK["restaurant"], "monthly_usd", 199.0)
+    monkeypatch.setitem(PRICE_BOOK["restaurant"], "monthly_usd", 139.0)
     monkeypatch.setitem(PLAN_TIERS["trial"], "term_days", 21)
     monkeypatch.setitem(PLAN_TIERS["trial"], "max_sensors", 7)
 
     page = api.get("/").text
 
-    assert "From $199 a month per location" in page
+    assert "From $139 a month per location" in page
     assert "21 days on up to 7 sensors" in page
     assert not re.search(r"\$\d", LANDING), "the page source carries a price"
     hero = LANDING[LANDING.index('<section class="hero">'):]

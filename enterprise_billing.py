@@ -190,16 +190,20 @@ def quote(
             detail="units_per_branch must be at least 1.",
         )
 
-    from pricing import per_site
+    from pricing import extra_units_charge, per_site
 
     entry = PRICE_BOOK[vertical]
     units = total_branch_locations * units_per_branch
     # What the rate card actually bills on. A per-location sector is billed
-    # one price per branch whatever is inside it, so multiplying by sensors
-    # per branch quoted a rate card no customer is ever charged -- and made
-    # the volume contract look like it was saving them money it was not.
+    # one price per branch for its allowance of units, so multiplying by
+    # sensors per branch quoted a rate card no customer is ever charged --
+    # and made the volume contract look like it was saving them money it
+    # was not. Units past the allowance at each branch are added as the
+    # invoice adds them.
     billed = total_branch_locations if per_site(vertical) else units
-    per_unit_monthly = round(entry["monthly_usd"] * billed, 2)
+    extra = (extra_units_charge(vertical, [units_per_branch] * total_branch_locations)
+             if per_site(vertical) else {"units": 0, "amount_usd": 0.0})
+    per_unit_monthly = round(entry["monthly_usd"] * billed + extra["amount_usd"], 2)
     cluster_total = cluster_monthly(total_branch_locations, entry["monthly_usd"])
 
     cheaper = "per_unit" if per_unit_monthly <= cluster_total else "enterprise_volume"
@@ -220,6 +224,8 @@ def quote(
             "unit": entry["unit"],
             "units": billed,
             "unit_price_usd": entry["monthly_usd"],
+            "extra_units": extra["units"],
+            "extra_units_usd": extra["amount_usd"],
             "monthly_usd": per_unit_monthly,
             "annual_usd": round(per_unit_monthly * 12, 2),
         },

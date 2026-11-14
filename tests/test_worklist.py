@@ -58,7 +58,7 @@ def test_a_trial_about_to_end_is_on_the_list(
     assert "3 units live" in trial[0]["headline"]
     # Worth the rate card on the estate they have actually built: three
     # freezers in one restaurant is one location, a year of it.
-    assert trial[0]["at_stake_usd"] == pytest.approx(249.0 * 12)
+    assert trial[0]["at_stake_usd"] == pytest.approx(149.0 * 12)
     assert trial[0]["contact_email"]
 
 
@@ -184,8 +184,8 @@ def test_the_totals_are_the_sum_of_what_is_really_there(
     assert book["accounts"] == 2
     assert book["paying"] == 1, "a trial is not revenue"
     # Four freezers, one restaurant, one location.
-    assert book["mrr_usd"] == pytest.approx(249.0)
-    assert book["arr_usd"] == pytest.approx(249.0 * 12)
+    assert book["mrr_usd"] == pytest.approx(149.0)
+    assert book["arr_usd"] == pytest.approx(149.0 * 12)
 
 
 def test_a_suspended_account_is_not_counted_as_revenue(

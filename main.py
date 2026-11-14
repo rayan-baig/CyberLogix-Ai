@@ -716,11 +716,16 @@ def _landing_facts() -> Dict[str, str]:
     a front page that will one day quote one the product does not charge.
     These come off the rate card and the plan tiers as they are now.
     """
+    from helpdesk import talk_to_us
     from pricing import headline
 
     facts = headline()
+    talk = talk_to_us()
     named = 4  # restaurants, pharmacies, labs and data centres, by name
     return {
+        # Where a sector card priced by quote sends "Talk to us".
+        "%%TALK_HREF%%": talk["href"],
+        "%%TALK_ADDRESS%%": talk["address"],
         "%%FROM_PRICE%%": facts["from_label"],
         "%%FROM_UNIT%%": facts["from_unit"],
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
@@ -1113,11 +1118,14 @@ def _pricing_text() -> Dict[str, str]:
     from pricing import (
         ANNUAL_ESCALATOR_PERCENT,
         ANNUAL_PREPAY_DISCOUNT_PERCENT,
-        SETUP_FEE_PER_SITE_USD,
+        EXTRA_UNIT_MONTHLY_USD,
+        PRICE_BOOK,
+        UNITS_PER_LOCATION,
         headline,
     )
 
-    from pricing import REFERRAL_TRIAL_DAYS, bundle_price_label, starter_terms
+    from pricing import (REFERRAL_TRIAL_DAYS, bundle_includes_label,
+                         bundle_price_label, starter_terms)
 
     facts = headline()
     starter = starter_terms()
@@ -1126,38 +1134,67 @@ def _pricing_text() -> Dict[str, str]:
         "%%STARTER_RATE%%": repr(float(starter["monthly_usd"])),
         "%%STARTER_UNITS%%": str(starter["max_units"]),
         "%%BUNDLE_PRICE%%": bundle_price_label(),
+        "%%BUNDLE_INCLUDES%%": bundle_includes_label(),
         "%%REFERRAL_DAYS%%": str(REFERRAL_TRIAL_DAYS),
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
         "%%PREPAY_DISCOUNT%%": f"{ANNUAL_PREPAY_DISCOUNT_PERCENT:g}",
-        # Charged on a contract's first invoice (contracts.py). It was on
-        # the bill and on no page a buyer reads first.
-        "%%SETUP_FEE%%": f"${SETUP_FEE_PER_SITE_USD:,.0f}",
+        "%%RESTAURANT_PRICE%%": f"${PRICE_BOOK['restaurant']['monthly_usd']:,.0f}",
+        "%%PHARMACY_PRICE%%": f"${PRICE_BOOK['pharmacy']['monthly_usd']:,.0f}",
+        "%%UNITS_PER_LOCATION%%": str(UNITS_PER_LOCATION),
+        "%%EXTRA_UNIT_PRICE%%": f"${EXTRA_UNIT_MONTHLY_USD:,.0f}",
+        "%%EXTRA_UNIT_RATE%%": repr(float(EXTRA_UNIT_MONTHLY_USD)),
         "%%ESCALATOR%%": f"{ANNUAL_ESCALATOR_PERCENT:g}",
     }
 
 
 def _pricing_markup() -> Dict[str, str]:
-    """The rate card, plans and extras as HTML, every value escaped."""
-    from pricing import calculator_rates, headline
+    """The rate card, plans and extras as HTML, every value escaped.
+
+    A trade priced by quote goes into the page with no figure anywhere in
+    its markup (no data-rate either): the calculator says "custom" for it
+    and offers the Talk to us link.
+    """
+    from helpdesk import talk_to_us_html
+    from pricing import (EXTRA_UNIT_MONTHLY_USD, calculator_rates, headline)
 
     e = html.escape
     data = calculator_rates()
     cheapest = headline()["from_vertical"]
+    talk = talk_to_us_html()
 
     def money(amount: float) -> str:
         return f"${amount:,.0f}" if amount == int(amount) else f"${amount:,.2f}"
 
-    options = "".join(
-        f'<option value="{e(r["vertical"])}" data-rate="{r["monthly_usd"]!r}" '
-        f'data-unit="{e(r["unit"])}" data-plural="{e(r["unit_plural"])}"'
-        f'{" selected" if r["vertical"] == cheapest else ""}>'
-        f'{e(r["industry"])}</option>'
-        for r in data["rates"])
+    def option(r) -> str:
+        price = ('data-custom="yes"' if r["custom"]
+                 else f'data-rate="{r["monthly_usd"]!r}"')
+        allowance = (f' data-included="{r["units_per_location"]}"'
+                     if r["units_per_location"] else "")
+        return (f'<option value="{e(r["vertical"])}" {price} '
+                f'data-unit="{e(r["unit"])}" data-plural="{e(r["unit_plural"])}"'
+                f'{allowance}{" selected" if r["vertical"] == cheapest else ""}>'
+                f'{e(r["industry"])}{" (custom pricing)" if r["custom"] else ""}'
+                '</option>')
+
+    def unit_cell(r) -> str:
+        if r["units_per_location"]:
+            return (f'{e(r["unit"])}, up to {r["units_per_location"]} units; '
+                    f'{money(EXTRA_UNIT_MONTHLY_USD)} a month for each unit past '
+                    f'{r["units_per_location"]}')
+        return e(r["unit"])
+
+    def price_cell(r) -> str:
+        if r["custom"]:
+            return f'<td class="num custom-price">{e(data["custom_label"])}</td>'
+        return f'<td class="num">{money(r["monthly_usd"])}</td>'
+
+    options = "".join(option(r) for r in data["rates"])
+    custom_attr = ' data-custom="yes"'
     rate_rows = "".join(
-        f'<tr data-vertical="{e(r["vertical"])}"><td>{e(r["industry"])}</td>'
-        f'<td>{e(r["unit"])}</td>'
-        f'<td class="num">{money(r["monthly_usd"])}</td></tr>'
+        f'<tr data-vertical="{e(r["vertical"])}"'
+        f'{custom_attr if r["custom"] else ""}>'
+        f'<td>{e(r["industry"])}</td><td>{unit_cell(r)}</td>{price_cell(r)}</tr>'
         for r in data["rates"])
     def per(a) -> str:
         return " per location" if a["basis"] == "per location" else ""
@@ -1204,6 +1241,8 @@ def _pricing_markup() -> Dict[str, str]:
         "%%ADDON_ROWS%%": addon_rows,
         "%%PLAN_ROWS%%": plan_rows,
         "%%STARTER_POINTS%%": starter_points,
+        "%%TALK_LINK%%": talk,
+        "%%CUSTOM_LABEL%%": e(data["custom_label"]),
     }
 
 

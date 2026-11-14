@@ -1,17 +1,20 @@
 """The price book, and what a customer's estate actually costs.
 
-Pricing is per unit, per vertical, per month: a rack is not a reefer truck
-and is not priced like one. A customer with three data-hall racks and two
-hangar bays is billed 3 x $499 + 2 x $349, and the invoice is derived from
-the sensors actually registered rather than from a plan tier.
+Restaurants and pharmacies are priced per location: $149 a month for a
+restaurant and $199 for a pharmacy, each for up to ten fridges and
+freezers there, and $15 a month for each unit past ten at the same
+location. A small cafe can take Starter instead: $59 a month, flat, for
+one location and up to three units. There is no setup fee.
+
+Every other trade is priced by quote. Its rate is still in PRICE_BOOK,
+per unit (a rack, a vessel, a tank), because businesses already on it
+are invoiced from that figure; no public page shows it. The invoice is
+derived from the sensors actually registered rather than from a plan
+tier.
 
 Plan tiers still exist, but they are about evaluation versus a paid
 contract and the seat ceiling that comes with it — they are not what sets
 the price.
-
-Rates are set for the pinnacle of each market rather than its volume: an
-owner who spends millions a year on a vessel reads a $399 service as a toy,
-and prices below the value at risk invite exactly the buyer who will haggle.
 
 `loss_avoided_usd` is the figure the product is sold on: the loss a single
 prevented failure represents. Only the verticals where a concrete number
@@ -23,6 +26,7 @@ because an ROI page built on invented figures is worse than one that says
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
@@ -39,8 +43,6 @@ from store import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from store import Sensor
 
 router = APIRouter(prefix="/api/billing", tags=["Pricing & Billing"])
@@ -49,6 +51,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "cybersecurity": {
         "unit": "rack",
         "monthly_usd": 899.0,
+        "custom_quote": True,
         "pitch": (
             "Prevents $50,000+ server meltdowns and SLA contract breaches with "
             "predictive forecasting."
@@ -58,6 +61,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "private_aviation": {
         "unit": "bay",
         "monthly_usd": 1999.0,
+        "custom_quote": True,
         "pitch": (
             "Protects multi-million-dollar avionics and jet components from "
             "high-humidity moisture corrosion."
@@ -67,6 +71,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "superyacht": {
         "unit": "vessel",
         "monthly_usd": 4999.0,
+        "custom_quote": True,
         "pitch": (
             "Guards engine rooms against thermal fires and secures $150k charter "
             "guest food freezers at sea."
@@ -76,6 +81,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "solar_infrastructure": {
         "unit": "enclosure",
         "monthly_usd": 899.0,
+        "custom_quote": True,
         "pitch": (
             "Monitors thermal runaway in commercial battery banks to protect "
             "against catastrophic fire liability."
@@ -85,6 +91,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "medical_lab": {
         "unit": "vault",
         "monthly_usd": 1499.0,
+        "custom_quote": True,
         "pitch": (
             "Mandated by strict OSHA/FDA chain-of-custody rules; includes "
             "automated audit report generation."
@@ -94,6 +101,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "cryostorage": {
         "unit": "tank",
         "monthly_usd": 2999.0,
+        "custom_quote": True,
         "pitch": (
             "Protects embryos, eggs and cell lines that cannot be replaced "
             "at any price. The evidence trail is the product here: these "
@@ -104,6 +112,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "country_club": {
         "unit": "kitchen",
         "monthly_usd": 1499.0,
+        "custom_quote": True,
         "pitch": (
             "Safeguards high-revenue holiday dining inventory (Thanksgiving, "
             "Mother's Day) from compressor failure."
@@ -113,6 +122,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "logistics": {
         "unit": "reefer truck",
         "monthly_usd": 749.0,
+        "custom_quote": True,
         "pitch": (
             "Generates tamper-proof transit handover temperature passes to "
             "eliminate dock cargo rejection disputes."
@@ -122,6 +132,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "wine_and_art": {
         "unit": "cellar",
         "monthly_usd": 2499.0,
+        "custom_quote": True,
         "pitch": (
             "Certifies unbroken storage conditions for a collection whose "
             "value depends entirely on provenance being unquestioned."
@@ -130,7 +141,12 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "pharmacy": {
         "unit": "pharmacy",
-        "monthly_usd": 1299.0,
+        # Per pharmacy, like a restaurant is per shop: $199 for the
+        # pharmacy and up to UNITS_PER_LOCATION fridges in it. It was
+        # $1,299 and counted each fridge as a "pharmacy", so a pharmacy
+        # with a vaccine fridge and a second fridge was billed as two.
+        "monthly_usd": 199.0,
+        "per_site": True,
         "pitch": (
             "Meets the continuous-monitoring requirement for vaccine storage "
             "and produces the audit record on demand."
@@ -140,6 +156,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     "cannabis": {
         "unit": "cultivation room",
         "monthly_usd": 1199.0,
+        "custom_quote": True,
         "pitch": (
             "Documents environmental control to the standard a state licence "
             "renewal is judged against."
@@ -148,12 +165,14 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
     },
     "restaurant": {
         "unit": "location",
-        # Per shop, however many thermometers are inside it. This was $999
-        # and counted sensors while calling each one a "location", so one
-        # sandwich shop with a freezer, a cooler and a reach-in was invoiced
-        # "3 locations" at $2,997 a month. $249 per location is the price
-        # set for a single site; `per_site` is what makes it per location.
-        "monthly_usd": 249.0,
+        # Per shop, for up to UNITS_PER_LOCATION fridges and freezers in it.
+        # This was once $999 and counted sensors while calling each one a
+        # "location", so one sandwich shop with a freezer, a cooler and a
+        # reach-in was invoiced "3 locations" at $2,997 a month. Then $249
+        # per location with no limit; now $149 for up to ten units, and
+        # EXTRA_UNIT_MONTHLY_USD for each one past ten at the same shop.
+        # `per_site` is what makes it per location.
+        "monthly_usd": 149.0,
         "per_site": True,
         "pitch": (
             "Prevents $15,000 walk-in freezer meat/seafood spoilage and "
@@ -171,16 +190,128 @@ assert set(PRICE_BOOK) == set(INDUSTRY_PROFILES), (
 )
 
 
+# ---- the published prices, and the trades priced by quote --------------
+#
+# Restaurants and pharmacies have a price anyone can read. Every other
+# trade is "custom_quote": its rate stays in PRICE_BOOK, because the
+# invoices of businesses already on it are worked out from that figure,
+# but no public page, sheet or unauthenticated API shows the number. They
+# say CUSTOM_PRICE_LABEL and offer a way to talk to us instead.
+CUSTOM_PRICE_LABEL = "Custom pricing — ask for a quote"
+
+
+def custom_quote(vertical: str) -> bool:
+    """Priced by quote on every public page; billed from PRICE_BOOK."""
+    return bool(PRICE_BOOK.get(vertical, {}).get("custom_quote"))
+
+
+def public_price(vertical: str) -> Optional[float]:
+    """The monthly rate a public page may show, or None for a quote."""
+    if custom_quote(vertical):
+        return None
+    return PRICE_BOOK[vertical]["monthly_usd"]
+
+
+def public_price_label(vertical: str) -> str:
+    """"$149 / location / month", or the custom-pricing words."""
+    if custom_quote(vertical):
+        return CUSTOM_PRICE_LABEL
+    entry = PRICE_BOOK[vertical]
+    return f"${entry['monthly_usd']:,.0f} / {entry['unit']} / month"
+
+
+# ---- units at one location ----------------------------------------------
+#
+# A location's price covers up to UNITS_PER_LOCATION fridges and freezers
+# there. Each unit past that at the same location is a flat
+# EXTRA_UNIT_MONTHLY_USD a month: $15 is a tenth of $149 rounded up, so
+# the eleventh unit costs about what each of the first ten does. One small
+# line on the invoice, the same every month, rather than a whole second
+# location for one more fridge. Applies to the per-location trades
+# (restaurants and pharmacies); Starter has its own three-unit limit.
+UNITS_PER_LOCATION = 10
+EXTRA_UNIT_MONTHLY_USD = 15.0
+
+# ---- businesses already on the old prices --------------------------------
+#
+# Every price here went down on PRICES_CHANGED_AT, and an invoice is
+# priced from this file on the day it is issued, so a business already
+# on the old prices pays the new ones from its next invoice: nothing to
+# migrate, and invoices already issued stay exactly as they were sent.
+#
+# The one way the new card could cost somebody more is a restaurant with
+# more than ten units at one shop, which paid a flat $249 for the shop
+# before. For a business that signed up before the change, a location's
+# extra-unit charge is held so that the location never costs more than
+# OLD_LOCATION_PRICE_USD. New businesses pay the card.
+PRICES_CHANGED_AT = datetime(2026, 11, 14, tzinfo=timezone.utc)
+OLD_LOCATION_PRICE_USD: Dict[str, float] = {"restaurant": 249.0}
+
+
+def signed_up_before_price_change(tenant: Any) -> bool:
+    activated = getattr(tenant, "activated_at", None)
+    return activated is not None and activated < PRICES_CHANGED_AT
+
+
+def units_per_location(vertical: str) -> Optional[int]:
+    """How many units one location's price covers, or None for no limit."""
+    return UNITS_PER_LOCATION if per_site(vertical) else None
+
+
+def location_unit_counts(sensors: Iterable["Sensor"]) -> List[int]:
+    """How many units are at each location, by the same rule as branches().
+
+    Units not filed under a location, where locations exist, are counted
+    at none of them: the customer is given the benefit of the doubt, as
+    branches() does for the location count.
+    """
+    sited: Dict[str, int] = {}
+    unsited = 0
+    for sensor in sensors:
+        if sensor.site_id:
+            sited[sensor.site_id] = sited.get(sensor.site_id, 0) + 1
+        else:
+            unsited += 1
+    if sited:
+        return list(sited.values())
+    return [unsited] if unsited else []
+
+
+def extra_units_charge(vertical: str, counts: Iterable[int],
+                       held_to_old_price: bool = False) -> Dict[str, Any]:
+    """Units past the allowance at each location, and what they cost.
+
+    `held_to_old_price` is the protection for a business that signed up
+    before the change: no location's total goes over its old flat price.
+    """
+    cap = units_per_location(vertical)
+    if cap is None:
+        return {"units": 0, "amount_usd": 0.0, "held": False}
+    old = OLD_LOCATION_PRICE_USD.get(vertical) if held_to_old_price else None
+    units, amount, held = 0, 0.0, False
+    for count in counts:
+        extra = max(0, int(count) - cap)
+        charge = extra * EXTRA_UNIT_MONTHLY_USD
+        if old is not None and charge > old - unit_price(vertical):
+            charge = max(0.0, old - unit_price(vertical))
+            held = True
+        units += extra
+        amount += charge
+    return {"units": units, "amount_usd": round(amount, 2), "held": held}
+
+
 # ---- contract terms ---------------------------------------------------
 #
 # The rate card is only half of what an estate is worth. These are the
 # terms that decide the other half, and the ones customers rarely
 # negotiate out because each is standard practice in enterprise software.
 
-# Charged once per site at commissioning. It funds acquisition cost on the
-# day of signature rather than eleven months later, and a customer who has
-# paid to be installed does not churn casually.
-SETUP_FEE_PER_SITE_USD = 1500.0
+# No setup fee. It was $1,500 a site, charged once at commissioning; the
+# owner set it to nothing so the first bill is just the first month. The
+# figure stays a named setting, read by the deal, the invoice and the
+# contract's first bill, so all three say $0 together; at zero they add
+# no setup line at all.
+SETUP_FEE_PER_SITE_USD = 0.0
 
 # Paying a year up front removes the collections problem on that unit and
 # fixes the customer for twelve months. Whether it is worth ten percent
@@ -241,16 +372,23 @@ ADD_ONS: Dict[str, Dict[str, Any]] = {
     # than chosen from a list, so nobody pays for a connection they took
     # off and nobody runs one that is not on the bill. Free on a trial,
     # like everything else, so it can be tried before it is bought.
+    #
+    # It includes OmniArmor Pro for each location: OmniArmor waives its own
+    # Pro fee for a workspace whose daily reports arrive signed by a
+    # CyberLogix server (KITCHEN_BUNDLE_SECRET, omniarmor.py), which is
+    # how only a connection on this bill unlocks it.
     "kitchen_safety_bundle": {
         "name": "Kitchen Safety Bundle",
         "basis": "per location",
         "monthly_usd": 29.0,
         "included_in_trial": True,
         "billed_while_connected": True,
+        "includes": "OmniArmor Pro for that location",
         "description": (
             "Each day's fridge and freezer record sent to OmniArmor, which "
-            "fills in its temperature-log checks for you. Billed while the "
-            "connection is on; free during the trial."
+            "fills in its temperature-log checks for you, and OmniArmor Pro "
+            "for that location included. Billed while the connection is "
+            "on; free during the trial."
         ),
     },
 }
@@ -263,6 +401,11 @@ def bundle_price_label() -> str:
     """The bundle's add-on price as words, for the MTRX Horizyn bundle page."""
     entry = ADD_ONS[BUNDLE_ADD_ON]
     return f"+${entry['monthly_usd']:,.0f} a month per location"
+
+
+def bundle_includes_label() -> str:
+    """What the bundle includes besides the daily report, as words."""
+    return f"Includes {ADD_ONS[BUNDLE_ADD_ON]['includes']}"
 
 
 def add_on_price(key: str, units: int, locations: int = 1) -> float:
@@ -284,8 +427,8 @@ def add_on_price(key: str, units: int, locations: int = 1) -> float:
 def locations_billed(tenant: Tenant) -> int:
     """How many locations a per-location charge counts for this estate.
 
-    The same rule as the commissioning fee: the sites set up, and one
-    location for an estate that has units but never set up sites. Starter
+    The sites set up, and one location for an estate that has units but
+    never set up sites. Starter
     covers one location and cannot set up a second (sites.py).
     """
     if not STORE.sensors_for(tenant.tenant_id):
@@ -313,27 +456,20 @@ def auto_add_ons(tenant: Tenant) -> List[str]:
 # file. The fourth unit or a second location asks them to move to Growth
 # (licenses.py, sites.py) and charges nothing on its own.
 STARTER_PLAN = "starter"
-STARTER_MONTHLY_USD = 79.0
+STARTER_MONTHLY_USD = 59.0
 # A cafe or shop's fridges and freezers, on the restaurant limits. A
 # vaccine fridge or a server rack is a different job at a different
-# price, and a $79 plan that took either would undercut the rate card by
+# price, and a $59 plan that took either would undercut the rate card by
 # more than the plan is worth.
 STARTER_VERTICALS = ("restaurant",)
 # The extras that fit a one-location plan. The per-estate extras (the
 # vault, benchmarks, equipment intelligence) cost more than the plan and
 # are for estates; moving to Growth opens them.
 STARTER_ADD_ONS = (BUNDLE_ADD_ON,)
-# No commissioning fee on Starter. The per-site fee funds an engineer
-# placing every unit and proving the alert path; a cafe plugging in three
-# sensors itself would meet a $1,500 charge on a $79 plan, which is the
-# surprise this plan is meant not to have.
-STARTER_SETUP_FEE_PER_SITE_USD = 0.0
 
 
 def setup_fee_per_site(tenant: Tenant) -> float:
-    """The one-time commissioning fee per site for this business's plan."""
-    if tenant.plan == STARTER_PLAN:
-        return STARTER_SETUP_FEE_PER_SITE_USD
+    """The one-time setup fee per site: none, on every plan."""
     return SETUP_FEE_PER_SITE_USD
 
 
@@ -421,8 +557,11 @@ def headline() -> Dict[str, Any]:
     The lowest rate on the card and what it is per, and the trial's length
     and size. Read from the rate card and the plan tiers at serve time, so
     the front page cannot quote a number the product does not charge.
+    Only published rates count: a trade priced by quote has no "from".
     """
-    vertical, entry = min(PRICE_BOOK.items(), key=lambda kv: kv[1]["monthly_usd"])
+    vertical, entry = min(((v, e) for v, e in PRICE_BOOK.items()
+                           if not custom_quote(v)),
+                          key=lambda kv: kv[1]["monthly_usd"])
     trial = PLAN_TIERS["trial"]
     return {
         "from_usd": entry["monthly_usd"],
@@ -432,6 +571,10 @@ def headline() -> Dict[str, Any]:
         "trial_days": trial["term_days"],
         "trial_units": trial["max_sensors"],
         "industries": len(PRICE_BOOK),
+        "custom_industries": sum(1 for v in PRICE_BOOK if custom_quote(v)),
+        "units_per_location": UNITS_PER_LOCATION,
+        "extra_unit_usd": EXTRA_UNIT_MONTHLY_USD,
+        "setup_fee_usd": SETUP_FEE_PER_SITE_USD,
         # The flat plan for a small cafe or shop, beside the rate card.
         "starter_usd": STARTER_MONTHLY_USD,
         "starter_label": f"${STARTER_MONTHLY_USD:,.0f}",
@@ -450,6 +593,10 @@ def calculator_rates() -> Dict[str, Any]:
     reads them back out, so the calculator has no number of its own: change
     a rate here and the page, the calculator and the invoice all move
     together. tests/test_pricing_page.py holds the three to each other.
+
+    A trade priced by quote is listed with no figure at all
+    (`monthly_usd` None, `custom` True): this is published, so its rate
+    must not be in it.
     """
     rates = [
         {
@@ -457,12 +604,15 @@ def calculator_rates() -> Dict[str, Any]:
             "industry": INDUSTRY_PROFILES[vertical]["name"],
             "unit": entry["unit"],
             "unit_plural": plural(vertical, 2),
-            "monthly_usd": entry["monthly_usd"],
+            "monthly_usd": public_price(vertical),
+            "custom": custom_quote(vertical),
             "per_site": per_site(vertical),
+            "units_per_location": units_per_location(vertical),
         }
+        # The published prices first, then the trades priced by quote.
         for vertical, entry in sorted(
             PRICE_BOOK.items(),
-            key=lambda kv: INDUSTRY_PROFILES[kv[0]]["name"])
+            key=lambda kv: (custom_quote(kv[0]), INDUSTRY_PROFILES[kv[0]]["name"]))
     ]
     return {
         "currency": "USD",
@@ -477,12 +627,16 @@ def calculator_rates() -> Dict[str, Any]:
         ],
         "starter": starter_terms(),
         "annual_prepay_discount_percent": ANNUAL_PREPAY_DISCOUNT_PERCENT,
+        "units_per_location": UNITS_PER_LOCATION,
+        "extra_unit_usd": EXTRA_UNIT_MONTHLY_USD,
+        "custom_label": CUSTOM_PRICE_LABEL,
     }
 
 
 def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
                   plan: Optional[str] = None,
-                  locations: Optional[int] = None) -> float:
+                  locations: Optional[int] = None,
+                  units_at_each_location: Optional[Dict[str, int]] = None) -> float:
     """The monthly price of an estate described as {vertical: units}.
 
     The calculator's sum, in Python: what build_subscription charges for
@@ -493,6 +647,11 @@ def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
     the rate card, with only the extras Starter takes. `locations` counts
     for an extra priced per location; left out, it is the restaurant
     locations in the estate, or one.
+
+    `units_at_each_location` is, for a per-location trade, how many units
+    each of its locations has; past UNITS_PER_LOCATION, each one adds
+    EXTRA_UNIT_MONTHLY_USD, as it does on the invoice. Left out, every
+    location is within its allowance.
     """
     estate = sum(max(0, int(count)) for count in units.values())
     wanted = list(add_ons)
@@ -508,6 +667,9 @@ def quote_monthly(units: Dict[str, int], add_ons: Iterable[str] = (),
                         if per_site(vertical)) or (1 if estate else 0)
     total = sum(unit_price(vertical) * max(0, int(count))
                 for vertical, count in units.items())
+    for vertical, each in (units_at_each_location or {}).items():
+        places = max(0, int(units.get(vertical, 0)))
+        total += extra_units_charge(vertical, [max(0, int(each))] * places)["amount_usd"]
     total += sum(add_on_price(key, estate, locations) for key in wanted)
     return round(total, 2)
 
@@ -639,6 +801,12 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
                 "description": description,
             }
         )
+        if per_site(vertical):
+            extra = extra_units_charge(
+                vertical, location_unit_counts(by_vertical[vertical]),
+                held_to_old_price=signed_up_before_price_change(tenant))
+            if extra["units"] and extra["amount_usd"] > 0:
+                lines.append(extra_units_line(vertical, extra))
 
     mrr = round(sum(line["line_total_usd"] for line in lines), 2)
     tier = tenant.entitlements()
@@ -712,6 +880,33 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
     }
 
 
+def extra_units_line(vertical: str, extra: Dict[str, Any]) -> Dict[str, Any]:
+    """The invoice line for units past the allowance at a location.
+
+    Its own line, so the location line keeps reading "2 locations" at the
+    location price and the customer sees exactly what the extra units add.
+    """
+    count = extra["units"]
+    cap = units_per_location(vertical)
+    description = (f"{count} extra unit{'' if count == 1 else 's'} past "
+                   f"{cap} at a {PRICE_BOOK[vertical]['unit']}, "
+                   f"${EXTRA_UNIT_MONTHLY_USD:,.0f} each")
+    if extra["held"]:
+        description += (
+            f", held so no {PRICE_BOOK[vertical]['unit']} costs more than "
+            f"its old ${OLD_LOCATION_PRICE_USD[vertical]:,.0f}")
+    return {
+        "vertical": vertical,
+        "industry": INDUSTRY_PROFILES[vertical]["name"],
+        "unit": "extra unit",
+        "units": count,
+        "unit_price_usd": EXTRA_UNIT_MONTHLY_USD,
+        "line_total_usd": extra["amount_usd"],
+        "extra_units": True,
+        "description": description,
+    }
+
+
 def rate_card_monthly(sensors: Iterable["Sensor"]) -> float:
     """What these sensors cost a month on the rate card, ignoring the plan.
 
@@ -726,6 +921,8 @@ def rate_card_monthly(sensors: Iterable["Sensor"]) -> float:
     for vertical, group in by_vertical.items():
         count = len(branches(group)) if per_site(vertical) else len(group)
         total += unit_price(vertical) * count
+        if per_site(vertical):
+            total += extra_units_charge(vertical, location_unit_counts(group))["amount_usd"]
     return round(total, 2)
 
 
@@ -790,26 +987,37 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
 
 @router.get("/pricing")
 def price_book():
-    """The public price list, highest-value vertical first."""
+    """The public price list: the published rates, highest first, then the
+    trades priced by quote, which carry no figure (`monthly_usd` null)."""
     rows = [
         {
             "vertical": vertical,
             "industry": INDUSTRY_PROFILES[vertical]["name"],
             "unit": entry["unit"],
-            "monthly_usd": entry["monthly_usd"],
-            "price_label": f"${entry['monthly_usd']:,.0f} / {entry['unit']} / month",
+            "monthly_usd": public_price(vertical),
+            "custom_pricing": custom_quote(vertical),
+            "price_label": public_price_label(vertical),
+            "units_per_location": units_per_location(vertical),
+            "extra_unit_usd": (EXTRA_UNIT_MONTHLY_USD if per_site(vertical)
+                               else None),
             "pitch": entry["pitch"],
             "protects_against": INDUSTRY_PROFILES[vertical]["catastrophe"],
             "loss_avoided_usd": entry["loss_avoided_usd"],
         }
         for vertical, entry in sorted(
-            PRICE_BOOK.items(), key=lambda kv: -kv[1]["monthly_usd"]
-        )
+            PRICE_BOOK.items(),
+            key=lambda kv: (custom_quote(kv[0]),
+                            -(public_price(kv[0]) or 0.0),
+                            INDUSTRY_PROFILES[kv[0]]["name"]))
     ]
     return {
         "count": len(rows),
         "currency": "USD",
-        "billing": "Per unit, per month. Priced from registered sensors.",
+        "billing": (
+            "Restaurants and pharmacies: per location, per month, for up to "
+            f"{UNITS_PER_LOCATION} units there, and ${EXTRA_UNIT_MONTHLY_USD:,.0f} "
+            "a month for each unit past that. Every other trade: "
+            f"{CUSTOM_PRICE_LABEL.lower()}. No setup fee."),
         "plans": [
             {
                 "plan": key,
@@ -881,9 +1089,10 @@ def full_deal(
 ):
     """The whole deal: subscription, add-ons, setup, term and escalator.
 
-    Everything a signature page needs in one figure, so nobody discovers a
-    setup fee or an escalator after the fact — which is the only way those
-    terms survive a renewal conversation.
+    Everything a signature page needs in one figure, so nobody discovers an
+    escalator after the fact — which is the only way that term survives a
+    renewal conversation. The setup block is still here, at $0: there is
+    no setup fee, and the deal says so rather than leaving it unsaid.
     """
     subscription = build_subscription(tenant)
     units = subscription["units_total"]
@@ -952,10 +1161,8 @@ def full_deal(
             "per_site_usd": fee,
             "sites_billed": billable_sites,
             "one_time_usd": setup,
-            "note": (
-                "Charged once, at commissioning. Covers placing every unit, "
-                "proving the alert path end to end, and training the roster."
-            ),
+            "note": "No setup fee." if not setup else (
+                "Charged once, on the first bill."),
         },
         "term": {
             "years": years,
