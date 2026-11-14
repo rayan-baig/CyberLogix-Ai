@@ -3,6 +3,13 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+
+## 3.12.1 — 2026-11-14
+
+- **The rate card is only for signed-in businesses.** The two price
+  lookups behind the console's chain calculator now need a business key.
+  The custom trades show "ask for a quote" on every public page, and these
+  addresses no longer give their rates to anyone who asks.
 ## 3.12.0 — 2026-11-14
 
 New, lower prices; no setup fee; a quote for every trade but two; and

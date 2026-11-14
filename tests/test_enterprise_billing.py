@@ -110,10 +110,12 @@ def test_a_smaller_estate_never_pays_more_than_a_larger_one(smaller, larger):
     assert price(smaller, rate) == price(larger, rate) == round(naive_larger, 2)
 
 
-def test_discount_ladder_is_published_per_vertical(api):
+def test_discount_ladder_is_published_per_vertical(api, tenant_factory):
     """2.5% off every ten units, to a 10% ceiling, on any rate."""
+    key_headers, _ = tenant_factory()
     body = api.get(
-        "/api/v1/enterprise-billing/tiers?industry_vertical=superyacht"
+        "/api/v1/enterprise-billing/tiers?industry_vertical=superyacht",
+        headers=key_headers,
     ).json()
     assert body["list_price_usd"] == 4999.0
     assert body["unit"] == "vessel"
@@ -346,3 +348,14 @@ def test_an_owner_alone_cannot_set_their_own_cluster_price(api, operator_factory
     lowered = api.post(f"/api/v1/enterprise-billing/account/{account}/branches",
                        headers=headers, json={"total_branch_locations": 1})
     assert lowered.status_code in (401, 403)
+
+
+def test_price_lookups_need_a_signed_in_business(api, tenant_factory):
+    """The custom trades are "ask for a quote" on every public page, so their
+    rates must not be readable by anyone who calls these addresses."""
+    for path in ("/api/v1/enterprise-billing/tiers?industry_vertical=superyacht",
+                 "/api/v1/enterprise-billing/quote?industry_vertical=superyacht"
+                 "&total_branch_locations=3"):
+        assert api.get(path).status_code == 401, path
+        key_headers, _ = tenant_factory()
+        assert api.get(path, headers=key_headers).status_code == 200, path

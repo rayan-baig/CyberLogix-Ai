@@ -123,8 +123,12 @@ def _load(account_id: str, tenant: Tenant) -> EnterpriseContract:
     return contract
 
 
+# Both price lookups need a signed-in business. They return the rate card for
+# every trade, and the trades that are "custom pricing — ask for a quote" on
+# the public pages must not be readable by anyone who asks.
 @router.get("/tiers")
-def volume_tiers(industry_vertical: str = "restaurant"):
+def volume_tiers(industry_vertical: str = "restaurant",
+                 tenant: Tenant = Depends(require_tenant)):
     """The volume discount ladder, priced against one vertical's rate."""
     from pricing import PRICE_BOOK
     from store import (
@@ -169,6 +173,7 @@ def quote(
     industry_vertical: str,
     total_branch_locations: int,
     units_per_branch: int = 1,
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Price both models side by side before anyone signs.
 

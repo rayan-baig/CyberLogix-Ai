@@ -259,13 +259,16 @@ def test_a_per_unit_add_on_is_still_caught_up_per_thermometer(
 # ---- the chain quote ---------------------------------------------------------
 
 
-def test_the_chain_quote_bills_restaurants_per_branch(api):
+def test_the_chain_quote_bills_restaurants_per_branch(api, tenant_factory):
     """Multiplying by thermometers per branch quoted a rate card nobody is
     ever charged, and made the volume contract look like a saving."""
+    key_headers, _ = tenant_factory()
     one_each = api.get("/api/v1/enterprise-billing/quote?industry_vertical="
-                       "restaurant&total_branch_locations=10&units_per_branch=1").json()
+                       "restaurant&total_branch_locations=10&units_per_branch=1",
+                       headers=key_headers).json()
     four_each = api.get("/api/v1/enterprise-billing/quote?industry_vertical="
-                        "restaurant&total_branch_locations=10&units_per_branch=4").json()
+                        "restaurant&total_branch_locations=10&units_per_branch=4",
+                        headers=key_headers).json()
 
     assert one_each["per_unit"]["monthly_usd"] == 10 * SHOP
     assert four_each["per_unit"]["monthly_usd"] == 10 * SHOP
