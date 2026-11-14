@@ -157,21 +157,31 @@ def check_at_signup(code: str, email: str, phone: str) -> Tenant:
     return referrer
 
 
-def record_signup(referred: Tenant, referrer: Tenant, code: str) -> Dict[str, Any]:
-    """Give the new business its longer trial and write down who sent it."""
+def give_welcome(referred: Tenant) -> int:
+    """The welcome a referred business gets: the longer trial. Returns its days.
+
+    The same for a friend's code and an insurance partner's code
+    (insurers.py), so the two can never drift apart.
+    """
     from domain import PLAN_TIERS
     from pricing import REFERRAL_TRIAL_DAYS
 
-    usual = PLAN_TIERS[referred.plan]["term_days"]
+    usual = int(PLAN_TIERS[referred.plan]["term_days"])
     if REFERRAL_TRIAL_DAYS > usual:
         STORE.extend_licence(referred.tenant_id, REFERRAL_TRIAL_DAYS - usual)
+    return max(REFERRAL_TRIAL_DAYS, usual)
+
+
+def record_signup(referred: Tenant, referrer: Tenant, code: str) -> Dict[str, Any]:
+    """Give the new business its longer trial and write down who sent it."""
+    days = give_welcome(referred)
     row = {
         "tenant_id": referred.tenant_id,
         "referrer_id": referrer.tenant_id,
         "referred_name": referred.company_name,
         "code": normalise(code),
         "joined_at": iso(utc_now()),
-        "trial_days": max(REFERRAL_TRIAL_DAYS, usual),
+        "trial_days": days,
         "status": "joined",
         "decided_at": None,
         "credit_id": None,
@@ -379,6 +389,24 @@ def mark_refunded(tenant_id: str, payload: Refund,
     left of the referrer's reward is withdrawn; what was already taken off
     an invoice stays taken.
     """
-    result = refunded(tenant_id.strip())
+    import insurers
+
+    tenant_id = tenant_id.strip()
+    # A business can have joined with a friend's code or with an insurance
+    # partner's code, never both. Whichever it was, what it earned somebody
+    # is taken back.
+    share = insurers.refunded(tenant_id)
+    try:
+        result = refunded(tenant_id)
+    except HTTPException:
+        if share is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=("That business did not join with a referral code or a "
+                        "partner code."))
+        result = {"status": "refunded", "withdrawn_usd": 0.0}
+    if share is not None:
+        result = {**result, "partner_share_withdrawn_usd": share,
+                  "withdrawn_usd": round(float(result["withdrawn_usd"]) + share, 2)}
     logger.info("Referral for %s marked refunded (%s).", tenant_id, payload.note[:80])
     return result

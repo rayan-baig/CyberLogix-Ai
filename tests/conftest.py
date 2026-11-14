@@ -109,14 +109,17 @@ def clean_rate_limits():
     miles from the cause.
     """
     import firstday
+    import ratelimit
     import signup
     import simulator
 
     signup.reset_rate_limits()
+    ratelimit.reset_all()
     firstday.forget()
     simulator.forget()
     yield
     signup.reset_rate_limits()
+    ratelimit.reset_all()
     firstday.forget()
     simulator.forget()
 

@@ -124,6 +124,16 @@ try:
 except ValueError:
     MAX_READINGS_PER_SENSOR = 500
 
+# A silence this long between two readings from one sensor is written down
+# as a gap in its data ("data_gap" rows). Readings themselves are a ring
+# buffer that forgets the oldest, so without this a month-old silence
+# could not be told from a month of readings nobody kept. Gaps are rare,
+# so this is a write now and then, not one per reading. The proof of
+# monitoring report reads them (proofreports.py).
+GAP_RECORD_MINUTES = 10
+GAP_KIND = "data_gap"
+_GAP_SINCE_ID = "gap_log_since"
+
 # How many generated answers are kept. Every distinct prompt is a new
 # key, so this is the fastest-growing table in the product, and a cache
 # is a saving rather than a record: losing the least recently wanted
@@ -243,6 +253,8 @@ class HubStore:
         self._mail_keys: Dict[str, str] = {}
         self._suppressions: Dict[str, MailSuppression] = {}
         self._counter = 0
+        # When gaps in data started being written down; read once.
+        self._gap_since: Optional[datetime] = None
         self._db = db if db is not None else Database()
         self.load()
 
@@ -493,6 +505,7 @@ class HubStore:
             self._mail_keys.clear()
             self._suppressions.clear()
             self._counter = 0
+            self._gap_since = None
 
     def reset(self) -> None:
         """Drop all state, on disk as well as in memory. Used by tests."""
@@ -1119,6 +1132,7 @@ class HubStore:
             bucket = self._readings.setdefault(
                 sensor.sensor_id, deque(maxlen=MAX_READINGS_PER_SENSOR)
             )
+            self._note_gap_locked(sensor, bucket, now)
             # The ring buffer silently drops its oldest entry once full, so
             # take that entry out of the database too rather than letting the
             # table grow without bound.
@@ -1136,6 +1150,74 @@ class HubStore:
             self._db.put("reading", reading.reading_id, reading.to_row())
             self._db.put("sensor", sensor.sensor_id, sensor.to_row())
             return reading
+
+    # ---- gaps in data ----------------------------------------------------
+
+    def gap_log_since(self, at: Optional[datetime] = None) -> datetime:
+        """When this database started writing down gaps in data.
+
+        Stamped the first time it is asked for, at `at` when that is
+        earlier (history imported oldest first is tracked from its first
+        reading). A report says plainly that time before this is not
+        counted, rather than calling it time with no gaps.
+        """
+        with self._lock:
+            if self._gap_since is None:
+                row = self._db.get("meta", _GAP_SINCE_ID)
+                stamped = _parse(row.get("at")) if row else None
+                if stamped is None:
+                    stamped = min(utc_now(), at) if at is not None else utc_now()
+                    self._db.put("meta", _GAP_SINCE_ID, {"at": iso(stamped)})
+                self._gap_since = stamped
+            return self._gap_since
+
+    def _note_gap_locked(self, sensor: Sensor, bucket: Deque[Reading],
+                         at: datetime) -> None:
+        """Write down the silence a new reading ends, if it was long.
+
+        Measured from the newest contact held (a gateway catching up can
+        send an older reading after a newer one, so the order readings
+        arrived in is not the order they were taken in), or from when the
+        sensor was registered if it has never reported. A reading that
+        lands inside a gap already written down splits that gap.
+        """
+        self.gap_log_since(at)
+        newest = max((r.recorded_at for r in bucket), default=None)
+        candidates = [t for t in (newest, sensor.last_seen) if t is not None]
+        start = max(candidates) if candidates else sensor.registered_at
+        threshold = timedelta(minutes=GAP_RECORD_MINUTES)
+        if start is not None and at > start:
+            if at - start >= threshold:
+                self._db.put(GAP_KIND, f"{sensor.sensor_id}:{iso(start)}", {
+                    "tenant_id": sensor.tenant_id,
+                    "sensor_id": sensor.sensor_id,
+                    "start": iso(start),
+                    "end": iso(at),
+                    "minutes": round((at - start).total_seconds() / 60.0, 1),
+                })
+            return
+        # An older reading, arriving late: it may fall inside a known gap.
+        for rec_id, row in self._db.rows(GAP_KIND):
+            if row.get("sensor_id") != sensor.sensor_id:
+                continue
+            g_start, g_end = _parse(row.get("start")), _parse(row.get("end"))
+            if g_start is None or g_end is None or not g_start < at < g_end:
+                continue
+            self._db.delete(GAP_KIND, rec_id)
+            for piece_start, piece_end in ((g_start, at), (at, g_end)):
+                if piece_end - piece_start >= threshold:
+                    self._db.put(GAP_KIND, f"{sensor.sensor_id}:{iso(piece_start)}", {
+                        "tenant_id": sensor.tenant_id,
+                        "sensor_id": sensor.sensor_id,
+                        "start": iso(piece_start),
+                        "end": iso(piece_end),
+                        "minutes": round((piece_end - piece_start).total_seconds() / 60.0, 1),
+                    })
+
+    def gaps_for(self, tenant_id: str) -> List[Dict[str, Any]]:
+        """Every gap in data written down for this business's sensors."""
+        return [row for row in self._db.all(GAP_KIND)
+                if row.get("tenant_id") == tenant_id]
 
     def update_sensor_location(self, sensor: Sensor, location_name: str) -> Sensor:
         """Adopt a better site tag reported by third-party hardware."""

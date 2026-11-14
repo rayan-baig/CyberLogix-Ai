@@ -296,6 +296,10 @@ MUST_SEND = (
     "dunning:",
     "renewal:",
     "error-report:",
+    # An insurance partner's dashboard key, and the answer to an
+    # application: about their own standing with us (insurers.py).
+    "insurance-key:",
+    "insurance-declined:",
 )
 
 # Mail that is neither must-send nor marketing says where its reader
@@ -304,6 +308,7 @@ MANAGED = {
     "licence-alert:": ("/console", "Change the licences we remind you about"),
     "digest:operator:": ("/book", "The same figures, and the settings behind them"),
     "omniarmor-failing:": ("/console", "Each day sent to OmniArmor, and the connection"),
+    "insurance-application:": ("/book", "Approve or decline it in the operator console"),
 }
 
 _URL = re.compile(r"https?://[^\s<>\"']+")

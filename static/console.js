@@ -626,6 +626,7 @@ const OPTIONAL_PANELS = {
   knocking: "knock-body",
   pollers: "poller-body",
   referrals: "referral-body",
+  proofReports: "proof-report-body",
   omni: "omni-body",
   tasks: "task-body",
   peopleAlerts: "licence-alerts",
@@ -703,6 +704,8 @@ async function refresh() {
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     omni: () => api("/api/connections/omniarmor").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
+    proofReports: () => api("/api/proof-reports").catch((err) =>
+      (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     tasks: () => api("/api/tasks"),
     staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
@@ -751,6 +754,7 @@ async function refresh() {
   paint("pollers", () => renderPollers(got.pollers));
   paint("referrals", () => renderReferrals(got.referrals));
   paint("omni", () => renderOmni(got.omni));
+  paint("proofReports", () => renderProofReports(got.proofReports));
   paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
     renderLicenceAlerts(got.peopleAlerts);
@@ -2833,6 +2837,115 @@ document.addEventListener("click", async (event) => {
     toast("Copied the link.", "ok");
   } catch (_) {
     toast(button.dataset.link);
+  }
+});
+
+/* ---------------- proof of monitoring ----------------
+   Owners only (the server refuses anyone else with 403, drawn here as a
+   sentence). A report opens on its own page to print; its link is the
+   one thing an owner hands to an insurer, and can be switched off. */
+
+function monthValue(date) {
+  return date.toISOString().slice(0, 7);
+}
+
+function proofLink(report) {
+  return report.link.url || (/^https?:$/.test(location.protocol)
+    ? location.origin + report.link.path : report.link.path);
+}
+
+function renderProofReports(seen) {
+  const body = $("proof-report-body");
+  const form = $("proof-report-form");
+  if (!seen || seen.notOwner) {
+    $("proof-report-note").textContent = "Owners only";
+    form.hidden = true;
+    body.innerHTML = `<div class="sub">Only an owner can make and share a proof
+      of monitoring report.</div>`;
+    return;
+  }
+  form.hidden = false;
+  const site = $("proof-report-site");
+  const chosen = site.value;
+  site.innerHTML = `<option value="">Every location</option>` + seen.locations.map(
+    (l) => `<option value="${esc(l.site_id)}">${esc(l.name)}</option>`).join("");
+  if (chosen) site.value = chosen;
+  const month = $("proof-report-month");
+  const now = new Date();
+  month.max = monthValue(now);
+  month.min = seen.earliest_month;
+  if (!month.value) {
+    const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    month.value = monthValue(last) < seen.earliest_month ? monthValue(now) : monthValue(last);
+  }
+  $("proof-report-note").textContent = seen.reports.length
+    ? `${seen.reports.length} made` : "none yet";
+  const rows = seen.reports.map((r) => {
+    const live = r.state === "genuine";
+    return `<div class="u-p-7-0 u-bb">
+      <span class="u-d-block u-fs-13 u-fw-500">${esc(r.month_label)} · ${esc(r.location)}</span>
+      <span class="u-d-block u-fs-11-5 u-c-muted">${live ? "Link on" : esc(r.state_words)}
+        · code ${esc(r.verify_code)}</span>
+      <div class="u-d-flex u-gap-8 u-flex-wrap u-mt-8">
+        <a class="btn btn-sm" href="/proof-report/${encodeURIComponent(r.report_id)}"
+           target="_blank" rel="noopener">Open</a>
+        ${live ? `<button class="btn btn-sm proof-copy" type="button"
+           data-link="${esc(proofLink(r))}">Copy link</button>
+        <button class="btn btn-sm proof-revoke" type="button"
+           data-id="${esc(r.report_id)}">Switch off</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  body.innerHTML = (rows || `<div class="sub u-mt-8">No reports yet.</div>`)
+    + `<div class="sub u-mt-8">${esc(seen.note)}</div>`;
+}
+
+document.addEventListener("submit", async (event) => {
+  if (event.target.id !== "proof-report-form") return;
+  event.preventDefault();
+  const button = $("proof-report-make");
+  button.disabled = true;
+  try {
+    const made = await api("/api/proof-reports", {
+      method: "POST",
+      body: JSON.stringify({
+        month: $("proof-report-month").value,
+        site_id: $("proof-report-site").value || null,
+      }),
+    });
+    toast(`Report made. Code ${made.verify_code}.`, "ok");
+    renderProofReports(await api("/api/proof-reports"));
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const copy = event.target.closest(".proof-copy");
+  if (copy) {
+    try {
+      await navigator.clipboard.writeText(copy.dataset.link);
+      toast("Copied the link.", "ok");
+    } catch (_) {
+      toast(copy.dataset.link);
+    }
+    return;
+  }
+  const off = event.target.closest(".proof-revoke");
+  if (!off) return;
+  if (!window.confirm("Switch this link off? Anyone who opens it will be told "
+                      + "it was switched off. This cannot be undone.")) return;
+  off.disabled = true;
+  try {
+    await api(`/api/proof-reports/${encodeURIComponent(off.dataset.id)}/revoke`,
+              { method: "POST" });
+    toast("Switched off.", "ok");
+    renderProofReports(await api("/api/proof-reports"));
+  } catch (err) {
+    toast(err.message, "err");
+    off.disabled = false;
   }
 });
 

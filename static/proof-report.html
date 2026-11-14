@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Proof of monitoring — CyberLogix AI</title>
+<meta name="description" content="A monthly proof of monitoring report, to print or save as PDF.">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/proof-report.css">
+<link rel="stylesheet" href="/static/utilities.css">
+</head>
+<body>
+<header class="top no-print">
+  <a href="/console" aria-label="Back to the console">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+  <span class="spacer"></span>
+  <button type="button" id="print" hidden>Print or save as PDF</button>
+</header>
+
+<main class="sheet">
+  <p class="err" id="err" hidden></p>
+
+  <article id="report" hidden>
+    <header class="doc-head">
+      <p class="kicker">Proof of monitoring</p>
+      <h1 id="business"></h1>
+      <p class="where" id="where"></p>
+      <p class="state" id="state"></p>
+    </header>
+
+    <section class="figs" id="figs" aria-label="Summary"></section>
+
+    <h2>Sensors watched</h2>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Sensor</th><th class="num">Online</th>
+          <th class="num">Longest gap</th><th class="num">Alerts</th></tr></thead>
+        <tbody id="sensors"></tbody>
+      </table>
+    </div>
+
+    <h2>Every temperature alert</h2>
+    <div id="alerts"></div>
+
+    <h2>Longest gap in data</h2>
+    <p class="para" id="gap"></p>
+
+    <h2>Who gets alerted</h2>
+    <div id="alerted"></div>
+
+    <h2>How this was measured</h2>
+    <p class="para" id="how"></p>
+    <p class="para warn" id="coverage" hidden></p>
+
+    <footer class="seal">
+      <div>
+        <span class="k">Check this report</span>
+        <span class="v" id="link"></span>
+      </div>
+      <div>
+        <span class="k">Verify code</span>
+        <span class="v mono" id="code"></span>
+      </div>
+      <div>
+        <span class="k">Fingerprint</span>
+        <span class="v mono" id="fingerprint"></span>
+      </div>
+      <p class="fine" id="fine"></p>
+    </footer>
+  </article>
+</main>
+
+<script src="/static/proof-report.js"></script>
+</body>
+</html>

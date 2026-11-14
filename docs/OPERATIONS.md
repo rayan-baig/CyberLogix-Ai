@@ -29,6 +29,9 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_SWEEP_SECONDS` | `60` | Unattended sweep interval; `0` disables the in-process loop |
 | `CYBERLOGIX_GROUP_ALERT_MIN_UNITS` | `3` | Units at one site warming together that raise the site-wide alert; `0` turns it off. The other `CYBERLOGIX_GROUP_ALERT_*` settings are in [ALERTS.md](ALERTS.md#the-site-wide-alert) |
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
+| `CYBERLOGIX_PROOF_REPORT_KEY` | — | Seals each proof of monitoring report (HMAC-SHA256), so an edited one reads "changed" at `/verify`. Unset, a key is made once and kept in the database. Keep it once set: changing it makes earlier reports read "changed". See [PROOF-OF-MONITORING.md](PROOF-OF-MONITORING.md) |
+| `CYBERLOGIX_INSURANCE_PARTNER_SHARE_PERCENT` | `10` | What an insurance partner earns of what a business they referred pays us, in percent (0 to 50). Kept with each partner at approval. See [INSURANCE-PARTNERS.md](INSURANCE-PARTNERS.md) |
+| `CYBERLOGIX_INSURANCE_PARTNER_SHARE_MONTHS` | `12` | For how many months from that business's first payment (1 to 60) |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
 | `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizyn` | Issuer name on invoices and in the agreements: MTRX Horizyn's registered name |

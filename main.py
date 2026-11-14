@@ -26,6 +26,7 @@ from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     Response,
 )
 from fastapi.staticfiles import StaticFiles
@@ -74,6 +75,8 @@ from mail import router as mail_router
 from mail import status as mail_status
 from notifications import delivery_ready
 from partners import router as partners_router
+from insurers import router as insurers_router
+from proofreports import router as proofreports_router
 import scheduler
 import usage
 from licenses import router as license_router
@@ -252,6 +255,8 @@ app.include_router(vault_router)
 app.include_router(claims_router)
 app.include_router(benchmarks_router)
 app.include_router(partners_router)
+app.include_router(insurers_router)
+app.include_router(proofreports_router)
 app.include_router(invoicing_router)
 app.include_router(enterprise_router)
 app.include_router(contracts_router)
@@ -321,6 +326,8 @@ MODULES_ACTIVE = [
     "starter_plan",
     "bring_a_friend_referrals",
     "kitchen_safety_bundle_omniarmor",
+    "proof_of_monitoring_reports",
+    "insurance_partners",
 ]
 
 
@@ -335,6 +342,10 @@ SERVICE_WORKER = STATIC_DIR / "sw.js"
 WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
 OFFLINE_HTML = STATIC_DIR / "offline.html"
 PROOF_HTML = STATIC_DIR / "proof.html"
+PROOF_REPORT_HTML = STATIC_DIR / "proof-report.html"
+VERIFY_HTML = STATIC_DIR / "verify.html"
+INSURERS_HTML = STATIC_DIR / "insurance-partners.html"
+INSURER_DASHBOARD_HTML = STATIC_DIR / "insurance-dashboard.html"
 SIMPLE_HTML = STATIC_DIR / "simple.html"
 INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
@@ -428,7 +439,8 @@ API_DOCS_POLICY = "; ".join([
 # answered with `X-Robots-Tag: noindex`, and robots.txt asks crawlers to
 # stay out as well. The sitemap lists exactly these (plus one page per
 # industry), and a test holds the two together.
-PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal")
+PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal",
+                "/insurance-partners")
 
 # A copy that is not the live product -- staging, a demo box -- asks to be
 # left out of search results entirely: every page noindex, robots.txt
@@ -755,6 +767,8 @@ def robots(request: Request):
         "Allow: /help",
         "Allow: /for",
         "Allow: /legal",
+        "Allow: /insurance-partners$",
+        "Disallow: /insurance-partners/",
         "Disallow: /console",
         "Disallow: /today",
         "Disallow: /partners",
@@ -762,6 +776,8 @@ def robots(request: Request):
         "Disallow: /reset",
         "Disallow: /offline",
         "Disallow: /proof/",
+        "Disallow: /proof-report/",
+        "Disallow: /verify",
         "Disallow: /api/",
         "Disallow: /docs",
         "Disallow: /redoc",
@@ -789,7 +805,8 @@ def sitemap(request: Request):
     pages = [("/", "1.0"), ("/pricing", "0.9"), ("/signup", "0.9"),
              ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
-    pages += [("/help", "0.6"), ("/help/sensors", "0.6"), ("/legal", "0.4")]
+    pages += [("/help", "0.6"), ("/help/sensors", "0.6"),
+              ("/insurance-partners", "0.5"), ("/legal", "0.4")]
     if NOINDEX:
         pages = []
     entries = "".join(
@@ -947,6 +964,74 @@ def public_proof(token: str):
     the owner can revoke it.
     """
     return FileResponse(PROOF_HTML, media_type="text/html")
+
+
+@app.get("/proof-report/{report_id}", include_in_schema=False)
+def proof_report_page(report_id: str):
+    """A proof of monitoring report, to read and print.
+
+    The page holds nothing: it asks /api/proof-reports/{id} with the
+    console's own sign-in, and only an owner of that business gets an
+    answer.
+    """
+    return FileResponse(PROOF_REPORT_HTML, media_type="text/html")
+
+
+@app.get("/verify", include_in_schema=False)
+def verify_entry(request: Request, code: str = ""):
+    """Where somebody types the code printed on a report."""
+    from proofreports import normalise_code, pretty_code
+
+    typed = normalise_code(code)
+    if typed:
+        return RedirectResponse(f"/verify/{pretty_code(typed[:16])}", status_code=303)
+    return _serve_page(VERIFY_HTML, request, markup={"%%RESULT%%": ""})
+
+
+@app.get("/verify/{code}", include_in_schema=False)
+def verify_page(request: Request, code: str):
+    """Is this proof of monitoring report genuine and unchanged?
+
+    Public and rate limited. Shows the business name and the headline
+    numbers, never a reading, a person or a location's name.
+    """
+    from proofreports import render_verify_html, verify
+
+    try:
+        result = verify(code, request)
+    except HTTPException as refused:
+        if refused.status_code != 429:
+            raise
+        message = ('<div class="verdict v-unknown"><p class="verdict-word">Slow down'
+                   f'</p><p>{html.escape(str(refused.detail))}</p></div>')
+        page = _serve_page(VERIFY_HTML, request, markup={"%%RESULT%%": message},
+                           status_code=429)
+        page.headers.update(refused.headers or {})
+        return page
+    codes = {"genuine": 200, "unchecked": 200, "changed": 409,
+             "revoked": 410, "unknown": 404}
+    return _serve_page(VERIFY_HTML, request,
+                       markup={"%%RESULT%%": render_verify_html(result, code)},
+                       status_code=codes[result["state"]])
+
+
+@app.get("/insurance-partners", include_in_schema=False)
+def insurance_partners_page(request: Request):
+    """For insurers and brokers: what we do, and the partner application."""
+    from insurers import DEFAULT_SHARE_MONTHS, DEFAULT_SHARE_PERCENT
+    from pricing import REFERRAL_TRIAL_DAYS
+
+    return _serve_page(INSURERS_HTML, request, {
+        "%%SHARE_PERCENT%%": f"{DEFAULT_SHARE_PERCENT:g}",
+        "%%SHARE_MONTHS%%": str(DEFAULT_SHARE_MONTHS),
+        "%%REFERRAL_DAYS%%": str(REFERRAL_TRIAL_DAYS),
+    })
+
+
+@app.get("/insurance-partners/dashboard", include_in_schema=False)
+def insurance_partner_dashboard():
+    """An approved partner's dashboard. Renders nothing without their key."""
+    return FileResponse(INSURER_DASHBOARD_HTML, media_type="text/html")
 
 
 @app.get("/offline", include_in_schema=False)

@@ -201,6 +201,7 @@ python - <<'PY'
 import secrets
 print("CYBERLOGIX_ADMIN_KEY=" + secrets.token_urlsafe(32))
 print("CYBERLOGIX_MAIL_SECRET=" + secrets.token_urlsafe(32))
+print("CYBERLOGIX_PROOF_REPORT_KEY=" + secrets.token_urlsafe(32))
 PY
 ```
 
@@ -214,6 +215,9 @@ CYBERLOGIX_BACKUP_DIR=/srv/backups
 CYBERLOGIX_TRUST_PROXY_HEADER=1
 CYBERLOGIX_ADMIN_KEY=<generated above>
 CYBERLOGIX_MAIL_SECRET=<generated above>
+# Seals proof of monitoring reports; keep it once set (changing it makes
+# every report made before read "changed" on its check page).
+CYBERLOGIX_PROOF_REPORT_KEY=<generated above>
 # Leave CYBERLOGIX_ALLOWED_ORIGINS unset: every page is served from this
 # same origin. See section 1 before naming one.
 PUBLIC_BASE_URL=https://cyberlogix.mtrxhorizyn.com

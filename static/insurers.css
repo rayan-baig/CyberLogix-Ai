@@ -1,0 +1,45 @@
+/* The insurance partner page and the partner dashboard. Built on
+   signup.css (the header, the form card and its fields). */
+.kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+          text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+.side-head { font-family: var(--display); font-weight: 400; font-size: 19px;
+             color: var(--ink); margin: 30px 0 12px; }
+.plain { color: var(--muted); font-size: 14.5px; line-height: 1.65; max-width: 58ch; }
+.plain.note { margin-top: 26px; padding: 12px 14px; border-radius: 11px;
+              border: 1px solid var(--border-lit); background: var(--surface); }
+.card textarea { font: inherit; font-size: 14px; padding: 11px 12px; border-radius: 10px;
+                 border: 1px solid var(--border-lit); background: var(--sunken);
+                 color: var(--ink); resize: vertical; }
+.card select { font: inherit; }
+.done { color: var(--good); font-size: 14px; line-height: 1.6; }
+
+.dash { padding: 28px 16px 70px; max-width: 760px; }
+.dash h1 { margin-bottom: 18px; }
+.dash .card { margin: 0 0 16px; padding: 20px; }
+.gate { max-width: 440px; }
+.codeline code { font-family: var(--mono); font-size: 20px; color: var(--ink);
+                 letter-spacing: .04em; word-break: break-all; }
+.dash .sub { word-break: break-all; margin: 6px 0 12px; }
+.btn-copy { font: inherit; font-weight: 600; font-size: 13px; cursor: pointer;
+            padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border-lit);
+            color: var(--ink); background: var(--raised); }
+.linkish { font: inherit; font-size: 13px; background: none; border: 0;
+           color: var(--muted); cursor: pointer; padding: 0; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+        padding: 13px 14px; }
+.tile .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+           text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 6px; }
+.tile .v { font-family: var(--display); font-size: 22px; color: var(--ink);
+           font-variant-numeric: tabular-nums; }
+.rowline { display: flex; gap: 10px; align-items: baseline; padding: 10px 0;
+           border-top: 1px solid var(--border); font-size: 14px; color: var(--ink); }
+.rowline:first-child { border-top: 0; }
+.rowline .grow { flex: 1; min-width: 0; }
+.rowline .meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.rowline .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.empty-line { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+/* .shell sets its own padding, which drops the .wrap side gutter. */
+main.wrap.shell { padding-left: 28px; padding-right: 28px; }
+@media (max-width: 720px) { main.wrap.shell { padding-left: 16px; padding-right: 16px; } }

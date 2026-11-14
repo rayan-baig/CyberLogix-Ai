@@ -887,6 +887,27 @@
         </section>
 
 
+        <!-- Proof of monitoring (proofreports.py). Owners only: sharing a
+             report is a decision about the business. -->
+        <section class="card" id="find-proof-reports" data-group="proof" data-find="proof of monitoring report insurer insurance broker show fridges watched 24/7 verify link code share monthly" data-label="Proof of monitoring">
+          <div class="card-head">
+            <span class="card-title">Proof of monitoring</span>
+            <span class="card-note" id="proof-report-note">Owners only</span>
+          </div>
+          <p class="card-plain">Show your insurer proof that your fridges are
+             watched 24/7. A one-page report for a location and a month, with
+             a link anyone can use to check it is genuine. Nobody sees it
+             until you share the link, and you can switch the link off.</p>
+          <form id="proof-report-form" class="row u-mt-12" hidden>
+            <label class="sr" for="proof-report-site">Location</label>
+            <select id="proof-report-site" class="u-maxw-170"></select>
+            <label class="sr" for="proof-report-month">Month</label>
+            <input id="proof-report-month" type="month" required class="u-maxw-170">
+            <button class="btn btn-sm btn-primary" type="submit" id="proof-report-make">Make the report</button>
+          </form>
+          <div id="proof-report-body"></div>
+        </section>
+
         <!-- Claim packets used to live inside the payout-cover card, and
              went out with it. They are a different thing entirely: this
              is evidence for the customer's own insurer, not us paying

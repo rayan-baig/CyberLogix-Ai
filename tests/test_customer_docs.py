@@ -18,7 +18,8 @@ from main import app
 from test_every_route_is_tested import _routes as walk_routes
 
 ROOT = Path(__file__).resolve().parent.parent
-GUIDES = [ROOT / "docs" / "YOUR-DATA.md", ROOT / "docs" / "THE-VAULT.md"]
+GUIDES = [ROOT / "docs" / "YOUR-DATA.md", ROOT / "docs" / "THE-VAULT.md",
+          ROOT / "docs" / "PROOF-OF-MONITORING.md"]
 
 
 def _routes():

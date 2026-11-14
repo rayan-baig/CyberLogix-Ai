@@ -73,6 +73,9 @@ services:
         generateValue: true
       - key: CYBERLOGIX_MAIL_SECRET
         generateValue: true
+      # Seals proof of monitoring reports, so an edited one fails /verify.
+      - key: CYBERLOGIX_PROOF_REPORT_KEY
+        generateValue: true
 
       - key: CYBERLOGIX_SWEEP_SECONDS
         value: "60"

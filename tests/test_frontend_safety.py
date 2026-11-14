@@ -473,6 +473,9 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
         "actionButton(it)", "esc(it.act)", "esc(it.id)", "esc(it.label)",
         # an expense category, offered by the server rather than typed
         "esc(opt)",
+        # an insurance partner in the payout picker: its id and the company
+        # name it applied with (typed by the applicant, so escaped)
+        "esc(opt.id)", "esc(opt.name)",
     }
     found = {m.strip() for m in re.findall(r"\$\{([^}]+)\}", js)}
     assert found <= SAFE, (

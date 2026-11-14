@@ -385,6 +385,10 @@ def apply_event(event: Dict[str, Any]) -> Dict[str, Any]:
         from referrals import after_settlement
 
         after_settlement(tenant, invoice)
+        # And an insurance partner's share (insurers.py). Never raises.
+        import insurers
+
+        insurers.after_settlement(tenant, invoice)
         logger.info(
             "Stripe %s settled %s with $%.2f; %s.",
             event_id, invoice.number, amount,
