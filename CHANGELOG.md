@@ -3,6 +3,50 @@
 What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
+## 3.12.0 — 2026-11-14
+
+New, lower prices; no setup fee; a quote for every trade but two; and
+signed Kitchen Safety Bundle reports, so the bundle can include
+OmniArmor Pro.
+
+- **Starter, $59 a month** (was $79). Still one location and up to 3
+  units, with everything else as before.
+- **Restaurants, $149 a month per location** (was $249), for up to 10
+  units at that location. **Each unit past 10 at the same location is
+  $15 a month**, on its own invoice line ("2 extra units past 10 at a
+  location, $15 each"): about what each of the first ten costs, rather
+  than a second location for one more fridge. The allowance is per
+  location, so 11 units at one shop and 9 at another is one extra unit.
+- **Pharmacies, $199 a month per pharmacy** (was $1,299), billed per
+  pharmacy with the same 10-unit allowance. It used to count every
+  fridge as a "pharmacy", the bug restaurants had before.
+- **No setup fee**, on any plan (was $1,500 a site). Gone from invoices
+  and a contract's first bill, the deal, the pricing page, the help
+  page, the sales sheets and the docs.
+- **Every other trade is "Custom pricing — ask for a quote"** on the
+  pricing page and its calculator, the front page's sector cards, the
+  industry pages, the sales sheets, the help page and the public
+  catalogues, with a **Talk to us** link (a mail to the support address,
+  also printed as text you can copy). Their rates stay in `pricing.py`,
+  so businesses already on them are invoiced exactly as before. The
+  calculator says "Ask for a quote" instead of adding up a trade it has
+  no price for, and asks how many units each location has so it can add
+  the $15 ones.
+- **Businesses already on the old prices pay the new ones from their
+  next invoice.** Invoices already sent are not changed. A restaurant
+  that signed up before the change and has more than 10 units at a shop
+  never pays more than its old $249 for that shop.
+- **The Kitchen Safety Bundle stays +$29 a month per location, and now
+  includes OmniArmor Pro for that location.** OmniArmor waives its Pro
+  fee for a workspace whose daily reports arrive signed by a CyberLogix
+  server: every report now carries `X-CyberLogix-Signature:
+  t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>` over the
+  exact bytes sent, keyed with the new `KITCHEN_BUNDLE_SECRET` setting
+  (the same value on both apps). Unset, no header is sent and reports
+  work as before.
+- The agreements quote no price or setup fee ("Prices are on your
+  order"), so their text and version (2.4) are unchanged.
+
 ## 3.11.0 — 2026-11-13
 
 Three ways to earn: a $79 Starter plan, "bring a friend" referrals, and

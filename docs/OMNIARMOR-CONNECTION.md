@@ -19,9 +19,13 @@ Examples use `omniarmor.example.com` for OmniArmor and
 ## What it costs
 
 **+$29 a month per location**, billed while the connection is on
-(`ADD_ONS["kitchen_safety_bundle"]` in `pricing.py`). Free during the
-trial, so a kitchen can try it first. It is the one extra the Starter plan
-takes. Disconnecting takes it off the next invoice. More in
+(`ADD_ONS["kitchen_safety_bundle"]` in `pricing.py`). It **includes
+OmniArmor Pro for that location**: OmniArmor waives its own $50 a month
+per location Pro fee for a workspace whose daily reports arrive signed by
+a CyberLogix server (see [The signature](#the-signature)), and only a
+server that bills this add-on sends them. Free during the trial, so a
+kitchen can try it first. It is the one extra the Starter plan takes.
+Disconnecting takes it off the next invoice. More in
 [BILLING.md](BILLING.md).
 
 ## Connecting (the owner)
@@ -116,6 +120,33 @@ account (people, the on-call list, staff), an email address or a phone
 number is sent as "Unit 2", or the site as null. Roles and actions come
 from the fixed lists, so names cannot arrive there.
 
+## The signature
+
+Every daily report carries one more header when the server has
+`KITCHEN_BUNDLE_SECRET` set:
+
+```
+X-CyberLogix-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>
+```
+
+- `t` is the time of sending in whole Unix seconds.
+- `v1` is the lowercase hex HMAC-SHA256, keyed with the secret (as UTF-8
+  bytes), of the ASCII bytes of `t`, a full stop, and then the **exact
+  bytes of the request body** as sent: never a re-serialisation of the
+  JSON.
+- Each try is signed afresh, so a retry after a wait carries a current
+  timestamp.
+- The same value is set as `KITCHEN_BUNDLE_SECRET` on both apps. OmniArmor
+  checks the header the same way, and waives its Pro fee for the
+  workspace while signed reports arrive.
+- **Unset, no header is sent.** Reports still go and are still accepted;
+  OmniArmor just does not waive its fee. Nothing else about the connection
+  changes.
+
+The code is `omniarmor.sign()` and `signature_headers()`;
+`tests/test_omniarmor_bundle.py` checks the header with the algorithm
+written out again, and that it is absent when the secret is unset.
+
 ## Reliability
 
 - **Retries.** A `429`, a `5xx` or a network failure is tried again, up to
@@ -152,4 +183,5 @@ from the fixed lists, so names cannot arrive there.
 | Setting | What it does |
 |---|---|
 | `CYBERLOGIX_CREDENTIAL_KEY` | Seals saved connection keys. Required to connect. |
+| `KITCHEN_BUNDLE_SECRET` | Signs each report (`X-CyberLogix-Signature`). The same value as OmniArmor's. Unset, reports go unsigned and OmniArmor does not waive its Pro fee. A secret: never in a file in the repository. |
 | `PUBLIC_BASE_URL` | Where the `log_url` points. Only an https address is sent. |

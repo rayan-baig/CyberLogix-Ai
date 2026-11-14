@@ -18,6 +18,7 @@ version in the README. The step-by-step runbook is
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
 | `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the OmniArmor key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
+| `KITCHEN_BUNDLE_SECRET` | none | Signs each daily Kitchen Safety Bundle report to OmniArmor (`X-CyberLogix-Signature`, HMAC-SHA256 over the timestamp and the exact body). The same value as OmniArmor's; OmniArmor waives its Pro fee for signed reports. Unset, reports go unsigned. A secret: keep it in the secret store |
 | `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_SMS_PER_DAY` | `100` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY` | `30` | Per-tenant daily cap; `0` = unlimited |
@@ -39,7 +40,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
 | `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
 | `CYBERLOGIX_ERRORS_EMAIL` | — | Where a short report of each unexpected server error (500) is mailed. Empty sends nothing. See [Error reports](#error-reports) |
-| `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the contact on their invoice |
+| `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write, and where "Talk to us" sends someone asking for a quote. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the help page |
 | `CYBERLOGIX_NOINDEX` | — | `1` on a copy that is not the live product (staging, a demo): every page asks search engines not to list it, robots.txt closes, the sitemap is empty. See [STAGING.md](STAGING.md) |
 
 `.env.example` carries the same list with the reasoning next to each one, and
