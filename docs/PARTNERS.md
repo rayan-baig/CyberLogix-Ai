@@ -1,5 +1,8 @@
 # Partners (resellers)
 
+(Brokers and insurers who refer businesses are a different programme, and
+see nothing inside a business: [INSURANCE-PARTNERS.md](INSURANCE-PARTNERS.md).)
+
 A partner is a firm that sells and looks after CyberLogix for its own
 customers: a refrigeration servicer, an installer, a facilities company.
 They already visit the sites and get the call when a freezer fails.

@@ -25,7 +25,8 @@ from main import API_DOCS_POLICY, CONTENT_SECURITY_POLICY, app
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
 # A value for each kind of path parameter a page route takes.
-SAMPLE = {"vertical": "restaurant", "token": "not-a-real-token"}
+SAMPLE = {"vertical": "restaurant", "token": "not-a-real-token",
+          "report_id": "PRF-000001", "code": "AAAA-BBBB-CCCC-DDDD"}
 
 
 def _page_routes():

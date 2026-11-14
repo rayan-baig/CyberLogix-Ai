@@ -4,6 +4,63 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.14.0 — 2026-11-14
+
+Proof of monitoring for insurers, and a partner programme for brokers and
+insurers.
+
+- **Proof of monitoring report.** An owner can make a one-page report for
+  any location and month (console, Proof tab, or `POST
+  /api/proof-reports`): the sensors watched and how much of the time each
+  was online, every temperature alert and how fast somebody acknowledged
+  it, the longest gap in the data, and who gets alerted by role only (no
+  names, phone numbers or emails). It opens on its own page to print or
+  save as PDF.
+- **A link anyone can check.** Each report has a verify code (80 random
+  bits) and a link to `/verify/<code>`. That page says whether the report
+  is genuine and unchanged, and shows only the business name and the
+  headline numbers. The report is frozen and hashed when it is made, and
+  the hash is sealed (HMAC-SHA256) with the server's key, so an edited
+  report or a made-up code reads "changed" or "not found". An owner can
+  switch a link off, and it then says so. The page and its API are rate
+  limited (30 checks a caller in ten minutes).
+- **Gaps in data are written down as they happen.** Every silence of 10
+  minutes or more is kept when it ends, so time online and the longest gap
+  no longer depend on how many readings are kept. Time before this version
+  is not counted, and a report says so.
+- **Insurance partners.** Brokers and insurers apply at
+  `/insurance-partners` (rate limited, 3 a caller an hour). The
+  application is mailed to `CYBERLOGIX_OPERATOR_EMAIL`, and the operator
+  approves it on the new Partners tab of `/book`. An approved partner gets
+  a partner code (`PARTNER-XXXX-XXXX`), a sign-up link and a dashboard
+  key. A business that signs up with the code gets the same longer trial
+  as a friend's referral.
+- **Revenue share, recorded as owed.** A partner earns 10% of what each
+  business they referred pays us for its first 12 months from its first
+  payment, on money that arrived, to the cent. A late charge, money over
+  an invoice's total and a business a reseller looks after earn nothing;
+  a refund takes the share back. The operator records payouts by hand;
+  nothing moves money. New settings:
+  `CYBERLOGIX_INSURANCE_PARTNER_SHARE_PERCENT` (10) and
+  `CYBERLOGIX_INSURANCE_PARTNER_SHARE_MONTHS` (12), kept with each partner
+  when approved.
+- **Partners see names and plans only.** Their dashboard
+  (`/insurance-partners/dashboard`) shows the businesses that joined with
+  their code by name and plan, what they earned and what was paid. The
+  partner key opens nothing else; the only window onto a business's
+  fridges is a report link the business chose to share.
+- **A section on the front page** for insurers and brokers, in plain
+  words: show your insurer proof that your fridges are watched 24/7. It
+  says we are a monitoring service, not an insurer, and promises no
+  discount.
+- **Agreements 2.6.** The privacy statement says, in two short paragraphs,
+  that a partner whose code a business used sees its name and plan and
+  nothing inside, and that a report is seen only by whoever the business
+  gives its link to.
+- **New setting `CYBERLOGIX_PROOF_REPORT_KEY`**, the seal's key. Unset, a
+  key is made once and kept in the database. The Render blueprint and the
+  runbook generate one.
+
 ## 3.13.0 — 2026-11-14
 
 Yearly plans at two months free, and chain discounts anyone can see.

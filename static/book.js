@@ -380,6 +380,57 @@ async function loadCash() {
   $("cash-note").textContent = b.note || "";
 }
 
+/* ---- insurance partners (insurers.py) -------------------------------- */
+
+async function loadPartners() {
+  const b = await read("/api/insurance-partners");
+  const s = b.settings || {};
+  tilesInto("ins-totals", [
+    ["Waiting", String(b.applications.length), "application(s) to decide"],
+    ["Partners", String(b.partners.length), "approved"],
+    ["Owed to partners", cents(b.owed_usd), "earned and not yet paid"],
+    ["Default share", pct(s.share_percent), "for " + s.share_months + " months"],
+  ]);
+  $("ins-note").textContent = b.note || "";
+  // Two buttons each (approve, decline), so not through itemsInto; the
+  // same primitives, so every value is escaped where it is written.
+  const waiting = b.applications.map((a) => ({
+    id: a.partner_id,
+    title: a.company_name + " · " + a.kind_words,
+    detail: [a.contact_name, a.contact_email, a.contact_phone, a.website]
+      .filter(Boolean).join(" · ") + (a.message ? " — " + a.message : ""),
+    meta: "applied " + when(a.applied_at) + " · " + a.partner_id,
+  }));
+  $("ins-applications").innerHTML = waiting.length ? waiting.map((it) => `
+    <article class="item warn">
+      <span class="bar" aria-hidden="true"></span>
+      <div>
+        ${div("title", it.title)}
+        ${div("detail", it.detail)}
+        ${div("meta", it.meta)}
+      </div>
+      <div class="right">
+        <button type="button" class="act" data-act="ins-approve"
+                data-id="${esc(it.id)}">Approve</button>
+        <button type="button" class="act" data-act="ins-decline"
+                data-id="${esc(it.id)}">Decline</button>
+      </div>
+    </article>`).join("") : `<p class="empty">No applications are waiting.</p>`;
+  itemsInto("ins-partners", b.partners.map((p) => ({
+    tone: p.active ? "good" : "bad",
+    title: p.company_name + " · " + p.kind_words + (p.active ? "" : " · switched off"),
+    detail: p.code + " · " + p.businesses + " business(es) · earned "
+      + cents(p.earned_usd) + ", paid " + cents(p.paid_usd),
+    meta: p.contact_name + " · " + p.contact_email + " · "
+      + pct(p.share_percent) + " for " + p.share_months + " months",
+    amount: cents(p.owed_usd) + " owed",
+    act: p.active ? "ins-off" : "ins-on", id: p.partner_id,
+    label: p.active ? "Switch off" : "Switch on",
+  })), "No partners yet.");
+  $("p-partner").innerHTML = b.partners.map((p) => ({ id: p.partner_id, name: p.company_name }))
+    .map((opt) => `<option value="${esc(opt.id)}">${esc(opt.name)}</option>`).join("");
+}
+
 /* ---- is the machine running ------------------------------------------ */
 
 async function loadHealth() {
@@ -550,7 +601,7 @@ async function loadHealth() {
 
 const PANELS = {
   work: loadWork, money: loadMoney, books: loadBooks,
-  cash: loadCash, health: loadHealth,
+  cash: loadCash, partners: loadPartners, health: loadHealth,
 };
 let current = "work";
 
@@ -606,6 +657,26 @@ async function act(button) {
       await api("/api/payments/unmatched/" + encodeURIComponent(id),
                 { method: "DELETE" });
       await loadCash();
+      return;
+    }
+    if (what === "ins-approve" || what === "ins-decline"
+        || what === "ins-on" || what === "ins-off") {
+      const path = "/api/insurance-partners/" + encodeURIComponent(id) + (
+        what === "ins-approve" ? "/approve"
+          : what === "ins-decline" ? "/decline" : "/status");
+      const body = what === "ins-on" ? { active: true }
+        : what === "ins-off" ? { active: false } : {};
+      if (what === "ins-decline" && !window.confirm("Decline this application?")) return;
+      const resp = await api(path, { method: "POST", body: body });
+      const answer = await resp.json().catch(() => ({}));
+      say("ins-said", resp.ok
+          ? (what === "ins-approve" ? "Approved: code " + answer.code + ". " + answer.warning
+             : "Done.")
+          : (typeof answer.detail === "string" ? answer.detail : "That was not accepted."),
+          !resp.ok);
+      $("ins-key").hidden = !(resp.ok && answer.key);
+      $("ins-key-value").textContent = answer.key || "";
+      await loadPartners();
       return;
     }
     if (what === "unsuppress") {
@@ -783,6 +854,29 @@ $("refund-form").addEventListener("submit", async (event) => {
       : "Done.");
   } else {
     say("refund-said", typeof body.detail === "string"
+        ? body.detail : "That was not accepted.", true);
+  }
+});
+
+$("payout-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  say("payout-said", "");
+  const payload = {
+    amount_usd: Number($("p-amount").value),
+    reference: $("p-reference").value.trim(),
+    note: $("p-note").value.trim(),
+  };
+  if ($("p-date").value) payload.paid_on = $("p-date").value;
+  const id = $("p-partner").value;
+  const resp = await api("/api/insurance-partners/" + encodeURIComponent(id) + "/payouts",
+    { method: "POST", body: payload });
+  const body = await resp.json().catch(() => ({}));
+  if (resp.status === 201) {
+    $("payout-form").reset();
+    say("payout-said", "Recorded. " + cents(body.owed_usd) + " is still owed to them.");
+    await loadPartners();
+  } else {
+    say("payout-said", typeof body.detail === "string"
         ? body.detail : "That was not accepted.", true);
   }
 });

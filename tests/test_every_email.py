@@ -200,6 +200,19 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     conversion._grace(trial, ev, 4)
     conversion._dark(trial, ev)
 
+    # Two insurance partner applications: one approved, one declined.
+    admin = {"X-CyberLogix-Admin": "test-admin-key"}
+    for firm, address in (("Northgate Brokers", "alex@northgate.example"),
+                          ("Harbor Mutual", "kim@harbormutual.example")):
+        assert api.post("/api/insurance-partners/apply", json={
+            "kind": "broker", "company_name": firm, "contact_name": "Alex Moreno",
+            "contact_email": address}).status_code == 202   # insurance-application
+    first, second = sorted(r["partner_id"] for r in STORE._db.all("insurance_partner"))
+    assert api.post(f"/api/insurance-partners/{first}/approve", headers=admin,
+                    json={}).status_code == 200              # insurance-key
+    assert api.post(f"/api/insurance-partners/{second}/decline",
+                    headers=admin).status_code == 200        # insurance-declined
+
     try:                                                             # error-report
         raise RuntimeError("a bug")
     except RuntimeError as exc:
@@ -218,6 +231,9 @@ KINDS = {
     "renewal:": "must",
     "reset:": "must",
     "error-report:": "must",
+    "insurance-key:": "must",
+    "insurance-declined:": "must",
+    "insurance-application:": "manage",
     "licence-alert:": "manage",
     "digest:operator:": "manage",
     "omniarmor-failing:": "manage",

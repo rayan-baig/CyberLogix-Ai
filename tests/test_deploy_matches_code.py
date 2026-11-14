@@ -120,7 +120,8 @@ def test_no_document_says_the_sweep_setting_makes_a_second_process_safe():
 
 def test_the_runbook_quotes_the_secrets_it_generates():
     generated = set(re.findall(r'print\("([A-Z_]+)=', RUNBOOK))
-    assert generated == {"CYBERLOGIX_ADMIN_KEY", "CYBERLOGIX_MAIL_SECRET"}
+    assert generated == {"CYBERLOGIX_ADMIN_KEY", "CYBERLOGIX_MAIL_SECRET",
+                         "CYBERLOGIX_PROOF_REPORT_KEY"}
     for name in generated:
         assert f"{name}=<generated above>" in RUNBOOK
         assert f"key: {name}\n        generateValue: true" in BLUEPRINT

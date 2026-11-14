@@ -46,6 +46,8 @@
               aria-selected="false">Books</button>
       <button type="button" role="tab" data-panel="cash"
               aria-selected="false">Unmatched cash</button>
+      <button type="button" role="tab" data-panel="partners"
+              aria-selected="false">Partners</button>
       <button type="button" role="tab" data-panel="health"
               aria-selected="false">Health</button>
     </nav>
@@ -132,8 +134,9 @@
 
       <h3 class="sub">A referred business was refunded</h3>
       <p class="note">After giving a business its money back, take back what
-        is left of the month free its referrer earned for it. What already
-        came off an invoice stays off.</p>
+        is left of the month free its referrer earned for it, or the share
+        an insurance partner earned on it. What already came off an invoice,
+        or was already paid to a partner, stays.</p>
       <form class="entry" id="refund-form">
         <label class="wide">Account ID of the business that was refunded
           <input id="refund-tenant" type="text" maxlength="40" required
@@ -142,6 +145,48 @@
         <button type="submit">Withdraw the referral reward</button>
       </form>
       <p class="said" id="refund-said"></p>
+    </section>
+
+    <section class="panel" id="panel-partners" role="tabpanel" hidden>
+      <h2>Insurance partners</h2>
+      <div class="totals" id="ins-totals"></div>
+      <p class="note" id="ins-note"></p>
+
+      <h3 class="sub">Applications waiting</h3>
+      <div id="ins-applications"></div>
+
+      <h3 class="sub">Approved partners</h3>
+      <div id="ins-partners"></div>
+      <p class="said" id="ins-said"></p>
+      <div class="issued" id="ins-key" hidden>
+        <p class="note">Shown once. It has been mailed to the partner when mail
+          is set up; otherwise give it to them yourself.</p>
+        <code id="ins-key-value"></code>
+      </div>
+
+      <h3 class="sub">Record a payment made to a partner</h3>
+      <p class="note">Pay the partner yourself first, by bank transfer or
+        however you agreed. This only writes it down.</p>
+      <form class="entry" id="payout-form">
+        <label>Partner
+          <select id="p-partner" required></select>
+        </label>
+        <label>Amount (USD)
+          <input id="p-amount" type="number" step="0.01" min="0.01" required>
+        </label>
+        <label>Paid on
+          <input id="p-date" type="date">
+        </label>
+        <label>Reference
+          <input id="p-reference" type="text" maxlength="120" required
+                 placeholder="The transfer's reference">
+        </label>
+        <label class="wide">Note
+          <input id="p-note" type="text" maxlength="300">
+        </label>
+        <button type="submit">Record the payment</button>
+      </form>
+      <p class="said" id="payout-said"></p>
     </section>
 
     <section class="panel" id="panel-health" role="tabpanel" hidden>

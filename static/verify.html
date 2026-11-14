@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Check a proof of monitoring report — CyberLogix AI</title>
+<meta name="description" content="Check that a CyberLogix proof of monitoring report is genuine and unchanged.">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/verify.css">
+<link rel="stylesheet" href="/static/utilities.css">
+</head>
+<body>
+<header class="top">
+  <a href="/" aria-label="CyberLogix AI">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">CyberLogix AI</span>
+  </a>
+</header>
+
+<main class="wrap">
+  <h1>Check a proof of monitoring report</h1>
+  <p class="lede">
+    A business can print a monthly report that shows its fridges and
+    freezers were watched. Each report has a code at the bottom. This page
+    says whether the report is genuine and unchanged.
+  </p>
+
+  %%RESULT%%
+
+  <form class="enter" method="get" action="/verify">
+    <label for="code">Code printed on the report</label>
+    <div class="row">
+      <input id="code" name="code" maxlength="40" autocomplete="off"
+             spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" required>
+      <button type="submit">Check</button>
+    </div>
+  </form>
+
+  <p class="small">
+    This page shows only the business name and the report's headline
+    numbers. It never shows temperatures, people or phone numbers. The
+    business chose to share this report, and it can switch the link off at
+    any time. CyberLogix is a monitoring service, not an insurer.
+  </p>
+</main>
+</body>
+</html>

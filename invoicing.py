@@ -556,6 +556,11 @@ def mark_paid(
     from referrals import after_settlement
 
     after_settlement(tenant, invoice)
+    # An insurance partner's share, when this business joined with a
+    # partner code (insurers.py). Never raises either.
+    import insurers
+
+    insurers.after_settlement(tenant, invoice)
     write_audit(
         tenant, None,
         "invoice.paid" if settled else "invoice.part_paid",

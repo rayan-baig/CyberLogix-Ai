@@ -27,7 +27,7 @@ async function boot() {
     $("sub").textContent =
       `${days} days, up to ${info.max_sensors} sensors, no card.`;
     $("ref-hint").textContent =
-      `A friend's code makes the trial ${info.referral_trial_days} days.`;
+      `A friend's or a partner's code makes the trial ${info.referral_trial_days} days.`;
     if (info.starter) {
       $("after-trial").textContent =
         `After the trial, a small café or shop can stay on Starter: `

@@ -115,6 +115,12 @@ matters most — what is quietly broken. Mail that cannot be sent looks
 exactly like mail nobody needed, so an unconfigured transport goes in the
 subject line rather than a log nobody opens.
 
+The same address gets each application from a broker or insurer who wants
+to be an insurance partner, with a pointer to the Partners tab of `/book`
+([INSURANCE-PARTNERS.md](INSURANCE-PARTNERS.md)). An approved partner is
+mailed their dashboard key once, as a sensitive message whose text is
+blanked once it is sent, the way a password reset is.
+
 The other direction is a weekly report to each paying estate. A
 monitoring product that works is invisible by construction, and at
 renewal the customer cannot remember what they are paying for. Four

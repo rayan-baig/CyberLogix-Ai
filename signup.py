@@ -168,8 +168,8 @@ class SignupRequest(BaseModel):
     )
     referral_code: Optional[str] = Field(
         None, max_length=40,
-        description=("A code from a business that already uses CyberLogix. "
-                     "It makes the trial longer."),
+        description=("A code from a business that already uses CyberLogix, "
+                     "or from an insurance partner. It makes the trial longer."),
     )
 
 
@@ -242,11 +242,18 @@ def start_trial(payload: SignupRequest, request: Request):
     # Checked before anything is made: a code that is wrong or is the
     # caller's own is said so, and nothing is left behind.
     referrer = None
+    partner = None
     code = (payload.referral_code or "").strip()
     if code:
+        import insurers
         import referrals
 
-        referrer = referrals.check_at_signup(code, email, payload.contact_phone)
+        # One box takes either: a friend's code (FRIEND-...) or an insurance
+        # partner's (PARTNER-...). Both give the same longer trial.
+        if insurers.is_partner_code(code):
+            partner = insurers.check_at_signup(code, email)
+        else:
+            referrer = referrals.check_at_signup(code, email, payload.contact_phone)
 
     tenant = STORE.create_tenant(
         company_name=payload.company_name.strip(),
@@ -286,6 +293,10 @@ def start_trial(payload: SignupRequest, request: Request):
         import referrals
 
         referrals.record_signup(tenant, referrer, code)
+    if partner is not None:
+        import insurers
+
+        insurers.record_signup(tenant, partner)
 
     import usage
 
@@ -320,7 +331,7 @@ def start_trial(payload: SignupRequest, request: Request):
             f"{tenant.company_name} is live on a "
             f"{days or tier['term_days']}-day trial. You are signed in."
         ),
-        "referred": referrer is not None,
+        "referred": referrer is not None or partner is not None,
         "token": session.secret,
         "expires_at": iso(session.expires_at),
         "user": user.public(),

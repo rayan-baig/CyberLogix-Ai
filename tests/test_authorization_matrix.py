@@ -76,6 +76,12 @@ UNGATED_BY_DESIGN = {
         "it acts only for a number the alert went to"
     ),
     "/api/vault/verify": "a public verifier — being checkable by outsiders is the point",
+    "/api/insurance-partners/apply": (
+        "the public application form for brokers and insurers: there is no "
+        "account yet. It only files an application for the operator to "
+        "decide, says the same thing whether or not the address applied "
+        "before, and is rate limited per caller and in total"
+    ),
     "/api/claims/{incident_id}/packet": "assembles a document, changes no state",
     "/api/shortcuts/{vertical}": "produces a document, changes no state",
 }

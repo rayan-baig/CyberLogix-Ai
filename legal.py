@@ -81,7 +81,11 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # for what is added part-way through, reminders before it renews) and what
 # cancelling does: nothing more is billed, the service runs to the end of
 # what was paid for, and what was paid is not refunded.
-TERMS_VERSION = "2.5"
+# 2.6 says who sees what when a business signs up with an insurance
+# partner's code (the partner sees its name and plan, nothing inside), and
+# that a proof of monitoring report is seen only by whoever the business
+# gives its link to.
+TERMS_VERSION = "2.6"
 EFFECTIVE_DATE = "2026-11-14"
 
 # The cap on what we can owe. Without one, a single claim about a lost
@@ -336,6 +340,15 @@ We do not sell any of it, and we do not use it to train anything.
 
 Nobody else gets your readings in bulk, your customer list, or your
 passwords.
+
+**Insurance partners.** If you signed up with a code from an insurer or
+a broker, that partner sees your business name and your plan, so we can
+pay them their share. Nothing from inside your account: no readings,
+alerts or people.
+
+**Proof of monitoring reports.** A report is seen only by people you give
+its link to. The page behind the link shows your business name and the
+report's headline numbers, and you can switch the link off at any time.
 
 ## Anonymous sector averages
 

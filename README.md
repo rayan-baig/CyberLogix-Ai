@@ -29,6 +29,9 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   an attestation proves and what it does not, and how anyone can check one.
 * [A sensor is offline](docs/SENSOR-OFFLINE.md): what offline means, what
   we do about it, and what to check, in order.
+* [Proof of monitoring](docs/PROOF-OF-MONITORING.md): show your insurer
+  proof that your fridges are watched 24/7. What the monthly report says,
+  who can see it, how anyone checks it, and switching a link off.
 * [Setting up sensors](docs/SENSOR-SETUP.md): step by step for each way a
   sensor can report — your own device, Monnit, SensorPush, Elitech,
   Dickson, a vendor's cloud, or anything that sends JSON. Also at
@@ -54,9 +57,10 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, the sales sheet print check, mutation testing |
 | [docs/PARTNERS.md](docs/PARTNERS.md) | Resellers: what a partner sees, how commission works, setting one up step by step, each month, and what is not there yet |
+| [docs/INSURANCE-PARTNERS.md](docs/INSURANCE-PARTNERS.md) | Brokers and insurers: applying, approving in the operator console, partner codes, the revenue share and how it is worked out, payouts by hand, and what a partner can never see |
 | [docs/STAGING.md](docs/STAGING.md) | A second copy on Render for trying changes first: its own disk, test Twilio and Stripe, and moving a change to live |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
-| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md), [docs/SENSOR-SETUP.md](docs/SENSOR-SETUP.md) | The customer guides above |
+| [docs/YOUR-DATA.md](docs/YOUR-DATA.md), [docs/THE-VAULT.md](docs/THE-VAULT.md), [docs/PROOF-OF-MONITORING.md](docs/PROOF-OF-MONITORING.md), [docs/SENSOR-OFFLINE.md](docs/SENSOR-OFFLINE.md), [docs/SENSOR-SETUP.md](docs/SENSOR-SETUP.md) | The customer guides above |
 
 ## Modules
 

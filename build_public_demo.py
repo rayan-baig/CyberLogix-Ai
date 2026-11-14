@@ -63,6 +63,7 @@ PATHS = [
     "/api/help/sensor-offline",
     "/api/referrals/me",
     "/api/connections/omniarmor",
+    "/api/proof-reports",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
