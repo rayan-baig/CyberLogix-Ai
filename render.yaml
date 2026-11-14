@@ -85,8 +85,10 @@ services:
         value: "1"
 
       # Paste the service's own https address here after the first
-      # deploy -- https://cyberlogix.<MTRX Horizyn's domain> once the
-      # custom domain is added (DEPLOY.md section 1) -- then redeploy. Until it is set a voice call still goes
+      # deploy -- https://cyberlogix.mtrxhorizyn.com once the custom
+      # domain is added (DEPLOY.md section 1) -- then redeploy. Set in the
+      # dashboard, not here, so a copy of this Blueprint never points
+      # live customers' links at itself. Until it is set a voice call still goes
       # out and pressing 1 reaches nothing, so the alert escalates to the
       # next person as though it had been ignored.
       - key: PUBLIC_BASE_URL
@@ -137,7 +139,7 @@ services:
       - key: SMTP_PASSWORD
         sync: false
       - key: MAIL_FROM
-        sync: false
+        sync: false          # live: no-reply@cyberlogix.mtrxhorizyn.com
       - key: CYBERLOGIX_OPERATOR_EMAIL
         sync: false
       # Optional: where a short report of each server error (a 500) goes,
@@ -145,8 +147,9 @@ services:
       # here, so a blueprint sync never clears one set in the dashboard.
       - key: CYBERLOGIX_ERRORS_EMAIL
         sync: false
-      # Where the help page tells customers to write for help. Unset, it
-      # uses MAIL_REPLY_TO, and with neither it points them at their invoice.
+      # Where the help page tells customers to write for help (live:
+      # help@cyberlogix.mtrxhorizyn.com). Unset, it uses MAIL_REPLY_TO, and
+      # with neither it points them at their invoice.
       - key: CYBERLOGIX_SUPPORT_EMAIL
         sync: false
       # Signs each daily Kitchen Safety Bundle report to OmniArmor

@@ -291,11 +291,10 @@ def test_the_docs_file_is_what_the_module_renders():
         "python sensor_guides.py > docs/SENSOR-SETUP.md")
 
 
-def test_the_docs_use_a_reserved_domain_only():
+def test_the_docs_name_only_cyberlogixs_own_address():
     text = (ROOT / "docs" / "SENSOR-SETUP.md").read_text()
     hosts = set(re.findall(r"https?://([a-z0-9.-]+)", text))
-    assert hosts and all(h.endswith(".example") or h.endswith("example.com")
-                         for h in hosts), hosts
+    assert hosts == {"cyberlogix.mtrxhorizyn.com"}, hosts
 
 
 def test_examples_are_valid_json():

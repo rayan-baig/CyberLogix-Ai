@@ -4,6 +4,18 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.12.2 — 2026-11-14
+
+- **The real address, cyberlogix.mtrxhorizyn.com.** DEPLOY.md, the
+  README, the staging, operations, alerts, partners, OmniArmor and sensor
+  guides, `.env.example` and the comments in `render.yaml` now name it
+  instead of a placeholder, with `help@cyberlogix.mtrxhorizyn.com` for
+  customers and `no-reply@cyberlogix.mtrxhorizyn.com` for sending. The app
+  still reads every address from its setting (`PUBLIC_BASE_URL`,
+  `MAIL_FROM`, `CYBERLOGIX_SUPPORT_EMAIL`), and the in-app sensor guide
+  still uses the address it is served from. `CYBERLOGIX_ALLOWED_ORIGINS`
+  stays empty: MTRX Horizyn's console asks from its server, not a browser.
+
 ## 3.12.1 — 2026-11-14
 
 - **The rate card is only for signed-in businesses.** The two price

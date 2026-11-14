@@ -1,8 +1,8 @@
 # A staging copy
 
 A second, separate copy of CyberLogix on Render, at
-`staging.cyberlogix.example.com` (where `example.com` stands for MTRX
-Horizyn's domain). You try a change there first, with fake data and test
+`staging.cyberlogix.mtrxhorizyn.com` (MTRX Horizyn's domain is
+`mtrxhorizyn.com`). You try a change there first, with fake data and test
 credentials, and only then put it on the live copy.
 
 The rule for everything below: **staging shares nothing with live.** Not
@@ -43,7 +43,7 @@ email addresses.
    `staging.cyberlogix` pointing at the staging service's
    `onrender.com` address.
 2. Render: the staging service → Settings → Custom Domains → add
-   `staging.cyberlogix.example.com`, and wait for the certificate.
+   `staging.cyberlogix.mtrxhorizyn.com`, and wait for the certificate.
 
 ## 3. The settings
 
@@ -54,7 +54,7 @@ never paste in the live ones.
 |---|---|---|
 | `CYBERLOGIX_DB_PATH` | `/app/data/cyberlogix.db` | On staging's own disk |
 | `CYBERLOGIX_BACKUP_DIR` | `/app/data/backups` | The same |
-| `PUBLIC_BASE_URL` | `https://staging.cyberlogix.example.com` | Links, "press 1" and replies come back here, not to live |
+| `PUBLIC_BASE_URL` | `https://staging.cyberlogix.mtrxhorizyn.com` | Links, "press 1" and replies come back here, not to live |
 | `CYBERLOGIX_NOINDEX` | `1` | Search engines leave it out, so nobody signs up on staging by mistake |
 | `CYBERLOGIX_ADMIN_KEY` | a new one | Generated, as in DEPLOY.md section 3 |
 | `CYBERLOGIX_MAIL_SECRET` | a new one | The same |
@@ -88,7 +88,7 @@ reply from a real person to a real alert must reach live.
 
 To test "reply 1" for real, buy a second, cheap Twilio number for staging
 only, point its "A message comes in" webhook at
-`https://staging.cyberlogix.example.com/api/voice/sms-reply`, and put
+`https://staging.cyberlogix.mtrxhorizyn.com/api/voice/sms-reply`, and put
 only your own phone on staging's on-call lists.
 
 ### Mail: never to real people
@@ -98,14 +98,14 @@ dropped after 72 hours; the queue is at `/book → Health`. To read the
 mail as it would arrive, use a test inbox service that accepts SMTP and
 delivers nothing, and give staging its SMTP settings. Never the live mail
 account. Set `MAIL_FROM` to a staging address, such as
-`no-reply@staging.cyberlogix.example.com`.
+`no-reply@staging.cyberlogix.mtrxhorizyn.com`.
 
 ### Payments: Stripe in test mode
 
 Switch the Stripe dashboard to **test mode** and, there:
 
 1. Developers → Webhooks → add endpoint
-   `https://staging.cyberlogix.example.com/api/payments/stripe`,
+   `https://staging.cyberlogix.mtrxhorizyn.com/api/payments/stripe`,
    subscribed to `checkout.session.completed`. Put its signing secret
    (the test one) in staging's `STRIPE_WEBHOOK_SECRET`.
 2. Make a test-mode payment link that passes the invoice number as
@@ -123,7 +123,7 @@ to the empty one:
 
 ```
 python demo_account.py --db /app/data/demo.db \
-  --url https://staging.cyberlogix.example.com
+  --url https://staging.cyberlogix.mtrxhorizyn.com
 ```
 
 Then set `CYBERLOGIX_DB_PATH=/app/data/demo.db` and redeploy. It prints
@@ -136,7 +136,7 @@ empty while it is in use.
 
 1. Push the change to the `staging` branch. Staging deploys it.
 2. Check it there:
-   - `curl -s https://staging.cyberlogix.example.com/api/health` shows the
+   - `curl -s https://staging.cyberlogix.mtrxhorizyn.com/api/health` shows the
      new version from `VERSION`;
    - `/book → Health` shows nothing new that is broken;
    - walk the change by hand, and for anything that alerts, take a test
@@ -147,7 +147,7 @@ empty while it is in use.
    commit that ships.
 4. Deploy live (it is on manual deploy in `render.yaml`: the service →
    Manual Deploy → Deploy latest commit), then check
-   `https://cyberlogix.example.com/api/health` shows the same version.
+   `https://cyberlogix.mtrxhorizyn.com/api/health` shows the same version.
 
 Settings do not travel with a commit. If the change needs a new setting,
 add it to live by hand before step 4, with live's own value.

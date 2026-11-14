@@ -25,7 +25,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_RATE_AI_CALL` | `0.0012` | USD per model call, for the estimate |
 | `CYBERLOGIX_RATE_SMS` | `0.0079` | USD per SMS, for the estimate |
 | `CYBERLOGIX_RATE_VOICE_CALL` | `0.0140` | USD per voice call, for the estimate |
-| `PUBLIC_BASE_URL` | — | Public URL, `https://cyberlogix.<domain>`: "press 1 to acknowledge" reaches the callback, and link previews and the sitemap use whole addresses. Unset, pages use the address the request arrived on |
+| `PUBLIC_BASE_URL` | — | Public URL (live: `https://cyberlogix.mtrxhorizyn.com`): "press 1 to acknowledge" reaches the callback, and link previews and the sitemap use whole addresses. Unset, pages use the address the request arrived on |
 | `CYBERLOGIX_SWEEP_SECONDS` | `60` | Unattended sweep interval; `0` disables the in-process loop |
 | `CYBERLOGIX_GROUP_ALERT_MIN_UNITS` | `3` | Units at one site warming together that raise the site-wide alert; `0` turns it off. The other `CYBERLOGIX_GROUP_ALERT_*` settings are in [ALERTS.md](ALERTS.md#the-site-wide-alert) |
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
@@ -113,7 +113,7 @@ is not one. This is the command, for a cron job anywhere else:
 
 ```bash
 KEY=...   # CYBERLOGIX_ADMIN_KEY
-HOST=https://cyberlogix.example.com
+HOST=https://cyberlogix.mtrxhorizyn.com
 NAME=$(curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"])')
 curl -fsS -H "X-CyberLogix-Admin: $KEY" -o "$NAME" "$HOST/api/admin/backups/$NAME/download"
 ```

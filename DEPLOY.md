@@ -74,10 +74,10 @@ in spam for a fortnight.
 **CyberLogix has no domain of its own.** It is a product of MTRX Horizyn,
 and MTRX Horizyn owns the one domain: its own site on the apex (and
 `www`), each product on a subdomain. CyberLogix lives at
-`cyberlogix.<your domain>`, beside `rankup.<your domain>` and
-`omniarmor.<your domain>`. Below, `example.com` stands for that domain.
+`cyberlogix.mtrxhorizyn.com`, beside `rankup.mtrxhorizyn.com` and
+`omniarmor.mtrxhorizyn.com`; MTRX Horizyn's own site is `mtrxhorizyn.com`.
 
-A subdomain, not a path (`example.com/cyberlogix`), on purpose: each
+A subdomain, not a path (`mtrxhorizyn.com/cyberlogix`), on purpose: each
 subdomain is its own origin, so a sign-in, the browser's storage and the
 installed app's service worker belong to CyberLogix alone and never
 reach a sibling. Keep it that way — the app sets no cookie for the
@@ -90,21 +90,24 @@ lets no other site (siblings included) call its API from a browser.
    `A` record to the server's IP if you run the container yourself.
 2. **The host's custom-domain step.** Tell the host the name it will
    answer to. Render: the service → Settings → Custom Domains → add
-   `cyberlogix.example.com`, then wait for it to verify. Your own server:
-   name `cyberlogix.example.com` in the proxy (Caddy, nginx) in front of
+   `cyberlogix.mtrxhorizyn.com`, then wait for it to verify. Your own server:
+   name `cyberlogix.mtrxhorizyn.com` in the proxy (Caddy, nginx) in front of
    the container.
 3. **HTTPS.** Render issues the certificate itself once DNS resolves;
-   Caddy does the same. Do not go on until `https://cyberlogix.example.com`
+   Caddy does the same. Do not go on until `https://cyberlogix.mtrxhorizyn.com`
    loads with a padlock — sensors, Twilio's callback and the installed app
    all need it.
 4. **Point the app at its own address.** `PUBLIC_BASE_URL` is
-   `https://cyberlogix.example.com` (no trailing slash), then redeploy.
+   `https://cyberlogix.mtrxhorizyn.com` (no trailing slash), then redeploy.
    Leave `CYBERLOGIX_ALLOWED_ORIGINS` unset unless a page on another
    origin genuinely has to call this API; then name that exact origin.
+   Neither CyberLogix's own console (served from this same address) nor
+   MTRX Horizyn's console (which asks `/api/health` and `/api/stats` from
+   its server, not from a browser) needs it.
    Never `*`, and never the parent domain or a sibling as a convenience.
 5. **MTRX Horizyn.** In MTRX Horizyn's settings, CyberLogix's address is
-   `https://cyberlogix.example.com` and its stats address is
-   `https://cyberlogix.example.com/api/stats` (MTRX Horizyn's README names
+   `https://cyberlogix.mtrxhorizyn.com` and its stats address is
+   `https://cyberlogix.mtrxhorizyn.com/api/stats` (MTRX Horizyn's README names
    the two settings; `STATS_KEY` here matches its `MTRX_STATS_KEY`).
 
 ### Mail, from the one domain
@@ -121,8 +124,9 @@ once per app. Your mail provider gives you the exact values:
 
 CyberLogix then sends from an address of its own on that domain, so a
 customer (and a spam filter) can tell the products apart:
-`MAIL_FROM=no-reply@cyberlogix.example.com`, or an address such as
-`cyberlogix@example.com`. A sending subdomain like `cyberlogix.example.com`
+`MAIL_FROM=no-reply@cyberlogix.mtrxhorizyn.com`. Customers write for help
+to `help@cyberlogix.mtrxhorizyn.com` (`CYBERLOGIX_SUPPORT_EMAIL`). A sending
+subdomain like `cyberlogix.mtrxhorizyn.com`
 needs to be verified with the mail provider too (it adds its DKIM record
 there), and is covered by the parent's DMARC policy. Keep
 `MAIL_FROM_NAME=CyberLogix AI`; every message already says in its footer
@@ -212,7 +216,7 @@ CYBERLOGIX_ADMIN_KEY=<generated above>
 CYBERLOGIX_MAIL_SECRET=<generated above>
 # Leave CYBERLOGIX_ALLOWED_ORIGINS unset: every page is served from this
 # same origin. See section 1 before naming one.
-PUBLIC_BASE_URL=https://cyberlogix.example.com
+PUBLIC_BASE_URL=https://cyberlogix.mtrxhorizyn.com
 
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -224,10 +228,10 @@ SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
-MAIL_FROM=no-reply@cyberlogix.example.com
+MAIL_FROM=no-reply@cyberlogix.mtrxhorizyn.com
 # Where /help tells customers to write. Unset, it uses MAIL_REPLY_TO;
 # with neither, it tells them to use the contact on their invoice.
-CYBERLOGIX_SUPPORT_EMAIL=support@cyberlogix.example.com
+CYBERLOGIX_SUPPORT_EMAIL=help@cyberlogix.mtrxhorizyn.com
 # You: the daily digest of what was billed, what arrived and what broke.
 CYBERLOGIX_OPERATOR_EMAIL=
 ```
@@ -258,7 +262,7 @@ Then tell Twilio where a **reply** to an alert text goes. In the Twilio
 console: Phone Numbers → your number → Messaging → "A message comes in"
 → Webhook, method `POST`:
 
-    https://cyberlogix.example.com/api/voice/sms-reply
+    https://cyberlogix.mtrxhorizyn.com/api/voice/sms-reply
 
 That is what makes "Reply 1" work. Without it a reply of 1 goes nowhere
 and the calls carry on as if nobody had answered. It needs two settings
@@ -353,14 +357,14 @@ on purpose, so the first time is not during an incident:
 
 ```
 curl -s -H "X-CyberLogix-Admin: $KEY" \
-  https://cyberlogix.example.com/api/admin/backups
+  https://cyberlogix.mtrxhorizyn.com/api/admin/backups
 ```
 
 Pick a snapshot and verify it:
 
 ```
 curl -s -H "X-CyberLogix-Admin: $KEY" \
-  https://cyberlogix.example.com/api/admin/backups/cyberlogix-....sqlite3/verify
+  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/verify
 ```
 
 Then restore it from `/book → Health`, or:
@@ -369,7 +373,7 @@ Then restore it from `/book → Health`, or:
 curl -s -X POST -H "X-CyberLogix-Admin: $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"snapshot":"cyberlogix-....sqlite3","confirm":true}' \
-  https://cyberlogix.example.com/api/admin/backups/restore
+  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/restore
 ```
 
 It verifies the snapshot, snapshots the database it is about to replace,
@@ -392,7 +396,7 @@ each one:
 
 ```
 curl -fsS -H "X-CyberLogix-Admin: $KEY" -o cyberlogix-....sqlite3 \
-  https://cyberlogix.example.com/api/admin/backups/cyberlogix-....sqlite3/download
+  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/download
 ```
 
 ---
@@ -432,7 +436,7 @@ what changed in it, in plain words. The image will not build without
 both. After a deploy, check the live copy is the one you meant:
 
 ```
-curl -s https://cyberlogix.example.com/api/health
+curl -s https://cyberlogix.mtrxhorizyn.com/api/health
 ```
 
 `version` in the answer is the `VERSION` file the image was built from.
@@ -480,7 +484,7 @@ copy on Render is [docs/STAGING.md](docs/STAGING.md).
   webhook that trusts its body is a button for marking every invoice in
   the system paid.
   In Stripe: Developers → Webhooks → add endpoint
-  `https://cyberlogix.example.com/api/payments/stripe`, subscribe it to
+  `https://cyberlogix.mtrxhorizyn.com/api/payments/stripe`, subscribe it to
   **`checkout.session.completed`** (what a payment link produces), and copy
   its signing secret here. Make the payment link pass the invoice number as
   `?client_reference_id={invoice}` (that is what `CYBERLOGIX_PAY_URL` is for)

@@ -157,7 +157,7 @@ reply 1 to the text or acknowledge in the console.
 ### Reply 1 to acknowledge
 
 A reply of `1`, `ACK`, `OK` or `yes` to the alert text acknowledges the
-alert and stops the calls. Set `https://<your host>/api/voice/sms-reply`
+alert and stops the calls. Set `https://cyberlogix.mtrxhorizyn.com/api/voice/sms-reply`
 as the "A message comes in" webhook on the Twilio number that sends the
 alerts. A reply counts only when:
 
