@@ -13,8 +13,8 @@ is `omniarmor.py`, and `tests/test_omniarmor_bundle.py` sends every report
 through OmniArmor's own validation, ported into
 `tests/omniarmor_contract.py`. Change one side, change the other.
 
-Examples use `omniarmor.example.com` for OmniArmor and
-`cyberlogix.example.com` for CyberLogix.
+OmniArmor is at `omniarmor.mtrxhorizyn.com` and CyberLogix at
+`cyberlogix.mtrxhorizyn.com`.
 
 ## What it costs
 
@@ -35,7 +35,7 @@ Disconnecting takes it off the next invoice. More in
    shown once.
 2. In the CyberLogix console, the owner opens Setup, **OmniArmor
    connection**, and fills in:
-   - **OmniArmor's address**, `https://omniarmor.example.com` (https only;
+   - **OmniArmor's address**, `https://omniarmor.mtrxhorizyn.com` (https only;
      a private or local address is refused);
    - **the connection key**;
    - optionally a **site name** for OmniArmor to show, the **time zone**

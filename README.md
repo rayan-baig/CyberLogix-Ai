@@ -8,7 +8,7 @@ in minutes, not hours.
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
 In production it runs on its own subdomain of MTRX Horizyn's domain,
-`cyberlogix.<your domain>`, beside the company's other products;
+`cyberlogix.mtrxhorizyn.com`, beside the company's other products;
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
 
 Wireless thermal sensors report to the hub. Each reading is scored against

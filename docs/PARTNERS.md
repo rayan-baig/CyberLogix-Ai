@@ -12,7 +12,7 @@ with a real partner key.
 
 In the commands below, `$ADMIN` is the platform operator's key
 (`CYBERLOGIX_ADMIN_KEY`), `$PARTNER_KEY` is the partner's key, and
-`cyberlogix.example.com` stands for your own address.
+`cyberlogix.mtrxhorizyn.com` is CyberLogix's address.
 
 ## What a partner gets
 
@@ -63,7 +63,7 @@ friend). The rule between the two is one business, one reward:
 ### 1. Make the partner
 
 ```
-curl -X POST https://cyberlogix.example.com/api/partners \
+curl -X POST https://cyberlogix.mtrxhorizyn.com/api/partners \
   -H "X-CyberLogix-Admin: $ADMIN" -H 'Content-Type: application/json' \
   -d '{"company_name": "Coldline Service Co", "contact_name": "Ray Diaz",
        "contact_email": "ray@coldline.example", "commission_percent": 15}'
@@ -86,7 +86,7 @@ email it signed up with (at least two characters):
 
 ```
 curl -H "X-CyberLogix-Admin: $ADMIN" \
-  'https://cyberlogix.example.com/api/partners/businesses?search=bella+vista'
+  'https://cyberlogix.mtrxhorizyn.com/api/partners/businesses?search=bella+vista'
 ```
 
 Each match shows `tenant_id`, the name, the plan, how many units it has,
@@ -95,7 +95,7 @@ and which partner already looks after it, if any.
 ### 4. Attach it
 
 ```
-curl -X POST https://cyberlogix.example.com/api/partners/PTR-000001/accounts \
+curl -X POST https://cyberlogix.mtrxhorizyn.com/api/partners/PTR-000001/accounts \
   -H "X-CyberLogix-Admin: $ADMIN" -H 'Content-Type: application/json' \
   -d '{"tenant_id": "TEN-000007"}'
 ```
@@ -111,7 +111,7 @@ partner in `partner_name`.
 
 ### 6. The partner signs in
 
-They open `https://cyberlogix.example.com/partners` and paste the key.
+They open `https://cyberlogix.mtrxhorizyn.com/partners` and paste the key.
 The portal keeps itself up to date while it is open.
 
 ## Each month
@@ -120,7 +120,7 @@ The portal keeps itself up to date while it is open.
    every partner's total with:
 
    ```
-   curl -H "X-CyberLogix-Admin: $ADMIN" https://cyberlogix.example.com/api/partners
+   curl -H "X-CyberLogix-Admin: $ADMIN" https://cyberlogix.mtrxhorizyn.com/api/partners
    ```
 
    The two figures always agree: both are added up from the same
