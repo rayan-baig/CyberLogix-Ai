@@ -294,6 +294,7 @@ MUST_SEND = (
     "reset:",
     "invoice:",
     "dunning:",
+    "renewal:",
     "error-report:",
 )
 

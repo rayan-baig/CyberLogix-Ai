@@ -313,12 +313,13 @@ def test_the_deal_ties_term_and_add_ons_together_with_no_setup_fee(
     assert deal["term"]["years"] == 3
     assert deal["term"]["escalator_percent"] == 5.0
     assert len(deal["term"]["schedule"]) == 3
-    assert deal["annual_prepay"]["discount_percent"] == 10.0
+    assert deal["annual_prepay"]["months_charged"] == 10
+    assert deal["annual_prepay"]["label"] == "2 months free"
     assert deal["annual_prepay"]["discount_usd"] > 0
-    # The first year is the year less the prepay discount, and nothing else.
-    year_one = deal["term"]["schedule"][0]["annual_usd"]
-    assert deal["total_first_year_usd"] == round(year_one * 0.9, 2)
-    assert deal["first_invoice_usd"] == round(year_one * 0.9, 2)
+    # The first year is ten of its months, and nothing else.
+    monthly = deal["term"]["schedule"][0]["monthly_usd"]
+    assert deal["total_first_year_usd"] == round(monthly * 10, 2)
+    assert deal["first_invoice_usd"] == round(monthly * 10, 2)
 
 
 def test_no_estate_pays_a_setup_fee(
@@ -356,20 +357,19 @@ def test_the_custom_verticals_keep_their_rates_for_billing():
 
 
 def test_no_estate_is_charged_more_than_a_larger_one():
-    """The guard the whole volume ladder rests on.
+    """The guard the chain discount rests on.
 
     Checked across every vertical at every size up to 400 units, because
-    a discount ladder with a step in the wrong place is a customer
+    a discount with a step in the wrong place is a customer
     discovering that buying one more sensor makes their bill drop.
     """
-    from pricing import PRICE_BOOK
-    from store import calculate_volume_tier_price
+    from pricing import PRICE_BOOK, chain_locations_price
 
     for vertical, entry in PRICE_BOOK.items():
         price = entry["monthly_usd"]
         previous = -1.0
         for units in range(1, 401):
-            total = calculate_volume_tier_price(units, price)
+            total = chain_locations_price(units, price)
             assert total >= previous - 0.005, (
                 f"{vertical} at {units} units costs {total}, less than "
                 f"{previous} at {units - 1}"
@@ -379,14 +379,13 @@ def test_no_estate_is_charged_more_than_a_larger_one():
 
 def test_the_per_unit_rate_never_rises_with_scale():
     """Buying more must never make each one dearer."""
-    from pricing import PRICE_BOOK
-    from store import calculate_volume_tier_price
+    from pricing import PRICE_BOOK, chain_locations_price
 
     for vertical, entry in PRICE_BOOK.items():
         price = entry["monthly_usd"]
         previous = float("inf")
         for units in range(1, 401):
-            rate = calculate_volume_tier_price(units, price) / units
+            rate = chain_locations_price(units, price) / units
             # A cent of tolerance: below that it is float division noise,
             # not a pricing decision anybody could notice.
             assert rate <= previous + 0.01, (
@@ -398,12 +397,11 @@ def test_the_per_unit_rate_never_rises_with_scale():
 
 def test_the_next_tier_is_never_a_step_down():
     """A "next tier" that costs less would be advice to under-buy."""
-    from pricing import PRICE_BOOK
-    from store import next_volume_tier
+    from pricing import PRICE_BOOK, next_chain_tier
 
     for vertical, entry in PRICE_BOOK.items():
         for units in range(1, 60):
-            step = next_volume_tier(units, entry["monthly_usd"])
+            step = next_chain_tier(units, entry["monthly_usd"])
             if step is not None:
                 assert step["monthly_increase_usd"] >= 0, (
                     f"{vertical} at {units}: {step}"
@@ -412,18 +410,18 @@ def test_the_next_tier_is_never_a_step_down():
 
 def test_zero_and_negative_estates_price_at_zero():
     """No division by zero, no negative invoice."""
-    from store import calculate_volume_tier_price, volume_discount_percent
+    from pricing import chain_discount_percent, chain_locations_price
 
     for units in (0, -1, -500):
-        assert volume_discount_percent(units) == 0.0
-        assert calculate_volume_tier_price(units, 999.0) == 0.0
+        assert chain_discount_percent(units) == 0.0
+        assert chain_locations_price(units, 999.0) == 0.0
 
 
-def test_the_prepay_discount_is_ten_percent_and_there_is_no_setup_fee():
-    from pricing import (ANNUAL_PREPAY_DISCOUNT_PERCENT,
-                         SETUP_FEE_PER_SITE_USD, escalated_schedule)
+def test_yearly_is_two_months_free_and_there_is_no_setup_fee():
+    from pricing import (SETUP_FEE_PER_SITE_USD, YEARLY_DISCOUNT_PERCENT,
+                         yearly_price, yearly_saving)
 
-    year_one = escalated_schedule(5000.0, 1)[0]["annual_usd"]
-    discount = round(year_one * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100.0, 2)
-    assert abs(discount - year_one * 0.10) < 0.005
+    assert yearly_price(5000.0) == 50000.0
+    assert yearly_saving(5000.0) == 10000.0
+    assert YEARLY_DISCOUNT_PERCENT == 16.67
     assert SETUP_FEE_PER_SITE_USD == 0.0

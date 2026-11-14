@@ -1,14 +1,19 @@
 """Enterprise cluster billing.
 
 A single-site customer is billed per unit from the rate card in
-`pricing.py`. A chain is billed on volume brackets by enrolled branch
-count, and the contract covers every sensor inside those branches — which
-is what makes a four-figure branch rate coherent against a single walk-in.
+`pricing.py`. A chain can instead be put on a contract billed by enrolled
+branch count, which covers every sensor inside those branches.
 
-The brackets step rather than taper, so one branch at a boundary can add
-five figures. Every quote and contract therefore carries `next_tier`,
-naming the boundary and what crossing it costs, rather than letting a
-customer discover it on an invoice.
+There is one volume discount, and it is the chain discount on the rate
+card (pricing.CHAIN_DISCOUNT_TIERS: 10% off each location from 5, 20% off
+from 20). A contract is priced with the same tiers. This used to have a
+ladder of its own (2.5% off for every ten units, up to 10%), so the same
+chain could be quoted two different discounts; now it cannot, and a
+business on a contract is billed from the contract alone, never the
+contract and the rate card's discount together.
+
+Every quote and contract still carries `next_tier`, naming the next
+boundary and what crossing it costs.
 
 A tenant on an active contract is invoiced from it; the per-unit rate card
 no longer applies. `/quote` prices both models side by side so nobody signs
@@ -24,16 +29,20 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from accounts import require_role
 from auth import require_platform_admin, require_tenant, write_audit
+from pricing import (
+    CHAIN_DISCOUNT_TIERS,
+    chain_discount_percent,
+    chain_locations_price,
+    chain_tier_label,
+    chain_tiers,
+    next_chain_tier,
+)
 from store import (
     STORE,
     EnterpriseContract,
     Tenant,
     User,
-    calculate_volume_tier_price,
-    next_volume_tier,
     resolve_vertical,
-    volume_discount_percent,
-    volume_tier_label,
 )
 
 logger = logging.getLogger("cyberlogix.enterprise")
@@ -95,7 +104,7 @@ class BranchChange(BaseModel):
 
 
 def cluster_monthly(branches: int, unit_price: float) -> float:
-    return calculate_volume_tier_price(branches, unit_price)
+    return chain_locations_price(branches, unit_price)
 
 
 def _validate_vertical(raw: str) -> str:
@@ -129,17 +138,12 @@ def _load(account_id: str, tenant: Tenant) -> EnterpriseContract:
 @router.get("/tiers")
 def volume_tiers(industry_vertical: str = "restaurant",
                  tenant: Tenant = Depends(require_tenant)):
-    """The volume discount ladder, priced against one vertical's rate."""
+    """The chain discount tiers, priced against one vertical's rate."""
     from pricing import PRICE_BOOK
-    from store import (
-        MAX_VOLUME_DISCOUNT_PERCENT,
-        VOLUME_DISCOUNT_EVERY_UNITS,
-        VOLUME_DISCOUNT_STEP_PERCENT,
-        volume_band_table,
-    )
 
     key = _validate_vertical(industry_vertical)
     entry = PRICE_BOOK[key]
+    tiers = ", ".join(f"{off:g}% off from {start}" for start, off in CHAIN_DISCOUNT_TIERS)
 
     return {
         "currency": "USD",
@@ -147,23 +151,31 @@ def volume_tiers(industry_vertical: str = "restaurant",
         "unit": entry["unit"],
         "list_price_usd": entry["monthly_usd"],
         "billing": (
-            f"${entry['monthly_usd']:,.0f} per {entry['unit']} per month, less a "
-            f"{VOLUME_DISCOUNT_STEP_PERCENT:g}% volume discount for every "
-            f"{VOLUME_DISCOUNT_EVERY_UNITS} units, to a "
-            f"{MAX_VOLUME_DISCOUNT_PERCENT:g}% maximum. A contract covers every "
-            "sensor inside an enrolled unit."
+            f"${entry['monthly_usd']:,.0f} per {entry['unit']} per month, less "
+            f"the chain discount: {tiers}. A contract covers every sensor "
+            "inside an enrolled unit."
         ),
-        "discount_ladder": {
-            "step_percent": VOLUME_DISCOUNT_STEP_PERCENT,
-            "every_units": VOLUME_DISCOUNT_EVERY_UNITS,
-            "max_percent": MAX_VOLUME_DISCOUNT_PERCENT,
-        },
-        "bands": volume_band_table(entry["monthly_usd"]),
+        "tiers": [{"from_units": start, "discount_percent": off}
+                  for start, off in CHAIN_DISCOUNT_TIERS],
+        "bands": [
+            {
+                "band": (f"{row['from']}+" if row["to"] is None
+                         else f"{row['from']}-{row['to']}"),
+                "from_units": row["from"],
+                "to_units": row["to"],
+                "discount_percent": row["percent"],
+                "effective_unit_price_usd": row["each_usd"],
+                "example_units": row["example_locations"],
+                "example_monthly_usd": row["example_monthly_usd"],
+                "example_annual_usd": round(row["example_monthly_usd"] * 12, 2),
+            }
+            for row in chain_tiers(key)
+        ],
         "note": (
-            "No estate is charged more than a larger estate would pay. The "
-            "discount deepens a whole band at a time, so the ladder alone "
-            "would make 40 units cheaper than 39; the smaller estate gets the "
-            "lower figure instead."
+            "The same tiers as the chain discount on the rate card, so a "
+            "business is offered one volume price, not two. No estate is "
+            "charged more than a larger estate would pay: just below a tier, "
+            "the smaller estate pays the larger one's price."
         ),
     }
 
@@ -208,7 +220,11 @@ def quote(
     billed = total_branch_locations if per_site(vertical) else units
     extra = (extra_units_charge(vertical, [units_per_branch] * total_branch_locations)
              if per_site(vertical) else {"units": 0, "amount_usd": 0.0})
-    per_unit_monthly = round(entry["monthly_usd"] * billed + extra["amount_usd"], 2)
+    # The rate card takes the chain discount off a per-location trade's
+    # location prices, so the comparison does too.
+    location_charge = (chain_locations_price(billed, entry["monthly_usd"])
+                       if per_site(vertical) else entry["monthly_usd"] * billed)
+    per_unit_monthly = round(location_charge + extra["amount_usd"], 2)
     cluster_total = cluster_monthly(total_branch_locations, entry["monthly_usd"])
 
     cheaper = "per_unit" if per_unit_monthly <= cluster_total else "enterprise_volume"
@@ -229,6 +245,8 @@ def quote(
             "unit": entry["unit"],
             "units": billed,
             "unit_price_usd": entry["monthly_usd"],
+            "chain_discount_percent": (chain_discount_percent(billed)
+                                       if per_site(vertical) else 0.0),
             "extra_units": extra["units"],
             "extra_units_usd": extra["amount_usd"],
             "monthly_usd": per_unit_monthly,
@@ -236,15 +254,15 @@ def quote(
         },
         "enterprise_volume": {
             "model": (
-                f"${entry['monthly_usd']:,.0f} per {entry['unit']}, less a "
-                "volume discount every 10 units"
+                f"${entry['monthly_usd']:,.0f} per {entry['unit']}, less the "
+                "chain discount"
             ),
             "branches": total_branch_locations,
-            "pricing_tier_applied": volume_tier_label(total_branch_locations),
-            "volume_discount_percent": volume_discount_percent(
+            "pricing_tier_applied": chain_tier_label(total_branch_locations),
+            "volume_discount_percent": chain_discount_percent(
                 total_branch_locations
             ),
-            "next_tier": next_volume_tier(
+            "next_tier": next_chain_tier(
                 total_branch_locations, entry["monthly_usd"]
             ),
             "monthly_usd": cluster_total,
@@ -257,10 +275,10 @@ def quote(
         "monthly_difference_usd": round(abs(per_unit_monthly - cluster_total), 2),
         "cluster_breaks_even_at_units_per_branch": max(breakeven, 1),
         "note": (
-            "Volume billing covers every sensor inside an enrolled branch, so "
-            "it pays off on multi-sensor sites and costs more on single ones. "
-            "The volume discount deepens every 10 units; next_tier shows where "
-            "the next step lands."
+            "Volume billing covers every sensor inside an enrolled branch, "
+            "with the same chain discount the rate card gives, so the two "
+            "differ only in what a branch covers. next_tier shows where the "
+            "next discount lands."
         ),
     }
 

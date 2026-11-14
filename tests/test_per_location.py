@@ -270,6 +270,7 @@ def test_the_chain_quote_bills_restaurants_per_branch(api, tenant_factory):
                         "restaurant&total_branch_locations=10&units_per_branch=4",
                         headers=key_headers).json()
 
-    assert one_each["per_unit"]["monthly_usd"] == 10 * SHOP
-    assert four_each["per_unit"]["monthly_usd"] == 10 * SHOP
+    # Ten shops: the chain discount comes off the rate card too.
+    assert one_each["per_unit"]["monthly_usd"] == round(10 * SHOP * 0.9, 2)
+    assert four_each["per_unit"]["monthly_usd"] == round(10 * SHOP * 0.9, 2)
     assert four_each["per_unit"]["units"] == 10

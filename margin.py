@@ -4,10 +4,10 @@
 up in a bill are rarely the expensive ones. Run this module's numbers
 against the rate card and the ranking is not the one anybody guesses:
 
-    Annual prepay discount (10%)    $1,198.80    10.00% of revenue
-    Bad debt (3%)                   $  359.64     3.00%
-    Card fees (2.9% + 30c)          $  351.25     2.93%
-    Metered usage (AI, SMS, voice)  $    5.60     0.05%
+    Yearly plan: 2 months free      $  298.00    16.67% of revenue
+    Card fees (2.9% + 30c)          $   55.45     3.10%
+    Bad debt (3%)                   $   53.64     3.00%
+    Metered usage (AI, SMS, voice)  $    5.60     0.31%
 
 Per restaurant location, per year. The discount we *choose* to give away
 costs more than every real cost combined, and it does not appear in any
@@ -17,10 +17,10 @@ whole spend-control module for, is a rounding error at 0.05%.
 
 Two things this deliberately does not do.
 
-It does not change anybody's prices. The prepay discount is a commercial
-decision with a revenue consequence — a smaller discount is only a
-saving if the customer still prepays — so it is a setting with the
-current value as its default, and the arithmetic is published next to it
+It does not change anybody's prices. The yearly offer (pay for ten
+months, get twelve) is a commercial decision with a revenue consequence:
+a smaller discount is only a saving if the customer still pays yearly.
+It is set in pricing.py, and the arithmetic is published next to it
 rather than acted on.
 
 It does not model the largest line of all. Tax is bigger than every
@@ -196,15 +196,15 @@ def _usage_per_unit_month() -> float:
 
 def per_unit_year(vertical: str = "restaurant") -> Dict[str, Any]:
     """Every cost against one unit of one sector, for a year, ranked."""
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT, PRICE_BOOK
+    from pricing import PRICE_BOOK, yearly_label, yearly_saving
 
     price = PRICE_BOOK[vertical]["monthly_usd"]
     revenue = round(price * 12, 2)
 
     lines: List[Dict[str, Any]] = [
         {
-            "line": f"Annual prepay discount ({ANNUAL_PREPAY_DISCOUNT_PERCENT:g}%)",
-            "usd": round(revenue * ANNUAL_PREPAY_DISCOUNT_PERCENT / 100, 2),
+            "line": f"Yearly plan: {yearly_label()}",
+            "usd": yearly_saving(price),
             "chosen": True,
             "note": (
                 "Only paid on contracts that take it. It is here because "
@@ -252,7 +252,7 @@ def per_unit_year(vertical: str = "restaurant") -> Dict[str, Any]:
 
 
 def prepay_verdict() -> Dict[str, Any]:
-    """Does the annual prepay discount pay for itself?
+    """Does the yearly plan's discount (two months free) pay for itself?
 
     A discount is a purchase: you are buying certainty and cash with
     margin. It is worth what it removes — the bad debt on that unit, the
@@ -261,14 +261,15 @@ def prepay_verdict() -> Dict[str, Any]:
     away, and because nobody invoices for it, it is the one cost that can
     grow for years without anybody noticing.
     """
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT
+    from pricing import PRICE_BOOK, YEARLY_DISCOUNT_PERCENT
 
     avoided_bad_debt = BAD_DEBT_PERCENT
     avoided_card = CARD_PERCENT
     # Half a year of float, at whatever the money is worth.
     financing = COST_OF_CAPITAL_PERCENT * 0.5
     break_even = round(avoided_bad_debt + avoided_card + financing, 2)
-    current = ANNUAL_PREPAY_DISCOUNT_PERCENT
+    current = YEARLY_DISCOUNT_PERCENT
+    location = PRICE_BOOK["restaurant"]["monthly_usd"]
 
     return {
         "current_percent": current,
@@ -286,15 +287,15 @@ def prepay_verdict() -> Dict[str, Any]:
                 "inside what it buys."
                 if current <= break_even
                 else f"{round(current - break_even, 2):g} points more than "
-                     "what it buys. On a $999 location that is "
-                     f"${round(999 * 12 * (current - break_even) / 100, 2):,.2f} "
+                     f"what it buys. On a ${location:,.0f} location that is "
+                     f"${round(location * 12 * (current - break_even) / 100, 2):,.2f} "
                      "a year, per unit, given away."
             )
             + " Financing value is zero unless CYBERLOGIX_COST_OF_CAPITAL_"
             "PERCENT says otherwise, because a company with these margins "
             "and no capital needs is not short of cash. This is a "
             "commercial decision, not a bug: a smaller discount only saves "
-            "anything if the customer still prepays."
+            "anything if the customer still pays yearly."
         ),
     }
 

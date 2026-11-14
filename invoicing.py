@@ -269,8 +269,9 @@ def build_lines(
     lines only. (A one-time setup line would not be escalated either;
     there is no setup fee now, so none is added.)
 
-    `months` bills several months on one document, which is what an annual
-    prepay is: twelve months at the same year's rate, on one invoice.
+    `months` bills several months on one document, which is what a yearly
+    plan is: twelve months at the same year's rate, on one invoice (the
+    two free months come off as their own line, in contracts.bill_period).
     """
     from pricing import (
         ADD_ONS,
@@ -294,6 +295,21 @@ def build_lines(
         return round(base * rate_multiplier * months, 2)
 
     for row in subscription["line_items"]:
+        if row.get("chain_discount"):
+            # Its own line, as the customer is promised: "Chain discount
+            # (20 locations): −20%". Recurring, so it is escalated and
+            # multiplied by the months like the locations it comes off.
+            lines.append(
+                {
+                    "kind": "chain_discount",
+                    "description": f"{row['description']}{period_note}",
+                    "quantity": row["units"],
+                    "unit_price_usd": round(row["unit_price_usd"] * rate_multiplier, 2),
+                    "amount_usd": recurring(row["line_total_usd"]),
+                    "percent": row["percent"],
+                }
+            )
+            continue
         lines.append(
             {
                 "kind": "subscription",
@@ -344,7 +360,7 @@ def build_lines(
     # recurring lines and outside `recurring()` on purpose, like a setup
     # fee would be: it is a share of refunds already received, so the contract
     # escalator does not apply and it is not multiplied by the months of
-    # an annual prepay. Its kind keeps it out of the prepay discount too.
+    # a yearly plan. Its kind keeps it out of the two free months too.
     from people import recovery_share_line
 
     share = recovery_share_line(tenant)

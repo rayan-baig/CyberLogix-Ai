@@ -86,7 +86,7 @@ def test_the_pricing_page_shows_starter_from_the_code(api):
     assert f'data-starter-rate="{STARTER!r}"' in page
     assert "Starter: $59 a month" in page
     assert "<td>Starter</td><td class=\"num\">3</td>" in page
-    assert "$59, one location" in page
+    assert "$59 a month, or $590 a year; one location" in page
 
 
 def test_signup_the_help_page_and_the_sales_sheet_show_starter(api):

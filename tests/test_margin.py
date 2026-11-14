@@ -16,7 +16,7 @@ import margin
 from store import STORE
 
 
-def test_the_prepay_discount_is_the_largest_line(api):
+def test_the_yearly_discount_is_the_largest_line(api):
     """Bigger than card fees, bad debt and usage put together.
 
     And invisible: nobody sends a bill for revenue you never charged, so
@@ -24,7 +24,7 @@ def test_the_prepay_discount_is_the_largest_line(api):
     """
     lines = margin.per_unit_year("restaurant")["lines"]
 
-    assert "prepay" in lines[0]["line"].lower(), (
+    assert "yearly" in lines[0]["line"].lower(), (
         f"expected the discount on top, got {lines[0]['line']}"
     )
     rest = sum(row["usd"] for row in lines[1:])
@@ -68,17 +68,18 @@ def test_financing_value_is_zero_unless_somebody_says_otherwise(
 
 def test_the_analysis_does_not_change_anybody_s_prices(api):
     """The point of the module is to inform a commercial decision, not to
-    make one. A smaller discount only saves anything if the customer
-    still prepays, and that is not a thing code can know."""
-    from pricing import ANNUAL_PREPAY_DISCOUNT_PERCENT
+    make one. The yearly offer is set in pricing.py (two months free), and
+    the verdict reads it rather than moving it."""
+    from pricing import YEARLY_DISCOUNT_PERCENT, YEARLY_MONTHS_CHARGED
 
-    assert ANNUAL_PREPAY_DISCOUNT_PERCENT == 10.0
-    assert margin.prepay_verdict()["current_percent"] == 10.0
+    assert YEARLY_MONTHS_CHARGED == 10
+    assert margin.prepay_verdict()["current_percent"] == YEARLY_DISCOUNT_PERCENT
 
 
-def test_the_discount_can_be_tuned_without_a_deploy(monkeypatch):
-    """It was a constant in a file. A commercial lever nobody can pull
-    without shipping code does not get pulled."""
+def test_the_yearly_offer_is_one_rule_not_a_setting(monkeypatch):
+    """It used to be a 10% setting that each page read for itself. Two
+    months free is the one yearly offer now: the old setting is ignored, so
+    no deployment can quote a different figure from the pages."""
     monkeypatch.setenv("CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT", "6.0")
     import importlib
 
@@ -86,7 +87,8 @@ def test_the_discount_can_be_tuned_without_a_deploy(monkeypatch):
 
     importlib.reload(pricing)
     try:
-        assert pricing.ANNUAL_PREPAY_DISCOUNT_PERCENT == 6.0
+        assert not hasattr(pricing, "ANNUAL_PREPAY_DISCOUNT_PERCENT")
+        assert pricing.yearly_price(100.0) == 1000.0
     finally:
         monkeypatch.delenv("CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT")
         importlib.reload(pricing)

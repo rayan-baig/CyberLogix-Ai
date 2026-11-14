@@ -82,7 +82,7 @@ NOT_FETCHED = {
     "/api/accounts/business/export", "/api/accounts/business/erase",
     "/api/licenses/me/rotate-key",
     "/api/autopilot/compliance.csv", "/api/claims", "/api/contracts/billing-run",
-    "/api/contracts/renew", "/api/contracts/add-ons",
+    "/api/contracts/renew", "/api/contracts/add-ons", "/api/contracts/billing-interval",
     "/api/doorstep/adopt", "/api/legal/accept",
     "/api/licenses/me/plan", "/api/licenses/me/sensors",
     "/api/licenses/me/temperature-unit",

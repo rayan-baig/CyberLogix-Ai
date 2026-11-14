@@ -31,10 +31,6 @@ from domain import (
     display_temperature,
     INDUSTRY_PROFILES,
     PLAN_TIERS,
-    volume_discount_percent,
-    calculate_volume_tier_price,
-    volume_tier_label,
-    next_volume_tier,
 )
 
 
@@ -1546,9 +1542,10 @@ class EnterpriseContract:
     """A volume contract billed by branch rather than by unit.
 
     A single-site customer is billed per unit from the rate card. A chain
-    is billed on volume brackets by enrolled branch count, and the contract
-    covers every sensor inside those branches — which is what makes a
-    four-figure branch rate coherent against a single walk-in.
+    on a contract is billed by enrolled branch count, and the contract
+    covers every sensor inside those branches. The discount is the chain
+    discount (pricing.CHAIN_DISCOUNT_TIERS), the same tiers the rate card
+    applies, so a business is never offered two different volume prices.
     """
 
     account_id: str
@@ -1563,7 +1560,15 @@ class EnterpriseContract:
 
     @property
     def tier_label(self) -> str:
-        return volume_tier_label(self.enrolled_branches)
+        from pricing import chain_tier_label
+
+        return chain_tier_label(self.enrolled_branches)
+
+    @property
+    def discount_percent(self) -> float:
+        from pricing import chain_discount_percent
+
+        return chain_discount_percent(self.enrolled_branches)
 
     @property
     def unit_price_usd(self) -> float:
@@ -1574,9 +1579,9 @@ class EnterpriseContract:
 
     @property
     def monthly_usd(self) -> float:
-        return calculate_volume_tier_price(
-            self.enrolled_branches, self.unit_price_usd
-        )
+        from pricing import chain_locations_price
+
+        return chain_locations_price(self.enrolled_branches, self.unit_price_usd)
 
     @property
     def annual_contract_value_usd(self) -> float:
@@ -1589,7 +1594,9 @@ class EnterpriseContract:
     @property
     def next_tier(self) -> Optional[Dict[str, Any]]:
         """Where the next discount sits, so growth holds no surprises."""
-        return next_volume_tier(self.enrolled_branches, self.unit_price_usd)
+        from pricing import next_chain_tier
+
+        return next_chain_tier(self.enrolled_branches, self.unit_price_usd)
 
     def to_row(self) -> Dict[str, Any]:
         return {
@@ -1628,9 +1635,10 @@ class EnterpriseContract:
             "enrolled_branches": self.enrolled_branches,
             "pricing_tier_applied": "Custom Enterprise Volume Bracket",
             "unit_price_usd": self.unit_price_usd,
-            "volume_discount_percent": volume_discount_percent(
-                self.enrolled_branches
-            ),
+            # The chain discount. Kept under its old name as well, for
+            # callers written when contracts had a ladder of their own.
+            "chain_discount_percent": self.discount_percent,
+            "volume_discount_percent": self.discount_percent,
             # The specific bracket, alongside the contract label, so the
             # figure can be traced to the row of the table that produced it.
             "pricing_bracket": self.tier_label,
@@ -1648,7 +1656,7 @@ class EnterpriseContract:
 # ---- signed contracts -------------------------------------------------
 #
 # The gap this closes: the product could *quote* a three-year deal with a
-# five percent annual escalator, a setup fee and a prepay discount, and
+# five percent annual escalator, a setup fee and a yearly discount, and
 # then bill a flat month-one rate, by hand, if somebody remembered. The
 # quote and the money were two different numbers, and the difference grew
 # every year of the term.
@@ -1710,11 +1718,44 @@ class Subscription:
     # never be charged for: `periods_billed` is a high-water mark, so the
     # run simply moves past the hole.
     rebill_periods: List[int] = field(default_factory=list)
+    # A switch between monthly and yearly the owner has asked for:
+    # "monthly" or "yearly", taking effect when what has been paid for runs
+    # out (contracts.apply_interval_switch). None when nothing is pending.
+    next_interval: Optional[str] = None
+    # On a yearly plan, what this year's invoice paid for, by the month:
+    # {"period", "monthly_usd", "locations", "units"}. A location or units
+    # added part-way through the year are charged on the difference, for
+    # the rest of the year (contracts.bill_mid_year_changes).
+    year_covered: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def months_per_period(self) -> int:
         """Paying a year up front means one invoice a year, not twelve."""
         return 12 if self.annual_prepay else 1
+
+    @property
+    def interval(self) -> str:
+        return "yearly" if self.annual_prepay else "monthly"
+
+    @property
+    def paid_until(self) -> Optional[datetime]:
+        """The end of the last period invoiced: what has been paid for."""
+        if self.started_at is None:
+            return None
+        return self.period_start(self.periods_billed)
+
+    @property
+    def service_until(self) -> Optional[datetime]:
+        """After a cancellation, when the service paid for ends.
+
+        The rule (pricing.CANCELLATION_RULE): nothing more is billed, the
+        rest of the month or year already paid for is not refunded, and
+        the service carries on to its end.
+        """
+        if self.cancelled_at is None or self.started_at is None:
+            return None
+        paid = self.paid_until
+        return max(self.cancelled_at, paid) if paid else self.cancelled_at
 
     @property
     def active(self) -> bool:
@@ -1804,6 +1845,8 @@ class Subscription:
             "last_billed_at": iso(self.last_billed_at),
             "carried_multiplier": self.carried_multiplier,
             "rebill_periods": sorted(self.rebill_periods),
+            "next_interval": self.next_interval,
+            "year_covered": dict(self.year_covered),
         }
 
     @classmethod
@@ -1826,6 +1869,8 @@ class Subscription:
             last_billed_at=_parse(row.get("last_billed_at")),
             carried_multiplier=row.get("carried_multiplier", 1.0),
             rebill_periods=list(row.get("rebill_periods") or []),
+            next_interval=row.get("next_interval"),
+            year_covered=dict(row.get("year_covered") or {}),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1836,6 +1881,13 @@ class Subscription:
                 "billing_interval": (
                     "annual" if self.annual_prepay else "monthly"
                 ),
+                # A switch the owner asked for, and when it starts: the
+                # end of what has already been paid for.
+                "switching_to": self.next_interval,
+                "switches_at": (iso(self.paid_until)
+                                if self.next_interval and self.active else None),
+                "paid_until": iso(self.paid_until),
+                "service_until": iso(self.service_until),
                 "current_contract_year": self.contract_year(
                     max(0, self.periods_billed - 1)
                 ),

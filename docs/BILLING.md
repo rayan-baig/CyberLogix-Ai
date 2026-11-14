@@ -1,8 +1,8 @@
 # Pricing, billing and the books
 
-The rate card, plans and volume pricing; invoices, contracts that bill
-themselves and collections; taking payment; the books and the margin
-report; and the reseller channel.
+The rate card, plans, paying yearly and chain discounts; invoices,
+contracts that bill themselves and collections; taking payment; the books
+and the margin report; and the reseller channel.
 
 ## Pricing
 
@@ -18,12 +18,114 @@ other trade is priced by quote.
 | Kitchen Safety Bundle | **+$29** / location / month | the daily OmniArmor report, and OmniArmor Pro for that location |
 | Every other trade | **Custom pricing — ask for a quote** | sized to what is run |
 | Setup | **No setup fee** | on any plan |
+| Paying yearly | **10 × the monthly price** for 12 months | everything recurring: "2 months free" |
+| Chains of 5–19 restaurants or pharmacies | **10% off** each location | location prices only |
+| Chains of 20+ | **20% off** each location | location prices only |
 
 The prices are `PRICE_BOOK`, `STARTER_MONTHLY_USD`,
-`UNITS_PER_LOCATION`, `EXTRA_UNIT_MONTHLY_USD` and `ADD_ONS` in
-`pricing.py`, and every page reads them from there: the pricing page and
-its calculator, the front page, the help page, the industry pages and the
-sales sheets.
+`UNITS_PER_LOCATION`, `EXTRA_UNIT_MONTHLY_USD`, `ADD_ONS`,
+`YEARLY_MONTHS_CHARGED` / `YEARLY_MONTHS_COVERED` and
+`CHAIN_DISCOUNT_TIERS` in `pricing.py`, and every page reads them from
+there: the pricing page and its calculator, the front page, the help
+page, the industry pages, the sales sheets and sign-up.
+
+### Paying yearly: pay for 10 months, get 12
+
+A year paid up front costs ten times the monthly price and covers twelve
+months (`pricing.yearly_price`), shown everywhere as "2 months free"
+(about 16.7% off). It covers everything recurring on the bill: Starter
+($590 a year), each location ($1,490 for a restaurant, $1,990 for a
+pharmacy), extra units ($150 a year each), the Kitchen Safety Bundle and
+the other extras. It is worked out after any chain discount.
+
+How it bills (`contracts.py`):
+
+- **One invoice for the year.** Twelve months of every recurring line,
+  then one line taking two of them off: "Paid yearly: 12 months for the
+  price of 10 (2 months free)". Nothing more until the year renews.
+- **Added part-way through the year.** The billing pass (hourly) compares
+  the estate's monthly price with what the year's invoice paid for
+  (`Subscription.year_covered`). When it has grown, it issues one invoice
+  for the difference at the yearly price for the days left of the year:
+  a restaurant added with 183 of 365 days left is $149 × 10 × 183/365.
+  Shrinking refunds nothing, and the higher figure is kept, so taking a
+  unit off and putting it back is not charged twice. The part-period
+  catch-up that monthly plans carry on their next invoice is not used on
+  a yearly plan, so nothing is charged twice.
+- **Renewal reminders** 30 and 7 days before the year renews
+  (`YEARLY_RENEWAL_REMINDER_DAYS`), through the ordinary mail queue, each
+  once: the key is the contract, the year and the reminder. A plan first
+  seen five days out gets the 7-day one only. A plan that will not renew
+  gets none.
+- **Switching monthly ↔ yearly at renewal.**
+  `POST /api/contracts/billing-interval {"billing_interval": "yearly"}`
+  (owner) schedules it; it starts when what has been paid for runs out,
+  the end of the paid month or year. The old contract hands over to a new
+  one starting exactly there, billed the new way, at the rate the old one
+  would have charged next. Asking for the interval the contract already
+  has cancels a pending switch. `POST /api/contracts/renew` also takes
+  `billing_interval`.
+
+This replaced a 10% annual prepayment discount, which was a setting
+(`CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT`, now ignored). One rule, so
+the pages, the invoices and the margin report cannot quote different
+yearly figures. A contract that took the old prepay is a yearly contract
+and renews at ten months for twelve, which costs it less.
+
+### Cancelling
+
+`pricing.CANCELLATION_RULE`, shown at checkout (the contract form in the
+console, `/api/contracts`, the sign response), on the pricing page, the
+help page, sign-up and in the agreement:
+
+> Cancel any time. Nothing more is billed after you cancel, and the
+> service carries on to the end of the month or year you have already
+> paid for. What you have already paid is not refunded, in part or in
+> full.
+
+`POST /api/contracts/cancel` returns `refund_usd: 0` and
+`service_until`, the end of the last period invoiced. Nothing is billed
+after it, not even a mid-year addition.
+
+### Chain discounts
+
+Restaurants and pharmacies take a discount on each location's price by
+how many locations the business has, counted together:
+
+| Locations | Each location | Restaurant | Pharmacy |
+|---|---|---|---|
+| 1–4 | list price | $149 | $199 |
+| 5–19 | 10% off | $134.10 | $179.10 |
+| 20+ | 20% off | $119.20 | $159.20 |
+
+Twenty restaurants: $149 → $119.20 each, $2,384 a month, or $23,840 a
+year paid yearly (`pricing.chain_example()`; the pricing page prints it
+from there).
+
+- **Self-serve.** Worked out from the locations on the account every time
+  an invoice is priced, so it applies from the next invoice with nothing
+  to sign. The invoice shows it on its own line: "Chain discount (20
+  locations): −20%".
+- **Location prices only.** Not Starter (one location), not the $15
+  extra-unit fee, not the extras. "The price of each location drops" is
+  the whole rule, and it is the one a customer can check: 20 × $149 × 20%.
+- **No chain pays more than a bigger one.** Twenty locations at 20% off
+  cost less than eighteen or nineteen at 10% off, so those pay the
+  twenty-location price, and the line says so.
+- **Stacks with yearly.** Yearly is ten months of the discounted price.
+- A location added part-way through a month is caught up at the
+  discounted per-location rate.
+
+### One volume discount
+
+There used to be two: the enterprise ladder (2.5% off for every ten
+units, up to 10%), which priced operator-made volume contracts, and
+nothing at all for a self-serve chain. Now the chain tiers are the only
+one. Volume contracts (`/api/v1/enterprise-billing`) are priced with the
+same tiers, and a business on a contract is billed from the contract
+alone (`pricing.build_subscription` returns the contract line and adds
+no chain line), so nobody can get both. Every contract price that
+changed went down.
 
 ### The eleventh unit at a location
 
@@ -135,39 +237,33 @@ in advance like everyone else, and a shop added after the move is caught
 up as ordinary mid-period arrears. Each plan change is recorded with its
 time (`plan_change` rows), which is what the bill reads.
 
-### Enterprise volume brackets
+### Enterprise volume contracts
 
-A chain is billed by enrolled branch count rather than per unit, and the
-contract covers every sensor inside those branches:
+The operator can put a chain on a contract billed by enrolled branch
+count, which covers every sensor inside those branches. It is priced with
+the chain discount tiers above, on that vertical's own rate:
 
-| Units | Volume discount | Restaurant @ $149 | Vessel (by quote) |
-|---|---|---|---|
-| 1–9 | list | $149 | list |
-| 10–19 | −2.5% | $145.28 | −2.5% |
-| 20–29 | −5% | $141.55 | −5% |
-| 30–39 | −7.5% | $137.82 | −7.5% |
-| 40+ | −10% | $134.10 | −10% |
-
-One ladder serves every vertical: the discount is a percentage of that
-vertical's own rate, not a fixed dollar step. It caps at 10% deliberately —
-at the top of a market a deep discount reads as eagerness, and every point of
-it comes off the largest accounts.
+| Branches | Discount | Restaurant @ $149 |
+|---|---|---|
+| 1–4 | list | $149 |
+| 5–19 | −10% | $134.10 |
+| 20+ | −20% | $119.20 |
 
 There is **no ceiling on a contract**. A cap is a hard stop on revenue from
 exactly the accounts worth the most; at these rates a chain of eleven vessels
 would have hit a $50,000 cap and every vessel after that would be free.
 
 **No estate is charged more than a larger estate would pay.** The discount
-deepens a whole band at a time, so the ladder alone would make 40 units
-cheaper than 39; the smaller estate gets the lower figure instead. A test
+steps a whole tier at a time, so the tiers alone would make 20 branches
+cheaper than 19; the smaller estate gets the lower figure instead. A test
 walks every vertical from 1 to 200 units asserting the bill never falls.
 
-`GET /api/v1/enterprise-billing/tiers` publishes the bands, and every quote
+`GET /api/v1/enterprise-billing/tiers` publishes the tiers, and every quote
 carries a `next_tier` block naming where the next discount lands.
 
 `POST /api/v1/enterprise-billing/provision-cluster` opens a contract;
-`/quote` prices both models side by side before anyone signs, since volume
-billing wins on multi-sensor sites and loses badly on single ones. An active
+`/quote` prices both models side by side before anyone signs, both with the
+chain discount, so they differ only in what a branch covers. An active
 contract supersedes the rate card, and the rate-card figure is kept alongside
 for comparison rather than charged.
 
@@ -209,15 +305,18 @@ The rate card is half of what an estate is worth.
   on every plan, so the first bill is the first month and nothing else.
   `SETUP_FEE_PER_SITE_USD` is still the one setting the deal, the invoice
   and a contract's first bill read, so all three say $0 together.
-- **10% for annual prepay.** Worth more than it costs: it removes the
-  collections problem and fixes the customer for twelve months.
+- **Paying yearly: 2 months free.** Ten months' price for twelve. It
+  removes the collections problem and fixes the customer for a year;
+  whether it is worth what it costs is `margin.prepay_verdict()`'s
+  question (below).
 - **A 5% annual escalator** on multi-year contracts. Uncontroversial at
   signature and compounding — three years is 5.1% more contract value for
   no additional delivery.
 
 `GET /api/billing/deal?years=3&annual_prepay=true&include_add_ons=assurance,vault`
 returns the whole thing in one figure (its setup block reads $0, "No setup
-fee."), so nobody discovers an escalator afterwards. That is the only way
+fee."; `annual_prepay=true` is the yearly plan, ten months for twelve), so
+nobody discovers an escalator afterwards. That is the only way
 that term survives a renewal conversation.
 
 ### Return on the subscription
@@ -238,7 +337,7 @@ invented number. Add a figure for one of those (`loss_avoided_usd` in
 ## Account credit
 
 Money we owe a business comes off its next invoice as a line of its own,
-"Credit: ..." with a minus amount, after any prepayment discount
+"Credit: ..." with a minus amount, after any yearly or chain discount
 (`credits.py`). Each credit is granted once per reason (its id is the
 reason, so a retried payment cannot grant it twice), never takes an
 invoice below zero, and carries what is left to the next invoice. An
@@ -315,14 +414,14 @@ actually settled, gets recorded.
 ## Contracts that bill themselves
 
 Everything above this could *quote*: a three-year term, a five percent
-annual escalator, a one-time setup fee (there is none now), ten percent
-off for paying a year up front. Nothing carried any of it into an invoice. Billing was a
+annual escalator, a one-time setup fee (there is none now), a discount
+for paying a year up front. Nothing carried any of it into an invoice. Billing was a
 button somebody had to remember to press, at the month-one rate, forever.
 On a $4,000-a-month estate signed to three escalating years the gap
 between the deal as quoted and the deal as billed is $7,320.
 
 `POST /api/contracts` makes the signed deal durable — term, escalator,
-prepay, add-ons — and from then on invoices issue themselves. The
+monthly or yearly, add-ons — and from then on invoices issue themselves. The
 scheduler runs the billing pass hourly; `POST /api/contracts/billing-run`
 is the same code on demand for a month-end close. Running it twice issues
 nothing the second time: the claim on a period is atomic, so a scheduler
@@ -513,9 +612,9 @@ not the one anybody guesses, per restaurant location per year:
 
 | line | cost | of revenue |
 |---|---|---|
-| Annual prepay discount (10%) | $178.80 | 10.00% |
-| Bad debt (3%) | $53.64 | 3.00% |
+| Yearly plan: 2 months free | $298.00 | 16.67% |
 | Card fees (2.9% + 30¢) | $55.45 | 3.10% |
+| Bad debt (3%) | $53.64 | 3.00% |
 | Metered usage (AI, SMS, voice) | $5.64 | 0.32% |
 
 The discount we *choose* to give away costs more than every real cost
@@ -551,15 +650,15 @@ they are and how to reach them.
 `margin.prepay_verdict()` asks whether the discount pays for itself. A
 discount is a purchase — certainty and cash, bought with margin — worth
 the bad debt it avoids, the card fees it avoids, and whatever holding
-the money early is worth. At the defaults that is 5.9%, so ten is four
-points of gift. The financing term is zero unless somebody sets it,
+the money early is worth. At the defaults that is 5.9%, so two months
+free (16.67%) is about eleven points of gift: a choice made for the
+customer's sake, and published next to its cost. The financing term is zero unless somebody sets it,
 because a company with these margins and no capital needs is not short
 of cash, and assuming otherwise is how a discount justifies itself.
 
-Nothing here changes a price. The discount became a setting with its
-current value as the default: a smaller one is only a saving if the
-customer still prepays, which is a commercial call rather than a code
-change. And nothing here models tax, which is larger than every
+Nothing here changes a price. The yearly offer is one rule in
+`pricing.py`: a smaller discount is only a saving if the customer still
+pays yearly, which is a commercial call rather than a code change. And nothing here models tax, which is larger than every
 operating cost put together and belongs to an accountant.
 
 The one cut actually made: invoices now lead with bank transfer and

@@ -105,6 +105,25 @@
 .calc-addons label:has(input:disabled) { opacity: .55; }
 .calc-out { display: grid; gap: 14px; align-content: start; }
 
+/* --- monthly or yearly, and the chain table ------------------------------ */
+.calc-pay { border: none; padding: 0; margin: 0 0 16px; }
+.calc-pay legend { color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+.calc-pay label {
+  display: inline-flex; gap: 8px; align-items: center; margin: 0 6px 6px 0;
+  padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--ink-2); font-size: 14.5px; cursor: pointer;
+}
+.calc-pay label:has(input:checked) { border-color: var(--accent); color: var(--ink); }
+.chain-panel h2, .yearly-panel h2 { margin-top: 0; }
+.chain-example { color: var(--ink); }
+.table .per-year { display: block; color: var(--muted); font-size: 12.5px; font-weight: 400; }
+@media (max-width: 520px) {
+  #chain-table { font-size: 13px; }
+  #chain-table th, #chain-table td { padding: 10px 5px; }
+  #chain-table .num { white-space: normal; }
+  #chain-table .per-year { font-size: 11.5px; }
+}
+
 /* --- Starter ------------------------------------------------------------ */
 .starter-panel h2 { margin-top: 0; }
 .starter-points { margin: 6px 0 12px; padding-left: 20px; color: var(--ink-2); }

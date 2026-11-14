@@ -4,6 +4,59 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.13.0 — 2026-11-14
+
+Yearly plans at two months free, and chain discounts anyone can see.
+
+- **Pay yearly: 12 months for the price of 10.** A year paid up front is
+  ten times the monthly price ("2 months free", about 16.7% off), on
+  everything recurring: Starter ($590 a year), each restaurant ($1,490),
+  each pharmacy ($1,990), extra units ($150 a year each), the Kitchen
+  Safety Bundle and the other extras. One invoice for the year, with the
+  two free months on their own line, then nothing until it renews.
+- **It replaces the 10% annual prepayment discount.** That was a setting
+  (`CYBERLOGIX_ANNUAL_PREPAY_DISCOUNT_PERCENT`, now ignored) quoted as
+  "10% off that year". There is one yearly offer now, everywhere. A
+  contract that took the old prepay is a yearly contract and renews at
+  ten months for twelve, which costs it less.
+- **Added part-way through a paid year?** A location or units added
+  mid-year are billed at once, for the rest of that year at the yearly
+  price, on one small invoice. Taking something off refunds nothing, and
+  putting it back is not charged twice.
+- **Renewal reminders** 30 and 7 days before a yearly plan renews, each
+  sent once, with what the next year will cost.
+- **Switch between monthly and yearly at renewal.** From the contract
+  card in the console (or `POST /api/contracts/billing-interval`); the
+  switch starts when what has been paid for runs out. A renewal can also
+  switch.
+- **Cancelling, plainly:** nothing more is billed, the service carries on
+  to the end of the month or year already paid for, and what was paid is
+  not refunded. Said at checkout (the contract form), on the pricing page,
+  the help page, sign-up and in the agreement; the cancel response gives
+  the date the service runs to.
+- **Chain discounts, self-serve:** 10% off each restaurant or pharmacy
+  location from 5 locations, 20% off from 20, counted together. On its
+  own invoice line ("Chain discount (20 locations): −20%"), from the next
+  invoice, with nothing to sign. Location prices only: not Starter, not
+  the $15 extra-unit fee, not the extras. No chain pays more than a
+  bigger one, so 18 or 19 locations pay the 20-location price. Yearly is
+  worked out on the discounted price: 20 restaurants are $119.20 each,
+  $2,384 a month or $23,840 a year.
+- **One volume discount.** The enterprise ladder (2.5% off for every ten
+  units, up to 10%) is gone; volume contracts use the chain tiers, and a
+  business on a contract is billed from the contract alone, so nobody
+  gets two discounts. Every contract price that changed went down.
+- **The pricing page** has a monthly/yearly switch on the calculator, the
+  chain discount on the calculator's lines, a "Paid yearly" column, a
+  chain table for restaurants and pharmacies, the worked example (worked
+  out from `pricing.py`, not typed) and a yearly panel with the
+  cancellation rule. The help page has a new question, "Can I pay yearly,
+  and what if I cancel?", and the chain discounts under "What does it
+  cost?". The sales sheets, sign-up, the console's bill and contract
+  cards, the price list API and the margin report say the same.
+- **Agreements 2.5.** The subscription agreement now says how paying
+  yearly works and what cancelling does. No prices are quoted in it.
+
 ## 3.12.2 — 2026-11-14
 
 - **The real address, cyberlogix.mtrxhorizyn.com.** DEPLOY.md, the

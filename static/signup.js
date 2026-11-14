@@ -35,6 +35,13 @@ async function boot() {
         + `${info.starter.max_units} fridges or freezers, texts and the `
         + `site-wide alert included. Bigger estates use the rate card.`;
     }
+    if (info.yearly) {
+      // Said before anyone pays: the yearly offer, the chain discounts and
+      // what cancelling does, all as pricing.py words them.
+      $("pay-options").textContent =
+        `${info.yearly.headline}. ${info.chain_discounts || ""} `
+        + `If you cancel: ${info.yearly.cancellation}`;
+    }
     $("pw-hint").textContent =
       `At least ${info.min_password_length} characters.`;
     $("password").minLength = info.min_password_length;
