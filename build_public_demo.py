@@ -94,9 +94,10 @@ NOT_FETCHED = {
     "/api/connections/omniarmor/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
-    # Pause or cancel, and a repair quote: pressed, never loaded with the page.
+    # Pause or cancel, a founding member code and a repair quote: pressed,
+    # never loaded with the page.
     "/api/contracts/cancel", "/api/leaving/pause", "/api/leaving/resume",
-    "/api/leaving/stay", "/api/repairs/quote",
+    "/api/leaving/stay", "/api/founder-code", "/api/repairs/quote",
 }
 
 

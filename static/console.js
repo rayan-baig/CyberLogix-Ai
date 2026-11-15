@@ -766,7 +766,10 @@ async function refresh() {
   paint("staff", () => renderStaff(got.staff));
   paint("leavers", () => renderLeavers(got.leavers));
   paint("team", () => renderTeam(got.team));
-  paint("leaving", () => renderLeaving(got.leaving));
+  paint("leaving", () => {
+    renderLeaving(got.leaving);
+    renderFounder(got.leaving.founder);
+  });
 
   // The contract card is where the way back lives, so it renders from
   // whatever arrived rather than needing both halves.
@@ -2452,6 +2455,31 @@ function renderLeaving(d) {
   body.innerHTML = `<p class="card-plain">${esc(d.pause_words)}</p>
     <div class="pause-options">${options}</div>${stay}${cancel}
     ${owner ? "" : `<p class="card-plain u-mt-8">Only an owner can pause or cancel.</p>`}`;
+}
+
+/* The founding member code (founders.py), on the Bills card. Shown only
+   while there is a code, or once this business has used one. It can be
+   entered by an owner until the first bill is paid. */
+function renderFounder(f) {
+  const box = $("founder-box");
+  if (!f || !f.show) { box.hidden = true; box.innerHTML = ""; return; }
+  const owner = Boolean(state.user && state.user.role === "owner");
+  box.hidden = false;
+  if (f.taken) {
+    box.innerHTML = `<b>${esc(f.words)}.</b> <span class="u-c-muted">${esc(f.note)}</span>
+      <div class="card-plain">${esc(f.yearly_words)}.</div>`;
+    return;
+  }
+  const form = f.can_enter && owner
+    ? `<div class="row u-mt-8">
+        <input id="founder-code" maxlength="40" autocomplete="off"
+               placeholder="Founding member code">
+        <button class="btn btn-sm btn-primary" type="button" data-founder-use="1">Use code</button>
+      </div>`
+    : (f.can_enter ? `<div class="card-plain">Only an owner can enter it.</div>` : "");
+  box.innerHTML = `<b>Have a founding member code?</b> ${esc(f.words)}.
+    <span class="u-c-muted">${esc(f.note)}</span>
+    <div class="card-plain">${esc(f.yearly_words)}.</div>${form}`;
 }
 
 /* Revenue this estate could produce and does not.
@@ -5124,6 +5152,15 @@ document.addEventListener("click", (event) => {
   if (btn.dataset.resumeNow) {
     act(async () => {
       const out = await api("/api/leaving/resume", { method: "POST" });
+      toast(out.message, "ok");
+    });
+  }
+
+  if (btn.dataset.founderUse) {
+    act(async () => {
+      const out = await api("/api/founder-code", {
+        method: "POST", body: JSON.stringify({ code: $("founder-code").value.trim() }),
+      });
       toast(out.message, "ok");
     });
   }

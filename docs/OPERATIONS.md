@@ -35,6 +35,10 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_REPAIR_LEAD_FEE_USD` | `35` | What a repair partner pays us for each lead delivered to them, in dollars (0 to 1000). Kept with each partner at approval. See [REPAIR-PARTNERS.md](REPAIR-PARTNERS.md) |
 | `CYBERLOGIX_SAVE_OFFER_PERCENT` | `25` | The one-time offer to stay, shown when an owner goes to cancel: this percentage off (1 to 90). See [BILLING.md](BILLING.md#pause-instead-of-cancel-and-the-offer-to-stay) |
 | `CYBERLOGIX_SAVE_OFFER_MONTHS` | `2` | ...of this many months of their invoices (1 to 12). Once per business, ever |
+| `CYBERLOGIX_FOUNDER_CODE` | — | The founding member code, compared ignoring case and spaces. Empty: off, and nothing about it is shown. See [BILLING.md](BILLING.md#founding-member-codes) |
+| `CYBERLOGIX_FOUNDER_PERCENT` | `20` | What the founding member code takes off, in percent (1 to 90)... |
+| `CYBERLOGIX_FOUNDER_MONTHS` | `3` | ...of the first this-many monthly invoices (1 to 12), or this many months' worth once on a yearly invoice. Once per business, ever |
+| `CYBERLOGIX_FOUNDER_UNTIL` | — | The last day the code can be entered (YYYY-MM-DD, UTC). Unset: no end date. A date that cannot be read closes the code |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
 | `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizyn` | Issuer name on invoices and in the agreements: MTRX Horizyn's registered name |

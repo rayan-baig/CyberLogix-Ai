@@ -169,13 +169,16 @@ class SignupRequest(BaseModel):
     referral_code: Optional[str] = Field(
         None, max_length=40,
         description=("A code from a business that already uses CyberLogix, "
-                     "or from an insurance partner. It makes the trial longer."),
+                     "or from an insurance partner, which makes the trial "
+                     "longer; or the founding member code, which takes a "
+                     "percentage off the first months' bills."),
     )
 
 
 @router.get("/sectors")
 def sectors():
     """What to offer in the sector picker, and the trial's shape."""
+    from founders import public_offer as founder_offer
     from pricing import (REFERRAL_TRIAL_DAYS, chain_words, starter_terms,
                          yearly_terms)
 
@@ -193,6 +196,9 @@ def sectors():
         # months free on a yearly plan, and the chain discounts.
         "yearly": yearly_terms(),
         "chain_discounts": chain_words(),
+        # The founding member code, when there is one open (founders.py).
+        # None when it is off, and then nothing is said about it.
+        "founder": founder_offer(),
         "min_password_length": MIN_PASSWORD_LENGTH,
         "sectors": [
             {
@@ -243,14 +249,21 @@ def start_trial(payload: SignupRequest, request: Request):
     # caller's own is said so, and nothing is left behind.
     referrer = None
     partner = None
+    founder = False
     code = (payload.referral_code or "").strip()
     if code:
+        import founders
         import insurers
         import referrals
 
-        # One box takes either: a friend's code (FRIEND-...) or an insurance
-        # partner's (PARTNER-...). Both give the same longer trial.
-        if insurers.is_partner_code(code):
+        # One box takes any of three: a friend's code (FRIEND-...) or an
+        # insurance partner's (PARTNER-...), which give the same longer
+        # trial; or the founding member code, which takes a percentage off
+        # the first bills instead (founders.py).
+        if founders.matches(code):
+            founders.check(code)
+            founder = True
+        elif insurers.is_partner_code(code):
             partner = insurers.check_at_signup(code, email)
         else:
             referrer = referrals.check_at_signup(code, email, payload.contact_phone)
@@ -297,6 +310,12 @@ def start_trial(payload: SignupRequest, request: Request):
         import insurers
 
         insurers.record_signup(tenant, partner)
+    founder_words = ""
+    if founder:
+        import founders
+
+        founders.apply(tenant, code, "signup")
+        founder_words = f" {founders.words()}."
 
     import usage
 
@@ -330,7 +349,9 @@ def start_trial(payload: SignupRequest, request: Request):
         "message": (
             f"{tenant.company_name} is live on a "
             f"{days or tier['term_days']}-day trial. You are signed in."
+            f"{founder_words}"
         ),
+        "founder": bool(founder),
         "referred": referrer is not None or partner is not None,
         "token": session.secret,
         "expires_at": iso(session.expires_at),

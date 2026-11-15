@@ -684,8 +684,11 @@ def bill_period(
                 if free is not None:
                     lines.append(free)
 
-            # The one-time offer to stay (retention.py): a percentage off
-            # the next months, as its own line, for the periods it covers.
+            # The one-time offer to stay or a founding member code
+            # (retention.py, founders.py): a percentage off some months, as
+            # its own line, for the periods it covers. After the chain
+            # discount above (it is one of the recurring lines the
+            # percentage is of), and never both on one invoice.
             from retention import discount_line
 
             stayed = discount_line(tenant, sub, index, lines)

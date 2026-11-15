@@ -284,9 +284,13 @@ async function loadKeeping() {
     ["Saves", String(k.save.last_30_days),
      k.save.ever + " ever, " + pct(s.save_offer_percent) + " off " + s.save_offer_months + " months"],
     ["Cancels", String(k.cancel.last_30_days), k.cancel.ever + " ever"],
+    ["Founder codes used", String((k.founder || {}).last_30_days || 0),
+     ((k.founder || {}).ever || 0) + " ever" + (s.founder_code_on
+       ? ", " + pct(s.founder_percent) + " off " + s.founder_months + " months" : ", code off")],
   ]);
   $("keep-note").textContent = "The last 30 days, with the count ever beneath. A save "
-    + "is a business that took the one-time offer to stay.";
+    + "is a business that took the one-time offer to stay. A founder code used is a "
+    + "business that entered the founding member code.";
 }
 
 /* ---- the books ------------------------------------------------------- */
