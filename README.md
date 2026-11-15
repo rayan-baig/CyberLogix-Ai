@@ -49,7 +49,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/FEATURES.md](docs/FEATURES.md) | The console, the industry profiles and their limits, Fahrenheit or Celsius, sites, sector paperwork, several businesses, your own hardware (BYOD), forecasting, meeting summaries, benchmarks, link previews |
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
-| [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, pausing instead and the one-time offer to stay, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
+| [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, pausing instead and the one-time offer to stay, founding member codes, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
 | [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), the signature that unlocks OmniArmor Pro, retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
@@ -111,6 +111,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to OmniArmor, which fills in its temperature-log check |
 | Repair partners | `/api/repair-partners`, `/api/repairs` | "Get a repair quote" on a failing unit, one lead to one technician covering the address, a fee per lead billed by hand |
 | Pause or cancel | `/api/leaving` | Pause for 1 to 3 months (no bills, no alerts), a one-time offer to stay, cancel one press away, and the counts |
+| Founding member code | `/api/founder-code` | A launch discount as our own invoice line: a percentage off the first months, once per business, entered at sign-up or before the first paid invoice |
 | Trade pages | `/for/<trade>` | Short pages for florists, breweries, ice-cream shops, butchers, school cafeterias, vaccine clinics and grocery stores |
 
 

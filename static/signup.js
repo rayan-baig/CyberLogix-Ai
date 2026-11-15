@@ -28,6 +28,15 @@ async function boot() {
       `${days} days, up to ${info.max_sensors} sensors, no card.`;
     $("ref-hint").textContent =
       `A friend's or a partner's code makes the trial ${info.referral_trial_days} days.`;
+    // The founding member code, only while there is one. Off, nothing is
+    // said about it.
+    if (info.founder) {
+      $("ref-label").textContent =
+        "Code from a friend or a partner, or a founding member code (optional)";
+      $("ref-hint").textContent +=
+        ` A founding member code gives ${info.founder.words.replace(/^Founding member: /, "")}.`
+        + (info.founder.until_words ? ` ${info.founder.until_words}` : "");
+    }
     if (info.starter) {
       $("after-trial").textContent =
         `After the trial, a small café or shop can stay on Starter: `

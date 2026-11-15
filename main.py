@@ -79,6 +79,7 @@ from insurers import router as insurers_router
 from repairs import business_router as repair_quotes_router
 from repairs import router as repairs_router
 from retention import router as retention_router
+from founders import router as founders_router
 from proofreports import router as proofreports_router
 import scheduler
 import usage
@@ -262,6 +263,7 @@ app.include_router(insurers_router)
 app.include_router(repairs_router)
 app.include_router(repair_quotes_router)
 app.include_router(retention_router)
+app.include_router(founders_router)
 app.include_router(proofreports_router)
 app.include_router(invoicing_router)
 app.include_router(enterprise_router)

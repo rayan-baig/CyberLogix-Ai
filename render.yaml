@@ -96,6 +96,18 @@ services:
         value: "25"
       - key: CYBERLOGIX_SAVE_OFFER_MONTHS
         value: "2"
+      # The founding member code (a launch discount on our own invoices):
+      # the code is set in the dashboard, the same text as the company
+      # site's; empty means off. Percent off the first this-many months.
+      - key: CYBERLOGIX_FOUNDER_CODE
+        sync: false
+      - key: CYBERLOGIX_FOUNDER_PERCENT
+        value: "20"
+      - key: CYBERLOGIX_FOUNDER_MONTHS
+        value: "3"
+      # The last day the code can be entered, YYYY-MM-DD; empty for none.
+      - key: CYBERLOGIX_FOUNDER_UNTIL
+        sync: false
 
       # Render's proxy sits in front of the app, so every request arrives
       # from the proxy's address. Without this, every visitor shares one

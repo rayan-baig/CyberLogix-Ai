@@ -137,6 +137,47 @@ console's Money tab shows them: paused now, and pauses, saves and cancels
 in the last 30 days and ever (`GET /api/leaving/numbers`). The operator's
 morning email has the same line whenever any of them happened.
 
+### Founding member codes
+
+The company site's early-access list promises founding members a launch
+discount by a code. Other products take it as a card processor's
+promotion code at checkout; CyberLogix bills from its own invoices with
+payment links, so there is no checkout for such a code to attach to.
+Here the code is one of our own invoice lines (`founders.py`), made the
+same way as the offer to stay.
+
+- **The code** is `CYBERLOGIX_FOUNDER_CODE`, compared ignoring case and
+  spaces. Empty means off: the sign-up page and the console say nothing
+  about it, and it is not taken.
+- **Entered** in the code box at sign-up (the box that also takes a
+  friend's or a partner's code), or later on the console's Money tab, on
+  the Bills card (`POST /api/founder-code`, owner only), but only before
+  the business's first paid invoice. Entered after an unpaid first
+  invoice, it starts with the next one.
+- **Monthly:** `CYBERLOGIX_FOUNDER_PERCENT` (20) off each of the first
+  `CYBERLOGIX_FOUNDER_MONTHS` (3) invoices, as a line of its own:
+  "Founding member: 20% off your first 3 months (month 1 of 3)".
+- **Yearly:** the percentage of that many months' worth, taken once, on
+  the first yearly invoice: "Paying yearly: 20% off 3 months' worth, taken
+  once on the first yearly bill". On $149 a month that is $89.40 off, and
+  the two free months of a yearly plan are still there as before.
+- **The base** is the recurring lines after any chain discount, the same
+  as the offer to stay, so the chain discount applies first and the
+  founder line after it.
+- **Once per business, ever.** A voided invoice that carried it is
+  re-issued with the same line, never an extra month.
+- **Never with the offer to stay on one invoice.** When both would
+  apply, the bigger line goes on, and the other is not used up by that
+  invoice: it carries on to the next.
+- **`CYBERLOGIX_FOUNDER_UNTIL`** (YYYY-MM-DD) is the last day the code
+  can be entered. A business that entered it in time keeps the discount
+  after that date, and so does one that entered it before the code was
+  switched off.
+- **The numbers.** Each code entered is counted with no business named
+  (`retention_event`, event `founder`), and the Money tab of `/book`
+  shows founder codes used in the last 30 days and ever
+  (`GET /api/leaving/numbers`).
+
 ### Chain discounts
 
 Restaurants and pharmacies take a discount on each location's price by

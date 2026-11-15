@@ -85,17 +85,19 @@ def add_months(moment: datetime, months: int) -> datetime:
 
 
 def record_event(event: str, months: Optional[int] = None) -> None:
-    """One pause, save or cancel, with no business named in it."""
+    """One pause, save, cancel or founding member code, with no business
+    named in it."""
     STORE._db.put(EVENT_KIND, STORE._next_id("RET"),
                   {"event": event, "at": iso(utc_now()), "months": months})
 
 
 def numbers(now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Pauses, saves and cancels: in the last 30 days and ever."""
+    """Pauses, saves, cancels and founding member codes entered: in the
+    last 30 days and ever."""
     now = now or utc_now()
     month_ago = now - timedelta(days=30)
     out: Dict[str, Any] = {}
-    for event in ("pause", "save", "cancel"):
+    for event in ("pause", "save", "cancel", "founder"):
         rows = [r for r in STORE._db.all(EVENT_KIND) if r.get("event") == event]
         recent = [r for r in rows if (_parse(r.get("at")) or now) >= month_ago]
         out[event] = {"last_30_days": len(recent), "ever": len(rows)}
@@ -290,25 +292,20 @@ def offer_row(tenant_id: str) -> Optional[Dict[str, Any]]:
     return STORE._db.get(OFFER_KIND, tenant_id)
 
 
-def discount_line(tenant: Tenant, sub: Subscription, index: int,
-                  lines: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """The offer's line on the invoice for period `index`, if it applies.
+def _candidate(row: Dict[str, Any], sub: Subscription, index: int,
+               lines: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """What one offer would take off the invoice for period `index`.
 
-    Called by contracts.bill_period with the store lock held. Which periods
-    used the offer, and how many months each, is written down by period,
-    so a voided invoice issued again gets the same line, and never a third
-    month.
+    Nothing is written: the caller records only the line it puts on.
     """
     from contracts import recurring_total
 
-    row = offer_row(tenant.tenant_id)
-    if row is None:
-        return None
     if row.get("subscription_id") == sub.subscription_id and index < int(row.get("from_period") or 0):
         return None
     used: Dict[str, Any] = dict(row.get("used") or {})
     key = f"{sub.subscription_id}:{index}"
-    if key in used:
+    again = key in used
+    if again:
         months = int(used[key])
     else:
         left = int(row.get("months") or 0) - sum(int(v) for v in used.values())
@@ -321,16 +318,69 @@ def discount_line(tenant: Tenant, sub: Subscription, index: int,
                     / Decimal(sub.months_per_period))
     if amount <= 0:
         return None
-    used[key] = months
-    row["used"] = used
-    STORE._db.put(OFFER_KIND, tenant.tenant_id, row)
     total = int(row.get("months") or 0)
-    done = sum(int(v) for v in used.values())
-    which = (f"month {done} of {total}" if months == 1
-             else f"{months} of {total} months")
+    done = sum(int(v) for k, v in used.items() if k != key) + months
+    return {"key": key, "months": months, "amount": amount, "again": again,
+            "percent": float(percent), "total": total, "done": done}
+
+
+def _save_words(c: Dict[str, Any], sub: Subscription) -> str:
+    which = (f"month {c['done']} of {c['total']}" if c["months"] == 1
+             else f"{c['months']} of {c['total']} months")
+    return f"Thank you for staying: {c['percent']:g}% off ({which})"
+
+
+def _founder_words(c: Dict[str, Any], sub: Subscription) -> str:
+    from founders import words, yearly_words
+
+    if sub.annual_prepay:
+        return yearly_words(c["percent"], c["months"])
+    which = (f"month {c['done']} of {c['total']}" if c["months"] == 1
+             else f"months {c['done'] - c['months'] + 1} to {c['done']} of {c['total']}")
+    return f"{words(c['percent'], c['total'])} ({which})"
+
+
+def discount_line(tenant: Tenant, sub: Subscription, index: int,
+                  lines: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The one offer line on the invoice for period `index`, if any.
+
+    Two offers make a line here: the offer to stay, and a founding member
+    code (founders.py). They never both go on one invoice. When both
+    would, the bigger line goes on, and the other is not used up by this
+    invoice: it carries on to the next one.
+
+    Called by contracts.bill_period with the store lock held, after any
+    chain discount (the percentage is of the recurring lines as they stand
+    after it). Which periods used an offer, and how many months each, is
+    written down by period, so a voided invoice issued again gets the same
+    line, and never an extra month. On a yearly invoice the months are
+    months' worth of the twelve, taken at once.
+    """
+    from founders import FOUNDER_KIND, row_for
+
+    choices = []
+    for kind, row, describe in (
+            (FOUNDER_KIND, row_for(tenant.tenant_id), _founder_words),
+            (OFFER_KIND, offer_row(tenant.tenant_id), _save_words)):
+        if row is None:
+            continue
+        found = _candidate(row, sub, index, lines)
+        if found is not None:
+            choices.append((kind, row, describe, found))
+    if not choices:
+        return None
+    # A re-issued invoice keeps the line it had; otherwise the bigger one.
+    again = [c for c in choices if c[3]["again"]]
+    kind, row, describe, found = (again[0] if again
+                                  else max(choices, key=lambda c: c[3]["amount"]))
+    used: Dict[str, Any] = dict(row.get("used") or {})
+    used[found["key"]] = found["months"]
+    row["used"] = used
+    STORE._db.put(kind, tenant.tenant_id, row)
+    amount = found["amount"]
     return {
         "kind": "discount",
-        "description": f"Thank you for staying: {float(percent):g}% off ({which})",
+        "description": describe(found, sub),
         "quantity": 1,
         "unit_price_usd": -amount,
         "amount_usd": -amount,
@@ -388,6 +438,7 @@ class PauseRequest(BaseModel):
 
 def state(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Everything the Pause or cancel screen shows."""
+    from founders import state as founder_state
     from pricing import CANCELLATION_RULE
 
     now = now or utc_now()
@@ -422,6 +473,8 @@ def state(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, Any]:
         },
         "next_billing_at": (iso(sub.period_start(sub.periods_billed))
                             if has_contract and sub is not None else None),
+        # The founding member code (founders.py), shown on the same tab.
+        "founder": founder_state(tenant, now),
     }
 
 
@@ -468,7 +521,13 @@ def stay(tenant: Tenant = Depends(require_tenant_any_state),
 
 @router.get("/numbers", dependencies=[Depends(require_platform_admin)])
 def operator_numbers():
-    """Pauses, saves and cancels across every business, for the book."""
+    """Pauses, saves, cancels and founding member codes used, across every
+    business, for the book."""
+    import founders
+
     return {**numbers(), "settings": {"save_offer_percent": SAVE_OFFER_PERCENT,
                                       "save_offer_months": SAVE_OFFER_MONTHS,
-                                      "pause_months": list(PAUSE_MONTHS)}}
+                                      "pause_months": list(PAUSE_MONTHS),
+                                      "founder_code_on": founders.is_open(),
+                                      "founder_percent": founders.percent(),
+                                      "founder_months": founders.months()}}

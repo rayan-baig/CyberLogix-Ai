@@ -4,6 +4,39 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.16.0 — 2026-11-15
+
+Founding member codes, on our own invoices.
+
+- **A founding member code.** The company site's early-access list
+  promises founding members a launch discount by a code. Our billing is
+  our own invoices with payment links, not card-processor checkout, so a
+  processor's promotion code has nothing to attach to here. The code is
+  taken as one of our own invoice lines instead (`founders.py`).
+- **What it gives:** 20% off the first 3 monthly invoices, as a line of
+  its own on each ("Founding member: 20% off your first 3 months (month 1
+  of 3)"). On a yearly plan it is 20% of 3 months' worth, taken once on
+  the first yearly invoice, and the line says so. The percentage is of the
+  recurring lines after any chain discount, the same base as the offer to
+  stay.
+- **Where it is entered:** the code box at sign-up, which already takes a
+  friend's or a partner's code, or later on the console's Money tab (the
+  Bills card), by an owner, before the first paid invoice. Entered after
+  an unpaid first invoice, it starts with the next one. Case and spaces
+  do not matter.
+- **Limits.** Once per business, ever. Never on the same invoice as the
+  offer to stay: when both would apply, the bigger line goes on, and the
+  other is not used up by that invoice. A last day to enter it can be set;
+  a business that entered it in time keeps the discount after it.
+- **Off unless set.** New settings `CYBERLOGIX_FOUNDER_CODE` (empty: off,
+  and nothing is shown), `CYBERLOGIX_FOUNDER_PERCENT` (20),
+  `CYBERLOGIX_FOUNDER_MONTHS` (3) and `CYBERLOGIX_FOUNDER_UNTIL` (a
+  YYYY-MM-DD date, optional). Switching the code off stops new codes; a
+  discount already given carries on.
+- **The numbers.** Each code entered is counted with no business named,
+  and the Money tab of `/book` shows founder codes used in the last 30
+  days and ever.
+
 ## 3.15.0 — 2026-11-15
 
 Repair partners, pause instead of cancel, and pages for seven more trades.

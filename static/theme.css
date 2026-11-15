@@ -1425,6 +1425,12 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
               border: 1px solid var(--border-lit); background: var(--surface);
               font-size: 13.5px; color: var(--ink-2); }
 .stay-offer b { color: var(--ink); }
+/* The founding member code (founders.py), at the top of the Bills card. */
+.founder-box { margin: 10px 0 12px; padding: 12px 14px; border-radius: 12px;
+               border: 1px solid var(--border-lit); background: var(--surface);
+               font-size: 13.5px; color: var(--ink-2); }
+.founder-box b { color: var(--ink); }
+.founder-box input { flex: 1; min-width: 0; }
 .paused-box { padding: 12px 14px; border-radius: 12px; margin: 6px 0 10px;
               border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
               background: color-mix(in srgb, var(--critical) 8%, transparent);
