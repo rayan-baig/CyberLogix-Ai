@@ -291,7 +291,10 @@ def list_industries():
     stranger to sign in before it will say what the thing does is a page
     that does not get read.
     """
-    return {"count": len(known()), "industries": index()}
+    from trades import index as trades
+
+    # The shorter pages for more trades with cold stock (trades.py).
+    return {"count": len(known()), "industries": index(), "trades": trades()}
 
 
 @router.get("/{vertical}")

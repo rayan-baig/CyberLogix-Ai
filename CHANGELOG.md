@@ -4,6 +4,67 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.15.0 — 2026-11-15
+
+Repair partners, pause instead of cancel, and pages for seven more trades.
+
+- **Get a repair quote.** When the pattern check calls a unit failing (warm,
+  not a defrost or a door, and not back down) or the forecaster sees it
+  drifting warm towards its limit, its card in the console offers "Get a
+  repair quote". Nothing is sent until the business reads a confirm
+  screen showing exactly what would go, picks the contact (a phone, an
+  email, or both) and the address, and ticks the box. Operators and owners
+  can send; a viewer cannot.
+- **A lead holds four things, nothing else:** the business name, the
+  contact chosen, the address, and a plain summary of the problem (fridge
+  or freezer and its name, what we saw, since when). No sensor, readings,
+  keys or account access. The lead email is blanked from our mail log once
+  sent, and logs mask the contact.
+- **One repair partner per lead, in turn.** It goes to one approved,
+  switched-on partner whose ZIP or postcode prefixes or cities cover the
+  address; whoever has waited longest goes first. At most one lead per unit
+  every three days. Nobody covering the address means nothing is sent.
+- **Repair partners apply** at `/repair-partners` (rate limited, 3 a caller
+  an hour). Applications are mailed to `CYBERLOGIX_OPERATOR_EMAIL`; the
+  operator approves them on the Partners tab of `/book` and sets their
+  areas. Each partner gets a key for their dashboard at
+  `/repair-partners/dashboard`: their leads and what they owe.
+- **A fee per lead, billed by hand.** Each delivered lead is owed at the
+  partner's fee: new setting `CYBERLOGIX_REPAIR_LEAD_FEE_USD` ($35), kept
+  with each partner when approved. A partner can mark a lead bad within 7
+  days; the operator refuses it (no charge) or keeps the charge. The
+  operator emails partners a statement and records their payments.
+  Nothing moves money. Every page says we do not do repairs and do not
+  vouch for any technician.
+- **Pause instead of cancel.** The console's Money tab has a Pause or cancel
+  card: pause for 1, 2 or 3 months, the one-time offer to stay, and Cancel
+  my plan right below, one press as before. During a pause the next bill
+  and every one after move later by exactly the pause, so nothing is billed
+  and the days already paid for are kept; readings are kept and nobody is
+  texted, called or emailed about a unit, and the console says so at the
+  top in red. It ends on its own on the date chosen, with a reminder
+  email three days before. Coming back early, or cancelling while paused,
+  gives back the unused part.
+- **The offer to stay:** 25% off the next 2 months, as a line on each of
+  those invoices, once per business ever. New settings
+  `CYBERLOGIX_SAVE_OFFER_PERCENT` (25) and `CYBERLOGIX_SAVE_OFFER_MONTHS`
+  (2).
+- **The numbers.** Pauses, saves and cancels are counted with no business
+  named, and shown on the Money tab of `/book`: paused now, and each in
+  the last 30 days and ever.
+- **Pages for seven more trades** at `/for/florists`, `/for/breweries`,
+  `/for/ice-cream-shops`, `/for/butchers`, `/for/school-cafeterias`,
+  `/for/vaccine-clinics` and `/for/grocery-stores`: the risk, what we do,
+  and the price that applies (the restaurant rate and Starter for food
+  shops, the pharmacy rate for a vaccine clinic, "Custom pricing — ask for
+  a quote" for florists and breweries). Rendered on the server with their
+  own titles and descriptions, listed on `/for` and in the sitemap, as is
+  `/repair-partners`.
+- **Agreements 2.7.** One sentence in the privacy statement: if you ask for
+  a repair quote, the one repair company it goes to gets your business
+  name, the contact and address you chose and a short note about the
+  problem, and nothing else.
+
 ## 3.14.0 — 2026-11-14
 
 Proof of monitoring for insurers, and a partner programme for brokers and

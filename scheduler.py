@@ -124,6 +124,15 @@ def run_money_pass() -> dict:
         bundle = omniarmor.run_daily()
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("OmniArmor daily pass failed (%s).", exc)
+    paused = {"reminded": 0, "resumed": 0}
+    try:
+        # A reminder three days before a pause ends (retention.py). Before
+        # the flush, so a reminder that queued goes out in the same hour.
+        import retention
+
+        paused = retention.run_pauses()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Pause pass failed (%s).", exc)
     try:
         # Last, so that anything the passes above queued against a mail
         # host that was briefly down gets one more attempt in the same
@@ -155,6 +164,7 @@ def run_money_pass() -> dict:
         "licence_alerts": licences,
         "weekly_texts": texted,
         "kitchen_safety_bundle": bundle,
+        "pauses": paused,
         "backup": backed_up,
         "mail_queue": flushed,
     }

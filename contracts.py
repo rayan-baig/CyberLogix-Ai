@@ -684,6 +684,14 @@ def bill_period(
                 if free is not None:
                     lines.append(free)
 
+            # The one-time offer to stay (retention.py): a percentage off
+            # the next months, as its own line, for the periods it covers.
+            from retention import discount_line
+
+            stayed = discount_line(tenant, sub, index, lines)
+            if stayed is not None:
+                lines.append(stayed)
+
             from credits import create_invoice as create_with_credit
 
             invoice = create_with_credit(
@@ -806,11 +814,19 @@ def run_billing(now: Optional[datetime] = None) -> Dict[str, Any]:
     failures: List[str] = []
     capped: List[str] = []
 
+    from retention import is_paused
+
     for sub in STORE.all_subscriptions():
         if not sub.active:
             continue
         tenant = STORE.get_tenant(sub.tenant_id)
         if tenant is None:
+            continue
+        # A paused business is not billed (retention.py). Its next billing
+        # date has already moved past the pause; this also holds back
+        # anything else, a re-issued month or a mid-year charge, until the
+        # pause is over.
+        if is_paused(tenant.tenant_id, now):
             continue
         try:
             # A switch between monthly and yearly starts when what was paid
@@ -1549,9 +1565,16 @@ def cancel(
             detail="There is no live contract to cancel.",
         )
     from pricing import CANCELLATION_RULE
+    from retention import end_pause, record_event
 
+    # Cancelling while paused ends the pause first, so the service runs to
+    # the end of what was paid for plus only the time actually spent
+    # paused, not the whole pause that was booked.
+    end_pause(tenant, "cancelled")
     reissued = settle_outstanding_rebills(tenant, sub)
+    sub = STORE.get_subscription(sub.subscription_id) or sub
     STORE.cancel_subscription(sub, payload.reason or "cancelled by customer")
+    record_event("cancel")
     write_audit(tenant, operator, "contract.cancelled", payload.reason or "")
     outstanding = round(
         sum(i.balance_usd for i in STORE.open_invoices(tenant.tenant_id)), 2

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
+from repairs import unit_state
 from licenses import require_tenant
 from store import (
     PLAN_TIERS,
@@ -81,8 +82,16 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
     subscription = build_subscription(tenant)
     contract = STORE.active_subscription(tenant.tenant_id)
 
+    from retention import current_pause, public_pause
+
+    pause = current_pause(tenant.tenant_id, now)
     if state == "suspended":
         headline = "This licence is suspended. Get in touch to restore it."
+        severity = "critical"
+    elif pause is not None:
+        # The loudest thing on the page while it lasts: an owner who paused
+        # in spring must not think in summer that the freezer is watched.
+        headline = public_pause(pause)["words"]
         severity = "critical"
     elif state == "lapsed":
         headline = (
@@ -167,8 +176,10 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
         "annual_if_paid_usd": subscription["annual_total_usd"],
         "collections": money,
         # Always true, and worth saying on the page rather than only in the
-        # agreement: none of this touches the alarm.
-        "alerting_continues": state != "lapsed",
+        # agreement: none of this touches the alarm. A pause the owner chose
+        # is the one exception, and says so.
+        "alerting_continues": state != "lapsed" and pause is None,
+        "paused": public_pause(pause) if pause is not None else None,
     }
 
 
@@ -207,6 +218,7 @@ def console_overview(
         site = sites.get(sensor.site_id) if sensor.site_id else None
         row["site_name"] = site.name if site else None
 
+        projection = None
         if forecasting:
             projection = forecast_sensor(sensor.sensor_id, window_hours=12.0)
             row["risk_level"] = projection["risk_level"]
@@ -216,6 +228,10 @@ def console_overview(
             row["risk_level"] = None
             row["hours_until_breach"] = None
             row["trend_f_per_hour"] = None
+        # "Get a repair quote", when the forecaster or the pattern check
+        # says this unit is failing or drifting warm (repairs.py), or the
+        # request already sent for it. On every plan: it costs nothing.
+        row["repair"] = unit_state(tenant, sensor, projection)
 
         sensors.append(row)
 

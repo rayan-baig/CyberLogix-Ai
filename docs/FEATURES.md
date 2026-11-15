@@ -40,6 +40,17 @@ and the trial; those figures are substituted when the page is served, from
 at `/for/<sector>` leads with the problem and then the fix, the fix quoting
 the limit that sector alarms on.
 
+Seven more trades that keep stock cold have a shorter page each
+(`trades.py`): `/for/florists`, `/for/breweries`, `/for/ice-cream-shops`,
+`/for/butchers`, `/for/school-cafeterias`, `/for/vaccine-clinics` and
+`/for/grocery-stores`. Each is written out on the server with its own
+title and description, says the risk in that trade, what CyberLogix does
+and the price that applies, read from pricing.py: the restaurant rate (and
+Starter) for the food trades, the pharmacy rate for a vaccine clinic, and
+"Custom pricing — ask for a quote" for florists and breweries. They are
+in the sitemap and listed under the twelve on `/for`. No made-up figures,
+testimonials or other companies' names.
+
 Beyond that the landing page quotes no prices of its own: the sector rate card and the
 plan list are fetched from `/api/industries` and `/api/licenses/plans`, the
 same endpoints the console uses, so a marketing page can never advertise a

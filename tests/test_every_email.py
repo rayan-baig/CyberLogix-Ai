@@ -213,6 +213,47 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     assert api.post(f"/api/insurance-partners/{second}/decline",
                     headers=admin).status_code == 200        # insurance-declined
 
+    # Two repair partner applications: one approved and sent a lead, which
+    # it marks bad, and a statement; one declined.
+    for firm, address in (("Polar Fix", "jo@polarfix.example"),
+                          ("Cold Crew", "kc@coldcrew.example")):
+        assert api.post("/api/repair-partners/apply", json={
+            "company_name": firm, "contact_name": "Jo Banks", "contact_email": address,
+            "contact_phone": "+1-555-0144", "areas": "021, Boston",
+        }).status_code == 202                                        # repair-application
+    rep_first, rep_second = sorted(r["partner_id"] for r in STORE._db.all("repair_partner"))
+    approved = api.post(f"/api/repair-partners/{rep_first}/approve", headers=admin,
+                        json={"postcodes": ["021"]})
+    assert approved.status_code == 200, approved.text                # repair-key
+    assert api.post(f"/api/repair-partners/{rep_second}/decline",
+                    headers=admin).status_code == 200                # repair-declined
+    sensor_factory(headers, "BELL-WALKIN", "restaurant", "Walk-in freezer")
+    walkin = STORE.get_sensor("BELL-WALKIN")
+    for minutes_ago, temp in enumerate([51.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0,
+                                        38.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]):
+        STORE.record_reading(sensor=walkin, temperature_fahrenheit=temp,
+                             humidity_percent=50.0, breached=temp > 32.0,
+                             at=utc_now() - timedelta(minutes=5 * (13 - minutes_ago)))
+    lead = api.post("/api/repairs/quote", headers=owner, json={
+        "sensor_id": "BELL-WALKIN", "contact_name": "Ann Bell",
+        "contact_phone": "+1-555-0177", "street": "1 Bell St", "city": "Boston",
+        "postcode": "02110", "consent": True})
+    assert lead.status_code == 201, lead.text                        # repair-lead
+    partner_key = {"X-CyberLogix-Repair-Partner": approved.json()["key"]}
+    assert api.post(f"/api/repair-partners/me/leads/{lead.json()['lead_id']}/bad",
+                    headers=partner_key, json={"reason": "No answer at that number."}
+                    ).status_code == 200                             # repair-dispute
+    assert api.post(f"/api/repair-partners/{rep_first}/statement",
+                    headers=admin).status_code == 200                # repair-statement
+
+    # The business pauses, and is reminded three days before it ends.
+    import retention
+
+    assert api.post("/api/leaving/pause", headers=owner,
+                    json={"months": 1}).status_code == 200
+    [pause] = STORE._db.all("account_pause")
+    retention.run_pauses(retention._parse(pause["resume_at"]) - timedelta(days=2))  # pause-reminder
+
     try:                                                             # error-report
         raise RuntimeError("a bug")
     except RuntimeError as exc:
@@ -234,6 +275,13 @@ KINDS = {
     "insurance-key:": "must",
     "insurance-declined:": "must",
     "insurance-application:": "manage",
+    "repair-key:": "must",
+    "repair-declined:": "must",
+    "repair-lead:": "must",
+    "repair-statement:": "must",
+    "pause-reminder:": "must",
+    "repair-application:": "manage",
+    "repair-dispute:": "manage",
     "licence-alert:": "manage",
     "digest:operator:": "manage",
     "omniarmor-failing:": "manage",

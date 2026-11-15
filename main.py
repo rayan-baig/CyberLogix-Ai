@@ -76,6 +76,9 @@ from mail import status as mail_status
 from notifications import delivery_ready
 from partners import router as partners_router
 from insurers import router as insurers_router
+from repairs import business_router as repair_quotes_router
+from repairs import router as repairs_router
+from retention import router as retention_router
 from proofreports import router as proofreports_router
 import scheduler
 import usage
@@ -256,6 +259,9 @@ app.include_router(claims_router)
 app.include_router(benchmarks_router)
 app.include_router(partners_router)
 app.include_router(insurers_router)
+app.include_router(repairs_router)
+app.include_router(repair_quotes_router)
+app.include_router(retention_router)
 app.include_router(proofreports_router)
 app.include_router(invoicing_router)
 app.include_router(enterprise_router)
@@ -328,6 +334,9 @@ MODULES_ACTIVE = [
     "kitchen_safety_bundle_omniarmor",
     "proof_of_monitoring_reports",
     "insurance_partners",
+    "repair_partners",
+    "pause_instead_of_cancel",
+    "trade_pages",
 ]
 
 
@@ -346,6 +355,9 @@ PROOF_REPORT_HTML = STATIC_DIR / "proof-report.html"
 VERIFY_HTML = STATIC_DIR / "verify.html"
 INSURERS_HTML = STATIC_DIR / "insurance-partners.html"
 INSURER_DASHBOARD_HTML = STATIC_DIR / "insurance-dashboard.html"
+REPAIRS_HTML = STATIC_DIR / "repair-partners.html"
+REPAIR_DASHBOARD_HTML = STATIC_DIR / "repair-dashboard.html"
+TRADE_HTML = STATIC_DIR / "trade.html"
 SIMPLE_HTML = STATIC_DIR / "simple.html"
 INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
@@ -440,7 +452,7 @@ API_DOCS_POLICY = "; ".join([
 # stay out as well. The sitemap lists exactly these (plus one page per
 # industry), and a test holds the two together.
 PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal",
-                "/insurance-partners")
+                "/insurance-partners", "/repair-partners")
 
 # A copy that is not the live product -- staging, a demo box -- asks to be
 # left out of search results entirely: every page noindex, robots.txt
@@ -465,8 +477,9 @@ def _indexable(path: str) -> bool:
         return True
     if path.startswith("/for/"):
         from industries import known
+        from trades import known as trades
 
-        return path[len("/for/"):] in known()
+        return path[len("/for/"):] in set(known()) | set(trades())
     return False
 
 
@@ -769,6 +782,8 @@ def robots(request: Request):
         "Allow: /legal",
         "Allow: /insurance-partners$",
         "Disallow: /insurance-partners/",
+        "Allow: /repair-partners$",
+        "Disallow: /repair-partners/",
         "Disallow: /console",
         "Disallow: /today",
         "Disallow: /partners",
@@ -800,13 +815,18 @@ def sitemap(request: Request):
     and they were crawlable but absent from the map.
     """
     from industries import known
+    from trades import known as trades
 
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     pages = [("/", "1.0"), ("/pricing", "0.9"), ("/signup", "0.9"),
              ("/for", "0.8")]
     pages += [(f"/for/{vertical}", "0.8") for vertical in known()]
+    # The shorter pages for more trades with cold stock (trades.py): a
+    # florist searches for "flower cooler alarm", not for our verticals.
+    pages += [(f"/for/{slug}", "0.7") for slug in trades()]
     pages += [("/help", "0.6"), ("/help/sensors", "0.6"),
-              ("/insurance-partners", "0.5"), ("/legal", "0.4")]
+              ("/insurance-partners", "0.5"), ("/repair-partners", "0.5"),
+              ("/legal", "0.4")]
     if NOINDEX:
         pages = []
     entries = "".join(
@@ -860,7 +880,18 @@ def industry_page(request: Request, vertical: str = ""):
     friendly page rather than a template that never fills in.
     """
     from industries import known
+    from trades import TRADES, render
 
+    if vertical in TRADES:
+        # A shorter page for a trade that is not a vertical of its own
+        # (trades.py), written out on the server with its own title.
+        page = render(vertical)
+        return _serve_page(TRADE_HTML, request, {
+            "%%TITLE%%": page["title"],
+            "%%PAGE_PATH%%": f"/for/{vertical}",
+            "%%OG_TITLE%%": page["title"],
+            "%%OG_DESCRIPTION%%": page["description"],
+        }, markup={"%%BODY%%": page["body"]})
     if vertical and vertical not in known():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="No page for that industry.")
@@ -1032,6 +1063,24 @@ def insurance_partners_page(request: Request):
 def insurance_partner_dashboard():
     """An approved partner's dashboard. Renders nothing without their key."""
     return FileResponse(INSURER_DASHBOARD_HTML, media_type="text/html")
+
+
+@app.get("/repair-partners", include_in_schema=False)
+def repair_partners_page(request: Request):
+    """For refrigeration technicians: how leads work, and the application."""
+    from repairs import BAD_LEAD_DAYS, DEFAULT_LEAD_FEE_USD
+
+    return _serve_page(REPAIRS_HTML, request, {
+        "%%LEAD_FEE%%": f"${DEFAULT_LEAD_FEE_USD:,.0f}" if DEFAULT_LEAD_FEE_USD == int(
+            DEFAULT_LEAD_FEE_USD) else f"${DEFAULT_LEAD_FEE_USD:,.2f}",
+        "%%BAD_DAYS%%": str(BAD_LEAD_DAYS),
+    })
+
+
+@app.get("/repair-partners/dashboard", include_in_schema=False)
+def repair_partner_dashboard():
+    """An approved repair partner's dashboard. Renders nothing without their key."""
+    return FileResponse(REPAIR_DASHBOARD_HTML, media_type="text/html")
 
 
 @app.get("/offline", include_in_schema=False)

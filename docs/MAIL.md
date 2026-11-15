@@ -121,6 +121,17 @@ to be an insurance partner, with a pointer to the Partners tab of `/book`
 mailed their dashboard key once, as a sensitive message whose text is
 blanked once it is sent, the way a password reset is.
 
+Repair partners work the same way ([REPAIR-PARTNERS.md](REPAIR-PARTNERS.md)):
+each application and each lead a partner marks bad come to this address
+with a pointer to `/book`; an approved partner is mailed their key once,
+sensitively. Each lead is mailed to its partner as a sensitive message
+too, because it carries somebody's phone number or email, and a statement
+of what they owe goes when the operator sends one.
+
+A business that paused (see [BILLING.md](BILLING.md#pause-instead-of-cancel-and-the-offer-to-stay))
+is emailed three days before the pause ends, to say alerts and bills
+start again on that date.
+
 The other direction is a weekly report to each paying estate. A
 monitoring product that works is invisible by construction, and at
 renewal the customer cannot remember what they are paying for. Four

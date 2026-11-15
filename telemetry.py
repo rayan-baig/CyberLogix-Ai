@@ -303,6 +303,25 @@ def process_reading(
             "message": "Telemetry parameters stable within safe operating bounds.",
         }
 
+    # Paused by the owner (retention.py): the reading is kept, and nobody
+    # is texted, called or emailed until the pause ends on its date.
+    from retention import current_pause
+
+    pause = current_pause(tenant.tenant_id)
+    if pause is not None:
+        logger.info("Out of range while paused, not alerted: sensor=%s temp=%s°F",
+                    sensor.sensor_id, temperature)
+        return {
+            "status": "PAUSED",
+            "industry": profile["name"],
+            "sensor_id": sensor.sensor_id,
+            "current_temperature": display_temperature(temperature, unit),
+            "temperature_unit": unit,
+            "breach_details": breach_reason,
+            "message": ("Out of range, and kept. Alerts are paused until "
+                        f"{pause['resume_at'][:10]}, so nobody was alerted."),
+        }
+
     logger.critical(
         "Catastrophe breach: sensor=%s vertical=%s temp=%s°F reason=%s",
         sensor.sensor_id,

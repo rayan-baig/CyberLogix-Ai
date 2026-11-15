@@ -224,8 +224,20 @@ def operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
         "people": _people_summary(),
         "unbilled_accounts": len(unbilled),
         "unbilled_annual_usd": unbilled_annual,
+        "keeping": _keeping_summary(now),
         "warnings": _system_warnings(),
     }
+
+
+def _keeping_summary(now: datetime) -> Dict[str, Any]:
+    """Pauses, saves and cancels (retention.py), for the morning email."""
+    try:
+        import retention
+
+        return retention.numbers(now)
+    except Exception:  # noqa: BLE001 - a summary must not stop the digest
+        logger.exception("Could not count pauses for the digest.")
+        return {}
 
 
 def _fault_summary() -> Dict[str, Any]:
@@ -304,6 +316,15 @@ def _render_operator(digest: Dict[str, Any]) -> str:
             f"${digest['unbilled_annual_usd']:,.0f} a year is being served "
             f"with no contract, across {count} account"
             f"{'' if count == 1 else 's'}. None of it is being invoiced."
+        )
+
+    keeping = digest.get("keeping") or {}
+    if keeping and any(keeping[k]["last_30_days"] for k in ("pause", "save", "cancel")):
+        out.append(
+            f"Last 30 days: {keeping['pause']['last_30_days']} pause(s), "
+            f"{keeping['save']['last_30_days']} save(s) with the offer to stay, "
+            f"{keeping['cancel']['last_30_days']} cancel(s); "
+            f"{keeping['paused_now']} business(es) paused now."
         )
 
     out += [
@@ -702,8 +723,13 @@ def send_weekly_texts(now: Optional[datetime] = None) -> Dict[str, Any]:
     sent: List[str] = []
     failures: List[str] = []
 
+    from retention import is_paused
+
     for tenant in STORE.list_tenants():
         if tenant.plan == "trial" or tenant.suspended:
+            continue
+        # "All fine this week" would be untrue of a business that is paused.
+        if is_paused(tenant.tenant_id, now):
             continue
         phone = wants_weekly_text(tenant.tenant_id)
         if not phone:

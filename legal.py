@@ -85,8 +85,10 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # partner's code (the partner sees its name and plan, nothing inside), and
 # that a proof of monitoring report is seen only by whoever the business
 # gives its link to.
-TERMS_VERSION = "2.6"
-EFFECTIVE_DATE = "2026-11-14"
+# 2.7 says, in one sentence, what a repair company gets when a business
+# asks for a repair quote (repairs.py), and nothing else.
+TERMS_VERSION = "2.7"
+EFFECTIVE_DATE = "2026-11-15"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -349,6 +351,10 @@ alerts or people.
 **Proof of monitoring reports.** A report is seen only by people you give
 its link to. The page behind the link shows your business name and the
 report's headline numbers, and you can switch the link off at any time.
+
+**Repair quotes.** If you ask for a repair quote, the one repair company
+we send it to gets your business name, the contact and address you chose
+and a short note about the problem, and nothing else.
 
 ## Anonymous sector averages
 

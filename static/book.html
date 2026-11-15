@@ -78,6 +78,10 @@
       <h3 class="sub">The yearly discount (2 months free)</h3>
       <div class="lines" id="margin-prepay"></div>
       <p class="note" id="margin-note"></p>
+
+      <h3 class="sub">Keeping customers: pauses, saves and cancels</h3>
+      <div class="totals" id="keep-totals"></div>
+      <p class="note" id="keep-note"></p>
     </section>
 
     <section class="panel" id="panel-books" role="tabpanel" hidden>
@@ -187,6 +191,86 @@
         <button type="submit">Record the payment</button>
       </form>
       <p class="said" id="payout-said"></p>
+
+      <h2 class="section-gap">Repair partners</h2>
+      <div class="totals" id="rep-totals"></div>
+      <p class="note" id="rep-note"></p>
+
+      <h3 class="sub">Applications waiting</h3>
+      <div id="rep-applications"></div>
+      <form class="entry" id="rep-approve-form">
+        <label>Application
+          <select id="rep-app" required></select>
+        </label>
+        <label>Fee per lead (USD)
+          <input id="rep-fee" type="number" step="0.01" min="0" max="1000"
+                 placeholder="The default">
+        </label>
+        <label class="wide">ZIP or postcode prefixes they cover, separated by commas
+          <input id="rep-postcodes" type="text" maxlength="2000" placeholder="021, 022, SW1">
+        </label>
+        <label class="wide">Cities they cover, separated by commas
+          <input id="rep-cities" type="text" maxlength="2000" placeholder="Boston, Cambridge">
+        </label>
+        <button type="submit">Approve with these areas</button>
+        <button type="button" class="act" data-act="rep-decline">Decline it</button>
+      </form>
+
+      <h3 class="sub">Approved repair partners</h3>
+      <div id="rep-partners"></div>
+      <form class="entry" id="rep-areas-form">
+        <label>Partner
+          <select id="rep-partner" required></select>
+        </label>
+        <label class="wide">ZIP or postcode prefixes, separated by commas
+          <input id="rep-area-postcodes" type="text" maxlength="2000">
+        </label>
+        <label class="wide">Cities, separated by commas
+          <input id="rep-area-cities" type="text" maxlength="2000">
+        </label>
+        <button type="submit">Save their areas</button>
+        <button type="button" class="act" data-act="rep-statement">Email them a statement</button>
+        <button type="button" class="act" data-act="rep-rotate">New dashboard key</button>
+      </form>
+      <p class="said" id="rep-said"></p>
+      <div class="issued" id="rep-key" hidden>
+        <p class="note">Shown once. It has been mailed to the partner when mail
+          is set up; otherwise give it to them yourself.</p>
+        <code id="rep-key-value"></code>
+      </div>
+
+      <h3 class="sub">Leads marked bad, waiting for you</h3>
+      <div id="rep-disputes"></div>
+      <form class="entry" id="rep-decide-form">
+        <label class="wide">Lead
+          <select id="rep-dispute" required></select>
+        </label>
+        <label class="wide">Note (optional)
+          <input id="rep-decide-note" type="text" maxlength="300">
+        </label>
+        <button type="button" class="act" data-act="rep-refuse">Refuse it: no charge</button>
+        <button type="button" class="act" data-act="rep-keep">Keep the charge</button>
+      </form>
+
+      <h3 class="sub">Record a payment a repair partner made to us</h3>
+      <p class="note">Once the money has arrived. This only writes it down.</p>
+      <form class="entry" id="rep-payment-form">
+        <label>Partner
+          <select id="rep-pay-partner" required></select>
+        </label>
+        <label>Amount (USD)
+          <input id="rep-pay-amount" type="number" step="0.01" min="0.01" required>
+        </label>
+        <label>Paid on
+          <input id="rep-pay-date" type="date">
+        </label>
+        <label>Reference
+          <input id="rep-pay-reference" type="text" maxlength="120" required
+                 placeholder="The transfer's reference">
+        </label>
+        <button type="submit">Record the payment</button>
+      </form>
+      <p class="said" id="rep-pay-said"></p>
     </section>
 
     <section class="panel" id="panel-health" role="tabpanel" hidden>

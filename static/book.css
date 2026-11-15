@@ -221,3 +221,8 @@ h3.sub {
           border: 1px solid var(--border-lit); background: var(--sunken); }
 .issued code { font-family: var(--mono); font-size: 12.5px; color: var(--ink);
                word-break: break-all; user-select: all; }
+
+/* Repair partners (repairs.py), below the insurance partners. */
+h2.section-gap { margin-top: 44px; }
+.entry button.act { background: transparent; color: var(--ink); font-weight: 500;
+                    border: 1px solid var(--border-lit); }

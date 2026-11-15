@@ -82,6 +82,18 @@ UNGATED_BY_DESIGN = {
         "decide, says the same thing whether or not the address applied "
         "before, and is rate limited per caller and in total"
     ),
+    "/api/repair-partners/apply": (
+        "the public application form for refrigeration technicians: there is "
+        "no account yet. It only files an application for the operator to "
+        "decide, says the same thing whether or not the address applied "
+        "before, and is rate limited per caller and in total"
+    ),
+    "/api/repair-partners/me/leads/{lead_id}/bad": (
+        "a repair partner saying one of their own leads was bad. Gated by the "
+        "partner's own dashboard key (require_repair_partner), not a tenant "
+        "role: partners hold no account in any business. It only flags the "
+        "lead for the operator, within seven days, and touches nothing else"
+    ),
     "/api/claims/{incident_id}/packet": "assembles a document, changes no state",
     "/api/shortcuts/{vertical}": "produces a document, changes no state",
 }
