@@ -643,6 +643,25 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
     now = utc_now()
     actions: List[Dict[str, Any]] = []
 
+    # Paused by the owner (retention.py): no texts about quiet sensors, no
+    # site-wide alert, no calls, until the pause ends on its date.
+    from retention import current_pause
+
+    pause = current_pause(tenant.tenant_id, now)
+    if pause is not None:
+        return {
+            "status": "paused",
+            "swept_at": iso(now),
+            "tenant_id": tenant.tenant_id,
+            "paused_until": pause.get("resume_at"),
+            "sensors_checked": STORE.seat_count(tenant.tenant_id),
+            "sensors_offline": 0,
+            "open_incidents": len(STORE.open_incidents(tenant.tenant_id)),
+            "voice_calls_placed": 0,
+            "actions_taken": 0,
+            "actions": [],
+        }
+
     offline = [s for s in STORE.sensors_for(tenant.tenant_id) if s.offline(now)]
     for sensor in offline:
         actions.append(

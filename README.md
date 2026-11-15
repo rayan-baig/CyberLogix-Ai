@@ -49,7 +49,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/FEATURES.md](docs/FEATURES.md) | The console, the industry profiles and their limits, Fahrenheit or Celsius, sites, sector paperwork, several businesses, your own hardware (BYOD), forecasting, meeting summaries, benchmarks, link previews |
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
-| [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
+| [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, pausing instead and the one-time offer to stay, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
 | [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), the signature that unlocks OmniArmor Pro, retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
@@ -57,6 +57,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/LOAD-TEST.md](docs/LOAD-TEST.md) | 250 to 5,000 sensors under load: ingest times, breach-to-alert times, what broke first, disk and memory per sensor, and when to move from SQLite to Postgres |
 | [docs/TESTING.md](docs/TESTING.md) | The suite, the type check on the money code, the fuzzer, the browser smoke test, the sales sheet print check, mutation testing |
 | [docs/PARTNERS.md](docs/PARTNERS.md) | Resellers: what a partner sees, how commission works, setting one up step by step, each month, and what is not there yet |
+| [docs/REPAIR-PARTNERS.md](docs/REPAIR-PARTNERS.md) | Refrigeration technicians who pay for leads: when "Get a repair quote" appears, what a lead holds and nothing else, fair rotation, areas, the fee per lead, bad leads, statements and payments by hand |
 | [docs/INSURANCE-PARTNERS.md](docs/INSURANCE-PARTNERS.md) | Brokers and insurers: applying, approving in the operator console, partner codes, the revenue share and how it is worked out, payouts by hand, and what a partner can never see |
 | [docs/STAGING.md](docs/STAGING.md) | A second copy on Render for trying changes first: its own disk, test Twilio and Stripe, and moving a change to live |
 | [DEPLOY.md](DEPLOY.md) | The step-by-step runbook for going live |
@@ -108,6 +109,9 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Pricing page | `/pricing` | Every rate, the Starter plan and a calculator, rendered from the rate card |
 | Bring a friend | `/api/referrals` | A referral code per business, a longer trial for the friend, a month's credit when they pay |
 | Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to OmniArmor, which fills in its temperature-log check |
+| Repair partners | `/api/repair-partners`, `/api/repairs` | "Get a repair quote" on a failing unit, one lead to one technician covering the address, a fee per lead billed by hand |
+| Pause or cancel | `/api/leaving` | Pause for 1 to 3 months (no bills, no alerts), a one-time offer to stay, cancel one press away, and the counts |
+| Trade pages | `/for/<trade>` | Short pages for florists, breweries, ice-cream shops, butchers, school cafeterias, vaccine clinics and grocery stores |
 
 
 The landing page is at `/`, the console at `/console`, the reseller portal

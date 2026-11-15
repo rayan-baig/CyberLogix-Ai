@@ -633,6 +633,7 @@ const OPTIONAL_PANELS = {
   peopleCal: "people-cal",
   staff: "staff-list",
   leavers: "leavers",
+  leaving: "pause-body",
 };
 
 function panelUnavailable(key, err) {
@@ -710,6 +711,7 @@ async function refresh() {
     staff: () => api("/api/people"),
     peopleCal: () => api("/api/people/calendar?days=180"),
     leavers: () => api("/api/people/departures"),
+    leaving: () => api("/api/leaving"),
   };
   const keys = Object.keys(wanted);
   const settled = await Promise.allSettled(keys.map((k) => wanted[k]()));
@@ -764,6 +766,7 @@ async function refresh() {
   paint("staff", () => renderStaff(got.staff));
   paint("leavers", () => renderLeavers(got.leavers));
   paint("team", () => renderTeam(got.team));
+  paint("leaving", () => renderLeaving(got.leaving));
 
   // The contract card is where the way back lives, so it renders from
   // whatever arrived rather than needing both halves.
@@ -861,10 +864,12 @@ function render(d, health) {
           ? ` <a class="banner-act" id="account-pay" href="${esc(a.pay_url)}"
                target="_blank" rel="noopener">Pay now</a>` : "")
       + ` <button type="button" class="banner-act" id="account-act">${
-          a.on_trial ? "See what it costs" : "Sort it out"}</button>`;
+          a.paused ? "Come back sooner" : a.on_trial ? "See what it costs" : "Sort it out"}</button>`;
     account.hidden = false;
     $("account-act").addEventListener("click", () => {
-      $("contract-body").scrollIntoView({ behavior: "smooth", block: "center" });
+      // A pause is ended on its own card; everything else on the contract.
+      $(a.paused ? "pause-body" : "contract-body")
+        .scrollIntoView({ behavior: "smooth", block: "center" });
     });
   } else {
     account.hidden = true;
@@ -1199,6 +1204,7 @@ function sensorCard(s) {
       </div>
       <div class="spark-wrap">${sparkline(s)}</div>
       ${healthPills(s)}
+      ${repairBlock(s)}
       ${s.online ? "" : `<a class="offline-help" href="/help#sensor-offline"
           >Offline: what to check</a>`}
       <div class="sensor-meta">
@@ -1216,6 +1222,125 @@ function sensorCard(s) {
       </div>
     </article>`;
   }
+}
+
+/* "Get a repair quote", on a unit the forecaster or the pattern check
+   says is failing or creeping warmer (repairs.py). Nothing is sent from
+   here: the button opens a confirm screen that says exactly what would be
+   sent, and to how many companies (one). */
+function repairBlock(s) {
+  const r = s.repair;
+  if (!r) return "";
+  if (!r.offer) {
+    return `<div class="repair-sent">Repair quote sent to ${esc(r.sent_to || "a repair company")}
+      on ${esc(shortDate(r.sent_at))}.</div>`;
+  }
+  const canAsk = Boolean(state.user && state.user.role !== "viewer");
+  const why = r.kind === "failing"
+    ? "This unit looks like it is failing."
+    : "This unit keeps getting warmer.";
+  return `<div class="repair-offer"><span>${esc(why)}</span>${canAsk
+    ? `<button class="btn btn-sm btn-primary" type="button"
+         data-repair-quote="${esc(s.sensor_id)}">Get a repair quote</button>` : ""}</div>`;
+}
+
+async function openRepairQuote(sensorId) {
+  let q;
+  try {
+    q = await api(`/api/repairs/quote/${encodeURIComponent(sensorId)}`);
+  } catch (err) {
+    toast(err.message, "err");
+    return;
+  }
+  // Not a sensor drawer: the poll must not repaint over a half-filled form.
+  state.drawerSensor = null;
+  const head = `<div class="drawer-head">
+      <div class="grow">
+        <div class="drawer-title" id="drawer-title">Get a repair quote</div>
+        <div class="drawer-sub">${esc(q.unit_name)} · ${esc(q.business_name)}</div>
+      </div>
+      <button class="btn btn-sm" id="drawer-close" type="button">Close</button>
+    </div>`;
+  if (!q.can_send) {
+    $("drawer").innerHTML = head + `<p class="card-plain">${esc(q.again_after
+      ? `A repair company was already sent this unit. You can ask again after ${shortDate(q.again_after)}.`
+      : "This unit looks fine to us right now, so there is nothing to send.")}</p>`;
+    showDrawer();
+    $("drawer-close").addEventListener("click", closeDrawer);
+    return;
+  }
+  const s = q.suggested || {};
+  $("drawer").innerHTML = head + `
+    <p class="card-plain">${esc(q.not_a_repairer)}</p>
+    <h3 class="sub-head">What we saw</h3>
+    <p class="repair-problem">${esc(q.problem)}</p>
+    <form id="repair-form">
+      <h3 class="sub-head">Who should they contact?</h3>
+      <div class="field"><label for="rq-name">Name</label>
+        <input id="rq-name" required minlength="2" maxlength="120"
+               value="${esc(s.contact_name)}"></div>
+      <div class="field"><label for="rq-phone">Phone</label>
+        <input id="rq-phone" type="tel" maxlength="40" value="${esc(s.contact_phone)}"></div>
+      <div class="field"><label for="rq-email">Email</label>
+        <input id="rq-email" type="email" maxlength="200" value="${esc(s.contact_email)}"></div>
+      <p class="sub">Leave the phone or the email empty and it is not sent. One of
+        them is needed.</p>
+      <h3 class="sub-head">Address of this location</h3>
+      <div class="field"><label for="rq-street">Street</label>
+        <input id="rq-street" required minlength="3" maxlength="200"
+               autocomplete="street-address" value="${esc(s.street)}"></div>
+      <div class="field"><label for="rq-city">City</label>
+        <input id="rq-city" required minlength="2" maxlength="100"
+               autocomplete="address-level2"></div>
+      <div class="field"><label for="rq-postcode">ZIP or postcode</label>
+        <input id="rq-postcode" required minlength="2" maxlength="20"
+               autocomplete="postal-code"></div>
+      <h3 class="sub-head">What the repair company gets</h3>
+      <ul class="repair-list">${(q.what_is_sent || []).map((line) =>
+        `<li>${esc(line)}</li>`).join("")}</ul>
+      <p class="sub">${esc(q.never_sent)}</p>
+      <label class="repair-consent"><input type="checkbox" id="rq-consent" required>
+        <span>Send these details to one approved repair company that covers this
+        address.</span></label>
+      <div class="row">
+        <button class="btn btn-sm btn-primary" type="submit">Send to one repair company</button>
+        <button class="btn btn-sm" type="button" id="rq-not-now">Not now</button>
+      </div>
+    </form>`;
+  showDrawer();
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("rq-not-now").addEventListener("click", closeDrawer);
+  $("repair-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.target.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const out = await api("/api/repairs/quote", {
+        method: "POST",
+        body: JSON.stringify({
+          sensor_id: q.sensor_id,
+          contact_name: $("rq-name").value.trim(),
+          contact_phone: $("rq-phone").value.trim(),
+          contact_email: $("rq-email").value.trim(),
+          street: $("rq-street").value.trim(),
+          city: $("rq-city").value.trim(),
+          postcode: $("rq-postcode").value.trim(),
+          consent: $("rq-consent").checked,
+        }),
+      });
+      const p = out.partner || {};
+      $("drawer").innerHTML = head + `<div class="repair-done">
+          <p>${esc(out.message)}</p>
+          ${p.contact_phone ? `<p>Their phone: ${esc(p.contact_phone)}</p>` : ""}
+          ${p.website ? `<p>Their website: ${esc(p.website)}</p>` : ""}
+        </div>`;
+      $("drawer-close").addEventListener("click", closeDrawer);
+      refresh().catch(() => { /* the card catches up on the next poll */ });
+    } catch (err) {
+      toast(err.message, "err");
+      button.disabled = false;
+    }
+  });
 }
 
 /* 12-point sparkline: recessive line, current point in the accent. */
@@ -2283,6 +2408,50 @@ function renderContract(contract, pipeline, tenant) {
       refresh();
     } catch (err) { toast(err.message, "err"); }
   });
+}
+
+/* Pause or cancel (retention.py). The two offers come first, and the
+   cancel button is right under them, always: never behind another screen. */
+function renderLeaving(d) {
+  const owner = Boolean(state.user && state.user.role === "owner");
+  const body = $("pause-body");
+  $("pause-note").textContent = d.paused ? "paused" : "";
+  if (d.paused) {
+    body.innerHTML = `<div class="paused-box">${esc(d.paused.words)}</div>
+      ${owner ? `<div class="row">
+        <button class="btn btn-sm btn-primary" type="button" data-resume-now="1">Come back now</button>
+        ${d.cancel.possible ? `<button class="btn btn-sm danger-btn" type="button"
+            data-cancel-plan="1">Cancel my plan</button>` : ""}
+      </div>` : `<p class="card-plain">Only an owner can end the pause or cancel.</p>`}`;
+    return;
+  }
+  if (d.on_trial) {
+    body.innerHTML = `<div class="empty u-p-16-0">Nothing to pause or cancel during a
+      free trial.<span class="sub">It ends on its own, and there is nothing to pay.</span></div>`;
+    return;
+  }
+  const options = (d.pause_options || []).map((o) => `
+    <button class="btn btn-sm" type="button" data-pause-months="${esc(o.months)}"
+            ${owner ? "" : "disabled"}>
+      <span>Pause for ${esc(o.label)}</span>
+      <span class="u-c-muted">back on ${esc(o.resume_on)}</span>
+    </button>`).join("");
+  const offer = d.offer || {};
+  const stay = offer.available ? `<div class="stay-offer">
+      <b>Or stay, with ${esc(offer.words)}.</b>
+      ${offer.saving_usd ? ` That is about ${money(offer.saving_usd)} off.` : ""}
+      Once only.
+      <div class="u-mt-8"><button class="btn btn-sm btn-primary" type="button" data-stay="1"
+        ${owner ? "" : "disabled"}>Stay with ${esc(offer.percent)}% off</button></div>
+    </div>` : "";
+  const cancel = d.cancel.possible
+    ? `<div class="cancel-line"><span class="grow">${esc(d.cancel.rule)}</span>
+        <button class="btn btn-sm danger-btn" type="button" data-cancel-plan="1"
+          ${owner ? "" : "disabled"}>Cancel my plan</button></div>`
+    : `<div class="cancel-line">${esc(d.cancel.words)}</div>`;
+  body.innerHTML = `<p class="card-plain">${esc(d.pause_words)}</p>
+    <div class="pause-options">${options}</div>${stay}${cancel}
+    ${owner ? "" : `<p class="card-plain u-mt-8">Only an owner can pause or cancel.</p>`}`;
 }
 
 /* Revenue this estate could produce and does not.
@@ -4937,6 +5106,43 @@ document.addEventListener("click", (event) => {
 
   const btn = event.target.closest("button");
   if (!btn) return;
+
+  if (btn.dataset.repairQuote) {
+    openRepairQuote(btn.dataset.repairQuote);
+    return;
+  }
+
+  if (btn.dataset.pauseMonths) {
+    act(async () => {
+      const out = await api("/api/leaving/pause", {
+        method: "POST", body: JSON.stringify({ months: Number(btn.dataset.pauseMonths) }),
+      });
+      toast(out.message, "ok");
+    });
+  }
+
+  if (btn.dataset.resumeNow) {
+    act(async () => {
+      const out = await api("/api/leaving/resume", { method: "POST" });
+      toast(out.message, "ok");
+    });
+  }
+
+  if (btn.dataset.stay) {
+    act(async () => {
+      const out = await api("/api/leaving/stay", { method: "POST" });
+      toast(out.message, "ok");
+    });
+  }
+
+  if (btn.dataset.cancelPlan) {
+    act(async () => {
+      const out = await api("/api/contracts/cancel", {
+        method: "POST", body: JSON.stringify({ reason: "cancelled from the console" }),
+      });
+      toast(out.message, "ok");
+    });
+  }
 
   if (btn.dataset.siteView) {
     state.site = btn.dataset.siteView;

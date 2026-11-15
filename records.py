@@ -1727,6 +1727,19 @@ class Subscription:
     # added part-way through the year are charged on the difference, for
     # the rest of the year (contracts.bill_mid_year_changes).
     year_covered: Dict[str, Any] = field(default_factory=dict)
+    # Time a pause added to the schedule (retention.py). Each is
+    # {"from_period": int, "seconds": float, "pause_id": str}: period
+    # `from_period` and every one after it start that much later, and the
+    # term ends that much later. So no period starts while a business is
+    # paused, and the days it had already paid for are still there when
+    # it comes back. Periods already invoiced keep their dates.
+    shifts: List[Dict[str, Any]] = field(default_factory=list)
+
+    def shifted_by(self, index: int) -> timedelta:
+        """How much later than first scheduled period `index` begins."""
+        seconds = sum(float(s.get("seconds") or 0.0) for s in self.shifts
+                      if int(s.get("from_period") or 0) <= index)
+        return timedelta(seconds=seconds)
 
     @property
     def months_per_period(self) -> int:
@@ -1763,7 +1776,8 @@ class Subscription:
 
     def period_start(self, index: int) -> datetime:
         """When period `index` (0-based) begins."""
-        return add_months(self.started_at, index * self.months_per_period)
+        return (add_months(self.started_at, index * self.months_per_period)
+                + self.shifted_by(index))
 
     def contract_year(self, index: int) -> int:
         """Which year of the term period `index` falls in, 1-based."""
@@ -1784,7 +1798,8 @@ class Subscription:
 
     @property
     def ends_at(self) -> datetime:
-        return add_months(self.started_at, self.term_years * 12)
+        total = sum(float(s.get("seconds") or 0.0) for s in self.shifts)
+        return add_months(self.started_at, self.term_years * 12) + timedelta(seconds=total)
 
     def expired(self, now: Optional[datetime] = None) -> bool:
         """Past its term with no automatic renewal. Billing stops here."""
@@ -1847,6 +1862,7 @@ class Subscription:
             "rebill_periods": sorted(self.rebill_periods),
             "next_interval": self.next_interval,
             "year_covered": dict(self.year_covered),
+            "shifts": [dict(s) for s in self.shifts],
         }
 
     @classmethod
@@ -1871,6 +1887,7 @@ class Subscription:
             rebill_periods=list(row.get("rebill_periods") or []),
             next_interval=row.get("next_interval"),
             year_covered=dict(row.get("year_covered") or {}),
+            shifts=[dict(s) for s in (row.get("shifts") or [])],
         )
 
     def public(self) -> Dict[str, Any]:

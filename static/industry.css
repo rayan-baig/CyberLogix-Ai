@@ -94,3 +94,10 @@ h1.lede {
 .slab .price-line { color: var(--ink); font-size: 17px; }
 .talk-link { font-weight: 500; }
 .talk-address { font-family: var(--mono); font-size: .92em; user-select: all; overflow-wrap: anywhere; }
+
+/* The shorter pages for more trades (trades.py), under the twelve. */
+.more-head {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted); font-weight: 400;
+  margin: 34px 0 14px;
+}

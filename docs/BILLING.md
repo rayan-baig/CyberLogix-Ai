@@ -87,6 +87,56 @@ help page, sign-up and in the agreement:
 `service_until`, the end of the last period invoiced. Nothing is billed
 after it, not even a mid-year addition.
 
+### Pause instead of cancel, and the offer to stay
+
+The console's Money tab has a **Pause or cancel** card (`retention.py`,
+`/api/leaving`). For an owner of a business with a contract it shows, in
+this order: pause for 1, 2 or 3 months, each with the date it ends; the
+one-time offer to stay; and **Cancel my plan**, which is the same
+`POST /api/contracts/cancel` as always, one press, never behind another
+screen. A trial has nothing to pause or cancel. A business with no
+contract can still pause (alerts stop); it has nothing to cancel.
+
+**A pause** (`POST /api/leaving/pause`, owner only) starts at once and
+ends on its own on the date shown:
+
+- **No bills.** Billing here is our own invoices, so a pause moves the
+  contract's next billing date, and every one after it, later by exactly
+  the length of the pause (`Subscription.shifts`). No period starts while
+  paused, the days already paid for are still there afterwards, and the
+  term ends that much later. The billing run also skips a paused
+  business, so not even a re-issued month goes out during a pause.
+- **No alerts.** Readings are still taken and kept, but an out-of-range
+  reading opens no incident and texts, calls and emails nobody, the sweep
+  calls nobody and texts nobody about quiet sensors, and the weekly
+  reassurance text is not sent. The console says so at the top in red:
+  "Paused until ... No bills and no alerts until then".
+- **Nothing is deleted.**
+- **A reminder** is emailed to the business three days before it ends
+  (the hourly pass, `retention.run_pauses`).
+- **Coming back early** (`POST /api/leaving/resume`) turns alerts on at
+  once and moves the next bill only by the time actually spent paused.
+  Cancelling while paused does the same before cancelling, so the service
+  runs to the end of what was paid for plus only the time used.
+
+**The offer to stay** (`POST /api/leaving/stay`, owner only):
+`CYBERLOGIX_SAVE_OFFER_PERCENT` (25) off the next
+`CYBERLOGIX_SAVE_OFFER_MONTHS` (2) months of the contract, as a line of
+its own on each of those invoices ("Thank you for staying: 25% off (month
+1 of 2)"), worked out from the recurring lines after any chain discount.
+On a yearly plan it is that percentage of two of the twelve months, on
+the next yearly invoice. Once per business, ever, including after
+cancelling and signing again. A voided invoice that carried it is
+re-issued with the same line, never a third month. These are our own
+invoice lines, not a card processor's coupon, so the settings are a
+percentage and a number of months.
+
+**The numbers.** Each pause, save and cancel is also written down as an
+event that names no business (`retention_event`), and the operator
+console's Money tab shows them: paused now, and pauses, saves and cancels
+in the last 30 days and ever (`GET /api/leaving/numbers`). The operator's
+morning email has the same line whenever any of them happened.
+
 ### Chain discounts
 
 Restaurants and pharmacies take a discount on each location's price by

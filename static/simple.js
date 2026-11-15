@@ -83,8 +83,17 @@ function stateOf(unit) {
 }
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
-function verdict(units, jobs) {
+function verdict(units, jobs, paused) {
   const box = $("verdict");
+  // Paused by the owner (retention.py): no "everything is fine" while
+  // nobody is being texted or called.
+  if (paused) {
+    box.className = "verdict bad";
+    box.innerHTML =
+      `<h1>Alerts are paused until ${esc(paused.resume_on)}</h1>
+       <p>${esc(paused.words)}</p>`;
+    return;
+  }
   const urgent = jobs.filter((j) => j.now).length;
   if (urgent) {
     box.className = "verdict bad";
@@ -149,7 +158,7 @@ function render(data) {
     }
   });
 
-  verdict(units, jobs);
+  verdict(units, jobs, (data.account || {}).paused);
 
   $("todo-wrap").hidden = jobs.length === 0;
   // Urgent first: somebody reading on a phone in a kitchen sees two

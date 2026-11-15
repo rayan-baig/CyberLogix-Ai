@@ -8,7 +8,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
 /* The vertical is the last path segment. /for on its own is the index. */
 const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
 
-function renderIndex(rows) {
+function renderIndex(rows, trades) {
   document.title = "CyberLogix — who this is for";
   $("page").innerHTML =
     `<div class="eyebrow">Who this is for</div>
@@ -20,7 +20,13 @@ function renderIndex(rows) {
        <a class="ind" href="/for/${esc(row.vertical)}">
          <b>${esc(row.name)}</b>
          <span>${esc(row.slogan)}</span>
-       </a>`).join("")}</div>`;
+       </a>`).join("")}</div>
+     ${trades.length ? `<h2 class="more-head">More trades with cold stock</h2>
+     <div class="grid">${trades.map((row) => `
+       <a class="ind" href="/for/${esc(row.slug)}">
+         <b>${esc(row.name)}</b>
+         <span>${esc(row.lede)}</span>
+       </a>`).join("")}</div>` : ""}`;
 }
 
 function renderIndustry(d) {
@@ -97,7 +103,7 @@ function renderIndustry(d) {
   try {
     if (!slug || slug === "for") {
       const rows = await (await fetch("/api/for")).json();
-      renderIndex(rows.industries);
+      renderIndex(rows.industries, rows.trades || []);
       return;
     }
     const got = await fetch(`/api/for/${encodeURIComponent(slug)}`);

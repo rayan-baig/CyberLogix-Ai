@@ -64,6 +64,7 @@ PATHS = [
     "/api/referrals/me",
     "/api/connections/omniarmor",
     "/api/proof-reports",
+    "/api/leaving",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
@@ -93,6 +94,9 @@ NOT_FETCHED = {
     "/api/connections/omniarmor/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
+    # Pause or cancel, and a repair quote: pressed, never loaded with the page.
+    "/api/contracts/cancel", "/api/leaving/pause", "/api/leaving/resume",
+    "/api/leaving/stay", "/api/repairs/quote",
 }
 
 

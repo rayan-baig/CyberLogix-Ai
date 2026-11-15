@@ -20,7 +20,8 @@ import pytest
 from pages import page_source
 
 
-CARDED = ("/", "/signup", "/pricing", "/help", "/for", "/for/restaurant", "/legal")
+CARDED = ("/", "/signup", "/pricing", "/help", "/for", "/for/restaurant", "/legal",
+          "/for/florists", "/repair-partners")
 
 
 @pytest.mark.parametrize("path", CARDED)
@@ -187,7 +188,8 @@ from pathlib import Path  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 PRIVATE = ("/console", "/today", "/partners", "/book", "/reset", "/offline",
            "/proof/anything", "/api", "/api/health", "/api/simulator",
-           "/api/help/sensor-offline", "/docs", "/openapi.json")
+           "/api/help/sensor-offline", "/docs", "/openapi.json",
+           "/repair-partners/dashboard", "/insurance-partners/dashboard")
 
 
 @pytest.mark.parametrize("path", CARDED)
@@ -254,8 +256,11 @@ def test_the_sitemap_lists_only_public_pages(api):
     body = api.get("/sitemap.xml").text
     listed = re.findall(r"<loc>http://testserver([^<]*)</loc>", body)
     allowed = {"/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal",
-               "/insurance-partners"}
+               "/insurance-partners", "/repair-partners"}
     allowed |= {f"/for/{v}" for v in known()}
+    from trades import known as trades
+
+    allowed |= {f"/for/{slug}" for slug in trades()}
     assert set(listed) <= allowed, set(listed) - allowed
     for must in ("/", "/pricing", "/for", "/legal"):
         assert must in listed

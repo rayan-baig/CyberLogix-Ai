@@ -32,6 +32,9 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_PROOF_REPORT_KEY` | — | Seals each proof of monitoring report (HMAC-SHA256), so an edited one reads "changed" at `/verify`. Unset, a key is made once and kept in the database. Keep it once set: changing it makes earlier reports read "changed". See [PROOF-OF-MONITORING.md](PROOF-OF-MONITORING.md) |
 | `CYBERLOGIX_INSURANCE_PARTNER_SHARE_PERCENT` | `10` | What an insurance partner earns of what a business they referred pays us, in percent (0 to 50). Kept with each partner at approval. See [INSURANCE-PARTNERS.md](INSURANCE-PARTNERS.md) |
 | `CYBERLOGIX_INSURANCE_PARTNER_SHARE_MONTHS` | `12` | For how many months from that business's first payment (1 to 60) |
+| `CYBERLOGIX_REPAIR_LEAD_FEE_USD` | `35` | What a repair partner pays us for each lead delivered to them, in dollars (0 to 1000). Kept with each partner at approval. See [REPAIR-PARTNERS.md](REPAIR-PARTNERS.md) |
+| `CYBERLOGIX_SAVE_OFFER_PERCENT` | `25` | The one-time offer to stay, shown when an owner goes to cancel: this percentage off (1 to 90). See [BILLING.md](BILLING.md#pause-instead-of-cancel-and-the-offer-to-stay) |
+| `CYBERLOGIX_SAVE_OFFER_MONTHS` | `2` | ...of this many months of their invoices (1 to 12). Once per business, ever |
 | `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
 | `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizyn` | Issuer name on invoices and in the agreements: MTRX Horizyn's registered name |

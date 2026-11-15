@@ -1,0 +1,28 @@
+/* The repair partner dashboard (repair-dashboard.html). Built on
+   signup.css and insurers.css; these are the lead cards. */
+.lead { border-top: 1px solid var(--border); padding: 14px 0; }
+.lead:first-child { border-top: 0; padding-top: 4px; }
+.lead-top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.lead-top .grow { flex: 1; min-width: 0; font-size: 15px; color: var(--ink); font-weight: 600; }
+.lead-top .amt { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink); }
+.lead .meta { color: var(--muted); font-size: 12.5px; margin: 3px 0 0; }
+.lead .who { font-size: 14px; color: var(--ink); margin: 8px 0 0; overflow-wrap: anywhere; }
+.lead .problem { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55;
+                 color: var(--ink-2, var(--muted)); margin: 8px 0 0; padding: 10px 12px;
+                 border-radius: 10px; background: var(--sunken); border: 1px solid var(--border); }
+.lead .state { font-size: 12.5px; margin: 8px 0 0; color: var(--muted); }
+.lead .state.charged { color: var(--ink); }
+.lead .state.waiting { color: var(--warning, var(--accent)); }
+.lead .state.refused { color: var(--good); }
+.lead details { margin-top: 10px; }
+.lead summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.lead form { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.lead form input { flex: 1; min-width: 180px; font: inherit; font-size: 14px; padding: 9px 11px;
+                   border-radius: 9px; border: 1px solid var(--border-lit);
+                   background: var(--sunken); color: var(--ink); }
+.lead form button { font: inherit; font-weight: 600; font-size: 13px; cursor: pointer;
+                    padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border-lit);
+                    color: var(--ink); background: var(--raised); }
+@media (max-width: 720px) {
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+}

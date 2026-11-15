@@ -270,6 +270,23 @@ async function loadMoney() {
   ]);
 
   $("margin-note").textContent = (t.note || "") + " " + (st.note || "");
+  await loadKeeping();
+}
+
+/* Pauses, saves and cancels (retention.py), counted with no business
+   named, so the figures outlive a business that deletes itself. */
+async function loadKeeping() {
+  const k = await read("/api/leaving/numbers");
+  const s = k.settings || {};
+  tilesInto("keep-totals", [
+    ["Paused now", String(k.paused_now), "alerts and bills stopped"],
+    ["Pauses", String(k.pause.last_30_days), k.pause.ever + " ever"],
+    ["Saves", String(k.save.last_30_days),
+     k.save.ever + " ever, " + pct(s.save_offer_percent) + " off " + s.save_offer_months + " months"],
+    ["Cancels", String(k.cancel.last_30_days), k.cancel.ever + " ever"],
+  ]);
+  $("keep-note").textContent = "The last 30 days, with the count ever beneath. A save "
+    + "is a business that took the one-time offer to stay.";
 }
 
 /* ---- the books ------------------------------------------------------- */
@@ -429,6 +446,83 @@ async function loadPartners() {
   })), "No partners yet.");
   $("p-partner").innerHTML = b.partners.map((p) => ({ id: p.partner_id, name: p.company_name }))
     .map((opt) => `<option value="${esc(opt.id)}">${esc(opt.name)}</option>`).join("");
+  await loadRepairPartners();
+}
+
+/* ---- repair partners (repairs.py) ------------------------------------ */
+
+function optionsInto(el, list) {
+  $(el).innerHTML = list
+    .map((opt) => `<option value="${esc(opt.id)}">${esc(opt.name)}</option>`).join("");
+}
+
+const splitList = (text) => String(text || "").split(",").map((v) => v.trim()).filter(Boolean);
+
+let repairPartners = [];
+
+async function loadRepairPartners() {
+  const b = await read("/api/repair-partners");
+  const s = b.settings || {};
+  repairPartners = b.partners;
+  tilesInto("rep-totals", [
+    ["Waiting", String(b.applications.length), "application(s) to decide"],
+    ["Partners", String(b.partners.length), "approved"],
+    ["Owed to us", cents(b.owed_usd), "charged and not yet paid"],
+    ["Marked bad", String(b.disputes.length), "lead(s) waiting for you"],
+    ["Fee per lead", cents(s.lead_fee_usd), "bad within " + s.bad_lead_days + " days"],
+  ]);
+  $("rep-note").textContent = b.note || "";
+  itemsInto("rep-applications", b.applications.map((a) => ({
+    tone: "warn",
+    title: a.company_name,
+    detail: [a.contact_name, a.contact_email, a.contact_phone, a.website]
+      .filter(Boolean).join(" · ") + " — covers: " + a.areas_said
+      + (a.message ? " — " + a.message : ""),
+    meta: "applied " + when(a.applied_at) + " · " + a.partner_id,
+  })), "No applications are waiting.");
+  optionsInto("rep-app", b.applications.map((a) => ({ id: a.partner_id, name: a.company_name })));
+  itemsInto("rep-partners", b.partners.map((p) => ({
+    tone: p.active ? "good" : "bad",
+    title: p.company_name + (p.active ? "" : " · switched off"),
+    detail: "Postcodes " + ((p.postcodes || []).join(", ") || "none") + " · cities "
+      + ((p.cities || []).join(", ") || "none") + " · " + p.lead_count + " lead(s), charged "
+      + cents(p.charged_usd) + ", paid " + cents(p.paid_usd)
+      + (p.in_question_usd ? ", " + cents(p.in_question_usd) + " in question" : ""),
+    meta: p.contact_name + " · " + p.contact_email + " · " + p.contact_phone + " · "
+      + cents(p.lead_fee_usd) + " a lead · last lead " + when(p.last_lead_at),
+    amount: cents(p.owed_usd) + " owed",
+    act: p.active ? "rep-off" : "rep-on", id: p.partner_id,
+    label: p.active ? "Switch off" : "Switch on",
+  })), "No repair partners yet.");
+  const partners = b.partners.map((p) => ({ id: p.partner_id, name: p.company_name }));
+  optionsInto("rep-partner", partners);
+  optionsInto("rep-pay-partner", partners);
+  fillAreas();
+  itemsInto("rep-disputes", b.disputes.map((d) => ({
+    tone: "warn",
+    title: d.lead_id + " · " + d.partner_name,
+    detail: "Their reason: " + d.reason,
+    meta: (d.business_name || "a business that has closed its account") + " · sent "
+      + when(d.delivered_at) + " · marked bad " + when(d.marked_bad_at),
+    amount: cents(d.amount_usd),
+  })), "No lead is waiting for a decision.");
+  optionsInto("rep-dispute", b.disputes.map((d) => ({
+    id: d.lead_id, name: d.lead_id + " — " + d.partner_name })));
+}
+
+function fillAreas() {
+  const chosen = repairPartners.find((p) => p.partner_id === $("rep-partner").value);
+  $("rep-area-postcodes").value = chosen ? (chosen.postcodes || []).join(", ") : "";
+  $("rep-area-cities").value = chosen ? (chosen.cities || []).join(", ") : "";
+}
+
+async function repairCall(path, body, saidEl) {
+  const resp = await api(path, { method: "POST", body: body || {} });
+  const answer = await resp.json().catch(() => ({}));
+  say(saidEl || "rep-said", resp.ok ? "Done."
+      : (typeof answer.detail === "string" ? answer.detail : "That was not accepted."),
+      !resp.ok);
+  return { resp, answer };
 }
 
 /* ---- is the machine running ------------------------------------------ */
@@ -679,6 +773,44 @@ async function act(button) {
       await loadPartners();
       return;
     }
+    if (what === "rep-on" || what === "rep-off") {
+      await repairCall("/api/repair-partners/" + encodeURIComponent(id) + "/status",
+                       { active: what === "rep-on" });
+      await loadRepairPartners();
+      return;
+    }
+    if (what === "rep-decline") {
+      const app = $("rep-app").value;
+      if (!app || !window.confirm("Decline this application?")) return;
+      await repairCall("/api/repair-partners/" + encodeURIComponent(app) + "/decline");
+      await loadRepairPartners();
+      return;
+    }
+    if (what === "rep-statement" || what === "rep-rotate") {
+      const partner = $("rep-partner").value;
+      if (!partner) return;
+      const out = await repairCall("/api/repair-partners/" + encodeURIComponent(partner)
+        + (what === "rep-statement" ? "/statement" : "/rotate-key"));
+      if (out.resp.ok) {
+        say("rep-said", what === "rep-statement"
+          ? (out.answer.mailed ? "Statement emailed. " : "Statement could not be mailed. ")
+            + cents(out.answer.owed_usd) + " is owed."
+          : (out.answer.mailed ? "New key mailed to them as well." : "New key: give it to them yourself."));
+      }
+      $("rep-key").hidden = !(out.resp.ok && out.answer.key);
+      $("rep-key-value").textContent = out.answer.key || "";
+      await loadRepairPartners();
+      return;
+    }
+    if (what === "rep-refuse" || what === "rep-keep") {
+      const lead = $("rep-dispute").value;
+      if (!lead) return;
+      await repairCall("/api/repair-partners/leads/" + encodeURIComponent(lead) + "/decision",
+                       { refuse: what === "rep-refuse", note: $("rep-decide-note").value.trim() });
+      $("rep-decide-note").value = "";
+      await loadRepairPartners();
+      return;
+    }
     if (what === "unsuppress") {
       await api("/api/mail/suppressions?address=" + encodeURIComponent(id),
                 { method: "DELETE" });
@@ -878,6 +1010,56 @@ $("payout-form").addEventListener("submit", async (event) => {
   } else {
     say("payout-said", typeof body.detail === "string"
         ? body.detail : "That was not accepted.", true);
+  }
+});
+
+$("rep-partner").addEventListener("change", fillAreas);
+
+$("rep-approve-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const app = $("rep-app").value;
+  if (!app) return;
+  const body = { postcodes: splitList($("rep-postcodes").value),
+                 cities: splitList($("rep-cities").value) };
+  if ($("rep-fee").value !== "") body.lead_fee_usd = Number($("rep-fee").value);
+  const out = await repairCall("/api/repair-partners/" + encodeURIComponent(app) + "/approve", body);
+  if (out.resp.ok) {
+    $("rep-approve-form").reset();
+    say("rep-said", "Approved. " + out.answer.warning);
+  }
+  $("rep-key").hidden = !(out.resp.ok && out.answer.key);
+  $("rep-key-value").textContent = out.answer.key || "";
+  await loadRepairPartners();
+});
+
+$("rep-areas-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const partner = $("rep-partner").value;
+  if (!partner) return;
+  await repairCall("/api/repair-partners/" + encodeURIComponent(partner) + "/areas", {
+    postcodes: splitList($("rep-area-postcodes").value),
+    cities: splitList($("rep-area-cities").value),
+  });
+  await loadRepairPartners();
+});
+
+$("rep-payment-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const partner = $("rep-pay-partner").value;
+  if (!partner) return;
+  const body = { amount_usd: Number($("rep-pay-amount").value),
+                 reference: $("rep-pay-reference").value.trim() };
+  if ($("rep-pay-date").value) body.paid_on = $("rep-pay-date").value;
+  const resp = await api("/api/repair-partners/" + encodeURIComponent(partner) + "/payments",
+    { method: "POST", body: body });
+  const answer = await resp.json().catch(() => ({}));
+  if (resp.status === 201) {
+    $("rep-payment-form").reset();
+    say("rep-pay-said", "Recorded. " + cents(answer.owed_usd) + " is still owed by them.");
+    await loadRepairPartners();
+  } else {
+    say("rep-pay-said", typeof answer.detail === "string"
+        ? answer.detail : "That was not accepted.", true);
   }
 });
 

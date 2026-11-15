@@ -80,6 +80,23 @@ services:
       - key: CYBERLOGIX_SWEEP_SECONDS
         value: "60"
 
+      # Partner programmes and the offer to stay, at their defaults. Each
+      # partner keeps the share or fee it was approved with, so changing
+      # one here only changes the deal for partners approved after.
+      - key: CYBERLOGIX_INSURANCE_PARTNER_SHARE_PERCENT
+        value: "10"
+      - key: CYBERLOGIX_INSURANCE_PARTNER_SHARE_MONTHS
+        value: "12"
+      # What a repair partner pays us per lead, in dollars.
+      - key: CYBERLOGIX_REPAIR_LEAD_FEE_USD
+        value: "35"
+      # The one-time offer to stay when an owner goes to cancel: this
+      # percentage off the next this-many months, once per business.
+      - key: CYBERLOGIX_SAVE_OFFER_PERCENT
+        value: "25"
+      - key: CYBERLOGIX_SAVE_OFFER_MONTHS
+        value: "2"
+
       # Render's proxy sits in front of the app, so every request arrives
       # from the proxy's address. Without this, every visitor shares one
       # "caller", and thirty wrong passwords from anyone would lock everybody
