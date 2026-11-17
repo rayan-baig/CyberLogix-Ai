@@ -75,15 +75,46 @@ feed. It is a different kind of incident from a unit's alarm: when it is
 raised and who it reaches are in
 [ALERTS.md](ALERTS.md#the-site-wide-alert).
 
-A new business sees a **first-day checklist** at the top: add a site, a
-sensor, someone to call, and send a test alert. Each box is ticked by the
-server from what the account holds (`first_day` in the overview), and the
-card is gone once all four are true. Every empty card ends with a button
-for the next step. Sign-up at `/signup` lands straight in the console,
-signed in, with the business key shown once in the same box as every
-other new key. A unit needs only its location: the sensor ID is made from
-it when left blank, and its first reading appears within seconds rather
-than on the next 20-second poll.
+A new business sees **Getting started** at the top: add your first
+sensor, add who gets alerts, and send a test alert. Each box is ticked by
+the server from what the account holds (`first_day` in the overview), and
+the card is gone once all three are true, with one line to say so. "Add
+me" puts the person who signed up on the alert list with the mobile they
+already gave; "Send a test" sends the test text from the checklist itself,
+with no are-you-sure, because it says TEST, opens nothing and chases
+nobody. A site is not one of the three: one kitchen does not need one
+before its first night, and the Your locations card still offers it.
+
+Every empty card ends with a button for the next step, and every tab a
+new business has nothing on yet (Fridges, Alerts, Proof, Money, People,
+Licences) starts with one sentence saying what will appear there and a
+button for what to do next. Sign-up at `/signup` lands straight in the
+console, signed in, with the business key shown once in the same box as
+every other new key (marked as only for connecting other software). A
+unit needs only its location: the sensor ID is made from it when left
+blank, and its first reading appears within seconds rather than on the
+next 20-second poll.
+
+### See it live, with no account
+
+`/demo` (the **See it live** button on the landing page) is a console
+with four pretend units: a walk-in cooler, a freezer, a prep fridge and a
+bar fridge. A minute in, the walk-in starts to warm. The visitor watches
+it cross its limit, the alert text go to Sam and Alex, the calls start
+when nobody replies (the real 10-minute wait takes 20 seconds here), and
+what replying 1, or pressing 1 on the call, does. "Skip the wait" jumps
+to the warming, and the page ends with **Start your free trial**.
+
+It is labelled "Demo — pretend data" at the top of every screen. All of
+it runs in the visitor's browser (`static/demo.js`). The server's only
+part is `GET /api/demo/story` (`demo.py`): the units, the readings the
+walk-in drifts through, and the words of the alert text, the call and the
+reply to "1", put together by the same code that words real alerts. It
+sends nothing, reads and writes nothing in the database (no business, no
+person, no reading, no audit line, no usage count), names no AI model, and
+is rate limited: 30 a caller and 900 in all, per 10 minutes. The public
+copy on GitHub Pages (`docs/demo.html`, built by `build_public_demo.py`)
+carries the story inside the page and needs no server at all.
 
 **The simulator** (`/api/simulator`, owner only) puts up to three pretend
 units on the console for a demo with no hardware. They read, can be made to

@@ -53,17 +53,25 @@
 </header>
 
 <main class="wrap shell">
-  <section>
+  <section class="intro">
     <h1>A fridge fails at two.<br>Nobody finds out at seven.</h1>
     <p class="lede" id="lede">
       Start monitoring in the next five minutes. No call, no invoice, and
       nobody has to set it up for you.
     </p>
+  </section>
+
+  <!-- Below the form on a phone, beside it on a wide screen: somebody who
+       came here to sign up should not have to scroll past four paragraphs
+       to find the first box. -->
+  <section class="why">
     <ul class="points">
       <li><b>No card.</b> The trial takes no payment details, because a
         trial that asks for a card is not a trial.</li>
-      <li><b>Your own data.</b> No demo sensors in your account — you send
-        a real reading and watch a real incident open.</li>
+      <li><b>Three steps after this form.</b> Add a sensor, add who gets
+        alerts, and send a test text. The console ticks each one off.
+        Want to look first? <a href="/demo">See it live</a> with pretend
+        data.</li>
       <li><b>Alerting never stops for money.</b> Even a badly overdue
         account keeps being monitored. That is written into the
         <a href="/legal">agreement</a>, not just meant.</li>
@@ -73,15 +81,15 @@
   </section>
 
   <section class="card" id="panel">
-    <h2>Start a trial</h2>
+    <h2>Start your free trial</h2>
     <p class="sub" id="sub">Loading…</p>
     <p class="error" id="error" hidden></p>
 
     <form id="form">
       <div class="field">
-        <label for="company_name">Company</label>
+        <label for="company_name">Business name</label>
         <input id="company_name" name="company_name" required maxlength="160"
-               autocomplete="organization">
+               autocomplete="organization" placeholder="e.g. Corner Bistro">
       </div>
       <div class="field">
         <label for="full_name">Your name</label>
@@ -89,13 +97,13 @@
                autocomplete="name">
       </div>
       <div class="field">
-        <label for="email">Work email</label>
+        <label for="email">Email</label>
         <input id="email" name="email" type="email" required
                autocomplete="email">
       </div>
       <div class="field">
-        <label for="contact_phone">Mobile — where an alert would reach you</label>
-        <input id="contact_phone" name="contact_phone" required
+        <label for="contact_phone">Mobile number — where alerts will reach you</label>
+        <input id="contact_phone" name="contact_phone" type="tel" required
                maxlength="40" autocomplete="tel" placeholder="+1 555 010 0000">
       </div>
       <div class="field">
@@ -105,18 +113,21 @@
         <span class="hint" id="pw-hint"></span>
       </div>
       <div class="field">
-        <label for="industry_vertical">What are you storing?</label>
+        <label for="industry_vertical">What kind of business?</label>
         <select id="industry_vertical" name="industry_vertical">
-          <option value="">Choose a sector…</option>
+          <option value="">Choose one (you can change it later)</option>
         </select>
       </div>
-      <div class="field">
-        <label for="referral_code" id="ref-label">Code from a friend or a partner (optional)</label>
+      <!-- Most people have no code, so the box stays folded until asked
+           for. A link with ?ref= opens it with the code filled in. -->
+      <details class="field code-box" id="code-box">
+        <summary>Have a code?</summary>
+        <label for="referral_code" id="ref-label">Code from a friend or a partner</label>
         <input id="referral_code" name="referral_code" maxlength="40"
-               autocomplete="off" placeholder="FRIEND-XXXX-XXXX or PARTNER-XXXX-XXXX">
+               autocomplete="off" placeholder="e.g. FRIEND-AB12-CD34">
         <span class="hint" id="ref-hint"></span>
-      </div>
-      <button class="go" type="submit" id="go">Start the trial</button>
+      </details>
+      <button class="go" type="submit" id="go">Start my free trial</button>
     </form>
 
     <p class="small" id="after-trial"></p>

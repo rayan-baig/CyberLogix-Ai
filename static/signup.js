@@ -22,7 +22,10 @@ async function boot() {
     // A link from a friend carries their code: fill it in, and say the
     // longer trial it brings. The server checks the code either way.
     const ref = new URLSearchParams(location.search).get("ref") || "";
-    if (ref) $("referral_code").value = ref.slice(0, 40);
+    if (ref) {
+      $("referral_code").value = ref.slice(0, 40);
+      $("code-box").open = true;
+    }
     const days = ref ? info.referral_trial_days : info.trial_days;
     $("sub").textContent =
       `${days} days, up to ${info.max_sensors} sensors, no card.`;
@@ -32,7 +35,7 @@ async function boot() {
     // said about it.
     if (info.founder) {
       $("ref-label").textContent =
-        "Code from a friend or a partner, or a founding member code (optional)";
+        "Code from a friend or a partner, or a founding member code";
       $("ref-hint").textContent +=
         ` A founding member code gives ${info.founder.words.replace(/^Founding member: /, "")}.`
         + (info.founder.until_words ? ` ${info.founder.until_words}` : "");
@@ -63,6 +66,12 @@ async function boot() {
       option.value = sector.key;
       option.textContent = sector.name;
       select.appendChild(option);
+    }
+    // Arriving from the demo or a trade page, the kind of business is
+    // already known: chosen for them, and still changeable.
+    const wanted = new URLSearchParams(location.search).get("sector") || "";
+    if (wanted && info.sectors.some((sector) => sector.key === wanted)) {
+      select.value = wanted;
     }
   } catch (err) {
     $("sub").textContent = "";
@@ -191,7 +200,7 @@ $("form").addEventListener("submit", async (event) => {
   } catch (err) {
     fail(err.message);
     $("go").disabled = false;
-    $("go").textContent = "Start the trial";
+    $("go").textContent = "Start my free trial";
   }
 });
 

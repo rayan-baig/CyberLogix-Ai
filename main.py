@@ -46,7 +46,7 @@ from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
 from costs import router as costs_router
 from forecaster import router as forecaster_router
-from gemini import GEMINI_MODEL, dispatch_ready, dispatch_status
+from gemini import dispatch_ready, dispatch_status
 from hardware_bridge import router as bridge_router
 from helpdesk import router as help_router
 from invoicing import router as invoicing_router
@@ -90,6 +90,7 @@ from omniarmor import router as omniarmor_router
 from shortcuts import router as shortcuts_router
 from signup import router as signup_router
 from simulator import router as simulator_router
+from demo import router as demo_router
 from sites import router as sites_router
 from store import INDUSTRY_PROFILES, PLAN_TIERS, iso, utc_now
 from telemetry import router as telemetry_router
@@ -293,6 +294,7 @@ app.include_router(omniarmor_router)
 app.include_router(margin_router)
 app.include_router(books_router)
 app.include_router(simulator_router)
+app.include_router(demo_router)
 app.include_router(help_router)
 
 MODULES_ACTIVE = [
@@ -348,6 +350,7 @@ CONSOLE_HTML = STATIC_DIR / "console.html"
 PARTNER_HTML = STATIC_DIR / "partner.html"
 LEGAL_HTML = STATIC_DIR / "legal.html"
 SIGNUP_HTML = STATIC_DIR / "signup.html"
+DEMO_HTML = STATIC_DIR / "demo.html"
 BOOK_HTML = STATIC_DIR / "book.html"
 SERVICE_WORKER = STATIC_DIR / "sw.js"
 WEB_MANIFEST = STATIC_DIR / "manifest.webmanifest"
@@ -1113,6 +1116,19 @@ def signup_page(request: Request):
     return _serve_page(SIGNUP_HTML, request)
 
 
+@app.get("/demo", include_in_schema=False)
+def demo_page(request: Request):
+    """See it live, with no account: a pretend kitchen (demo.py).
+
+    The page is files and nothing else. It asks the server for one thing,
+    the story at /api/demo/story, which is rate limited and keeps nothing.
+    """
+    from pricing import headline
+
+    return _serve_page(DEMO_HTML, request,
+                       {"%%TRIAL_DAYS%%": str(headline()["trial_days"])})
+
+
 @app.get("/book", include_in_schema=False)
 def book_page():
     """The operator's own view of the whole customer book.
@@ -1472,6 +1488,13 @@ def usage_stats(request: Request):
     return {**STORE.usage_counts(), "usage": usage.last_days(30)}
 
 
+def public_ai_status() -> dict:
+    """The model layer's state, with nothing that names a model."""
+    full = dispatch_status()
+    return {key: full[key] for key in
+            ("configured", "degraded", "consecutive_failures", "last_success_at")}
+
+
 @app.get("/api/health", status_code=200, tags=["Gateway"])
 def health_check():
     """Liveness probe covering every mounted subsystem."""
@@ -1482,12 +1505,17 @@ def health_check():
         "modules_active": len(MODULES_ACTIVE),
         "active_profiles": len(INDUSTRY_PROFILES),
         "plan_tiers": list(PLAN_TIERS),
-        "gemini_model": GEMINI_MODEL,
-        "gemini_dispatch": "ready" if dispatch_ready() else "fallback_template",
+        "ai_dispatch": "ready" if dispatch_ready() else "fallback_template",
         # The line above says a client was constructed. This one says
         # whether calls through it are working, which is a different
         # question once a named model is retired.
-        "ai": dispatch_status(),
+        #
+        # Which model is not said here. This answer is public -- anyone
+        # can ask for it, and the public demo once carried it to the
+        # world -- so it gives the state and never a model's name or id,
+        # nor the last error, which can carry one. The operator's
+        # readiness check (readiness.py, platform key only) names the model.
+        "ai": public_ai_status(),
         "message_delivery": "twilio" if delivery_ready() else "dry_run",
         "email_delivery": "smtp" if mail_status()["configured"] else "queued",
         "autopilot_scheduler": scheduler.status(),

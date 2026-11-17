@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>CyberLogix AI — See it live (demo, pretend data)</title>
+<meta name="description" content="Watch a pretend kitchen: four fridges and freezers, one warms up, and the alert texts and calls until somebody replies 1. Nothing is sent and nothing is saved.">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/demo.css">
+<link rel="stylesheet" href="/static/utilities.css">
+</head>
+<body>
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
+
+<!-- Said first, and kept on screen: none of this is real. -->
+<div class="demo-bar" role="note">
+  <strong>Demo &mdash; pretend data.</strong>
+  <span class="demo-bar-more">No texts or calls are sent, nothing is saved, and no account is made.</span>
+</div>
+
+<header class="demo-top">
+  <a class="brand" href="/" aria-label="CyberLogix AI home">
+    <img src="/static/logo.svg" alt="" width="28" height="28">
+    <span class="brand-name">CyberLogix <em>AI</em></span>
+  </a>
+  <a class="btn btn-sm btn-go demo-top-cta" id="top-cta" href="/signup?sector=restaurant">Start your free trial</a>
+</header>
+
+<main class="demo-wrap">
+  <section class="demo-intro">
+    <p class="demo-kicker" id="biz">Corner Bistro</p>
+    <h1 class="demo-h1">This is your console, with four pretend sensors.</h1>
+    <p class="demo-lede" id="lede">In about a minute the walk-in cooler starts to warm up.
+       Watch what happens, and reply 1 when the text arrives.</p>
+    <ol class="demo-steps" id="steps" aria-label="What happens">
+      <li data-step="fine">All fine</li>
+      <li data-step="warming">Warming up</li>
+      <li data-step="alert">Text sent</li>
+      <li data-step="call">Calls</li>
+      <li data-step="sorted">Sorted</li>
+    </ol>
+    <div class="demo-controls">
+      <button class="btn btn-sm" type="button" id="skip">Skip the wait</button>
+      <span class="demo-clock" id="clock" aria-live="off"></span>
+    </div>
+  </section>
+
+  <div id="verdict" class="demo-verdict ok" role="status">
+    <h2>Loading the pretend kitchen&hellip;</h2>
+    <p>One moment.</p>
+  </div>
+
+  <section class="card demo-card" aria-labelledby="units-title">
+    <div class="card-head">
+      <span class="card-title" id="units-title">Your fridges and freezers</span>
+      <span class="card-note">pretend</span>
+    </div>
+    <div class="demo-units" id="units"></div>
+  </section>
+
+  <div class="demo-pair">
+    <section class="card demo-card" aria-labelledby="phone-title">
+      <div class="card-head">
+        <span class="card-title" id="phone-title">Sam&rsquo;s phone</span>
+        <span class="card-note">the owner</span>
+      </div>
+      <div class="phone" id="phone">
+        <p class="phone-empty" id="phone-empty">No messages. Nothing is wrong yet.</p>
+        <div class="phone-thread" id="thread"></div>
+        <div class="phone-call" id="call" hidden>
+          <p class="call-who"><b>CyberLogix</b> is calling&hellip;</p>
+          <p class="call-said" id="call-said"></p>
+          <button class="btn demo-big" type="button" id="press-1">Press 1</button>
+        </div>
+      </div>
+      <button class="btn demo-big demo-reply" type="button" id="reply-1" disabled>Reply 1</button>
+      <p class="demo-small" id="reply-help">When the alert text arrives, reply 1 to say you are on it.</p>
+    </section>
+
+    <section class="card demo-card" aria-labelledby="alert-title">
+      <div class="card-head">
+        <span class="card-title" id="alert-title">Alerts</span>
+        <span class="card-note" id="alert-note">none</span>
+      </div>
+      <p class="demo-empty" id="alert-empty">Nothing has gone wrong. When a fridge gets too warm, the alert and who answered it appear here.</p>
+      <ul class="timeline" id="timeline"></ul>
+      <button class="btn demo-big" type="button" id="fix" hidden>Mark it fixed</button>
+    </section>
+  </div>
+
+  <p class="demo-small demo-time" id="time-note">Time is sped up. Here a reading
+     comes every 2 seconds; a real sensor sends one every few minutes.</p>
+
+  <section class="card demo-end" id="end" aria-labelledby="end-title">
+    <h2 id="end-title">Try it on your own fridges</h2>
+    <p>Free for %%TRIAL_DAYS%% days, no card. Add a sensor, add who gets alerts, and send a
+       test text. It takes a few minutes.</p>
+    <div class="demo-end-acts">
+      <a class="btn btn-primary demo-end-cta" id="end-cta" href="/signup?sector=restaurant">Start your free trial</a>
+      <button class="btn" type="button" id="again">Watch it again</button>
+    </div>
+  </section>
+  <p class="demo-small demo-error" id="error" hidden></p>
+</main>
+
+<script src="/static/circuit.js"></script>
+<script src="/static/demo.js"></script>
+</body>
+</html>

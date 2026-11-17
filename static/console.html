@@ -180,17 +180,18 @@
       <button type="button" id="terms-accept">Read and accept</button>
     </div>
 
-    <!-- The first day: four things to have done before the night a
-         freezer fails. The server ticks each one from what the account
-         actually holds; once all four are true the card is gone. -->
+    <!-- Getting started: three things, and the first fridge is protected.
+         The server ticks each one from what the account actually holds;
+         once all three are true the card is gone. -->
     <section class="card first-day" id="first-day" hidden>
       <div class="card-head">
-        <span class="card-title">Your first day</span>
+        <span class="card-title">Getting started</span>
         <span class="card-note" id="first-day-note"></span>
       </div>
-      <p class="card-plain">Four things to do before the night something
-         fails. Each one ticks itself when it is done.</p>
+      <p class="card-plain">Three steps and your first fridge is protected.
+         Each one ticks itself when it is done.</p>
       <ol class="checklist" id="first-day-list"></ol>
+      <div class="checklist-out" id="first-day-out" hidden></div>
     </section>
 
     <section class="tiles" id="tiles" aria-label="Fleet summary"></section>
@@ -217,13 +218,20 @@
       <button class="f-tab" data-tab="setup" aria-pressed="false" type="button">Setup</button>
     </div>
     <p class="finder-none" id="find-none" hidden></p>
+    <!-- A tab a new business has nothing on yet says, in one sentence, what
+         will appear there, and offers the next thing to do. Never a blank
+         page. Filled by renderTabEmpty() in console.js. -->
+    <div class="tab-empty" id="tab-empty" hidden>
+      <p class="tab-empty-text" id="tab-empty-text"></p>
+      <span id="tab-empty-act"></span>
+    </div>
 
     <div class="layout">
       <div>
         <!-- A device that is sending readings has already done the hard
              part. Requiring its serial up front was the whole difficulty
              of setting this product up. -->
-        <section class="card" id="find-knocking" data-group="fridges" data-find="devices knocking new sensor connect setup adopt pair discover unrecognised serial" data-label="Devices knocking" hidden>
+        <section class="card" id="find-knocking" data-empty="1" data-group="fridges" data-find="devices knocking new sensor connect setup adopt pair discover unrecognised serial" data-label="Devices knocking" hidden>
           <div class="card-head">
             <span class="card-title">Devices knocking</span>
             <span class="card-note" id="knock-note"></span>
@@ -402,7 +410,7 @@
           <section class="card mod-intel" id="find-meeting-intelligence" data-group="money" data-find="turn meeting notes into jobs meeting intelligence sales call prep customer notes" data-label="Turn meeting notes into jobs">
           <div class="card-head">
             <span class="card-title">Turn meeting notes into jobs</span>
-            <span class="mod-chip c-intel">Gemini-powered</span>
+            <span class="mod-chip c-intel">Written for you</span>
           </div>
           <p class="card-plain">Paste what was said and get back the things somebody agreed to do.</p>
           <form id="tx-form">
@@ -472,12 +480,12 @@
       <aside>
         <section class="card" id="find-add-to-the-estate" data-group="setup" data-find="add a fridge or freezer add to the estate new sensor register add device" data-label="Add a fridge or freezer">
           <div class="card-head"><span class="card-title">Add a fridge or freezer</span></div>
-          <p class="card-plain">Register a new unit so it starts being watched.</p>
+          <p class="card-plain">Name it by where it is, and we start watching it as soon as its sensor sends a reading.</p>
           <!-- A key is shown once. A toast that fades after three seconds
                is the wrong container for something you cannot get back. -->
           <div id="issued-key" class="banner warn" hidden
                role="status" aria-live="polite">
-            <div><b>Ingest key for <span id="issued-for">—</span></b></div>
+            <div><b><span id="issued-kind">Sensor key for</span> <span id="issued-for">—</span></b></div>
             <div class="digest" id="issued-value" tabindex="0"></div>
             <div class="issued-actions">
               <button class="btn btn-sm" type="button" id="issued-copy">Copy</button>
@@ -490,12 +498,13 @@
               more, which is why it, and not your account key, belongs on
               hardware.
             </div>
+            <a class="offline-help" id="issued-guide" href="/help/sensors" hidden>How to put the key in your sensor, brand by brand</a>
           </div>
 
           <form id="add-form">
             <div class="field">
               <label for="add-loc">Where is it?</label>
-              <input id="add-loc" required placeholder="Store 118 / Walk-In">
+              <input id="add-loc" required placeholder="e.g. Walk-in cooler">
             </div>
             <div class="field">
               <label for="add-vertical">Industry</label>
@@ -513,7 +522,7 @@
               <label for="add-sn">Third-party device serial <span class="u-c-muted u-fw-400">(optional)</span></label>
               <input id="add-sn" placeholder="ELITECH-00:1B:44:11:3A:B7">
             </div>
-            <button class="btn btn-primary" type="submit">Claim a seat</button>
+            <button class="btn btn-primary" type="submit">Add it</button>
           </form>
         </section>
 
@@ -553,13 +562,18 @@
                would do with it, which is not always the same thing. -->
           <div id="escalation-body" class="u-mt-12"></div>
           <form id="contact-form" class="u-mt-12">
-            <div class="row u-gap-8">
-              <input id="ct-name" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink" placeholder="Name" required>
-              <input id="ct-phone" placeholder="+15550100" required
-                     class="u-w-130 u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
+            <p class="sub-head">Add who gets alerts</p>
+            <div class="row u-gap-8 u-flex-wrap">
+              <label class="sr" for="ct-name">Name</label>
+              <input id="ct-name" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink"
+                     placeholder="Name" autocomplete="name" required>
+              <label class="sr" for="ct-phone">Mobile number</label>
+              <input id="ct-phone" type="tel" placeholder="Mobile, e.g. +1 555 010 0100"
+                     autocomplete="tel" required
+                     class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
             </div>
             <button class="btn btn-sm u-mt-8" type="submit">
-              Add to roster
+              Add to the list
             </button>
           </form>
           <!-- A wrong digit reads perfectly well on screen and reaches
@@ -567,7 +581,8 @@
           <div class="test-alert" id="test-alert-box">
             <p class="card-plain">Check the texts really arrive. Everyone
                above gets one that starts <b>TEST</b> and says nothing is
-               wrong. No problem is opened and nobody is chased.</p>
+               wrong. No problem is opened and nobody is chased. It is safe
+               to press.</p>
             <div class="row">
               <button class="btn btn-sm" type="button" id="test-alert">Send a test alert</button>
               <label class="test-call" id="test-call-wrap" hidden>
@@ -890,9 +905,8 @@
           <div id="founder-box" class="founder-box" hidden></div>
           <div id="invoice-body"></div>
           <p class="card-note u-mt-10">
-            Invoices are raised by the contract, not from here. A customer
-            issuing and settling their own is the ledger being writable by
-            the party it bills.
+            Bills come from your plan automatically. You cannot raise or
+            change one here.
           </p>
         </section>
 

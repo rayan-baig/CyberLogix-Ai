@@ -108,9 +108,19 @@ inline.
 
 It also walks a new business's first day: the landing page states who it is
 for, the price and the trial in the first screen (phone and laptop), sign-up
-lands in the console, every empty card offers its next step, the checklist
-ticks itself and goes, the test alert opens no incident, and a simulated unit
-is stamped as one and stays out of the real fleet.
+lands in the console, every empty card offers its next step, Getting
+started ticks itself through its own buttons (a sensor, "Add me", the test)
+and goes, the test alert opens no incident, and a simulated unit is stamped
+as one and stays out of the real fleet.
+
+The suite holds the demo at `/demo` to what it promises
+(`tests/test_demo.py`): nothing is sent, nothing is kept in the database,
+the story is rate limited per caller and in total, no AI model name or id
+appears in it, in `/api/health` or in the committed public pages, and the
+alert it shows is word for word what the product would send.
+`tests/test_getting_started.py` walks the three checklist steps ticking one
+at a time, and runs the console's own empty-tab code under node for a new
+business and for one that is set up.
 
 And who is on call: an owner builds a rotation and sets quiet hours
 through the On call now card at phone size, the card names who is on now

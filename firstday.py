@@ -3,11 +3,12 @@
 Two things a business needs to have done before the night a freezer
 fails, and that nothing used to tell it to do:
 
-* **The checklist.** Add a site, a sensor, somebody to call, and send a
-  test alert. Each line is read from what the account actually holds --
-  there is no "mark as done" button, because a box somebody ticked is a
-  promise, and a box the roster ticked is a fact. When all four are true
-  the checklist is gone, and it does not come back.
+* **The checklist** ("Getting started"). Add a sensor, add who gets
+  alerts, and send a test alert. Each line is read from what the account
+  actually holds -- there is no "mark as done" button, because a box
+  somebody ticked is a promise, and a box the roster ticked is a fact.
+  When all three are true the checklist is gone, and it does not come
+  back.
 
 * **The test alert.** The roster is the one part of the product a
   customer cannot check by looking at it. A wrong digit in a phone number
@@ -107,31 +108,33 @@ def has_sent_test(tenant_id: str) -> bool:
 
 
 def checklist(tenant: Tenant) -> Dict[str, Any]:
-    """The four things, each read from what the account holds right now."""
+    """Getting started: three things, each read from what the account holds.
+
+    A sensor, somebody to alert, and a test that reached them. That is
+    the whole of "this fridge is protected": a site is useful, and the
+    console offers one, but a business with one kitchen does not need it
+    before its first night.
+    """
     tid = tenant.tenant_id
     steps = [
         {
-            "key": "site",
-            "label": "Add your site",
-            "detail": "Where the fridges are, so an alert names the building.",
-            "done": bool(STORE.sites_for(tid)),
-        },
-        {
             "key": "sensor",
-            "label": "Add a sensor",
+            "label": "Add your first sensor",
             "detail": "One fridge or freezer is enough to start.",
             "done": bool(STORE.sensors_for(tid)),
         },
         {
             "key": "oncall",
-            "label": "Add someone to call",
-            "detail": "Who gets the text at 3am.",
+            "label": "Add who gets alerts",
+            "detail": "The people we text and call when something gets warm. "
+                      "You can add yourself.",
             "done": any(c.active for c in STORE.contacts_for(tid)),
         },
         {
             "key": "test",
             "label": "Send a test alert",
-            "detail": "Check the texts really arrive, before a night they have to.",
+            "detail": "A text that starts TEST and says nothing is wrong. "
+                      "Nothing is opened and nobody is chased.",
             "done": has_sent_test(tid),
         },
     ]

@@ -402,7 +402,8 @@ def faq() -> List[Dict[str, Any]]:
                 "find Who gets called and press Send a test alert. Everyone "
                 "on the list gets a text that starts “TEST” and says nothing "
                 "is wrong. On a plan with phone calls you can also ring the "
-                "first person.",
+                "first person. It is also the last step of Getting started, "
+                "at the top of the console.",
                 "A test opens no problem and chases nobody. Owners and "
                 f"operators can send one every {cooldown_minutes} minutes, "
                 f"up to {TEST_ALERTS_PER_DAY} a day.",

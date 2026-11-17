@@ -37,7 +37,8 @@ The slogan is *A freezer fails at two. Nobody finds out until seven.*
   Dickson, a vendor's cloud, or anything that sends JSON. Also at
   `/help/sensors`.
 
-The app has the same answers at `/help`, and the prices (restaurants and
+Anyone can watch a pretend kitchen warm up and alert at `/demo` without
+signing up. The app has the same answers at `/help`, and the prices (restaurants and
 pharmacies per location, a quote for every other trade, no setup fee)
 with a calculator at `/pricing`. [CHANGELOG.md](CHANGELOG.md) says what changed in
 each version; the number in use is in `VERSION` and at `/api/health`.
@@ -88,7 +89,8 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | Compliance Vault | `/api/vault` | Hash-chained readings and verifiable attestations |
 | Insurance Claim Packets | `/api/claims` | Everything an adjuster asks for, assembled |
 | Leaving | `/api/accounts/business` | Download everything, or delete everything |
-| First Day | `/api/contacts/test-alert` | A checklist that ticks itself, and a test text to the roster |
+| Getting Started | `/api/contacts/test-alert` | A three-step checklist that ticks itself, and a test text to the roster |
+| See It Live | `/demo`, `/api/demo/story` | A pretend kitchen anyone can watch, no account; sends and keeps nothing |
 | Simulator | `/api/simulator` | Pretend units for a demo, never recorded |
 | Industry Benchmarks | `/api/benchmarks` | Where an estate sits against its cohort |
 | Invoicing | `/api/invoices` | Numbered, dated, frozen demands for money |
