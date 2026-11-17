@@ -378,6 +378,12 @@ def my_referrals(owner: User = Depends(require_role("owner"))):
 
 class Refund(BaseModel):
     note: str = Field("", max_length=200)
+    # For a business that joined with an insurance partner's code: which
+    # invoice's payment was refunded, and how much of it (all of it when
+    # left out). Without an invoice, every payment so far counts as
+    # refunded in full. Only the partner's share of that is taken back.
+    invoice_number: Optional[str] = Field(None, max_length=40)
+    amount_usd: Optional[float] = Field(None, gt=0, le=1_000_000, allow_inf_nan=False)
 
 
 @router.post("/{tenant_id}/refunded")
@@ -395,7 +401,7 @@ def mark_refunded(tenant_id: str, payload: Refund,
     # A business can have joined with a friend's code or with an insurance
     # partner's code, never both. Whichever it was, what it earned somebody
     # is taken back.
-    share = insurers.refunded(tenant_id)
+    share = insurers.refunded(tenant_id, payload.invoice_number, payload.amount_usd)
     try:
         result = refunded(tenant_id)
     except HTTPException:

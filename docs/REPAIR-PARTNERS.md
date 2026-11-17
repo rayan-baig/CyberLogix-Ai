@@ -98,7 +98,11 @@ by id and mask the contact (`mask_email`).
 ## Fees, bad leads and billing
 
 - **The fee.** Each delivered lead is recorded as owed at the partner's
-  fee: `CYBERLOGIX_REPAIR_LEAD_FEE_USD` ($35 by default), kept with the
+  fee, and only once its email has actually gone to the partner. If the
+  mail host will not take it (or mail is not set up), no lead and no fee
+  are recorded, nothing is left queued to go out later, the partner keeps
+  their place in line, and the business is told its request did not go
+  through and to try again. The fee is `CYBERLOGIX_REPAIR_LEAD_FEE_USD` ($35 by default), kept with the
   partner when approved, so changing the setting never changes an
   existing partner's fee.
 - **A bad lead.** Within 7 days of a lead (`BAD_LEAD_DAYS`) the partner

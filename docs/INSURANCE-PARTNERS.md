@@ -56,11 +56,22 @@ business a lower premium. What a business can do is show its insurer a
 * A late charge earns nothing (it is about lateness, not service).
 * A business a reseller looks after earns its reseller a commission
   instead: one business, one share.
-* **A refund takes it back.** Record the refund the way you already do for
-  a friend's referral (Unmatched cash tab, "A referred business was
-  refunded", or `POST /api/referrals/{tenant_id}/refunded`). Whatever that
-  business earned the partner is withdrawn. What was already paid out
-  stays paid, and shows in the partner's balance.
+* **A refund takes back the share of what was refunded.** Record the
+  refund the way you already do for a friend's referral (Unmatched cash
+  tab, "A referred business was refunded", or
+  `POST /api/referrals/{tenant_id}/refunded`), with the invoice number
+  (`invoice_number`) and, for a part refund, the amount (`amount_usd`).
+  A part refund takes back only the share of that amount: $20 refunded of
+  a $59 payment takes back $2.00 of its $5.90. A full refund of a payment
+  takes back that payment's whole share. Left without an invoice number,
+  every payment so far counts as refunded in full. The business's later
+  payments keep earning as usual, inside the share period. What was
+  already paid out stays paid, and shows in the partner's balance.
+* **A partner switched off keeps earning on businesses it already
+  referred**, for the months its share runs. Switching off closes the
+  dashboard and stops the code signing anybody new up; it does not cancel
+  what the partner was promised for businesses that already joined. To
+  end that too, agree it with the partner and record it by hand.
 * **Earned − paid = owed**, each summed from the stored rows.
 * What is owed outlives a business deleting itself; its name goes with it.
 

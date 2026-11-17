@@ -121,6 +121,13 @@ ends on its own on the date shown:
   (the hourly pass, `retention.run_pauses`).
 - **Coming back early** (`POST /api/leaving/resume`) turns alerts on at
   once and moves the next bill only by the time actually spent paused.
+  That holds after a renewal during the pause too: the pause moves onto
+  the new contract (`retention.carry_pause`), and its first bill comes
+  forward the same way.
+- **Up to 3 months a year.** At most `PAUSE_MONTHS_PER_YEAR` (3) months
+  paused in any 12, counted as the time actually spent paused (coming
+  back early gives the rest back). The card offers only the pauses that
+  fit and says "You can pause for up to 3 months a year."
   Cancelling while paused does the same before cancelling, so the service
   runs to the end of what was paid for plus only the time used.
 
@@ -129,8 +136,9 @@ ends on its own on the date shown:
 `CYBERLOGIX_SAVE_OFFER_MONTHS` (2) months of the contract, as a line of
 its own on each of those invoices ("Thank you for staying: 25% off (month
 1 of 2)"), worked out from the recurring lines after any chain discount.
-On a yearly plan it is that percentage of two of the twelve months, on
-the next yearly invoice. Once per business, ever, including after
+On a yearly plan it is that percentage of two twelfths of what the year
+actually costs (after its two free months), on the next yearly invoice:
+on $149 a month, 25% of 2/12 of $1,490, $62.08. Once per business, ever, including after
 cancelling and signing again. A voided invoice that carried it is
 re-issued with the same line, never a third month. These are our own
 invoice lines, not a card processor's coupon, so the settings are a
@@ -162,10 +170,12 @@ same way as the offer to stay.
 - **Monthly:** `CYBERLOGIX_FOUNDER_PERCENT` (20) off each of the first
   `CYBERLOGIX_FOUNDER_MONTHS` (3) invoices, as a line of its own:
   "Founding member: 20% off your first 3 months (month 1 of 3)".
-- **Yearly:** the percentage of that many months' worth, taken once, on
-  the first yearly invoice: "Paying yearly: 20% off 3 months' worth, taken
-  once on the first yearly bill". On $149 a month that is $89.40 off, and
-  the two free months of a yearly plan are still there as before.
+- **Yearly:** the percentage of that many months' worth of the yearly
+  price (what the customer actually pays), taken once, on the first
+  yearly invoice: "Paying yearly: 20% off 3 months' worth of the yearly
+  price, taken once on the first yearly bill". On $149 a month the year
+  is $1,490, so that is 20% of 3/12 of it, $74.50 off, after the two free
+  months of a yearly plan.
 - **The base** is the recurring lines after any chain discount, the same
   as the offer to stay, so the chain discount applies first and the
   founder line after it.
@@ -413,7 +423,13 @@ The rate card is half of what an estate is worth.
 returns the whole thing in one figure (its setup block reads $0, "No setup
 fee."; `annual_prepay=true` is the yearly plan, ten months for twelve), so
 nobody discovers an escalator afterwards. That is the only way
-that term survives a renewal conversation.
+that term survives a renewal conversation. Its year-by-year schedule is
+worked out exactly as the signed contract bills it
+(`contracts.term_schedule`): the escalator compounded on the year-one
+price, and on a yearly plan two free months in every year of the term,
+not only the first (`prepay_discount_usd` and `payable_usd` on each row).
+`total_contract_value_usd` is what the term actually bills;
+`total_list_value_usd` is the same term at twelve monthly bills a year.
 
 ### Return on the subscription
 
@@ -536,7 +552,17 @@ Three things it gets right that are easy to get wrong:
 - **A voided invoice comes back.** `periods_billed` is a high-water mark,
   so voiding one used to give that month away for good. The period goes on
   a re-bill list instead — a list rather than a rewind, because the voided
-  invoice is not always the newest one.
+  invoice is not always the newest one. One exception: a yearly invoice
+  for a year that has ended, when mid-year invoices billed what was added
+  part-way through it, cannot be voided (409). Its re-issue would be
+  priced on today's estate and bill those additions again; issue a credit
+  note for what is wrong instead.
+- **No invoice is below $0.** Whatever the settings or a stored offer
+  say, discounts are cut back so the total is never negative
+  (`store.never_below_zero`), the last discount first (the offer to stay
+  or the founding member code), and a line that was cut says so. A bill
+  that comes to $0 is recorded as paid at once, so nobody is chased for
+  it.
 
 ### Collections
 

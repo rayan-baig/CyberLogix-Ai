@@ -2452,8 +2452,11 @@ function renderLeaving(d) {
         <button class="btn btn-sm danger-btn" type="button" data-cancel-plan="1"
           ${owner ? "" : "disabled"}>Cancel my plan</button></div>`
     : `<div class="cancel-line">${esc(d.cancel.words)}</div>`;
-  body.innerHTML = `<p class="card-plain">${esc(d.pause_words)}</p>
-    <div class="pause-options">${options}</div>${stay}${cancel}
+  const limit = d.pause_limit_words ? ` ${esc(d.pause_limit_words)}` : "";
+  const none = options ? "" : `<p class="card-plain">No pause is left in the last
+    12 months just now.</p>`;
+  body.innerHTML = `<p class="card-plain">${esc(d.pause_words)}${limit}</p>
+    <div class="pause-options">${options}</div>${none}${stay}${cancel}
     ${owner ? "" : `<p class="card-plain u-mt-8">Only an owner can pause or cancel.</p>`}`;
 }
 

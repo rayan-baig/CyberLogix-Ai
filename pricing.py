@@ -756,17 +756,22 @@ def referral_credit_usd(tenant: Tenant) -> float:
 def escalated_schedule(
     monthly_usd: float, years: int, escalator_percent: float = ANNUAL_ESCALATOR_PERCENT
 ) -> List[Dict[str, Any]]:
-    """Year-by-year contract value with the escalator applied."""
+    """Year-by-year contract value with the escalator applied.
+
+    Worked the way a signed contract bills (Subscription.rate_multiplier
+    and contracts.term_schedule): the escalator compounded on the year-one
+    price, not on last year's rounded figure, so the quote and the
+    contract agree to the cent in every year.
+    """
     schedule = []
-    rate = monthly_usd
     for year in range(1, max(1, min(years, MAX_CONTRACT_YEARS)) + 1):
-        if year > 1:
-            rate = round(rate * (1 + escalator_percent / 100.0), 2)
+        multiplier = round((1 + escalator_percent / 100.0) ** (year - 1), 6)
         schedule.append(
             {
                 "year": year,
-                "monthly_usd": rate,
-                "annual_usd": round(rate * 12, 2),
+                "monthly_usd": round(monthly_usd * multiplier, 2),
+                "annual_usd": round(monthly_usd * multiplier * 12, 2),
+                "multiplier": multiplier,
             }
         )
     return schedule
@@ -1454,15 +1459,20 @@ def full_deal(
     setup = round(fee * billable_sites, 2)
 
     schedule = escalated_schedule(monthly, years)
-    total_contract = round(sum(row["annual_usd"] for row in schedule), 2)
+    # Paying yearly is every year of the term up front at ten months for
+    # twelve, as the contract bills it (contracts.term_schedule), so each
+    # year carries its own two free months and the total is what is paid.
+    for row in schedule:
+        multiplier = row.pop("multiplier")
+        discount = (round(row["annual_usd"] - yearly_price(monthly * multiplier), 2)
+                    if annual_prepay else 0.0)
+        row["prepay_discount_usd"] = discount
+        row["payable_usd"] = round(row["annual_usd"] - discount, 2)
+    total_contract = round(sum(row["payable_usd"] for row in schedule), 2)
+    total_list = round(sum(row["annual_usd"] for row in schedule), 2)
 
     year_one = schedule[0]["annual_usd"]
-    # Two months free: a year paid up front is ten of its months.
-    prepay_discount = (
-        round(year_one - yearly_price(schedule[0]["monthly_usd"]), 2)
-        if annual_prepay
-        else 0.0
-    )
+    prepay_discount = schedule[0]["prepay_discount_usd"]
 
     return {
         "company_name": tenant.company_name,
@@ -1484,6 +1494,9 @@ def full_deal(
             "escalator_percent": ANNUAL_ESCALATOR_PERCENT if years > 1 else 0.0,
             "schedule": schedule,
             "total_contract_value_usd": total_contract,
+            # The same term at twelve monthly bills a year, before the
+            # yearly discount; equal to the total when paying monthly.
+            "total_list_value_usd": total_list,
         },
         "annual_prepay": {
             "elected": annual_prepay,
@@ -1492,6 +1505,7 @@ def full_deal(
             "label": yearly_label(),
             "discount_percent": YEARLY_DISCOUNT_PERCENT,
             "discount_usd": prepay_discount,
+            "term_discount_usd": round(total_list - total_contract, 2),
             "year_one_due_usd": round(year_one - prepay_discount + setup, 2),
         },
         "first_invoice_usd": round(

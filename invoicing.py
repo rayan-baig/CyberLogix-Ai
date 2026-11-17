@@ -630,6 +630,24 @@ def send_receipt(tenant: Tenant, invoice: Invoice, reference: str, settled: bool
     )
 
 
+def _midyear_invoices_of_a_past_year(invoice: Invoice) -> List[str]:
+    """The live mid-year invoice numbers of the year `invoice` billed, when
+    that is a yearly contract's year other than its current one; else []."""
+    if invoice.billing_period is None:
+        return []
+    sub = STORE.get_subscription(invoice.source)
+    if sub is None or not sub.annual_prepay or sub.started_at is None:
+        return []
+    index = invoice.billing_period
+    if index == sub.periods_billed - 1 and sub.active:
+        return []
+    start, end = sub.period_start(index), sub.period_start(index + 1)
+    return sorted(
+        other.number for other in STORE.invoices_for(invoice.tenant_id)
+        if other.source == f"midyear:{sub.subscription_id}" and other.state != "void"
+        and other.issued_at is not None and start <= other.issued_at < end)
+
+
 @router.post("/{invoice_id}/void")
 def void_invoice(
     invoice_id: str,
@@ -668,6 +686,21 @@ def void_invoice(
                 f"${invoice.amount_paid_usd:,.2f} has already been received "
                 f"against {invoice.number}. Voiding it would re-bill the "
                 "whole period and leave that money on a dead invoice."
+            ),
+        )
+    # A yearly invoice for a year that has ended, when things added part-way
+    # through that year were billed on mid-year invoices: the re-issue is
+    # priced on the estate as it is now, and only the current year knows
+    # what those mid-year invoices covered, so it would bill them again.
+    midyear = _midyear_invoices_of_a_past_year(invoice)
+    if midyear:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{invoice.number} is the bill for a year that has ended, and "
+                f"{', '.join(midyear)} billed what was added part-way through "
+                "it. Voiding it would bill those again on the invoice issued in "
+                "its place. Issue a credit note for what is wrong instead."
             ),
         )
     STORE.void_invoice(invoice)

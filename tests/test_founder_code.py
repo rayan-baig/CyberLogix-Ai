@@ -266,12 +266,13 @@ def test_yearly_takes_the_months_worth_once_and_says_so(api, shop, code_on):
     _bill_through(sub, 1)
     first, second = _invoices(shop["tenant_id"])
     (line,) = _founder_lines(first)
-    # Twelve months of $149, of which 20% of three months comes off: $89.40.
-    assert line["amount_usd"] == -89.4
-    assert line["description"] == ("Paying yearly: 20% off 3 months' worth, taken "
-                                   "once on the first yearly bill")
+    # 20% of three months' worth of what the year costs ($1,490, ten months
+    # for twelve): 20% of 3/12 of $1,490 is $74.50.
+    assert line["amount_usd"] == -74.5
+    assert line["description"] == ("Paying yearly: 20% off 3 months' worth of the "
+                                   "yearly price, taken once on the first yearly bill")
     # The two free months of a yearly plan are still there, as before.
-    assert first.total_usd == round(149.0 * 10 - 89.4, 2)
+    assert first.total_usd == round(149.0 * 10 - 74.5, 2)
     assert _founder_lines(second) == []
     assert second.total_usd == 1490.0
 
@@ -285,7 +286,7 @@ def test_yearly_is_capped_at_the_months_even_when_more_are_set(api, shop, code_o
     _bill_through(sub, 1)
     first, second = _invoices(shop["tenant_id"])
     (line,) = _founder_lines(first)
-    assert line["amount_usd"] == -round(149.0 * 6 * 0.20, 2)
+    assert line["amount_usd"] == -round(149.0 * 10 * 6 / 12 * 0.20, 2)
     assert _founder_lines(second) == []
 
 

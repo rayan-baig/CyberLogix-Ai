@@ -281,7 +281,9 @@ def _record_share(tenant: Tenant, invoice: Invoice) -> Optional[float]:
         return None
     with STORE._lock:
         referral = STORE._db.get(REFERRAL_KIND, tenant.tenant_id)
-        if referral is None or referral.get("refunded_at"):
+        # A refund takes back the share of what was refunded (refunded()),
+        # and payments after it earn as usual inside the share period.
+        if referral is None:
             return None
         partner = _partner(str(referral.get("partner_id") or ""))
         if partner is None or partner.get("status") != "approved":
@@ -306,11 +308,13 @@ def _record_share(tenant: Tenant, invoice: Invoice) -> Optional[float]:
         if paid <= 0:
             return None
         percent = float(partner.get("share_percent") or 0.0)
-        amount = share_of(paid, percent)
         existing = STORE._db.get(EARNING_KIND, invoice.invoice_id)
-        if existing is not None and (existing.get("withdrawn_at") or (
-                float(existing.get("paid_usd") or 0.0) == paid)):
+        if existing is not None and float(existing.get("paid_usd") or 0.0) == paid:
             return float(existing.get("amount_usd") or 0.0)
+        # What refunds on this invoice already took back stays taken back.
+        refunded_usd = float((existing or {}).get("refunded_usd") or 0.0)
+        withdrawn_usd = float((existing or {}).get("withdrawn_usd") or 0.0)
+        amount = max(0.0, round(share_of(paid, percent) - withdrawn_usd, 2))
         now = iso(utc_now())
         row: Dict[str, Any] = {
             "earning_id": invoice.invoice_id,
@@ -326,7 +330,9 @@ def _record_share(tenant: Tenant, invoice: Invoice) -> Optional[float]:
             "amount_usd": amount,
             "earned_at": (existing or {}).get("earned_at") or now,
             "updated_at": now,
-            "withdrawn_at": None,
+            "refunded_usd": refunded_usd,
+            "withdrawn_usd": withdrawn_usd,
+            "withdrawn_at": (existing or {}).get("withdrawn_at") if amount <= 0 else None,
         }
         STORE._db.put(EARNING_KIND, invoice.invoice_id, row)
     logger.info("Partner %s earned $%.2f on %s.", partner["partner_id"], amount,
@@ -334,25 +340,59 @@ def _record_share(tenant: Tenant, invoice: Invoice) -> Optional[float]:
     return amount
 
 
-def refunded(tenant_id: str) -> Optional[float]:
-    """A referred business was refunded: take back what it earned its partner.
+def _refund_one(row: Dict[str, Any], amount_usd: Optional[float], now: str) -> Decimal:
+    """Take back the share of `amount_usd` refunded on one earning (all of
+    what is left of that payment when None). Returns what was taken back."""
+    paid = Decimal(str(row.get("paid_usd") or 0))
+    already = Decimal(str(row.get("refunded_usd") or 0))
+    left = max(Decimal("0"), paid - already)
+    refund = left if amount_usd is None else min(left, Decimal(str(amount_usd)))
+    if refund <= 0:
+        return Decimal("0")
+    percent = float(row.get("percent") or 0.0)
+    share = Decimal(str(row.get("amount_usd") or 0))
+    # A full refund of the payment takes back all that is left of its share
+    # (no cent left over by rounding); a part refund, the share of the part.
+    back = share if refund >= left else min(share, Decimal(str(share_of(float(refund), percent))))
+    row["refunded_usd"] = _cents(already + refund)
+    row["withdrawn_usd"] = _cents(Decimal(str(row.get("withdrawn_usd") or 0)) + back)
+    row["amount_usd"] = _cents(share - back)
+    row["updated_at"] = now
+    if row["amount_usd"] <= 0:
+        row["withdrawn_at"] = now
+    STORE._db.put(EARNING_KIND, str(row["earning_id"]), row)
+    return back
 
-    Returns what was withdrawn, or None when the business did not join with
-    a partner code. What was already paid out stays paid; the partner's
-    balance shows it.
+
+def refunded(tenant_id: str, invoice_number: Optional[str] = None,
+             amount_usd: Optional[float] = None) -> Optional[float]:
+    """A referred business was refunded: take back the partner's share of it.
+
+    With `invoice_number`, the refund was of that invoice's payment:
+    `amount_usd` of it, or all of it when left out. Without, every payment
+    so far was refunded in full. Only the share of what was refunded is
+    taken back, and the business's later payments earn as usual inside the
+    share period. Returns what was taken back, or None when the business
+    did not join with a partner code. What was already paid out to the
+    partner stays paid; their balance shows it.
     """
     with STORE._lock:
         referral = STORE._db.get(REFERRAL_KIND, tenant_id)
         if referral is None:
             return None
+        rows = [r for r in STORE._db.all(EARNING_KIND)
+                if r.get("referred_account") == tenant_id]
+        if invoice_number:
+            invoice = next((i for i in STORE.invoices_for(tenant_id)
+                            if i.number == invoice_number.strip()), None)
+            if invoice is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                    detail="No such invoice for that business.")
+            rows = [r for r in rows if r.get("invoice_id") == invoice.invoice_id]
+        now = str(iso(utc_now()))
         withdrawn = Decimal("0")
-        now = iso(utc_now())
-        for row in STORE._db.all(EARNING_KIND):
-            if row.get("referred_account") != tenant_id or row.get("withdrawn_at"):
-                continue
-            withdrawn += Decimal(str(row.get("amount_usd") or 0))
-            row["withdrawn_at"] = now
-            STORE._db.put(EARNING_KIND, str(row["earning_id"]), row)
+        for row in rows:
+            withdrawn += _refund_one(row, amount_usd if invoice_number else None, now)
         referral["refunded_at"] = now
         STORE._db.put(REFERRAL_KIND, tenant_id, referral)
     return _cents(withdrawn)
