@@ -112,8 +112,17 @@ function verdict(units, jobs, paused) {
           out when you get a minute. None of it is an emergency.</p>`;
     return;
   }
-  box.className = "verdict ok";
   const n = units.length;
+  // A new business: "all 0 of your fridges are fine" is not fine.
+  if (!n) {
+    box.className = "verdict watch";
+    box.innerHTML =
+      `<h1>Nothing is being watched yet</h1>
+       <p>Add your first sensor in the console, and this page will say
+          whether your food is safe.</p>`;
+    return;
+  }
+  box.className = "verdict ok";
   box.innerHTML =
     `<h1>Everything is fine</h1>
      <p>All ${n} of your fridges and freezers are the right temperature and
@@ -188,7 +197,9 @@ function render(data) {
       </span>
       <span class="thing-word ${state.cls}">${esc(state.word)}</span>
     </div>`;
-  }).join("") : `<p class="sub">Nothing is set up yet.</p>`;
+  }).join("") : `<p class="sub">Your fridges and freezers will show here once
+      the first sensor is added.</p>
+      <a class="btn btn-sm" href="/console">Add your first sensor</a>`;
 
   $("when").textContent = "Checked " + howLongAgo(new Date().toISOString());
 }

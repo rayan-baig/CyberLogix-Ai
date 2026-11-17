@@ -44,7 +44,14 @@ company's monitoring, or moving it onto a plan without voice escalation,
 is not an action whose audit record should read "API key".
 
 Public endpoints are `/`, `/console`, `/api`, `/api/health`, `/api/industries`,
-`/api/licenses/plans`, `/api/licenses/tenants` and `/api/accounts/login`.
+`/api/licenses/plans`, `/api/licenses/tenants`, `/api/accounts/login` and the
+demo's `/api/demo/story` (rate limited, and it keeps nothing).
+
+`/api/health` says whether the model layer that words alerts is set up and
+working (`ai_dispatch`, and `ai`: `configured`, `degraded`,
+`consecutive_failures`, `last_success_at`). It never says which model: the
+answer is public, and it once carried the model's id into the public demo.
+The operator's readiness check, which only the platform key can read, names it.
 
 Status codes distinguish the failure modes: `401` for a missing or unknown
 credential, `402` for a suspended or expired license, `403` for a plan or role

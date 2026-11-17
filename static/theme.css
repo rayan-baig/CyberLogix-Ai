@@ -962,6 +962,18 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   #fleet-table, .scrollx { overflow-x: auto; }
   #toasts { right: 10px; left: 10px; bottom: 88px; }
   .toast { max-width: none; }
+  /* A title, a note and two buttons do not fit one phone row; the title
+     was squeezed into a column a word wide. They wrap instead. */
+  /* Fingers, not pointers: 30px buttons and 25px boxes were hard to hit
+     on a phone. */
+  .btn-sm { min-height: 38px; }
+  #app .chip-btn { min-height: 36px; }
+  #app input:not([type="checkbox"]):not([type="radio"]), #app select,
+  #app form button { min-height: 38px; }
+  #app summary { padding: 8px 0; }
+  .card-head { flex-wrap: wrap; row-gap: 8px; }
+  #fleet-card .card-head .card-title { flex: 1 1 100%; }
+  #fleet-card .card-head .nav-spacer { display: none; }
 }
 
 
@@ -1183,8 +1195,15 @@ body[data-stale] #offline-banner {
   position: sticky; top: var(--nav-h, 62px); z-index: 18;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 12px 0 12px; margin-bottom: 6px;
-  background: linear-gradient(to bottom,
-    var(--bg) 0%, var(--bg) 72%, transparent 100%);
+  background: var(--bg);
+}
+/* The soft edge sits below the bar, not across its last row of tabs:
+   when the tabs wrapped to a third row on a phone, that row was drawn
+   over the fade and the cards scrolling underneath showed through it. */
+.finder::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+  pointer-events: none;
 }
 .finder-search { position: relative; flex: 1 1 230px; min-width: 0; }
 .finder-search input {
@@ -1233,8 +1252,12 @@ body[data-stale] #offline-banner {
 }
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
-  .f-tab { padding: 6px 11px; font-size: 13px; }
+  .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
   .f-tab .n { display: none; }
+  /* On a phone the account bar scrolls away and only the finder stays:
+     both together were sticky and held a third of an 844px screen. */
+  .nav { position: relative; }
+  .finder { top: 0; }
 }
 
 /* One sentence under each card title, saying what the card is for.
@@ -1281,7 +1304,28 @@ body[data-stale] #offline-banner {
 }
 .checklist li.is-done b { color: var(--muted); text-decoration: line-through; }
 .checklist li.is-done .tick { border-color: var(--good); }
-.checklist .btn { flex: none; }
+.checklist .btn { flex: none; min-height: 36px; }
+.checklist-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex: none; }
+.checklist-out { margin-top: 6px; }
+@media (max-width: 520px) {
+  /* The buttons go under the words rather than squeezing them into a
+     column three words wide. */
+  .checklist li { flex-wrap: wrap; }
+  .checklist li .grow { flex: 1 1 calc(100% - 40px); }
+  .checklist li > .btn, .checklist-acts { margin-left: 34px; }
+}
+
+/* A tab with nothing on it yet: one sentence and the next step. */
+.tab-empty {
+  text-align: center; padding: 26px 20px; margin: 4px 0 18px;
+  border: 1px dashed var(--border-lit); border-radius: var(--radius);
+  background: var(--surface);
+}
+.tab-empty-text {
+  margin: 0 auto; max-width: 52ch; color: var(--ink-2);
+  font-family: var(--display); font-size: 18px; line-height: 1.45;
+}
+.tab-empty .empty-acts .btn { min-height: 40px; }
 .empty-acts {
   display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
   margin-top: 14px; font-family: var(--sans);

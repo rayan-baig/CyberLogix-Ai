@@ -23,12 +23,32 @@
   .top { padding: 14px 16px; gap: 10px; }
   .top .brand-name { display: none; }
   .top nav { gap: 14px; }
-  .top nav a { font-size: 13px; }
+  .top nav a { font-size: 13px; padding: 10px 0; }
 }
 
-.shell { display: grid; grid-template-columns: 1fr 420px; gap: 56px;
-         padding: 56px 0 90px; align-items: start; }
-@media (max-width: 960px) { .shell { grid-template-columns: 1fr; gap: 34px; } }
+/* Top and bottom only. This rule used to set `padding: 56px 0 90px`,
+   which, coming after .wrap, wiped out its side padding: on a phone the
+   heading and the points ran right to the edge of the screen. */
+.shell { display: grid; grid-template-columns: 1fr 420px; gap: 0 56px;
+         grid-template-areas: "intro panel" "why panel";
+         padding-top: 56px; padding-bottom: 90px; align-items: start; }
+.shell .intro { grid-area: intro; }
+.shell .why { grid-area: why; }
+.shell #panel { grid-area: panel; }
+@media (max-width: 960px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0;
+           grid-template-areas: "intro" "panel" "why"; padding-top: 28px; }
+  .shell .why { margin-top: 30px; }
+  .lede { margin-bottom: 22px; }
+}
+.points a { color: var(--accent-cyan); }
+.code-box { margin-bottom: 16px; }
+.code-box summary {
+  cursor: pointer; color: var(--accent-cyan); font-size: 13.5px;
+  padding: 8px 0; list-style-position: inside;
+}
+.code-box[open] summary { margin-bottom: 6px; }
+.code-box[open] { display: grid; gap: 6px; }
 
 h1 {
   font-family: var(--display); font-weight: 400;
@@ -69,7 +89,7 @@ h1 {
 .field .hint { font-size: 12px; color: var(--muted); }
 button.go {
   font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
-  width: 100%; padding: 13px; border-radius: 10px; border: none;
+  width: 100%; padding: 13px; min-height: 48px; border-radius: 10px; border: none;
   color: #05070D; background: var(--accent); margin-top: 6px;
 }
 button.go:disabled { opacity: .55; cursor: progress; }

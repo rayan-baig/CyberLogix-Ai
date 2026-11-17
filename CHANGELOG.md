@@ -4,6 +4,57 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.17.0 — 2026-11-17
+
+The first five minutes, for a restaurant owner.
+
+- **See it live, with no account.** The landing page has a **See it
+  live** button. It opens `/demo`: a console with four pretend units (a
+  walk-in cooler, a freezer, a prep fridge and a bar fridge). A minute in,
+  the walk-in starts to warm. You watch it go over its limit, the alert
+  text go out, the calls start when nobody replies, and what replying 1
+  does. It ends with **Start your free trial**.
+- **The demo is pretend, and says so.** "Demo — pretend data" is at the
+  top of every screen. It runs in your browser. Nothing is sent, nothing
+  is saved and no account is made. The server only hands over the story
+  and the words a real alert would use, and that is rate limited. The
+  public copy on GitHub Pages now has it too (`docs/demo.html`).
+- **No AI model name anywhere public.** `/api/health` used to say which
+  model writes the alert wording, and the public demo copied that out to
+  anyone with the link. It now says only whether that part is working.
+  The demo builder refuses to build a page that names a model. The
+  label on the console's meeting notes card that named the model now
+  says "Written for you".
+- **Getting started is three steps.** The checklist at the top of a new
+  console is now: add your first sensor, add who gets alerts, send a test
+  alert. Each one ticks itself, and the card goes when all three are done.
+  "Add me" puts you on the alert list with the mobile you signed up with,
+  in one tap. "Send a test" sends the test text from the checklist, with
+  no "are you sure", because it says TEST and opens nothing. Adding a site
+  is no longer a step; you can still add one under Setup.
+- **No blank tabs.** Fridges, Alerts, Proof, Money, People and Licences
+  each start with one sentence saying what will show there and a button
+  for the next step, until there is something to show. Cards that were
+  dead ends now offer the next step too (Bills, Claim packets, How you
+  compare, and anything not on your plan). An empty "Devices knocking"
+  card no longer shows up on the Fridges tab.
+- **Plainer words on the way in.** Sign-up asks for a business name and
+  "What kind of business?", hides the code box behind "Have a code?", and
+  picks restaurant for you when you come from the demo. After adding a
+  sensor, the key box says what to do next and links to the setup guide
+  for each brand. The business key is marked as only for connecting other
+  software. The "Twilio is not configured" banner says texts and calls are
+  switched off, in words. The plain view no longer says "all 0 of your
+  fridges are fine".
+- **Phones.** The sign-up page had no side margin on a phone; it does now,
+  and the form comes before the reasons. The landing page scrolled
+  sideways at 360px wide (the plan buttons would not wrap); it does not
+  now, and "Start a free trial" and "See it live" are on the first screen.
+  In the console the last row of tabs no longer lets cards show through,
+  only the tab bar stays pinned on a phone, card headings wrap instead of
+  squeezing, buttons and boxes are bigger to tap, and checklist buttons
+  land the card below the pinned bar.
+
 ## 3.16.2 — 2026-11-17
 
 Follow-ups to the pre-launch review, and three decisions on how money and

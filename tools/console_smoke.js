@@ -619,7 +619,7 @@ async function checkFirstDay(browser, base) {
   if (!/^clx_/.test(key || "")) fail(label, "the business key from sign-up is not shown");
 
   // Every empty card that a new business meets offers the next step.
-  for (const card of ["#fleet", "#incidents", "#roster-body", "#site-body"]) {
+  for (const card of ["#fleet", "#incidents", "#roster-body", "#site-body", "#invoice-body"]) {
     if (!(await page.$(`${card} .empty [data-go]`))) fail(label, `${card} is empty and offers nothing to do`);
   }
   for (const bad of await junkOnScreen(page)) fail(label, bad);
@@ -643,21 +643,22 @@ async function checkFirstDay(browser, base) {
   await page.click("#sim-stop");
   await page.waitForSelector("#sim-zone", { state: "hidden" });
 
-  // The checklist, one step at a time, through its own buttons.
+  // Getting started, one step at a time, through its own buttons: a
+  // sensor, "Add me" (the mobile given at sign-up), and the test, which
+  // goes from the checklist itself with no are-you-sure.
   const steps = [
-    ["site", async () => { await page.fill("#site-name", "Main Street"); await page.click("#site-form button[type=submit]"); }],
-    ["sensor", async () => { await page.fill("#add-loc", "Kitchen walk-in"); await page.click("#add-form button[type=submit]"); }],
-    ["oncall", async () => { await page.fill("#ct-name", "Fran"); await page.fill("#ct-phone", "+15550177"); await page.click("#contact-form button[type=submit]"); }],
-    ["test", async () => { page.once("dialog", (d) => d.accept()); await page.click("#test-alert"); }],
+    ["sensor", `#first-day [data-go="sensor"]`, async () => {
+      await page.fill("#add-loc", "Kitchen walk-in"); await page.click("#add-form button[type=submit]"); }],
+    ["oncall", `#first-day [data-go="addme"]`, async () => {}],
+    ["test", `#first-day [data-test-now]`, async () => {}],
   ];
-  for (const [step, doIt] of steps) {
-    const button = `#first-day [data-go="${step}"]`;
+  for (const [step, button, doIt] of steps) {
     if (!(await page.isVisible(button))) { fail(label, `no checklist button for ${step}`); continue; }
     await page.click(button);
     await page.waitForTimeout(500);
     await doIt();
-    await page.waitForTimeout(1200);
-    if (step !== "test" && (await page.isVisible(`#first-day [data-go="${step}"]`))) {
+    await page.waitForTimeout(1500);
+    if (step !== "test" && (await page.isVisible(button))) {
       fail(label, `the ${step} box did not tick itself`);
     }
   }

@@ -397,6 +397,12 @@ def _on_any_roster(phone: str) -> bool:
     return False
 
 
+def ack_reply_text(who: str, where: str) -> str:
+    """The text sent back to whoever replied 1. The public demo shows it too."""
+    return (f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is "
+            "yours. No more calls for this alert.")
+
+
 def _sms_answer(text: Optional[str], tenant_id: Optional[str] = None,
                 status_code: int = status.HTTP_200_OK) -> Response:
     """Reply by TwiML; a reply is a text too, so it is counted as one."""
@@ -491,8 +497,7 @@ async def sms_reply(request: Request) -> Response:
     await asyncio.to_thread(_notify_hooks, tenant, incident, "acknowledged",
                             f"Acknowledged by text by {who}.")
     logger.info("Incident %s acknowledged by text reply.", incident.incident_id)
-    return _sms_answer(f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is "
-                       "yours. No more calls for this alert.", tenant.tenant_id)
+    return _sms_answer(ack_reply_text(who, where), tenant.tenant_id)
 
 
 @router.get("/pending")

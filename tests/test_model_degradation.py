@@ -108,8 +108,22 @@ def test_health_reports_the_real_state(api):
     body = api.get("/api/health").json()
 
     assert "ai" in body, "health does not report the model layer at all"
-    for field in ("configured", "model", "degraded", "consecutive_failures"):
+    for field in ("configured", "degraded", "consecutive_failures"):
         assert field in body["ai"], field
+
+
+def test_health_names_no_model(api, monkeypatch):
+    """/api/health is public and once carried the model's id, into the
+    public demo among other places. It says what state the model layer is
+    in and never which model, nor the last error, which can name one."""
+    monkeypatch.setattr(gemini, "GEMINI_MODEL", "some-model-id-9")
+    monkeypatch.setattr(gemini, "_last_error", "404 some-model-id-9 not found")
+    raw = api.get("/api/health").text
+
+    assert "some-model-id-9" not in raw
+    body = api.get("/api/health").json()
+    assert "model" not in body["ai"] and "last_error" not in body["ai"]
+    assert not any("model" in key for key in body)
 
 
 def test_readiness_names_a_retired_model(monkeypatch):

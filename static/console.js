@@ -334,9 +334,9 @@ async function enter(token, user) {
     sessionStorage.removeItem(NEW_KEY_STORAGE);
   } catch (_) { /* storage refused: there is nothing to show */ }
   if (handed) {
+    // No toast: the first thing to read here is the checklist, and a
+    // business key matters only to somebody connecting other software.
     showIssuedKey("this business (master key)", handed, { scroll: false });
-    toast("Your business key is shown once, under \"Add a fridge or "
-          + "freezer\". Copy it if you will use the API.", "ok");
   }
   followInspectorLink().catch(() => { /* the estate is the page */ });
 }
@@ -636,6 +636,11 @@ const OPTIONAL_PANELS = {
   leaving: "pause-body",
 };
 
+const FEATURE_WORDS = {
+  predictive_forecasting: "warnings before something gets too warm",
+  voice_escalation: "phone calls",
+};
+
 function panelUnavailable(key, err) {
   const id = OPTIONAL_PANELS[key];
   const el = id && $(id);
@@ -648,8 +653,12 @@ function panelUnavailable(key, err) {
   // sentence; this just stops the wrapper contradicting it.
   const notIncluded = (err && err.status === 403) || /does not include/.test(message);
   if (notIncluded) {
+    // The server names the feature by its key ('predictive_forecasting');
+    // a person is told what it does instead.
+    const plain = message.slice(0, 160).replace(/'([a-z_]+)'/g,
+      (whole, key) => FEATURE_WORDS[key] || key.replace(/_/g, " "));
     el.innerHTML = `<div class="empty u-p-16-0">Not on this plan.
-      <span class="sub">${esc(message.slice(0, 160))}</span></div>`;
+      <span class="sub">${esc(plain)}</span>${nextSteps([["plans", "See the plans"]])}</div>`;
     return;
   }
   el.innerHTML = `<div class="empty u-p-16-0">${
@@ -780,6 +789,13 @@ async function refresh() {
   if (state.shortcutCatalogue) {
     renderShortcuts(overview.sensors, state.shortcutCatalogue);
   }
+  // What the empty-tab sentence reads, kept from this load.
+  state.counts = {
+    roster: got.roster ? (got.roster.contacts || []).length : null,
+    bills: got.invoices ? (got.invoices.invoices || []).length : null,
+    licences: got.peopleCal ? (got.peopleCal.credentials || 0) : null,
+  };
+  renderTabEmpty();
 }
 
 /* ---------------- render ---------------- */
@@ -882,8 +898,9 @@ function render(d, health) {
   if (health.message_delivery !== "twilio") {
     banner.hidden = false;
     banner.textContent =
-      "Twilio is not configured, so alerts are composed and logged but not actually "
-      + "sent. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER to go live.";
+      "Texts and calls are switched off on this server, so alerts are written "
+      + "down but not sent. (For whoever runs it: set TWILIO_ACCOUNT_SID, "
+      + "TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER.)";
   } else {
     banner.hidden = true;
   }
@@ -2567,8 +2584,12 @@ function renderInvoices(ledger) {
   if (!ledger.invoices.length) {
     $("invoice-body").innerHTML =
       `<div class="empty u-p-22">
-         Nothing billed yet.
-         <span class="sub">Issue one and it is frozen at today's figures.</span>
+         No bills yet.
+         <span class="sub">${state.data && state.data.tenant
+             && state.data.tenant.plan === "trial"
+           ? "You are on the free trial, so there is nothing to pay. Your bills will show here once you choose a plan."
+           : "Your bills will show here, each with what it covers and whether it is paid."}</span>
+         ${nextSteps([["plans", "See the plans"]])}
        </div>`;
     return;
   }
@@ -2792,7 +2813,9 @@ let knockSignature = null;
 
 function renderKnocking(seen) {
   const card = $("find-knocking");
-  card.hidden = !seen.count;
+  // Empty, it is not shown on any tab (applyFinder reads data-empty).
+  card.dataset.empty = seen.count ? "" : "1";
+  card.hidden = !seen.count || !cardInFinder(card);
   if (!seen.count) {
     $("knock-body").innerHTML = "";
     knockSignature = null;
@@ -3730,9 +3753,12 @@ document.addEventListener("click", async (event) => {
    already knowing the answer. */
 function renderClaims(eligible) {
   if (!eligible.count) {
+    const none = !((state.data && state.data.sensors) || []).length;
     $("claims-body").innerHTML =
-      `<div class="sub">Nothing claimable in the last ${
-        esc(eligible.period_days)} days.</div>`;
+      `<div class="sub">${none
+        ? "If food is ever lost, the paperwork your insurer asks for will be ready here."
+        : `Nothing to claim for in the last ${esc(eligible.period_days)} days.`}</div>`
+      + (none ? nextSteps([["sensor", `Add a ${noun(1)}`]]) : "");
     return;
   }
   $("claims-body").innerHTML =
@@ -4184,7 +4210,9 @@ async function loadBenchmarks(overview) {
   if (!dominant) {
     $("bench-note").textContent = "";
     $("bench-body").innerHTML =
-      `<div class="card-note">Nothing to compare yet.</div>`;
+      `<div class="card-note">Once your sensors have a few days of readings,
+         you will see how you compare with similar businesses here.</div>`
+      + nextSteps([["sensor", `Add a ${noun(1)}`]]);
     return;
   }
 
@@ -4876,10 +4904,10 @@ Content-Type: application/json
 }`;
 }
 
-/* ---------------- the first day ----------------
+/* ---------------- getting started ----------------
    An empty console used to say what was missing and stop there. Every
    empty card now ends with the button for the next thing to do, and the
-   checklist at the top says which of the four first things are done --
+   checklist at the top says which of the three first things are done --
    as the server counts them, never as this page guesses. */
 
 /* Where each next step lives: the card, and the field to put the cursor in. */
@@ -4888,9 +4916,11 @@ const GO = {
   sensor: { card: "find-add-to-the-estate", field: "add-loc" },
   oncall: { card: "find-on-call-roster", field: "ct-name" },
   test:   { card: "find-on-call-roster", field: "test-alert" },
+  plans:  { card: "find-subscription", field: "" },
 };
 const GO_LABEL = {
-  site: "Add a site", sensor: "Add one", oncall: "Add someone", test: "Send one",
+  site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",
+  test: "Send a test",
 };
 
 /* One or more next-step buttons, for the bottom of an empty card. Each is
@@ -4904,8 +4934,28 @@ function nextSteps(steps) {
              data-go="${esc(key)}">${esc(label)}</button>`).join("")}</span>`;
 }
 
+/* The sticky bars at the top of the page, so a card scrolled to is not
+   tucked underneath them. */
+function stickyHeight() {
+  let height = 0;
+  document.querySelectorAll(".nav, .finder").forEach((bar) => {
+    if (getComputedStyle(bar).position === "sticky") {
+      height += bar.getBoundingClientRect().height;
+    }
+  });
+  return height;
+}
+
 function goTo(key) {
   if (key === "simulate") { simAdd(); return; }
+  if (key === "addme") { addMe(); return; }
+  if (key === "demo") { location.href = "/demo"; return; }
+  if (key === "start") {
+    finder.tab = "all";
+    applyFinder();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    return;
+  }
   const where = GO[key];
   const card = where && $(where.card);
   if (!card) return;
@@ -4916,32 +4966,131 @@ function goTo(key) {
     $("find-q").value = "";
     applyFinder();
   }
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
-  const field = $(where.field);
-  if (field) setTimeout(() => field.focus({ preventScroll: true }), 350);
+  const top = card.getBoundingClientRect().top + window.scrollY - stickyHeight() - 10;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  const field = where.field && $(where.field);
+  if (field) setTimeout(() => field.focus({ preventScroll: true }), 450);
+}
+
+/* "Add me": the person who signed up is usually the first person who
+   should get the text, and they already gave their mobile. One tap puts
+   them on the list instead of typing it all again. */
+async function addMe() {
+  const t = (state.data && state.data.tenant) || {};
+  if (!t.contact_phone) { goTo("oncall"); return; }
+  await act(async () => {
+    await api("/api/contacts", {
+      method: "POST",
+      body: JSON.stringify({ full_name: t.contact_name || "Owner",
+                             phone: t.contact_phone }),
+    });
+  }, "Added you. Alerts will reach the mobile you signed up with.");
 }
 
 function renderFirstDay(fd) {
   const card = $("first-day");
   const canAct = Boolean(state.user && state.user.role !== "viewer");
-  // Gone once all four are done, and never shown to somebody who could
+  // Gone once all three are done, and never shown to somebody who could
   // not do any of them, or on a wall.
   if (!fd || fd.complete || !canAct || state.wall) {
+    // Finished while it was on screen: say so once, as it goes.
+    if (fd && fd.complete && !card.hidden) {
+      toast("All three done. Your first fridge is protected.", "ok");
+    }
     card.hidden = true;
     return;
   }
   card.hidden = false;
   $("first-day-note").textContent = `${fd.done} of ${fd.total} done`;
+  const t = (state.data && state.data.tenant) || {};
+  const actions = (step) => {
+    if (step.done) return `<span class="sr">done</span>`;
+    if (step.key === "oncall" && t.contact_phone) {
+      return `<span class="checklist-acts">
+        <button class="btn btn-sm btn-go" type="button" data-go="addme"
+                title="${esc(t.contact_phone)}">Add me</button>
+        <button class="btn btn-sm" type="button" data-go="oncall">Someone else</button>
+      </span>`;
+    }
+    if (step.key === "test") {
+      return `<button class="btn btn-sm btn-go" type="button"
+                      data-test-now="1">Send a test</button>`;
+    }
+    return `<button class="btn btn-sm btn-go" type="button" data-go="${esc(step.key)}">${
+      esc(GO_LABEL[step.key] || "Do it")}</button>`;
+  };
   $("first-day-list").innerHTML = fd.steps.map((step) => `
     <li class="${step.done ? "is-done" : ""}">
       <span class="tick" aria-hidden="true">${step.done ? "&#10003;" : ""}</span>
       <span class="grow"><b>${esc(step.label)}</b>
         <span class="sub">${esc(step.detail)}</span></span>
-      ${step.done
-        ? `<span class="sr">done</span>`
-        : `<button class="btn btn-sm" type="button" data-go="${esc(step.key)}">${
-            esc(GO_LABEL[step.key] || "Do it")}</button>`}
+      ${actions(step)}
     </li>`).join("");
+}
+
+/* ---------------- a tab with nothing on it yet ----------------
+   One sentence saying what will appear there, and the next thing to do.
+   Read from what the account holds, the same as the checklist. */
+function tabEmptyFor(tab) {
+  const d = state.data;
+  if (!d) return null;
+  const sensors = (d.sensors || []).length;
+  const c = state.counts || {};
+  const unit = noun(1);
+  switch (tab) {
+    case "fridges":
+      return sensors ? null : {
+        text: `Your ${noun(2)} will show here, with how cold each one is right now.`,
+        go: [["sensor", "Add your first sensor", true]] };
+    case "alerts":
+      if ((d.incidents || []).length) return null;
+      return sensors
+        ? { text: `When a ${unit} gets too warm, the alert and who answered it `
+                  + "will show here.",
+            go: [["test", "Send a test alert", true]] }
+        : { text: `When a ${unit} gets too warm, the alert and who answered it `
+                  + "will show here.",
+            go: [["sensor", "Add your first sensor", true],
+                 ["demo", "Watch a pretend alert"]] };
+    case "proof":
+      return sensors ? null : {
+        text: "Your temperature records, the log for an inspector and a monthly "
+              + "report for your insurer will show here once a sensor is sending readings.",
+        go: [["sensor", "Add your first sensor", true]] };
+    case "money":
+      if (c.bills === null || c.bills === undefined || c.bills) return null;
+      return {
+        text: d.tenant && d.tenant.plan === "trial"
+          ? "Your plan and bills will show here; on the free trial there is "
+            + "nothing to pay."
+          : "Your plan and bills will show here.",
+        go: [["plans", "See the plans", true]] };
+    case "people":
+      if (c.roster === null || c.roster === undefined || c.roster) return null;
+      return {
+        text: "The people who get alerts, and who can sign in, will show here.",
+        go: d.tenant && d.tenant.contact_phone
+          ? [["addme", "Add me", true], ["oncall", "Add someone else"]]
+          : [["oncall", "Add who gets alerts", true]] };
+    case "licences":
+      if (c.licences === null || c.licences === undefined || c.licences) return null;
+      return {
+        text: "Staff certificates, like a food handler card, will show here with "
+              + "the date each one runs out.",
+        go: [["start", "Back to getting started", true]] };
+    default:
+      return null;
+  }
+}
+
+function renderTabEmpty() {
+  const box = $("tab-empty");
+  if (!box) return;
+  const empty = finder.query.trim() ? null : tabEmptyFor(finder.tab);
+  box.hidden = !empty;
+  if (!empty) return;
+  $("tab-empty-text").textContent = empty.text;
+  $("tab-empty-act").innerHTML = nextSteps(empty.go);
 }
 
 /* A new sensor's first reading, shown when it lands rather than on the
@@ -4987,20 +5136,19 @@ function sensorIdFrom(location) {
 
 /* ---------------- the test alert ---------------- */
 
-$("test-alert").addEventListener("click", async () => {
-  const button = $("test-alert");
+/* Safe to press, and said so beside the button: the text starts TEST and
+   says nothing is wrong, no problem is opened and nobody is chased. So
+   it goes at once, with no "are you sure" in the way. The server limits
+   how often (one every ten minutes, five a day). */
+async function sendTestAlert(button) {
   const call = $("test-call").checked && !$("test-call-wrap").hidden;
-  if (!confirm("Text everyone on the roster now"
-      + (call ? ", and ring the first person" : "") + "?\n\n"
-      + "The message starts with TEST and says nothing is wrong. No problem "
-      + "is opened, nothing escalates, and it counts towards today's text "
-      + "allowance.")) return;
   button.disabled = true;
+  const outs = [$("test-alert-out"), $("first-day-out")].filter(Boolean);
   try {
     const out = await api("/api/contacts/test-alert", {
       method: "POST", body: JSON.stringify({ call }),
     });
-    $("test-alert-out").innerHTML = `<div class="test-result">
+    const html = `<div class="test-result">
         <p>${esc(out.message)}</p>
         <ul>${out.results.map((r) => `<li>
           ${badge(r.delivered ? "low" : (r.status === "not_configured" ? "unknown" : "critical"),
@@ -5009,15 +5157,20 @@ $("test-alert").addEventListener("click", async () => {
             r.delivered ? "handed to the network" : r.status === "not_configured"
               ? "written, not sent (dry run)" : r.detail || r.status)}</span></li>`).join("")}
         </ul></div>`;
-    toast("Test alert done. No problem was opened.", "ok");
+    $("test-alert-out").innerHTML = html;
+    toast("Test sent. It said TEST, and no problem was opened.", "ok");
     await refresh();
   } catch (err) {
-    $("test-alert-out").innerHTML =
-      `<div class="test-result"><p class="s-warning">${esc(err.message)}</p></div>`;
+    outs.forEach((box) => {
+      box.hidden = false;
+      box.innerHTML = `<div class="test-result"><p class="s-warning">${esc(err.message)}</p></div>`;
+    });
   } finally {
     button.disabled = false;
   }
-});
+}
+
+$("test-alert").addEventListener("click", () => sendTestAlert($("test-alert")));
 
 /* ---------------- the simulator ----------------
    Pretend units for a demo, the owner's only. The server keeps them in
@@ -5385,6 +5538,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (btn.dataset.go) goTo(btn.dataset.go);
+  if (btn.dataset.testNow) sendTestAlert(btn);
   if (btn.id === "sim-add") simAdd();
   if (btn.dataset.simBreak) simAct(`/units/${encodeURIComponent(btn.dataset.simBreak)}/break`, "POST",
     "It is warming. Nothing is sent to anybody.");
@@ -5395,18 +5549,21 @@ document.addEventListener("click", (event) => {
 /* Show an issued ingest key, once, somewhere it will stay put until it
    has been dealt with. The response is otherwise thrown away and the key
    is unrecoverable — rotation would be the only way back to one. */
-const DEVICE_KEY_NOTE = "Put this on the device and keep it nowhere else. It is "
-  + "shown once and never again — if it is lost, rotate the sensor for a new "
-  + "one. It can report readings for this asset and nothing more, which is "
-  + "why it, and not your account key, belongs on hardware.";
-const MASTER_KEY_NOTE = "This key speaks for the whole business: it is for "
-  + "scripts and integrations, never for a device. It is shown once — if it "
-  + "is lost, replace it from Setup. Sensors get keys of their own.";
+const DEVICE_KEY_NOTE = "Next: put this key in your sensor's settings, so its "
+  + "readings reach us. It is shown once — if it is lost, make a new one with "
+  + "New key on the sensor's card. It can only send readings for this one "
+  + "fridge, so it is safe to keep on the device.";
+const MASTER_KEY_NOTE = "Only for connecting other software to your account. "
+  + "Most kitchens never need it, so you can press Done. It is shown once — "
+  + "if it is lost, make a new one from Setup. Sensors get keys of their own.";
 
 function showIssuedKey(sensorId, key, options = {}) {
   if (!key) return;
   const master = /master key/.test(sensorId);
   $("issued-for").textContent = sensorId;
+  $("issued-for").hidden = master;
+  $("issued-kind").textContent = master ? "Your business key" : "Sensor key for";
+  $("issued-guide").hidden = master;
   $("issued-value").textContent = key;
   $("issued-note").textContent = master ? MASTER_KEY_NOTE : DEVICE_KEY_NOTE;
   $("issued-key").hidden = false;
@@ -5840,6 +5997,13 @@ function primeTheGate() {
 
 const finder = { tab: "all", query: "" };
 
+function cardInFinder(card) {
+  const words = finder.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = (card.getAttribute("data-find") || "").toLowerCase();
+  return (finder.tab === "all" || card.getAttribute("data-group") === finder.tab)
+    && words.every((word) => hay.includes(word));
+}
+
 function findableCards() {
   return Array.from(document.querySelectorAll("[data-find]"));
 }
@@ -5856,7 +6020,7 @@ function applyFinder() {
     // Every word has to appear somewhere, so "licence food" narrows
     // rather than widening the way an "any word" match would.
     const matches = words.every((word) => hay.includes(word));
-    const show = inTab && matches;
+    const show = inTab && matches && card.dataset.empty !== "1";
     card.hidden = !show;
     if (show) showing += 1;
   });
@@ -5869,6 +6033,7 @@ function applyFinder() {
       : "Nothing in this group yet.";
   }
   $("find-clear").hidden = !query;
+  renderTabEmpty();
 
   document.querySelectorAll(".f-tab").forEach((tab) => {
     tab.setAttribute("aria-pressed",

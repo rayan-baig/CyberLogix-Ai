@@ -400,7 +400,30 @@ def capture() -> dict:
     bad = {p: r["status"] for p, r in out.items() if r["status"] != 200}
     if bad:
         raise SystemExit(f"Refusing to build a demo with broken panels: {bad}")
+    refuse_model_names(out)
     return out
+
+
+# The model family this codebase calls (gemini.py), followed by a version
+# or a key, as an id or the health answer's old field would be.
+MODEL_NAME = re.compile(r"gemini[-_][0-9a-z]")
+
+
+def refuse_model_names(data) -> None:
+    """Stop the build if a captured answer names the AI model.
+
+    /api/health once carried the model's id, and this page carried it to
+    anybody with the link. Health no longer says it; this makes sure no
+    other answer starts to, in the one place a leak is public for good.
+    """
+    import gemini
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    named = set(MODEL_NAME.findall(text.lower()))
+    if gemini.GEMINI_MODEL and gemini.GEMINI_MODEL.lower() in text.lower():
+        named.add(gemini.GEMINI_MODEL)
+    if named:
+        raise SystemExit(f"the public demo would name the AI model: {sorted(named)}")
 
 
 def _bundle_and_referrals(client, head, home: str) -> None:
@@ -590,7 +613,8 @@ def build(data: dict, page_name: str = "console.html",
     # The help page is a file beside this one in the demo (help.html), so
     # its links, and the ones the scripts build, point there.
     page = (page.replace('href="/help', 'href="help.html')
-                .replace('"/help#', '"help.html#'))
+                .replace('"/help#', '"help.html#')
+                .replace('location.href = "/demo"', 'location.href = "demo.html"'))
     refuse_outbound(page)
     # And nothing loaded from the server's own root, which on GitHub Pages
     # is somebody else's site: a stray <script src="/static/..."> is a 404
@@ -604,7 +628,56 @@ def build(data: dict, page_name: str = "console.html",
 
 # Pages the demo has a copy of, by the route the real app serves them at.
 DEMO_PAGES = {"/": "index.html", "/console": "console.html", "/help": "help.html",
-              "/help/sensors": "sensors.html"}
+              "/help/sensors": "sensors.html", "/demo": "demo.html"}
+
+# Where "Start your free trial" goes from the copy on GitHub Pages, which
+# has no sign-up of its own: the live product. Overridable for a staging
+# copy. It travels inside the story (JSON), never as a link the browser
+# loads, so opening the page still reaches nothing.
+LIVE_ADDRESS = os.environ.get("DEMO_LIVE_ADDRESS", "https://cyberlogix.mtrxhorizyn.com")
+
+
+def build_kitchen(story: dict) -> str:
+    """See it live (static/demo.html) as one file, with its story inside.
+
+    The served page asks /api/demo/story for the story; this copy carries
+    it in a JSON block that demo.js reads first, so it needs no server.
+    Everything else is the shipped page: its markup, demo.css, demo.js.
+    """
+    from pricing import headline
+
+    story = dict(story, signup_href=f"{LIVE_ADDRESS}/signup?sector=restaurant")
+    page = (ROOT / "static" / "demo.html").read_text()
+    page = (page.replace("%%TRIAL_DAYS%%", str(headline()["trial_days"]))
+                .replace("%%THEME_COLOR%%", "#05070D"))
+    page = re.sub(r'\n<link rel="icon"[^>]*>', "", page)
+    styles = "\n".join([offline_theme()] + [
+        (ROOT / "static" / name).read_text() for name in ("demo.css", "utilities.css")])
+    page = re.sub(r'<link rel="stylesheet" href="/static/theme.css">\n'
+                  r'<link rel="stylesheet" href="/static/demo.css">\n'
+                  r'<link rel="stylesheet" href="/static/utilities.css">',
+                  lambda m: f"<style>\n{styles}\n</style>", page)
+    logo = (ROOT / "static" / "logo.svg").read_text()
+    page = page.replace("/static/logo.svg", "data:image/svg+xml;base64,"
+                        + base64.b64encode(logo.encode()).decode())
+    page = page.replace('href="/"', 'href="index.html"')
+    # demo.js points these at the live sign-up from the story.
+    page = page.replace('href="/signup?sector=restaurant"', 'href="#"')
+    data = json.dumps(story).replace("</", "<\\/")
+    scripts = "".join(
+        "<script>\n" + (ROOT / "static" / name).read_text().replace("</script", "<\\/script")
+        + "\n</script>\n" for name in ("circuit.js", "demo.js"))
+    page = page.replace(
+        '<script src="/static/circuit.js"></script>\n<script src="/static/demo.js"></script>\n',
+        f'<script type="application/json" id="demo-story">{data}</script>\n{scripts}')
+    page = page.replace("<head>", '<head>\n<meta name="robots" content="noindex">', 1)
+    refuse_outbound(page)
+    refuse_model_names(page)
+    markup = re.sub(r"<script>.*?</script>", "", page, flags=re.S)
+    leftover = re.findall(r'(?:href|src)="/[^"]*"', markup)
+    if leftover:
+        raise SystemExit(f"the demo kitchen still points at the server: {leftover}")
+    return page
 
 # The address the sensor guides show in their steps. The page is rendered
 # on a test client, whose address means nothing to a reader; this one is
@@ -716,6 +789,9 @@ def main() -> None:
         data = capture()
         help_page = build_help(capture_help())
         sensors_page = build_help(capture_help("/help/sensors"))
+        import demo
+
+        kitchen = build_kitchen(demo.story())
         # index.html is the plain view, because the front door belongs to
         # whoever was handed the link and has never seen the product. The
         # console is one click away for anyone who wants the instruments.
@@ -726,6 +802,7 @@ def main() -> None:
             "console.html": build(data, "console.html"),
             "help.html": help_page,
             "sensors.html": sensors_page,
+            "demo.html": kitchen,
         }
 
     DOCS.mkdir(exist_ok=True)

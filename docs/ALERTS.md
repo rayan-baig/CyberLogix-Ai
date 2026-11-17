@@ -104,7 +104,8 @@ compliance record; it goes through the same send functions as a real alert,
 so it counts against the day's spend caps and is refused the same premium
 numbers. One every ten minutes and five a day, counted from the audit trail
 so a restart does not reset it. A sent test is what ticks the last box of
-the console's first-day checklist.
+the console's Getting started checklist, which can send it directly: the
+words beside the button say what it is, so there is no are-you-sure.
 
 ## The escalation ladder
 

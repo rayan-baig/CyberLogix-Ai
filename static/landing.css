@@ -38,6 +38,17 @@
 /* No decorative glow here: the board underneath already carries the
    light, and a second source fighting it just makes the page murky. */
 .hero-inner { position: relative; max-width: 940px; }
+/* On a phone the two buttons come straight after the opening lines, so
+   "Start a free trial" and "See it live" are on the first screen; the
+   three facts follow them. */
+@media (max-width: 720px) {
+  .hero-inner { display: flex; flex-direction: column; }
+  .hero-inner .cta-row { order: 1; margin-bottom: 24px; }
+  /* The button says it; the line under it would push the three facts
+     below the first screen, and they must fit there too. */
+  .hero-inner .cta-note { display: none; }
+  .hero-inner .facts { order: 2; margin-bottom: 0; }
+}
 .kicker {
   font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
   text-transform: uppercase; color: var(--accent); margin: 0 0 22px;
@@ -53,6 +64,9 @@ h1 em { font-style: normal; color: var(--accent-cyan); }
   color: var(--muted); max-width: 60ch; margin: 0 0 34px;
 }
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.cta-row .btn { min-height: 44px; }
+.cta-center { justify-content: center; }
+.cta-note { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin: 12px 0 0; max-width: 52ch; }
 /* .btn-primary is full-width because it lives at the bottom of the sign-in
    form, where that is right. Loose on a page it is a bar, not a button. */
 .cta-row .btn-primary, .closer .btn-primary { width: auto; }
@@ -149,7 +163,11 @@ h3 {
 .controls-limit a { color: var(--accent-cyan); }
 
 /* --- plans ---------------------------------------------------------- */
-.plans { display: grid; gap: 14px; }
+.plans { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+/* A plan's button text ("Start free, then move to Growth") is longer than
+   a 360px phone is wide; nowrap pushed the whole column, and the page,
+   sideways. It wraps instead. */
+.plan .btn { white-space: normal; text-align: center; }
 @media (min-width: 800px) { .plans { grid-template-columns: repeat(3, 1fr); } }
 .plan {
   border: 1px solid var(--border); border-radius: var(--radius);

@@ -178,15 +178,27 @@ def test_a_new_business_starts_with_nothing_ticked(api):
 
     steps, complete = _steps(api, owner)
 
-    assert steps == {"site": False, "sensor": False, "oncall": False, "test": False}
+    assert steps == {"sensor": False, "oncall": False, "test": False}
     assert complete is False
+
+
+def test_getting_started_is_three_steps_in_order(api):
+    """Add your first sensor, add who gets alerts, send a test alert:
+    the whole of "this fridge is protected", and nothing more."""
+    owner, _, _ = _sign_up(api)
+    body = api.get("/api/console/overview", headers=owner).json()["first_day"]
+
+    assert [s["label"] for s in body["steps"]] == [
+        "Add your first sensor", "Add who gets alerts", "Send a test alert"]
+    assert body["total"] == 3 and body["done"] == 0
 
 
 def test_each_box_ticks_from_what_the_account_holds(api, wire):
     owner, tenant_id, _ = _sign_up(api)
 
+    # A site is not one of the three: adding one ticks nothing.
     api.post("/api/sites", headers=owner, json={"name": "Harbour Street"})
-    assert _steps(api, owner)[0]["site"] is True
+    assert set(_steps(api, owner)[0].values()) == {False}
 
     api.post("/api/licenses/me/sensors", headers=owner, json={
         "sensor_id": "WALKIN-1", "industry_vertical": "restaurant",
