@@ -190,10 +190,12 @@ def create_invoice(tenant: Tenant, lines: List[Dict[str, Any]], **kwargs: Any) -
         lines, used = apply_to_lines(tenant, lines)
         invoice = STORE.create_invoice(tenant=tenant, lines=lines, **kwargs)
         record_applied(used, invoice)
-        if used and invoice.total_usd <= 0:
-            # Paid by the credit. Left open, a $0 invoice would sit in
-            # collections and could be chased.
-            invoice, _ = STORE.settle_invoice(invoice, f"credit:{invoice.invoice_id}", 0.0)
+        if invoice.total_usd <= 0 and lines:
+            # Paid by the credit, or by a discount that covers it all (an
+            # invoice is never below $0: store.never_below_zero). Left open,
+            # a $0 invoice would sit in collections and could be chased.
+            how = "credit" if used else "discount"
+            invoice, _ = STORE.settle_invoice(invoice, f"{how}:{invoice.invoice_id}", 0.0)
     return invoice
 
 

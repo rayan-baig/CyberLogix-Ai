@@ -11,8 +11,9 @@ instead, worked out exactly like the offer to stay (retention.py).
   spaces. Empty means off: nothing is shown and no code is taken.
 * **What it gives:** CYBERLOGIX_FOUNDER_PERCENT (20) off the first
   CYBERLOGIX_FOUNDER_MONTHS (3) monthly invoices, as a line of its own on
-  each. On a yearly plan it is that percentage of that many months, taken
-  once, on the first yearly invoice.
+  each. On a yearly plan it is that percentage of that many months' worth
+  of the yearly price (what the customer actually pays, after the two
+  free months), taken once, on the first yearly invoice.
 * **Until:** CYBERLOGIX_FOUNDER_UNTIL, a date (YYYY-MM-DD), is the last day
   the code can be entered. A business that entered it in time keeps the
   discount after that date. Unset means no end date.
@@ -124,8 +125,8 @@ def yearly_words(pct: Optional[float] = None, count: Optional[int] = None) -> st
     pct = percent() if pct is None else pct
     count = months() if count is None else count
     span = "1 month's" if count == 1 else f"{count} months'"
-    return (f"Paying yearly: {pct:g}% off {span} worth, taken once on the "
-            "first yearly bill")
+    return (f"Paying yearly: {pct:g}% off {span} worth of the yearly price, "
+            "taken once on the first yearly bill")
 
 
 def public_offer(now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:

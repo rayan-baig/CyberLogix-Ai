@@ -263,17 +263,33 @@ def take_next(postcode: str, city: str, now: datetime) -> Optional[Dict[str, Any
     """Pick the partner next in line for this location, and mark them served.
 
     Picked and marked under one lock, so two requests at the same moment
-    go to two partners rather than both to the same one.
+    go to two partners rather than both to the same one. What the partner's
+    place in line was is kept on the row as `_before`, so a lead that could
+    not be sent can give it back (`give_back_turn`).
     """
     with STORE._lock:
         line = candidates(postcode, city)
         if not line:
             return None
         chosen = line[0]
+        before = {"last_lead_at": chosen.get("last_lead_at"),
+                  "leads_sent": int(chosen.get("leads_sent") or 0)}
         chosen["last_lead_at"] = iso(now)
         chosen["leads_sent"] = int(chosen.get("leads_sent") or 0) + 1
         _save(chosen)
-        return chosen
+        return {**chosen, "_before": before}
+
+
+def give_back_turn(partner: Dict[str, Any]) -> None:
+    """Undo take_next for a lead that was never delivered."""
+    before = partner.get("_before") or {}
+    with STORE._lock:
+        row = _partner(str(partner.get("partner_id")))
+        if row is None:
+            return
+        row["last_lead_at"] = before.get("last_lead_at")
+        row["leads_sent"] = int(before.get("leads_sent") or 0)
+        _save(row)
 
 
 # ---- what the forecaster saw -------------------------------------------------
@@ -534,9 +550,10 @@ def _refuse_if_sent_recently(sensor: Sensor) -> None:
 def _record_lead(tenant: Tenant, user: User, sensor: Sensor, payload: QuoteRequest,
                  signal: Dict[str, Any], phone: str, email: str
                  ) -> Tuple[Dict[str, Any], Dict[str, Any], datetime]:
-    """Pick the partner and write the lead and its fee. Call with the store
-    lock held, so the check that this unit was not just sent and the write
-    that sends it cannot be split by a second request."""
+    """Pick the partner and write the lead. Call with the store lock held,
+    so the check that this unit was not just sent and the write that sends
+    it cannot be split by a second request. Its fee is written only once
+    the lead email has gone (`_charge`)."""
     _refuse_if_sent_recently(sensor)
     now = utc_now()
     partner = take_next(payload.postcode, payload.city, now)
@@ -567,18 +584,35 @@ def _record_lead(tenant: Tenant, user: User, sensor: Sensor, payload: QuoteReque
         "delivered_at": iso(now),
     }
     STORE._db.put(LEAD_KIND, lead_id, lead)
-    STORE._db.put(FEE_KIND, lead_id, {
-        "fee_id": lead_id,
-        "partner_id": partner["partner_id"],
-        "amount_usd": fee,
-        "delivered_at": iso(now),
+    return lead, partner, now
+
+
+def _charge(lead: Dict[str, Any]) -> None:
+    """The fee for a lead that was delivered."""
+    STORE._db.put(FEE_KIND, str(lead["lead_id"]), {
+        "fee_id": lead["lead_id"],
+        "partner_id": lead["partner_id"],
+        "amount_usd": lead["fee_usd"],
+        "delivered_at": lead["delivered_at"],
         "status": "owed",
         "bad_reason": "",
         "bad_marked_at": None,
         "decided_at": None,
         "decision_note": "",
     })
-    return lead, partner, now
+
+
+def _not_delivered(lead: Dict[str, Any], partner: Dict[str, Any],
+                   sent: Dict[str, Any]) -> None:
+    """A lead whose email did not go: no lead, no fee, the partner keeps
+    their place in line, and nothing is left queued to go out later."""
+    with STORE._lock:
+        STORE._db.delete(LEAD_KIND, str(lead["lead_id"]))
+        give_back_turn(partner)
+        message = STORE._mail.get(str(sent.get("message_id") or ""))
+        if message is not None and message.status != "sent":
+            STORE.record_attempt(message, "failed",
+                                 "Not sent: the business was told it did not go through.")
 
 
 @business_router.post("/quote", status_code=status.HTTP_201_CREATED)
@@ -617,6 +651,19 @@ def request_quote(payload: QuoteRequest, user: User = Depends(require_role("oper
         lead, partner, now = _record_lead(tenant, user, sensor, payload, signal,
                                           phone, email)
     sent = _lead_mail(partner, lead)
+    if not sent.get("sent"):
+        # Queued for later is not sent: a lead the partner might get
+        # tomorrow, or never, is not one to charge them for today.
+        _not_delivered(lead, partner, sent)
+        logger.warning("Repair lead %s for %s could not be mailed (%s); nothing "
+                       "was sent or charged.", lead["lead_id"], tenant.tenant_id,
+                       sent.get("status"))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=("Your request did not go through: we could not reach the "
+                    "repair company just now. Nothing was sent and nobody was "
+                    "charged. Please try again in a little while."))
+    _charge(lead)
     STORE.record_audit(
         tenant_id=tenant.tenant_id, actor=f"{user.full_name} <{user.email}>",
         actor_role=user.role, action="repair.quote_requested",
@@ -632,7 +679,7 @@ def request_quote(payload: QuoteRequest, user: User = Depends(require_role("oper
         "partner": {"company_name": partner.get("company_name"),
                     "contact_phone": partner.get("contact_phone") or "",
                     "website": partner.get("website") or ""},
-        "mailed": bool(sent.get("sent") or sent.get("status") == "queued"),
+        "mailed": True,
         "again_after": iso(now + timedelta(days=LEAD_GAP_DAYS)),
         "message": (f"Sent to {partner.get('company_name')}. They should get in "
                     f"touch with {payload.contact_name} directly. {NOT_A_REPAIRER}"),

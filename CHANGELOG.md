@@ -4,6 +4,44 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.16.2 — 2026-11-17
+
+Follow-ups to the pre-launch review, and three decisions on how money and
+pauses work.
+
+- **Renewing during a pause, then coming back early, no longer gives free
+  days.** The new contract started after the whole pause, and coming back
+  early only shortened the pause on the old one. The pause now moves onto
+  the new contract, so its first bill comes forward too.
+- **A past year's yearly bill with mid-year additions cannot be voided.**
+  Its replacement would have charged those additions again. The operator
+  is told to issue a credit note instead. This year's bill can still be
+  voided and re-issued as before.
+- **The quote matches the contract.** `/api/billing/deal` now works out
+  each year exactly as a signed contract bills it, and on a yearly plan
+  gives two free months in every year of the term, not only the first.
+  Its `total_contract_value_usd` is what the term really bills.
+- **No bill is ever below $0.** Whatever the settings, discounts are cut
+  back so a bill never owes the customer money, and the line says so. A
+  bill that comes to $0 is marked paid at once.
+- **A repair lead is charged only once it has gone.** If the email to the
+  repair company cannot be sent, nothing is recorded or charged, nothing
+  is left to go out later, and the business is told it did not go through.
+- **Pausing is limited to 3 months a year.** At most 3 months paused in
+  any 12, counting the time actually used. The Pause or cancel card says
+  "You can pause for up to 3 months a year." and offers only what fits.
+- **On a yearly plan, the offer to stay and the founding member code
+  come off what the customer actually pays.** 20% off 3 months' worth is
+  now 20% of 3/12 of the yearly price ($74.50 on a $1,490 year), not of
+  three list-price months. The founder line says "of the yearly price".
+- **Partner refunds take back only the share of what was refunded.** A
+  part refund takes back the share of that part; a full refund, the whole
+  share of that payment. The business's later payments keep earning its
+  partner as usual. The operator's refund form takes an invoice number
+  and an amount.
+- **Documented:** a switched-off insurance partner keeps earning on the
+  businesses it already referred, for the months its share runs.
+
 ## 3.16.1 — 2026-11-17
 
 Fixes from a review of 3.13 to 3.16 before launch.

@@ -52,6 +52,10 @@ EVENT_KIND = "retention_event"
 
 PAUSE_MONTHS = (1, 2, 3)
 REMINDER_DAYS = 3
+# At most this many months paused in any twelve, counted as time actually
+# spent paused (coming back early gives the rest back).
+PAUSE_MONTHS_PER_YEAR = 3
+PAUSE_LIMIT_WORDS = (f"You can pause for up to {PAUSE_MONTHS_PER_YEAR} months a year.")
 
 
 def _number(name: str, default: float, low: float, high: float) -> float:
@@ -149,6 +153,38 @@ def public_pause(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def pause_months_used(tenant_id: str, until: Optional[datetime] = None) -> float:
+    """Months spent paused in the twelve months up to `until` (default now).
+
+    Each pause counts by its booked months, scaled to the part of it that
+    was actually used and that falls inside the window.
+    """
+    until = until or utc_now()
+    window_start = add_months(until, -12)
+    used = 0.0
+    for row in STORE._db.all(PAUSE_KIND):
+        if row.get("tenant_id") != tenant_id:
+            continue
+        start, end = _parse(row.get("paused_at")), _ends(row)
+        booked_end = _parse(row.get("resume_at"))
+        if start is None or end is None or booked_end is None or booked_end <= start:
+            continue
+        inside = (min(end, until) - max(start, window_start)).total_seconds()
+        if inside <= 0:
+            continue
+        booked = (booked_end - start).total_seconds()
+        used += int(row.get("months") or 0) * inside / booked
+    return round(used, 4)
+
+
+def months_allowed(tenant_id: str, months: int, now: Optional[datetime] = None) -> bool:
+    """Whether a pause of `months` from `now` keeps within the yearly limit:
+    the twelve months up to its end hold no more than PAUSE_MONTHS_PER_YEAR."""
+    now = now or utc_now()
+    used = pause_months_used(tenant_id, add_months(now, months))
+    return used + months <= PAUSE_MONTHS_PER_YEAR + 1e-6
+
+
 def _first_unstarted_period(sub: Subscription, now: datetime) -> int:
     index = sub.periods_billed
     while sub.period_start(index) <= now:
@@ -186,6 +222,16 @@ def start_pause(tenant: Tenant, months: int, now: Optional[datetime] = None) -> 
         if current_pause(tenant.tenant_id, now) is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                                 detail="This business is already paused.")
+        if not months_allowed(tenant.tenant_id, months, now):
+            used = pause_months_used(tenant.tenant_id, now)
+            room = [m for m in PAUSE_MONTHS if months_allowed(tenant.tenant_id, m, now)]
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(f"{PAUSE_LIMIT_WORDS} This business has been paused for "
+                        f"about {used:.1f} of the last 12 months, so "
+                        + (f"the longest pause it can take now is {max(room)} "
+                           f"month{'' if max(room) == 1 else 's'}."
+                           if room else "it cannot pause again just yet.")))
         pause_id = STORE._next_id("PAU")
         sub = STORE.active_subscription(tenant.tenant_id)
         from_period = None
@@ -230,6 +276,40 @@ def end_pause(tenant: Tenant, why: str, now: Optional[datetime] = None) -> Optio
         _set_shift(row, (now - start).total_seconds())
     logger.info("Pause %s for %s ended early (%s).", row["pause_id"], tenant.tenant_id, why)
     return row
+
+
+def carry_pause(old: Subscription, fresh: Subscription,
+                now: Optional[datetime] = None) -> None:
+    """Hand a pause still running on `old` over to `fresh`, its successor.
+
+    A contract renewed (or switched between monthly and yearly) during a
+    pause starts where the old one's paid time ends, and that end already
+    carries the whole pause. Moved here as a shift of its own, coming back
+    early (end_pause) shortens it on the contract that now bills, so the
+    unused part of the pause is not left as free days.
+    """
+    now = now or utc_now()
+    with STORE._lock:
+        row = current_pause(old.tenant_id, now)
+        if row is None or row.get("subscription_id") != old.subscription_id:
+            return
+        shift = next((s for s in old.shifts if s.get("pause_id") == row.get("pause_id")), None)
+        if shift is None or int(shift.get("from_period") or 0) > old.periods_billed:
+            return
+        live = STORE.get_subscription(fresh.subscription_id) or fresh
+        seconds = float(shift.get("seconds") or 0.0)
+        if (live.started_at is None or seconds <= 0
+                or live.started_at != old.period_start(old.periods_billed)):
+            return
+        live.started_at = live.started_at - timedelta(seconds=seconds)
+        live.shifts.append({"from_period": 0, "seconds": seconds,
+                            "pause_id": row.get("pause_id")})
+        STORE.save_subscription(live)
+        if live is not fresh:
+            fresh.started_at, fresh.shifts = live.started_at, [dict(s) for s in live.shifts]
+        row["subscription_id"] = live.subscription_id
+        row["from_period"] = 0
+        STORE._db.put(PAUSE_KIND, str(row["pause_id"]), row)
 
 
 def _remind(tenant: Tenant, row: Dict[str, Any]) -> bool:
@@ -312,7 +392,12 @@ def _candidate(row: Dict[str, Any], sub: Subscription, index: int,
         months = min(left, sub.months_per_period)
     if months <= 0:
         return None
-    base = Decimal(str(recurring_total(lines)))
+    # What the customer actually pays for the recurring lines: on a yearly
+    # invoice that is after its two free months, so "25% off 2 months" is
+    # a quarter of two twelfths of the real yearly price.
+    paid = recurring_total(lines) + sum(float(line["amount_usd"]) for line in lines
+                                        if line.get("yearly_free"))
+    base = Decimal(str(round(paid, 2)))
     percent = Decimal(str(row.get("percent") or 0))
     amount = _cents(base * percent / Decimal(100) * Decimal(months)
                     / Decimal(sub.months_per_period))
@@ -417,7 +502,12 @@ def estimated_saving(tenant: Tenant, sub: Optional[Subscription]) -> float:
         return 0.0
     from contracts import monthly_recurring
 
+    from pricing import YEARLY_MONTHS_CHARGED, YEARLY_MONTHS_COVERED
+
     monthly = Decimal(str(monthly_recurring(tenant, sub, sub.periods_billed)))
+    if sub.annual_prepay:
+        # A month of a yearly plan costs ten twelfths of a monthly one.
+        monthly = monthly * Decimal(YEARLY_MONTHS_CHARGED) / Decimal(YEARLY_MONTHS_COVERED)
     return _cents(monthly * Decimal(str(SAVE_OFFER_PERCENT)) / Decimal(100)
                   * Decimal(SAVE_OFFER_MONTHS))
 
@@ -453,7 +543,9 @@ def state(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, Any]:
         "paused": public_pause(pause) if pause else None,
         "pause_options": ([] if pause or trial else [
             {"months": m, "resume_on": _day(add_months(now, m)),
-             "label": f"{m} month{'' if m == 1 else 's'}"} for m in PAUSE_MONTHS]),
+             "label": f"{m} month{'' if m == 1 else 's'}"} for m in PAUSE_MONTHS
+            if months_allowed(tenant.tenant_id, m, now)]),
+        "pause_limit_words": PAUSE_LIMIT_WORDS,
         "pause_words": ("No bills and no alerts until the date you pick: we stop "
                         "texting and calling about your units, and keep all your "
                         "data. Everything starts again on its own on that date."),

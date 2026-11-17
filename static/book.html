@@ -139,12 +139,20 @@
       <h3 class="sub">A referred business was refunded</h3>
       <p class="note">After giving a business its money back, take back what
         is left of the month free its referrer earned for it, or the share
-        an insurance partner earned on it. What already came off an invoice,
-        or was already paid to a partner, stays.</p>
+        an insurance partner earned on what was refunded. What already came
+        off an invoice, or was already paid to a partner, stays, and the
+        business's later payments earn its partner as usual.</p>
       <form class="entry" id="refund-form">
         <label class="wide">Account ID of the business that was refunded
           <input id="refund-tenant" type="text" maxlength="40" required
                  placeholder="TEN-000123">
+        </label>
+        <label>Invoice refunded (for a partner's share; leave empty for all)
+          <input id="refund-invoice" type="text" maxlength="40"
+                 placeholder="CLX-2026-0042">
+        </label>
+        <label>Amount refunded (leave empty for all of that payment)
+          <input id="refund-amount" type="number" min="0.01" step="0.01">
         </label>
         <button type="submit">Withdraw the referral reward</button>
       </form>

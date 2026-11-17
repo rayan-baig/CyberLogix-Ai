@@ -217,6 +217,35 @@ SITE_WIDE_SENSOR_ID = "SITE-WIDE"
 OWNER_CONTACT_ID = "owner"
 
 
+def never_below_zero(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The lines, with discounts cut back so the total is never below $0.
+
+    Whatever the settings or a stored offer say, a bill cannot owe the
+    customer money. The last discount on the invoice gives way first (the
+    offer to stay or the founding member code comes after the yearly free
+    months and the chain discount), and a line that was cut says so.
+    """
+    out = [dict(line) for line in lines]
+    total = round(sum(float(line["amount_usd"]) for line in out), 2)
+    if total >= 0:
+        return out
+    for line in reversed(out):
+        if total >= 0:
+            break
+        amount = float(line["amount_usd"])
+        if amount >= 0 or line.get("kind") == "credit":
+            continue
+        cut = min(-amount, -total)
+        amount = round(amount + cut, 2)
+        total = round(total + cut, 2)
+        line["amount_usd"] = amount
+        quantity = line.get("quantity") or 1
+        line["unit_price_usd"] = round(amount / quantity, 2) if quantity else amount
+        line["description"] = (str(line.get("description") or "")
+                               + " (limited so the bill is not below $0)")
+    return out
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -2385,6 +2414,7 @@ class HubStore:
     ) -> Invoice:
         with self._lock:
             now = utc_now()
+            lines = never_below_zero(lines)
             subtotal = round(sum(line["amount_usd"] for line in lines), 2)
             invoice = Invoice(
                 invoice_id=self._next_id("INV"),

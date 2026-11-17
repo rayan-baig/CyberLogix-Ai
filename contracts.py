@@ -532,6 +532,9 @@ def yearly_free_months_line(lines: List[Dict[str, Any]]) -> Optional[Dict[str, A
         "quantity": YEARLY_MONTHS_FREE,
         "unit_price_usd": -round(free / YEARLY_MONTHS_FREE, 2),
         "amount_usd": -free,
+        # So a percentage off (retention.discount_line) is of what the
+        # year actually costs, not of twelve list-price months.
+        "yearly_free": True,
     }
 
 
@@ -1010,6 +1013,9 @@ def apply_interval_switch(tenant: Tenant, sub: Subscription,
         sub, min(term, MAX_TERM_YEARS), annual_prepay=(wanted == "yearly"),
         carried_multiplier=sub.rate_multiplier(sub.periods_billed),
         reason=f"switched to {wanted} billing")
+    from retention import carry_pause
+
+    carry_pause(sub, fresh, now)
     logger.info("%s switched to %s billing as %s from %s.", sub.subscription_id,
                 wanted, fresh.subscription_id, iso(fresh.started_at))
     return fresh
@@ -1619,6 +1625,11 @@ def renew(
     yearly = (None if payload.billing_interval is None
               else payload.billing_interval == "yearly")
     fresh = STORE.renew_subscription(sub, payload.term_years, annual_prepay=yearly)
+    # A pause still running moves onto the new contract, so coming back
+    # early brings its first bill forward too (retention.carry_pause).
+    from retention import carry_pause
+
+    carry_pause(sub, fresh)
     write_audit(
         tenant,
         operator,

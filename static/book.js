@@ -980,8 +980,16 @@ $("refund-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   say("refund-said", "");
   const id = $("refund-tenant").value.trim();
+  const refund = { note: "refunded" };
+  // A partner's share is taken back only for what was refunded: one
+  // invoice's payment, all of it or part.
+  const invoice = $("refund-invoice").value.trim();
+  if (invoice) refund.invoice_number = invoice;
+  if (invoice && $("refund-amount").value !== "") {
+    refund.amount_usd = Number($("refund-amount").value);
+  }
   const resp = await api("/api/referrals/" + encodeURIComponent(id) + "/refunded",
-    { method: "POST", body: { note: "refunded" } });
+    { method: "POST", body: refund });
   const body = await resp.json().catch(() => ({}));
   if (resp.ok) {
     $("refund-form").reset();
