@@ -177,7 +177,14 @@ def check(row: Dict[str, Any]) -> str:
     digest = content_hash(body)
     if not hmac.compare_digest(digest, str(row.get("content_hash") or "")):
         return "changed"
-    key = _key(str(row.get("key_source") or ""))
+    source = str(row.get("key_source") or "")
+    # With the key set, a seal under the database's own key proves nothing:
+    # whoever can edit a report can also write that key, and re-seal the
+    # edit under it. Every report made since the key was set is sealed with
+    # it, so only those are checked.
+    if PROOF_REPORT_KEY and source != "setting":
+        return "unchecked"
+    key = _key(source)
     if key is None:
         return "unchecked"
     expected = seal(str(row.get("report_id") or ""), str(row.get("code") or ""),

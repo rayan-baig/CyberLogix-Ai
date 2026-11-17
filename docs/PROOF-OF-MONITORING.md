@@ -88,7 +88,10 @@ again, make a new report, which gets a new code.
   hashed (SHA-256), and the hash is sealed with a key only the server
   holds (HMAC-SHA256), tied to the report's id and code. Change one
   figure, or move a seal onto a made-up code, and the check says
-  "Changed".
+  "Changed". With `CYBERLOGIX_PROOF_REPORT_KEY` set, only a seal made with
+  that key is trusted: a report claiming the database's fallback key
+  reads "Cannot check", because anyone able to edit the database could
+  write that key too.
 * **Time online does not depend on old readings being kept.** We keep
   only the newest readings for each sensor. So every silence of 10 minutes
   or more is written down when it ends, and the report counts those.

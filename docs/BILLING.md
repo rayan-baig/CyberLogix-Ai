@@ -51,7 +51,12 @@ How it bills (`contracts.py`):
   Shrinking refunds nothing, and the higher figure is kept, so taking a
   unit off and putting it back is not charged twice. The part-period
   catch-up that monthly plans carry on their next invoice is not used on
-  a yearly plan, so nothing is charged twice.
+  a yearly plan, so nothing is charged twice. Days spent paused count on
+  neither side of the fraction: a pause makes the year longer, not
+  longer to watch. If the year's invoice is voided and issued again, it
+  is priced on the estate as it is then, less what mid-year invoices
+  already charge ("Added part-way through the year: already billed on its
+  own invoice"), so it comes to what the voided one did.
 - **Renewal reminders** 30 and 7 days before the year renews
   (`YEARLY_RENEWAL_REMINDER_DAYS`), through the ordinary mail queue, each
   once: the key is the contract, the year and the reminder. A plan first

@@ -358,7 +358,10 @@ def test_withheld_while_reports_are_paused(grill, mailbox):
     tenant = STORE.get_tenant(grill["tenant_id"])
     invoice = STORE.create_invoice(tenant, [{"description": "Month",
                                              "amount_usd": 100.0}], period_days=30)
-    invoice.due_at = utc_now() - timedelta(days=60)
+    # Sixty days behind on the day the report runs (NOW, the 2nd), not on
+    # today: from the 17th of a month, today less sixty days was not yet
+    # 45 days overdue on the 2nd, and this failed for half of every month.
+    invoice.due_at = NOW - timedelta(days=60)
     STORE._db.put("invoice", invoice.invoice_id, invoice.to_row())
 
     result = monthly.run_monthly_reports(NOW)
