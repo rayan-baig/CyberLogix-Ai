@@ -4,6 +4,38 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.16.1 — 2026-11-17
+
+Fixes from a review of 3.13 to 3.16 before launch.
+
+- **A voided yearly bill no longer charges an added location twice.**
+  When a location or units were added part-way through a paid year, they
+  were billed on their own mid-year invoice. If the year's invoice was
+  then voided (a wrong PO, say) and issued again, the new one charged the
+  whole year at the bigger size, and the mid-year invoice still stood. The
+  re-issued invoice now leaves out what the mid-year invoice already
+  charges, on a line that says so, and comes to what the voided one did.
+- **A pause no longer skews the charge for a location added on a yearly
+  plan.** The rest-of-the-year charge was worked out over a year made
+  longer by the pause, so a location added after a pause was charged too
+  little, and one added just before a pause was charged for the paused
+  months too. Paused days now count on neither side.
+- **"Get a repair quote" tapped twice at once sends one lead.** Two taps
+  in the same moment both got past the "already sent" check, so the unit
+  went to two repair companies and both were charged a lead fee. The
+  check and the sending now happen together; the second tap is told the
+  unit was already sent.
+- **A proof of monitoring report cannot be re-sealed from the database.**
+  With `CYBERLOGIX_PROOF_REPORT_KEY` set, a report that claimed to be
+  sealed with the database's fallback key was still checked with that
+  key, so anyone able to edit the database could change a report's
+  numbers, write a key of their own and re-seal it as genuine. With the
+  setting on, only a seal made with it is trusted; anything else reads
+  "Cannot check". Without the setting nothing changes.
+- **A test that failed from the 17th of each month** (a monthly report
+  held back for a late bill) now measures lateness from the day the
+  report runs, not from today.
+
 ## 3.16.0 — 2026-11-15
 
 Founding member codes, on our own invoices.

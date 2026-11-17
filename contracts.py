@@ -43,8 +43,8 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -78,6 +78,7 @@ from store import (
     Subscription,
     Tenant,
     User,
+    _parse,
     iso,
     utc_now,
 )
@@ -499,8 +500,10 @@ def unsold_add_ons(
 # The invoice lines that recur every month: what the two free months of a
 # yearly plan are worked out on. A chain discount is one of them, so the
 # free months come off the discounted price. A recovery share or a setup
-# fee is not recurring and gets no free months.
-RECURRING_KINDS = ("subscription", "add_on", "chain_discount")
+# fee is not recurring and gets no free months. "already_billed" is what a
+# re-issued yearly invoice leaves out because a mid-year invoice already
+# charged it (bill_period); it comes off the twelve months like the rest.
+RECURRING_KINDS = ("subscription", "add_on", "chain_discount", "already_billed")
 
 
 def recurring_total(lines: Iterable[Dict[str, Any]]) -> float:
@@ -547,16 +550,50 @@ def _estate_size(tenant: Tenant) -> Dict[str, int]:
             "units": len(STORE.sensors_for(tenant.tenant_id))}
 
 
-def record_year_covered(tenant: Tenant, sub: Subscription, index: int) -> None:
-    """Note what the year's invoice paid for, by the month."""
+def record_year_covered(tenant: Tenant, sub: Subscription, index: int,
+                        separately: float = 0.0) -> None:
+    """Note what the year's invoice paid for, by the month.
+
+    `separately` is the part of the estate's monthly price that the year's
+    invoice left out because mid-year invoices charge it (a re-issue, in
+    bill_period). Kept as `billed_monthly_usd`, what the year's own
+    invoice covers, so a second re-issue leaves the same part out.
+    """
     with STORE._lock:
         live = STORE.get_subscription(sub.subscription_id) or sub
+        monthly = monthly_recurring(tenant, live, index)
         live.year_covered = {"period": index,
-                             "monthly_usd": monthly_recurring(tenant, live, index),
+                             "monthly_usd": monthly,
+                             "billed_monthly_usd": round(monthly - separately, 2),
                              **_estate_size(tenant)}
         STORE.save_subscription(live)
         if live is not sub:
             sub.year_covered = dict(live.year_covered)
+
+
+def _paused_days(sub: Subscription, index: int, start: datetime, end: datetime,
+                 now: datetime) -> Tuple[int, int]:
+    """Whole days of period `index` spent paused, in all and from `now` on.
+
+    A pause during the period moved the next one later by its length
+    (Subscription.shifts), so the period runs that much longer without a
+    day more of service.
+    """
+    from retention import PAUSE_KIND
+
+    total = ahead = 0.0
+    for shift in sub.shifts:
+        if int(shift.get("from_period") or 0) != index + 1:
+            continue
+        seconds = float(shift.get("seconds") or 0.0)
+        row = STORE._db.get(PAUSE_KIND, str(shift.get("pause_id") or ""))
+        began = _parse((row or {}).get("paused_at"))
+        if began is None or seconds <= 0:
+            continue
+        ended = began + timedelta(seconds=seconds)
+        total += max(0.0, (min(ended, end) - max(began, start)).total_seconds())
+        ahead += max(0.0, (min(ended, end) - max(began, now)).total_seconds())
+    return int(round(total / 86400)), int(round(ahead / 86400))
 
 
 def bill_mid_year_changes(tenant: Tenant, sub: Subscription,
@@ -589,18 +626,28 @@ def bill_mid_year_changes(tenant: Tenant, sub: Subscription,
         current = monthly_recurring(tenant, live, index)
         size = _estate_size(tenant)
         if covered.get("period") != index:
-            live.year_covered = {"period": index, "monthly_usd": current, **size}
+            live.year_covered = {"period": index, "monthly_usd": current,
+                                 "billed_monthly_usd": current, **size}
             STORE.save_subscription(live)
             return None
         before = float(covered.get("monthly_usd") or 0.0)
         grew = round(current - before, 2)
         if grew < 0.01:
             return None
-        days_left = (end.date() - now.date()).days
-        period_days = max((end - start).days, 1)
+        # Days of the paid year still to be watched, out of the days it
+        # watches: a pause lengthens the year without adding a day of
+        # service, so its days are not counted on either side.
+        paused_total, paused_ahead = _paused_days(live, index, start, end, now)
+        days_left = (end.date() - now.date()).days - paused_ahead
+        period_days = max((end - start).days - paused_total, 1)
         amount = round(grew * YEARLY_MONTHS_CHARGED * days_left / period_days, 2)
+        # What the year's own invoice covers stays as it was: the growth is
+        # on the invoice issued here (bill_period reads it on a re-issue).
+        kept = covered.get("billed_monthly_usd")
+        billed = before if kept is None else float(kept)
         live.year_covered = {
             "period": index, "monthly_usd": current,
+            "billed_monthly_usd": billed,
             "locations": max(size["locations"], int(covered.get("locations") or 0)),
             "units": max(size["units"], int(covered.get("units") or 0)),
         }
@@ -635,6 +682,26 @@ def bill_mid_year_changes(tenant: Tenant, sub: Subscription,
                 sub.subscription_id, invoice.number, invoice.total_usd)
     send_invoice(tenant, invoice)
     return invoice
+
+
+def _billed_separately(sub: Subscription, index: int,
+                       lines: List[Dict[str, Any]]) -> float:
+    """On a re-issue of this year's invoice, the monthly price of what
+    mid-year invoices already charge for, or 0.0.
+
+    Only for the current year (`year_covered` is about that one), and
+    never more than the recurring lines themselves.
+    """
+    live = STORE.get_subscription(sub.subscription_id) or sub
+    if index not in live.rebill_periods:
+        return 0.0
+    covered = live.year_covered or {}
+    if covered.get("period") != index or covered.get("billed_monthly_usd") is None:
+        return 0.0
+    extra = round(float(covered.get("monthly_usd") or 0.0)
+                  - float(covered.get("billed_monthly_usd") or 0.0), 2)
+    ceiling = recurring_total(lines) / max(1, sub.months_per_period)
+    return round(max(0.0, min(extra, ceiling)), 2)
 
 
 def bill_period(
@@ -679,7 +746,22 @@ def bill_period(
                 STORE.release_billing_period(sub, index)
                 return None
 
+            separately = 0.0
             if sub.annual_prepay:
+                # A voided year issued again is priced on the estate as it
+                # is now. What was added part-way through that year is
+                # already on its own mid-year invoice, which still stands,
+                # so it is left out here rather than charged twice.
+                separately = _billed_separately(sub, index, lines)
+                if separately > 0:
+                    lines.append({
+                        "kind": "already_billed",
+                        "description": ("Added part-way through the year: already "
+                                        "billed on its own invoice"),
+                        "quantity": months,
+                        "unit_price_usd": -separately,
+                        "amount_usd": -round(separately * months, 2),
+                    })
                 free = yearly_free_months_line(lines)
                 if free is not None:
                     lines.append(free)
@@ -721,7 +803,7 @@ def bill_period(
     # What this year's invoice paid for, so a location added in March is
     # charged for March to the renewal and nothing else.
     if sub.annual_prepay and index == sub.periods_billed - 1:
-        record_year_covered(tenant, sub, index)
+        record_year_covered(tenant, sub, index, separately)
 
     if include_setup:
         STORE.mark_setup_billed(sub)

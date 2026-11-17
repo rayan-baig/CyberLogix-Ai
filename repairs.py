@@ -48,7 +48,7 @@ import re
 import secrets
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -522,40 +522,22 @@ def quote_preview(sensor_id: str, user: User = Depends(require_role("operator"))
     }
 
 
-@business_router.post("/quote", status_code=status.HTTP_201_CREATED)
-def request_quote(payload: QuoteRequest, user: User = Depends(require_role("operator"))):
-    """Send one unit's problem to one approved repair partner near it.
-
-    Only with the business's say-so (`consent`), only for a unit the
-    forecaster says needs a repair, and only once per unit every three
-    days.
-    """
-    tenant = tenant_of(user)
-    if not payload.consent:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=("Tick the box to say we may send these details to one "
-                    "repair company. Nothing has been sent."))
-    phone, email = payload.contact_phone, payload.contact_email.lower()
-    if not phone and not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Give a phone number or an email, so the repair company can reach you.")
-    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="That email does not look right.")
-    sensor = _own_sensor(tenant, payload.sensor_id)
+def _refuse_if_sent_recently(sensor: Sensor) -> None:
     wait = next_allowed(sensor.sensor_id)
     if wait is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(f"A repair company was already sent this unit. You can ask "
                     f"again after {wait.strftime('%d %b %Y, %H:%M UTC')}."))
-    signal = repair_signal(sensor, None, tenant.temperature_unit)
-    if signal is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This unit looks fine to us right now, so there is nothing to send.")
+
+
+def _record_lead(tenant: Tenant, user: User, sensor: Sensor, payload: QuoteRequest,
+                 signal: Dict[str, Any], phone: str, email: str
+                 ) -> Tuple[Dict[str, Any], Dict[str, Any], datetime]:
+    """Pick the partner and write the lead and its fee. Call with the store
+    lock held, so the check that this unit was not just sent and the write
+    that sends it cannot be split by a second request."""
+    _refuse_if_sent_recently(sensor)
     now = utc_now()
     partner = take_next(payload.postcode, payload.city, now)
     if partner is None:
@@ -596,6 +578,44 @@ def request_quote(payload: QuoteRequest, user: User = Depends(require_role("oper
         "decided_at": None,
         "decision_note": "",
     })
+    return lead, partner, now
+
+
+@business_router.post("/quote", status_code=status.HTTP_201_CREATED)
+def request_quote(payload: QuoteRequest, user: User = Depends(require_role("operator"))):
+    """Send one unit's problem to one approved repair partner near it.
+
+    Only with the business's say-so (`consent`), only for a unit the
+    forecaster says needs a repair, and only once per unit every three
+    days.
+    """
+    tenant = tenant_of(user)
+    if not payload.consent:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=("Tick the box to say we may send these details to one "
+                    "repair company. Nothing has been sent."))
+    phone, email = payload.contact_phone, payload.contact_email.lower()
+    if not phone and not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Give a phone number or an email, so the repair company can reach you.")
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="That email does not look right.")
+    sensor = _own_sensor(tenant, payload.sensor_id)
+    _refuse_if_sent_recently(sensor)
+    signal = repair_signal(sensor, None, tenant.temperature_unit)
+    if signal is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This unit looks fine to us right now, so there is nothing to send.")
+    # Checked again, picked and written under one lock: two taps at once
+    # both got past the check above, and the unit went to two repair
+    # companies, each charged a lead fee.
+    with STORE._lock:
+        lead, partner, now = _record_lead(tenant, user, sensor, payload, signal,
+                                          phone, email)
     sent = _lead_mail(partner, lead)
     STORE.record_audit(
         tenant_id=tenant.tenant_id, actor=f"{user.full_name} <{user.email}>",
@@ -603,6 +623,7 @@ def request_quote(payload: QuoteRequest, user: User = Depends(require_role("oper
         detail=(f"Asked for a repair quote on {sensor.location_name}. Sent to "
                 f"{partner.get('company_name')}: the business name, the contact "
                 "chosen, the address and a summary of the problem."))
+    lead_id = lead["lead_id"]
     logger.info("Repair lead %s for %s sent to partner %s (contact %s).", lead_id,
                 tenant.tenant_id, partner["partner_id"],
                 mask_email(email) if email else "by phone")
