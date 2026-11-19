@@ -23,6 +23,15 @@ SHARED = {"theme.css", "pages.css", "motion.css", "utilities.css",
           "api-docs.js", "sw.js"}
 
 
+def unversioned(source: str) -> str:
+    """A served page with the ?v=<hash> taken off each /static/ file it names.
+
+    The server adds them so a browser can keep the files (main.versioned);
+    the checks here are about which file, not which version of it.
+    """
+    return re.sub(r'(/static/[^"?#]+)\?v=[0-9a-f]+"', r'\1"', source)
+
+
 def own_files(source: str) -> list:
     """The /static files a page's markup loads that belong to it alone."""
     found = re.findall(r'(?:src|href)="/static/([a-z0-9-]+\.(?:js|css))"', source)
@@ -49,7 +58,7 @@ def served_page(api, path: str) -> str:
     markup is filled in when served (the landing figures, an industry's
     words), and to prove the files the page names are really served.
     """
-    source = api.get(path).text
+    source = unversioned(api.get(path).text)
     for name in own_files(source):
         resp = api.get(f"/static/{name}")
         assert resp.status_code == 200, f"{path} loads /static/{name}, which is not served"

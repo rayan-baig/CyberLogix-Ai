@@ -12,7 +12,7 @@
  * loudly, that what it is showing is not live.
  */
 
-const VERSION = "clx-shell-v9";
+const VERSION = "clx-shell-v10";
 const SHELL = [
   "/static/theme.css",
   // The offline page's own stylesheet and script, now that it carries
@@ -89,7 +89,11 @@ self.addEventListener("fetch", (event) => {
             if (response && response.ok) cache.put(request, response.clone());
             return response;
           })
-          .catch(() => cache.match(request).then((hit) => hit || Response.error()))
+          // ignoreSearch: pages name their files with ?v=<hash> now, and
+          // the shell above was kept without it. Offline, the copy kept
+          // under the plain address is the one to fall back to.
+          .catch(() => cache.match(request, { ignoreSearch: true })
+            .then((hit) => hit || Response.error()))
       )
     );
     return;
@@ -99,7 +103,7 @@ self.addEventListener("fetch", (event) => {
   // app paints instantly, revalidated behind the render.
   event.respondWith(
     caches.open(VERSION).then((cache) =>
-      cache.match(request).then((hit) => {
+      cache.match(request, { ignoreSearch: true }).then((hit) => {
         const live = fetch(request)
           .then((response) => {
             if (response && response.ok) cache.put(request, response.clone());

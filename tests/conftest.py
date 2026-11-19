@@ -19,6 +19,10 @@ os.environ["CYBERLOGIX_DB_PATH"] = ":memory:"
 # to track down. The scheduler is tested directly instead.
 os.environ["CYBERLOGIX_SWEEP_SECONDS"] = "0"
 
+# Nor the alarm-path watcher thread (watchdog.py), for the same reason. Its
+# check is tested by calling it.
+os.environ["CYBERLOGIX_ALARM_WATCH_SECONDS"] = "0"
+
 # Provisioning a paid plan needs the key. The suite provisions Enterprise
 # tenants constantly, so it sets one — and the fact that every one of those
 # calls now has to carry it is the point: without the header they are
@@ -94,7 +98,12 @@ def pytest_collection_modifyitems(session, config, items):
 
 @pytest.fixture(autouse=True)
 def clean_store():
+    import watchdog
+
     STORE.reset()
+    # What the alarm-path watch counted is kept in memory, not the store.
+    watchdog.forget_deliveries()
+    watchdog.forget_readiness()
     yield
     STORE.reset()
 
@@ -174,6 +183,8 @@ def stub_gemini(monkeypatch):
     """Default every test to a working, offline Gemini stub."""
     models = _StubModels(text="URGENT: equipment failing, attend the site now.")
     monkeypatch.setattr(gemini, "client", type("C", (), {"models": models})())
+    # The model's name is a setting with no default; the stub needs one.
+    monkeypatch.setattr(gemini, "GEMINI_MODEL", "stub-model")
     return models
 
 

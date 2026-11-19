@@ -1,7 +1,7 @@
 # Running it in production
 
-Settings, where the state lives, backups, the dead man's switch, error
-reports, usage counts, deleting a business, the agreements, and the deployment details behind the short
+Settings, what to do if the app is down, where the state lives, backups,
+the dead man's switch, error reports, usage counts, deleting a business, the agreements, and the deployment details behind the short
 version in the README. The step-by-step runbook is
 [DEPLOY.md](../DEPLOY.md).
 
@@ -13,7 +13,8 @@ version in the README. The step-by-step runbook is
 | `TWILIO_ACCOUNT_SID` | — | Twilio account SID; unset means dry-run delivery |
 | `TWILIO_AUTH_TOKEN` | — | Twilio auth token |
 | `TWILIO_FROM_NUMBER` | — | Sending number in E.164, e.g. `+15550100` |
-| `CYBERLOGIX_GEMINI_MODEL` | `gemini-2.5-flash` | Model for all generated copy |
+| `CYBERLOGIX_GEMINI_MODEL` | — | Model for all generated copy, by its name in the provider's current list. Unset, every message uses its template |
+| `CYBERLOGIX_AI_TIMEOUT_SECONDS` | `6` | How long an alert waits for the model's line before it goes out with the template line |
 | `CYBERLOGIX_ALLOWED_ORIGINS` | none | Exact origins whose pages may call the API from a browser; unset allows only this site's own pages. Never `*` or a sibling subdomain |
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
@@ -49,6 +50,11 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_BACKUP_KEEP` | `14` | Snapshots kept, oldest deleted first |
 | `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
 | `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
+| `CYBERLOGIX_OPERATOR_EMAIL` | — | Your own email. The daily digest goes here, and so does "alerts have stopped" (see [If the app is down](#if-the-app-is-down)) |
+| `CYBERLOGIX_OPERATOR_PHONE` | — | Your own mobile, in E.164 (`+1...`). Gets a text when alerts stop and when they are fixed, so you hear even if email is down |
+| `CYBERLOGIX_ALARM_WATCH_SECONDS` | `60` | How often the alarm-path watch looks. `0` turns it off |
+| `CYBERLOGIX_INGEST_STALE_MINUTES` | `20` | How long every sensor on the platform has to be silent at once before "readings have stopped" is raised (at least 5) |
+| `CYBERLOGIX_HEARTBEAT_URL` | — | The dead man's switch: pinged after every sweep. See [The dead man's switch](#the-dead-mans-switch) |
 | `CYBERLOGIX_ERRORS_EMAIL` | — | Where a short report of each unexpected server error (500) is mailed. Empty sends nothing. See [Error reports](#error-reports) |
 | `CYBERLOGIX_SUPPORT_EMAIL` | — | Where the help page tells customers to write, and where "Talk to us" sends someone asking for a quote. Unset, it uses `MAIL_REPLY_TO`; with neither, it points them at the help page |
 | `CYBERLOGIX_NOINDEX` | — | `1` on a copy that is not the live product (staging, a demo): every page asks search engines not to list it, robots.txt closes, the sitemap is empty. See [STAGING.md](STAGING.md) |
@@ -59,6 +65,122 @@ documented there and read by nothing.
 
 Set real origins before production; browsers reject credentialed requests
 against a wildcard, so credentials switch on only once origins are named.
+
+## If the app is down
+
+Short version: two free checks watch the app from outside, and the app
+watches its own alarm path from inside. If anything stops, you get an
+email and a text. This section says what to set up once, and what each
+alert means.
+
+### Set up once, before the first customer
+
+1. **Your email and phone.** Set `CYBERLOGIX_OPERATOR_EMAIL` and
+   `CYBERLOGIX_OPERATOR_PHONE` (your mobile, starting `+1`). The app
+   tells you there when alerts stop flowing, and again when they are
+   fixed. One message each way, not one a minute.
+2. **A free uptime monitor.** UptimeRobot or Better Stack (free plan)
+   both work. Add an HTTP monitor:
+   - URL: `https://cyberlogix.mtrxhorizyn.com/readyz`
+   - Check every: as often as the free plan allows (a few minutes is fine)
+   - Alert when: the status is not 200
+   - Alert to: your phone (their app, or SMS) and your email
+3. **A second monitor, for "is it up at all":** the same, with
+   `https://cyberlogix.mtrxhorizyn.com/healthz`.
+4. **The dead man's switch** (`CYBERLOGIX_HEARTBEAT_URL`, see below and
+   DEPLOY.md section 4). It is the only check that still works when the
+   whole server is gone, because it alarms when the pings stop.
+
+Do not point Render's own health check at `/readyz`. Render restarts the
+app when its check fails, and a restart does not fix Twilio being down;
+it only hides it. Render's check stays on `/api/health`.
+
+### The two checks
+
+* **`/healthz`** — is the app running. Answers `{"status": "ok"}`, and
+  touches nothing else. If this fails, the app is down.
+* **`/readyz`** — can alerts get out right now. 200 means yes. 503 means
+  no, and `problems` says why in a sentence. It also shows each part:
+
+| Part | `ok` means | Other answers |
+|---|---|---|
+| `database` | readings can be saved | `failing` |
+| `alert_job` | the job that sends follow-up calls ran in the last few minutes | `stopped` |
+| `sensor_readings` | some sensor reported in the last 20 minutes | `stopped`; `no_sensors_yet` (fine) |
+| `texts`, `calls` | the last tries got through | `failing` (3 in a row refused), `off` (Twilio not set up), `no_sends_yet` (fine) |
+| `email` | the last alert emails got through | `failing`, `off`, `no_sends_yet` |
+| `webhooks` | customers' chat hooks are working | `failing` is shown but never makes it 503: it is usually one customer's hook set up wrong |
+| `outside_alarm` | the dead man's switch is set | `not_set` |
+
+It never shows names, phone numbers, how many customers there are,
+versions or error messages, so it is safe to give to an outside monitor.
+It is worked out at most every 5 seconds, however often it is asked.
+
+### What each alert means, and what to do
+
+**The uptime monitor says `/healthz` is down.** The app is not running.
+1. Open Render, the `cyberlogix` service, **Logs**. Look at the last
+   lines before it stopped.
+2. Restart the service from Render's dashboard. If it will not stay up,
+   deploy the last version that worked.
+3. When `/healthz` answers again, check `/readyz` is 200.
+
+**The heartbeat service says the pings stopped.** Same as above: the
+app or the server is gone. Same steps.
+
+**`/readyz` is 503, or you got an email or text starting "Problem:".**
+Read the sentence. Each one, and what to do:
+
+* **"The alert job has stopped."** The app is up but follow-up calls are
+  not going out. Restart the service in Render. If it happens again
+  within the hour, look in the logs for "Autopilot sweep pass failed".
+* **"No sensor readings have arrived from any business for N minutes."**
+  Every sensor went quiet at once, so the problem is on our side or the
+  internet's, not one customer's fridge. Check the app answers at its
+  address. Check Render's logs for errors on `/api/sensor-pulse`. If one
+  sensor brand stopped (a vendor cloud), see `/book` -> Health. With
+  only one or two sensors on the platform, this also fires when that one
+  sensor is unplugged.
+* **"Alert texts are failing" / "Alert phone calls are failing".**
+  Twilio refused or did not answer 3 times in a row. Open the Twilio
+  console: is the account paid up and not suspended, and is the sending
+  number still yours? Check status.twilio.com. A failed alert text is
+  tried again at 1, 5 and 15 minutes and a failed call at 5 and 15, then
+  the customer's console says to phone the roster. So if Twilio is down
+  for longer and a customer has an open alert, phone them.
+* **"Alert emails are failing".** The mail server refused or did not
+  answer. Check the mail provider's dashboard and `SMTP_HOST`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD`. Alert emails are tried again for
+  about eight hours while the alert is open. (This one reaches you by text, since email is down.)
+* **"Texts and calls are switched off".** `TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` are not all set. No alert
+  reaches a phone until they are. (On a staging copy with
+  `CYBERLOGIX_NOINDEX=1` this is expected and does not make it 503.)
+* **"The database is not answering".** Usually a full disk. In Render,
+  look at the disk's usage. See [Backups](#backups) for old snapshots to
+  delete, and [LOAD-TEST.md](LOAD-TEST.md#disk) for how big to make it.
+
+You get a **"Fixed:"** email and text when each one clears. If you never
+get one, it is still broken.
+
+### Timeouts on everything that leaves the app
+
+Nothing the app sends can hold up an alert for long:
+
+| Outgoing | Gives up after | Tries again |
+|---|---|---|
+| Texts and calls (Twilio) | 8 s (`TWILIO_TIMEOUT_SECONDS`) | A failed alert text at 1, 5 and 15 minutes; a failed call at 5 and 15. Each try is claimed first, so one failure is one re-send, never two |
+| Email | 20 s (`SMTP_TIMEOUT_SECONDS`) | Alert emails at 1, 5, 15, 30 minutes and on to 8 hours while the alert is open; other mail hourly. An address the mail server says does not exist is not tried again |
+| Customers' chat hooks | 5 s each, 12 s for all of them | Once, for a 5xx, 408, 429 or no answer; never for a wrong address |
+| The model that words the alert's "what to check" line | 6 s (`CYBERLOGIX_AI_TIMEOUT_SECONDS`) | No: the alert goes out with the plain template line instead |
+| Sensor clouds we fetch from | 20 s | On the next sweep |
+| OmniArmor daily report | 20 s | With backoff, as their contract allows |
+| The dead man's switch ping | 5 s | On the next sweep |
+
+The model line used to have no time limit at all: a model service that
+took the connection and said nothing held the alert text back for as long
+as it liked. That is fixed (`tests/test_alarm_path.py`).
+
 
 ## State
 

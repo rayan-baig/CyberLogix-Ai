@@ -31,6 +31,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import all modular system routers
@@ -69,7 +70,9 @@ from payments import router as payments_router
 from books import router as books_router
 from margin import router as margin_router
 from inspector import router as inspector_router
+from watchdog import public_router as checks_router
 from watchdog import router as watchdog_router
+import watchdog
 from legal import router as legal_router
 from mail import router as mail_router
 from mail import status as mail_status
@@ -113,9 +116,13 @@ async def lifespan(_app: FastAPI):
     and an in-process loop is the cheapest thing that can.
     """
     scheduler.start()
+    # A thread of its own, so a sweep that hangs is noticed too: tells the
+    # operator when readings, the alert job or a channel stops.
+    watchdog.start_watching()
     try:
         yield
     finally:
+        watchdog.stop_watching()
         await scheduler.stop()
 
 
@@ -238,6 +245,15 @@ class RequestSizeLimit:
 
 app.add_middleware(RequestSizeLimit, limit=MAX_REQUEST_BYTES)
 
+# Text answers are compressed for any browser that asks. The console's own
+# script, stylesheet and page were 388 KB on every first open, and each
+# 20-second poll about 70 KB of JSON; on a phone in a basement kitchen that
+# is the difference between a page that opens and one that does not.
+# Level 6, not the default 9: nearly the same size for a fraction of the
+# CPU, which matters on a one-worker server. Images are already compressed
+# and are left alone.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
 # Mount all microservice routers under the central app
 app.include_router(license_router)
 app.include_router(telemetry_router)
@@ -287,6 +303,7 @@ app.include_router(pollers_router)
 app.include_router(people_router)
 app.include_router(tasks_router)
 app.include_router(watchdog_router)
+app.include_router(checks_router)
 app.include_router(inspector_router)
 app.include_router(payments_router)
 app.include_router(referrals_router)
@@ -526,11 +543,32 @@ def _apply_security_headers(response: Response, request: Request) -> Response:
     return response
 
 
+def _cache_headers(response: Response, request: Request) -> Response:
+    """How long a browser may keep a static file, and the 304 for a page.
+
+    A /static/ file asked for by its versioned address never changes, so
+    it is kept for a year. Without the version it is left as it always
+    was: the browser's own judgement, checked with its ETag.
+    """
+    path = request.url.path
+    if path.startswith("/static/") and response.status_code == 200:
+        if request.query_params.get("v"):
+            response.headers.setdefault("Cache-Control", STATIC_IMMUTABLE)
+        return response
+    etag = response.headers.get("etag")
+    if (etag and response.status_code == 200 and request.method == "GET"
+            and request.headers.get("if-none-match") == etag):
+        kept = {k: v for k, v in response.headers.items()
+                if k.lower() in ("etag", "cache-control", "vary")}
+        return Response(status_code=304, headers=kept)
+    return response
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     """Set the headers that a browser can enforce on our behalf."""
     response = await call_next(request)
-    return _apply_security_headers(response, request)
+    return _apply_security_headers(_cache_headers(response, request), request)
 
 
 @app.exception_handler(Exception)
@@ -671,6 +709,63 @@ def _background_colour() -> str:
     return found.group(1)
 
 
+# Every /static/ script and stylesheet a page names gets ?v=<a hash of the file> added when
+# the page is served, so a browser can keep the file for a year and still
+# never run yesterday's script against today's page: a changed file is a
+# new address. Asked for without ?v= (an old page, the service worker's
+# shell list), a file is served as it always was.
+#
+# Scripts and stylesheets only: they are the weight, and the ones that must
+# match the page. Icons and images keep their plain address, which an
+# installed app's manifest and a link preview name too.
+_STATIC_REF = re.compile(r'((?:src|href)=")(/static/[^"?#]+\.(?:js|css))(")')
+_asset_tags: Dict[str, str] = {}
+STATIC_IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def _asset_tag(url_path: str) -> Optional[str]:
+    tag = _asset_tags.get(url_path)
+    if tag is None:
+        target = (STATIC_DIR / url_path[len("/static/"):]).resolve()
+        if STATIC_DIR.resolve() not in target.parents or not target.is_file():
+            return None
+        import hashlib
+
+        tag = hashlib.sha256(target.read_bytes()).hexdigest()[:12]
+        _asset_tags[url_path] = tag
+    return tag
+
+
+def versioned(page: str) -> str:
+    """The page with ?v=<hash> on every /static/ file it names."""
+    def tagged(found):
+        tag = _asset_tag(found.group(2))
+        if tag is None:
+            return found.group(0)
+        return f"{found.group(1)}{found.group(2)}?v={tag}{found.group(3)}"
+
+    return _STATIC_REF.sub(tagged, page)
+
+
+_html_files: Dict[str, tuple] = {}
+
+
+def _html_file(path: Path) -> HTMLResponse:
+    """A page served as it is on disk, with its assets versioned.
+
+    Carries an ETag, so opening it again costs a 304 rather than the page.
+    """
+    cached = _html_files.get(str(path))
+    if cached is None:
+        import hashlib
+
+        page = versioned(path.read_text(encoding="utf-8"))
+        etag = '"' + hashlib.sha256(page.encode()).hexdigest()[:16] + '"'
+        cached = (page, etag)
+        _html_files[str(path)] = cached
+    return HTMLResponse(cached[0], headers={"ETag": cached[1]})
+
+
 def _serve_page(
     path: Path,
     request: Request,
@@ -686,7 +781,7 @@ def _serve_page(
     """
     source = _page_cache.get(str(path))
     if source is None:
-        source = path.read_text(encoding="utf-8")
+        source = versioned(path.read_text(encoding="utf-8"))
         _page_cache[str(path)] = source
     base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     page = (source.replace(_BASE_TOKEN, base)
@@ -864,7 +959,7 @@ def landing_page(request: Request):
 @app.get("/console", include_in_schema=False)
 def operations_console():
     """Serve the operations console to a browser."""
-    return FileResponse(CONSOLE_HTML, media_type="text/html")
+    return _html_file(CONSOLE_HTML)
 
 
 @app.get("/for", include_in_schema=False)
@@ -956,7 +1051,7 @@ def plain_view():
     them jargon. Not a cut-down edition to be upsold out of: a different
     question, asked by a different person on a different day.
     """
-    return FileResponse(SIMPLE_HTML, media_type="text/html")
+    return _html_file(SIMPLE_HTML)
 
 
 # --- the installed app ------------------------------------------------------
@@ -999,7 +1094,7 @@ def public_proof(token: str):
     taking either party's word for it. The token is the only secret, and
     the owner can revoke it.
     """
-    return FileResponse(PROOF_HTML, media_type="text/html")
+    return _html_file(PROOF_HTML)
 
 
 @app.get("/proof-report/{report_id}", include_in_schema=False)
@@ -1010,7 +1105,7 @@ def proof_report_page(report_id: str):
     console's own sign-in, and only an owner of that business gets an
     answer.
     """
-    return FileResponse(PROOF_REPORT_HTML, media_type="text/html")
+    return _html_file(PROOF_REPORT_HTML)
 
 
 @app.get("/verify", include_in_schema=False)
@@ -1067,7 +1162,7 @@ def insurance_partners_page(request: Request):
 @app.get("/insurance-partners/dashboard", include_in_schema=False)
 def insurance_partner_dashboard():
     """An approved partner's dashboard. Renders nothing without their key."""
-    return FileResponse(INSURER_DASHBOARD_HTML, media_type="text/html")
+    return _html_file(INSURER_DASHBOARD_HTML)
 
 
 @app.get("/repair-partners", include_in_schema=False)
@@ -1085,7 +1180,7 @@ def repair_partners_page(request: Request):
 @app.get("/repair-partners/dashboard", include_in_schema=False)
 def repair_partner_dashboard():
     """An approved repair partner's dashboard. Renders nothing without their key."""
-    return FileResponse(REPAIR_DASHBOARD_HTML, media_type="text/html")
+    return _html_file(REPAIR_DASHBOARD_HTML)
 
 
 @app.get("/offline", include_in_schema=False)
@@ -1096,13 +1191,13 @@ def offline_page():
     temperatures to somebody who has no connection is how an app tells
     a restaurant its freezer is fine while the freezer is failing.
     """
-    return FileResponse(OFFLINE_HTML, media_type="text/html")
+    return _html_file(OFFLINE_HTML)
 
 
 @app.get("/partners", include_in_schema=False)
 def partner_portal():
     """Serve the reseller portal, which is a different principal entirely."""
-    return FileResponse(PARTNER_HTML, media_type="text/html")
+    return _html_file(PARTNER_HTML)
 
 
 @app.get("/signup", include_in_schema=False)
@@ -1137,7 +1232,7 @@ def book_page():
     supplied, and every figure on it comes from an endpoint that checks
     that key. The page itself holds no secret.
     """
-    return FileResponse(BOOK_HTML, media_type="text/html")
+    return _html_file(BOOK_HTML)
 
 
 @app.get("/reset", include_in_schema=False)
@@ -1149,7 +1244,7 @@ def reset_page():
     the console's sign-in form, and putting the way out behind the thing
     they are locked out of is how an account becomes unreachable forever.
     """
-    return FileResponse(RESET_HTML, media_type="text/html")
+    return _html_file(RESET_HTML)
 
 
 @app.get("/legal", include_in_schema=False)

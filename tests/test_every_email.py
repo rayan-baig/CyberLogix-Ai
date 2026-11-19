@@ -260,6 +260,15 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
         row = faults.record("GET /api/x", exc)
         faults.mail_report(row, exc, "GET", "/api/x")
 
+    # Alert texts start failing for everybody, then come back.
+    import watchdog
+
+    for _ in range(watchdog.FAILING_AFTER):
+        watchdog.note_delivery("sms", False)
+    assert "texts_failing" in watchdog.check_alarm_path()["started"]  # alarm
+    watchdog.note_delivery("sms", True)
+    assert "texts_failing" in watchdog.check_alarm_path()["ended"]    # alarm-cleared
+
 
 # What every message is, by the start of its key, and how it is stopped.
 KINDS = {
@@ -272,6 +281,8 @@ KINDS = {
     "renewal:": "must",
     "reset:": "must",
     "error-report:": "must",
+    "alarm:": "must",
+    "alarm-cleared:": "must",
     "insurance-key:": "must",
     "insurance-declined:": "must",
     "insurance-application:": "manage",

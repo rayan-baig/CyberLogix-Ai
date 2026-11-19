@@ -296,6 +296,10 @@ MUST_SEND = (
     "dunning:",
     "renewal:",
     "error-report:",
+    # The owner told that alerts have stopped flowing, and that they are
+    # flowing again (watchdog.py). Never something to unsubscribe from.
+    "alarm:",
+    "alarm-cleared:",
     # An insurance partner's dashboard key, and the answer to an
     # application: about their own standing with us (insurers.py).
     "insurance-key:",
@@ -645,6 +649,7 @@ def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict
         import faults
 
         faults.record("mail.deliver", exc, context="the mail host refused or did not answer")
+        _count(False)
         logger.warning(
             "Mail to %s failed on attempt %d (%s).",
             mask_email(message.to_address), attempts, _redact(str(exc)),
@@ -655,11 +660,25 @@ def deliver(message: MailMessage, max_attempts: int = MAIL_MAX_ATTEMPTS) -> Dict
             + ("" if final else " — queued for another attempt."),
         )
 
+    _count(True)
     STORE.record_attempt(message, "sent", "Accepted by the mail host.")
     logger.info(
         "Mail sent to %s: %s", mask_email(message.to_address), message.subject
     )
     return _result(message, True, "sent", "Accepted by the mail host.")
+
+
+def _count(ok: bool) -> None:
+    """Tell the alarm-path watch how a real hand-off went. Never raises.
+
+    A refused recipient is not counted: that is one address, not the host.
+    """
+    try:
+        import watchdog
+
+        watchdog.note_delivery("email", ok)
+    except Exception:  # noqa: BLE001 - mail must never raise
+        logger.exception("Could not count the mail delivery.")
 
 
 def retry_alert_mail(now=None) -> Dict[str, Any]:

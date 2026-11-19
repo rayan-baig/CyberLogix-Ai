@@ -344,7 +344,7 @@ def test_one_failing_panel_cannot_blank_the_console(api):
     the structure that makes that true.
     """
     js = script_of(ROOT / "static/console.html")
-    body = js[js.index("async function refresh()"): js.index("/* ---------------- render")]
+    body = js[js.index("async function refresh("): js.index("/* ---------------- render")]
 
     assert "Promise.allSettled" in body, (
         "refresh() no longer tolerates a panel failing"

@@ -76,14 +76,15 @@ def checks() -> List[Dict[str, Any]]:
         WARNS if (ai["degraded"] or not ai["configured"]) else OK,
         (f"{ai['consecutive_failures']} call(s) in a row have failed against "
          f"{ai['model']}: {ai['last_error']}") if ai["degraded"]
-        else ("no key, so every generated line is a template"
+        else ("no key or no model named, so every generated line is a template"
               if not ai["configured"] else f"answering, on {ai['model']}"),
         ("Named models get retired. Nothing breaks loudly when this one is "
          "-- every message quietly becomes its deterministic template and "
          "the service keeps answering 200. Point CYBERLOGIX_GEMINI_MODEL at "
          "a current model.") if ai["degraded"] else
         ("Not a blocker: alerts still go out, worded from templates rather "
-         "than written. Set GEMINI_API_KEY to turn the writing on."
+         "than written. Set GEMINI_API_KEY and CYBERLOGIX_GEMINI_MODEL to "
+         "turn the writing on."
          if not ai["configured"] else ""),
     ))
 

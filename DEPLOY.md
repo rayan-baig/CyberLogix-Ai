@@ -295,6 +295,18 @@ enough for an uptime monitor that pages a person (not for the platform's
 health check: see section 2), but only while there is a process left to
 answer at all. That is the case the heartbeat exists for.
 
+Then two more, ten minutes in all (step by step in
+[docs/OPERATIONS.md](docs/OPERATIONS.md#if-the-app-is-down)):
+
+- Set `CYBERLOGIX_OPERATOR_EMAIL` and `CYBERLOGIX_OPERATOR_PHONE` to your
+  own email and mobile. The app emails and texts you when readings stop
+  arriving, the alert job stops, or texts, calls or alert emails start
+  failing, and again when each is fixed.
+- Add a free uptime monitor (UptimeRobot or Better Stack) on
+  `https://<your address>/readyz`, alerting when it is not 200, and a
+  second one on `/healthz`. Keep the platform's own health check on
+  `/api/health`.
+
 ---
 
 ## 5. Prove it end to end
