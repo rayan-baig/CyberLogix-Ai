@@ -378,6 +378,23 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
         return False, "unreachable"
 
 
+def _count(delivered: bool, http_status: str) -> None:
+    """Tell the alarm-path watch how a post went. Never raises.
+
+    Only a failure a second try could fix counts (down, slow, 5xx): a 404
+    or a refused address is one business's hook set up wrong.
+    """
+    try:
+        import watchdog
+
+        base = http_status.replace("_after_retry", "")
+        watchdog.note_delivery(
+            "webhook", delivered,
+            counts=_worth_retrying(base) or base == "abandoned_slow")
+    except Exception:  # noqa: BLE001 - bookkeeping, never the alert
+        logger.exception("Could not count the webhook delivery.")
+
+
 def dispatch_event(
     tenant: Tenant, incident, sensor, state: str, note: str = ""
 ) -> List[Dict[str, Any]]:
@@ -459,6 +476,7 @@ def dispatch_event(
     results = []
     for hook in hooks:
         delivered, http_status = outcomes.get(hook.webhook_id, (False, "not_attempted"))
+        _count(delivered, http_status)
         try:
             STORE.record_webhook_attempt(hook, delivered, http_status)
         except Exception as exc:  # noqa: BLE001 - bookkeeping, never the alert

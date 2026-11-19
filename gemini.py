@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as _CallTimedOut
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -21,7 +23,45 @@ from store import STORE
 
 logger = logging.getLogger("cyberlogix.gemini")
 
-GEMINI_MODEL = os.environ.get("CYBERLOGIX_GEMINI_MODEL", "gemini-2.5-flash")
+# Which model writes the copy. No default: a model's name is a setting,
+# never something written into the code, and named models are retired on
+# a schedule. Unset, every line is its template, the same as having no key.
+GEMINI_MODEL = os.environ.get("CYBERLOGIX_GEMINI_MODEL", "").strip()
+
+
+def _seconds(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        logger.error("%s is not a number; using %ss.", name, default)
+        return default
+    return value if value > 0 else default
+
+
+# The alert text waits for the model's one line about what to check. The
+# SDK's own HTTP client waits forever by default (`timeout=None`), so a
+# model service that accepted the connection and then said nothing held
+# the breach text back for as long as it liked: the reading's request
+# never answered and nobody was texted. Now the line has this long, and
+# then the alert goes out with the template line instead.
+#
+# Two limits, because the SDK's timeout is per socket read and a reply
+# that trickles in a byte at a time never trips it: the HTTP client gets
+# the timeout, and the caller stops waiting at the same time whatever the
+# socket is doing.
+AI_TIMEOUT_SECONDS = _seconds("CYBERLOGIX_AI_TIMEOUT_SECONDS", 6.0)
+
+
+def http_options() -> Dict[str, Any]:
+    """What the SDK client is built with: a timeout, in milliseconds."""
+    return {"timeout": int(AI_TIMEOUT_SECONDS * 1000)}
+
+
+# Calls run here so the caller can stop waiting. A call that hangs past
+# its deadline keeps its worker until the socket gives up, so there are a
+# few; when all are stuck, a new call waits in line and still times out
+# on schedule.
+_calls = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ai-call")
 
 # Falling back is normal once. Falling back every time is a different
 # thing wearing the same clothes, and the difference is only visible in
@@ -75,7 +115,7 @@ def dispatch_status() -> Dict[str, Any]:
         failures, error = _consecutive_failures, _last_error
         since = _last_success_at
     return {
-        "configured": client is not None,
+        "configured": client is not None and bool(GEMINI_MODEL),
         "model": GEMINI_MODEL,
         "consecutive_failures": failures,
         "degraded": failures >= FAILURES_BEFORE_DEGRADED,
@@ -84,7 +124,7 @@ def dispatch_status() -> Dict[str, Any]:
     }
 
 try:
-    client = genai.Client()
+    client = genai.Client(http_options=http_options())  # type: ignore[arg-type]
     logger.info("Google GenAI client initialized (model=%s).", GEMINI_MODEL)
 except Exception as exc:  # noqa: BLE001 - startup must never hard-fail
     client = None
@@ -96,8 +136,8 @@ except Exception as exc:  # noqa: BLE001 - startup must never hard-fail
 
 
 def dispatch_ready() -> bool:
-    """True when the Gemini client initialized successfully."""
-    return client is not None
+    """True when the Gemini client initialized and a model is named."""
+    return client is not None and bool(GEMINI_MODEL)
 
 
 def safe_generate(
@@ -129,10 +169,10 @@ def safe_generate(
         logger.warning("%s not generated: %s", purpose, reason)
         return fallback, "fallback_template"
 
-    if client is None:
+    if client is None or not GEMINI_MODEL:
         logger.error(
             "Gemini unavailable for %s; using deterministic template. "
-            "Verify the GEMINI_API_KEY environment variable.",
+            "Verify GEMINI_API_KEY and CYBERLOGIX_GEMINI_MODEL.",
             purpose,
         )
         return fallback, "fallback_template"
@@ -146,10 +186,15 @@ def safe_generate(
         return fallback, "fallback_template"
 
     try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
+        call = _calls.submit(
+            client.models.generate_content, model=GEMINI_MODEL, contents=prompt,
         )
+        try:
+            response = call.result(timeout=AI_TIMEOUT_SECONDS)
+        except _CallTimedOut:
+            call.cancel()
+            raise TimeoutError(
+                f"no answer within {AI_TIMEOUT_SECONDS:g}s") from None
         text = (response.text or "").strip()
         if not text:
             raise ValueError("Gemini returned an empty body.")

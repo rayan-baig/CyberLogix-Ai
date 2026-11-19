@@ -131,7 +131,7 @@ def test_readiness_names_a_retired_model(monkeypatch):
     import readiness
 
     monkeypatch.setattr(gemini, "dispatch_status", lambda: {
-        "configured": True, "model": "gemini-1.0-retired",
+        "configured": True, "model": "retired-model-name",
         "consecutive_failures": 9, "degraded": True,
         "last_error": "404 model not found", "last_success_at": None,
     })
@@ -139,5 +139,5 @@ def test_readiness_names_a_retired_model(monkeypatch):
     row = next(c for c in readiness.checks() if c["key"] == "ai_model")
 
     assert row["state"] == readiness.WARNS
-    assert "gemini-1.0-retired" in row["detail"]
+    assert "retired-model-name" in row["detail"]
     assert "CYBERLOGIX_GEMINI_MODEL" in row["fix"]

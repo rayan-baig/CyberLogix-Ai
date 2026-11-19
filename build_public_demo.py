@@ -694,7 +694,10 @@ def capture_help(route: str = "/help") -> str:
     with TestClient(app) as client:
         got = client.get(route)
         got.raise_for_status()
-        return got.text.replace("http://testserver", EXAMPLE_ADDRESS)
+        # The server names its files with ?v=<hash> so browsers keep them;
+        # here they are inlined, so the plain names are what is wanted.
+        page = re.sub(r'(/static/[^"?#]+)\?v=[0-9a-f]+"', r'\1"', got.text)
+        return page.replace("http://testserver", EXAMPLE_ADDRESS)
 
 
 def build_help(served: str) -> str:

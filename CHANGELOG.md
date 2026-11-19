@@ -4,6 +4,43 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.18.0 — 2026-11-19
+
+Fast and solid: if alerts stop, you hear about it, and the console opens
+fast on a bad phone signal.
+
+- **You are told when alerts stop flowing.** The app now watches its own
+  alarm path, from a thread of its own: readings arriving from anybody,
+  the alert job running, and texts, calls and alert emails getting
+  through. When one stops it emails `CYBERLOGIX_OPERATOR_EMAIL` and texts
+  the new `CYBERLOGIX_OPERATOR_PHONE`, once, and again once it is fixed,
+  even across a restart. One business's wrong phone number or broken
+  chat hook does not count as an outage. The daily digest lists anything
+  still wrong.
+- **Two checks for an uptime monitor.** `/healthz` says the app is up.
+  `/readyz` says whether alerts can get out right now: 200, or 503 with
+  the reason in a sentence and the state of each part (database, alert
+  job, readings, texts, calls, email). No names, numbers, versions or
+  error messages, and cheap to ask every minute. Steps to set up a free
+  monitor, and what each alert means, are in docs/OPERATIONS.md under
+  "If the app is down".
+- **The model can no longer hold an alert back.** The line in the alert
+  saying what to check was waiting on the model with no time limit. A
+  model service that took the connection and then said nothing held the
+  alert text back indefinitely. It now gets 6 seconds
+  (`CYBERLOGIX_AI_TIMEOUT_SECONDS`), then the alert goes out with the
+  plain line. Every other outgoing call already had a time limit; the
+  list is in docs/OPERATIONS.md.
+- **No model name in the code.** `CYBERLOGIX_GEMINI_MODEL` has no
+  default now. Set it to the model's name to turn the written lines on;
+  unset, every message uses its template, as with no key.
+- **The console opens fast.** Pages, scripts, stylesheets and JSON are
+  compressed, and the files a page names carry a version so the browser
+  keeps them. First open: 388 KB down to 109 KB, 8.2 s down to 2.9 s on
+  a slow phone connection. Opening it again: 0.6 KB. An open console
+  fetches the cards that rarely change every fifth poll, so it sends 8
+  requests every 20 seconds instead of 28. Numbers in docs/PERFORMANCE.md.
+
 ## 3.17.0 — 2026-11-17
 
 The first five minutes, for a restaurant owner.

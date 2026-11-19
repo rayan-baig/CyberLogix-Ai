@@ -326,6 +326,7 @@ def send_sms(
         # Billed per segment, so counted per segment. Counting messages
         # is what hid a 3x overspend on the largest delivery line.
         record(tenant_id, "sms_segments", parts)
+        _count("sms", True)
         logger.info("SMS delivered to %s (sid=%s).", number_tail(to), message.sid)
         return {
             "channel": "sms",
@@ -343,8 +344,29 @@ def send_sms(
     except Exception as exc:  # noqa: BLE001 - a send failure must not kill the breach path
         logger.error("SMS to %s failed (%s).", number_tail(to), _redact(str(exc)))
         release(tenant_id, "sms")
+        _count("sms", False, exc)
         _provider_fault("notifications.send_sms", exc)
         return _undelivered("sms", to, "send_failed", f"Twilio rejected the send: {exc}")
+
+
+# Twilio's codes for "this one number cannot take it": not a valid number,
+# not reachable, opted out, a landline for a text. The business fixes its
+# roster; nothing is wrong with Twilio, so the alarm-path watch
+# (watchdog.py) does not count them as the channel failing.
+NUMBER_PROBLEM_CODES = frozenset({
+    21211, 21214, 21217, 21401, 21407, 21610, 21612, 21614, 13223, 13224,
+})
+
+
+def _count(channel: str, ok: bool, exc: Optional[Exception] = None) -> None:
+    """Tell the alarm-path watch how a real send went. Never raises."""
+    try:
+        import watchdog
+
+        counts = getattr(exc, "code", None) not in NUMBER_PROBLEM_CODES
+        watchdog.note_delivery(channel, ok, counts=counts)
+    except Exception:  # noqa: BLE001 - delivery must never raise
+        logger.exception("Could not count the %s delivery.", channel)
 
 
 def _provider_fault(source: str, exc: Exception) -> None:
@@ -498,6 +520,7 @@ def place_voice_call(
             twiml=build_twiml(spoken_text, action_url),
         )
         # voice_calls was counted by reserve(), before the call.
+        _count("voice", True)
         logger.info("Voice call placed to %s (sid=%s).", number_tail(to), call.sid)
         return {
             "channel": "voice",
@@ -510,6 +533,7 @@ def place_voice_call(
     except Exception as exc:  # noqa: BLE001 - a dial failure must not kill escalation
         logger.error("Voice call to %s failed (%s).", number_tail(to), _redact(str(exc)))
         release(tenant_id, "voice")
+        _count("voice", False, exc)
         _provider_fault("notifications.place_voice_call", exc)
         return _undelivered(
             "voice", to, "call_failed", f"Twilio rejected the call: {exc}"

@@ -350,6 +350,7 @@ function signOutLocally() {
   clearInterval(state.simTimer);
   state.simTimer = null;
   state.pollChain = (state.pollChain || 0) + 1;
+  state.slowKept = null;
   state.token = null;
   state.user = null;
   state.data = null;
@@ -469,8 +470,10 @@ function startPolling() {
   // A new chain retires the old one, even if the old one has a request
   // in flight: switching business must not leave two chains polling.
   const chain = (state.pollChain = (state.pollChain || 0) + 1);
+  // A new chain (a sign-in, another business) starts from a full load.
+  state.slowKept = null;
   const tick = () => {
-    refresh().then(markFresh).catch(markStale).finally(() => {
+    refresh({ poll: true }).then(markFresh).catch(markStale).finally(() => {
       if (chain !== state.pollChain || !state.token) return;
       state.timer = setTimeout(tick, nextPollDelay());
     });
@@ -669,7 +672,22 @@ function panelUnavailable(key, err) {
       : message.slice(0, 120))}</span></div>`;
 }
 
-async function refresh() {
+/* Panels whose contents change when somebody changes them (bills, the
+   team, the roster, the contract), not minute to minute. A timed poll
+   fetches them only every SLOW_EVERY polls and paints the copy it kept
+   in between; anything a person does here calls refresh() with no
+   argument, which fetches everything at once. Temperatures, problems,
+   tasks and the escalation preview are fetched on every poll. Without
+   this every open console sent 28 requests every 20 seconds. */
+const SLOW_PANELS = new Set([
+  "costs", "audit", "roster", "rotations", "team", "businesses", "hooks",
+  "invoices", "contract", "pipeline", "forecast", "claims", "peopleAlerts",
+  "referrals", "omni", "proofReports", "staff", "peopleCal", "leavers",
+  "leaving",
+]);
+const SLOW_EVERY = 5;
+
+async function refresh(opts = {}) {
   // The one call the page cannot do without. If this fails the session is
   // genuinely broken and the caller's error handling should see it.
   let overview, health;
@@ -722,14 +740,27 @@ async function refresh() {
     leavers: () => api("/api/people/departures"),
     leaving: () => api("/api/leaving"),
   };
-  const keys = Object.keys(wanted);
+  const kept = state.slowKept;
+  const light = Boolean(opts.poll && kept && kept.polls < SLOW_EVERY - 1);
+  const keys = Object.keys(wanted).filter((k) => !(light && SLOW_PANELS.has(k)));
   const settled = await Promise.allSettled(keys.map((k) => wanted[k]()));
-  const got = {};
-  const failed = {};
+  const got = light ? Object.assign({}, kept.got) : {};
+  const failed = light ? Object.assign({}, kept.failed) : {};
   keys.forEach((k, i) => {
     if (settled[i].status === "fulfilled") got[k] = settled[i].value;
     else failed[k] = settled[i].reason;
   });
+  if (light) {
+    kept.polls += 1;
+  } else {
+    const slowGot = {};
+    const slowFailed = {};
+    SLOW_PANELS.forEach((k) => {
+      if (k in got) slowGot[k] = got[k];
+      if (k in failed) slowFailed[k] = failed[k];
+    });
+    state.slowKept = { got: slowGot, failed: slowFailed, polls: 0 };
+  }
 
   state.shortcutCatalogue = got.catalogue || state.shortcutCatalogue;
   state.data = overview;
