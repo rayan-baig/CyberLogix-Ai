@@ -5,6 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const fs = require("node:fs");
 
 const core = (f) => path.join(__dirname, "..", "..", "static", "pilot", f);
 // The core files find each other on the global object, as in a browser.
@@ -521,4 +522,120 @@ test("the window never writes the word null: every replaceChildren goes through 
   const calls = src.match(/\.replaceChildren\(/g) || [];
   assert.equal(calls.length, 1, "only put() may call replaceChildren directly");
   assert.match(src, /function put\(node, \.\.\.kids\) \{\n\s+node\.replaceChildren\(\.\.\.kids\.filter\(/);
+});
+
+// ---------------------------------------------------------------- the moving robot (core 1.1.0)
+
+const Motion = require(core("pilot-motion.js"));
+const webGeo = (extra) => ({ pos: { x: 0, y: 0 }, home: { x: 0, y: 0 }, floor: 0, left: -1100, right: 40, top: -560, u: 88,
+  profile: "web", sky: 240, poses: ["standing", "wave", "walk1", "run1", "run2", "fly", "climb1", "flip"], ...(extra || {}) });
+const seeded = (seed) => { let s = seed; return () => ((s = (s * 16807) % 2147483647) / 2147483647); };
+
+test("motion: a pose without a picture falls back, in the end to the resting robot", () => {
+  assert.equal(Motion.resolvePose("walk2", ["standing", "walk1"]), "standing");
+  assert.equal(Motion.resolvePose("climb2", ["climb1"]), "climb1");
+  assert.equal(Motion.resolvePose("throw", ["wave"]), "wave");
+  assert.equal(Motion.resolvePose("kick", ["run2"]), "run2");
+  assert.equal(Motion.resolvePose("tennis", ["standing"]), "standing");
+  assert.equal(Motion.resolvePose("fly", []), "rest");
+  assert.deepEqual(Motion.posesFromFiles(["wave.png", "wave.webp", "kick.png", "readme.txt", "dance.webp"]), { wave: "wave.webp", kick: "kick.png" });
+  assert.deepEqual(Motion.posesFromFiles(["arms-crossed.webp", "land.png"]), { "arms-crossed": "arms-crossed.webp", land: "land.png" });
+  for (const name of ["throw", "tennis", "kick", "celebrate", "slide", "point", "power", "land", "love", "arms-crossed"]) assert.ok(Motion.POSES.includes(name), name);
+});
+
+test("motion: the web robot keeps still under reduce motion, whatever is chosen", () => {
+  const r = seeded(9);
+  for (const energy of ["low", "normal", "playful"]) {
+    for (const calm of [null, false]) {
+      for (let i = 0; i < 100; i += 1) assert.equal(Motion.pick({ profile: "web", reducedMotion: true, energy, calm }, r), null);
+    }
+  }
+  assert.equal(Motion.stillReason({ profile: "web", reducedMotion: true, calm: false }), "reduced-motion");
+  assert.equal(Motion.pick({ profile: "web", chatOpen: true }, r), null);
+  // The actor isn't even started: live() returns null under reduce motion.
+  const saved = globalThis.matchMedia;
+  globalThis.matchMedia = () => ({ matches: true });
+  const Actor = require(core("pilot-actor.js"));
+  assert.equal(Actor.live({ launcher: null }), null);
+  globalThis.matchMedia = saved;
+});
+
+test("motion: on the web, no climbing, flights, soccer or tennis unless Playful, and every move ends at home", () => {
+  const seen = (energy) => { const r = seeded(21); const s = new Set(); for (let i = 0; i < 3000; i += 1) s.add(Motion.pick({ profile: "web", energy }, r)); return s; };
+  const normal = seen("normal");
+  assert.ok(!normal.has("climb") && !normal.has("fly") && !normal.has("run"), [...normal].join());
+  // The calmer new moves by default; the rest only on Playful.
+  assert.ok(normal.has("celebrate") && normal.has("love") && normal.has("point"), [...normal].join());
+  assert.ok(!normal.has("slide") && !normal.has("power"), [...normal].join());
+  const playful = seen("playful");
+  assert.ok(playful.has("climb") && playful.has("fly") && playful.has("sport") && playful.has("slide") && playful.has("power"));
+  for (let i = 1; i <= 20; i += 1) assert.equal(Motion.plan("sport", webGeo({ energy: "normal", random: seeded(i) })).name, "football");
+  for (const name of ["stroll", "peek", "wave", "backflip", "spin", "bounce", "football", "soccer", "tennis", "fly", "climb"]) {
+    const p = Motion.plan(name, webGeo({ energy: "playful", random: seeded(3) }));
+    assert.ok(p, name);
+    assert.ok(Math.abs(p.end.x) < 2 && Math.abs(p.end.y) < 2, `${name} ends at ${JSON.stringify(p.end)}`);
+    // Props stay in the page's bottom area.
+    for (const pr of p.props) for (const f of pr.frames) if (pr.on === "stage") assert.ok(f.y >= -240 - 88, `${name} ${pr.kind} y ${f.y}`);
+  }
+});
+
+// ---------------------------------------------------------------- staying out of the way (core 1.1.0)
+
+function fakeEl(box, extra) {
+  const e = { box, hiddenAttr: false, inside: null, ...(extra || {}) };
+  e.getClientRects = () => (box ? [box] : []);
+  e.getBoundingClientRect = () => box || { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  e.closest = (sel) => (sel === "[hidden]" && e.hiddenAttr ? e : null);
+  return e;
+}
+const fakeDoc = (map) => ({ querySelectorAll: (sel) => map[sel] || [] });
+const box = (left, top, w, h) => ({ left, top, right: left + w, bottom: top + h, width: w, height: h });
+const win = { getComputedStyle: (el) => el.style || { visibility: "visible", display: "block", opacity: "1" } };
+
+test("placement: a page's open pop-up makes the robot step back, but not Pilot's own window or a closed one", () => {
+  const own = { contains: (el) => el.own === true };
+  const open = fakeEl(box(100, 100, 400, 300));
+  const closed = fakeEl(null);
+  const hiddenOne = fakeEl(box(0, 0, 10, 10), { hiddenAttr: true });
+  const invisible = fakeEl(box(0, 0, 10, 10), { style: { visibility: "hidden", display: "block", opacity: "1" } });
+  const pilotsOwn = fakeEl(box(0, 0, 400, 600), { own: true });
+  assert.equal(Mascot.modalOpen(fakeDoc({ [Mascot.MODALS]: [open] }), own, win), true);
+  assert.equal(Mascot.modalOpen(fakeDoc({ [Mascot.MODALS]: [closed, hiddenOne, invisible] }), own, win), false);
+  assert.equal(Mascot.modalOpen(fakeDoc({ [Mascot.MODALS]: [pilotsOwn] }), own, win), false);
+  for (const sel of ["dialog[open]", '[aria-modal="true"]', '[role="dialog"]']) assert.ok(Mascot.MODALS.includes(sel), sel);
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.match(css, /\.pilot-root\.pilot-yield \{[^}]*visibility: hidden;[^}]*pointer-events: none;/);
+});
+
+test("placement: the robot keeps clear of things to avoid and of another helper, else tucks away", () => {
+  const view = { width: 390, height: 800 };
+  const size = { width: 56, height: 54 };
+  // Nothing in the way: its own corner.
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, blocks: [] }), { corner: "br", peek: false });
+  // Another helper (OmniArmor's Armo) in the bottom right: the robot moves to the bottom left.
+  const armo = box(300, 690, 80, 100);
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, blocks: [armo] }), { corner: "bl", peek: false });
+  // A full-width bar along the bottom: a top corner.
+  const bar = box(0, 700, 390, 100);
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, blocks: [bar] }), { corner: "tr", peek: false });
+  // Everything taken: it stays in its corner, tucked half away until tapped.
+  const all = [bar, box(0, 0, 390, 100)];
+  assert.deepEqual(Mascot.choosePlace({ corner: "bl", view, size, gap: 12, blocks: all }), { corner: "bl", peek: true });
+  assert.deepEqual(Mascot.cornerOrder("tl"), ["tl", "tr", "bl", "br"]);
+  // Only visible elements, outside Pilot, count.
+  const doc = fakeDoc({ ".armo": [fakeEl(box(1, 2, 30, 40)), fakeEl(null)], ".bad[": undefined });
+  doc.querySelectorAll = ((orig) => (sel) => { if (sel === ".bad[") throw new Error("bad selector"); return orig(sel); })(doc.querySelectorAll);
+  assert.deepEqual(Mascot.boxesOf(doc, [".armo", ".bad["], null, win), [{ left: 1, top: 2, right: 31, bottom: 42 }]);
+});
+
+test("placement: smaller on phones, a gutter pages can reserve, and this app's banners kept clear", () => {
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.match(css, /@media \(max-width: 720px\) \{\s*\.pilot-root \{ --pilot-size: 56px;/);
+  assert.match(css, /:root\.pilot-on \{ --pilot-gutter:/);
+  assert.match(css, /\.pilot-gutter \{ padding-bottom: var\(--pilot-gutter/);
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.ok(loader.includes("config.avoid") && loader.includes("config.yieldTo"));
+  // This app's own list (the MTRX site checks its Genesis bars here).
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "static", "pilot-cyberlogix.js"), "utf8");
+  assert.ok(app.includes("avoid: ["));
 });

@@ -1,4 +1,4 @@
-// Pilot core 1.0.1 · pilot-media.js
+// Pilot core 1.1.0 · pilot-media.js
 // Making pictures and videos with the user's own image or video key, from
 // the browser. Only offered once the user has set such a key in Pilot
 // settings; without one, Pilot has no image or video abilities at all.
@@ -18,7 +18,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const PROMPT_MOST = 1000;
   const E = () => root.PilotProviders;
 

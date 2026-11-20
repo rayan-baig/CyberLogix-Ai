@@ -49,10 +49,17 @@ from invoicing import COMPANY, PAYMENT_TERMS_DAYS, issuer_block
 from pricing import (CANCELLATION_RULE, YEARLY_MONTHS_CHARGED,
                      YEARLY_MONTHS_COVERED, YEARLY_RENEWAL_REMINDER_DAYS)
 from usage import KEEP_DAYS as USAGE_KEEP_DAYS
+from domain import (
+    ALERT_AFTER_MINUTES_CLINICAL_FRIDGE,
+    ALERT_AFTER_MINUTES_FOOD_FREEZER,
+    ALERT_AFTER_MINUTES_FOOD_FRIDGE,
+    ALERT_AT_ONCE_DEGREES_F,
+)
 from store import (
     DISPATCH_SLA_SECONDS,
     MAIL_BODY_KEEP_DAYS,
-    MAX_READINGS_PER_SENSOR,
+    KEEP_DETAIL_DAYS,
+    KEEP_READINGS_MONTHS,
     SENSOR_OFFLINE_AFTER_MINUTES,
     STORE,
     Tenant,
@@ -90,7 +97,11 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # 2.8 describes Pilot, the assistant that runs on the person's own AI key
 # from their browser (what it sends, to whom, and that we never see it),
 # and the AI key a business may save for its alert wording (alertkey.py).
-TERMS_VERSION = "2.8"
+# 2.9 says when an alert is sent: once a unit has stayed out of range for
+# its wait, or at once when it is far past its limit, and that an alert
+# nobody answered closes itself when the unit is back to normal; and that
+# readings are now kept for 13 months (full detail for the first 30 days).
+TERMS_VERSION = "2.9"
 EFFECTIVE_DATE = "2026-11-20"
 
 # The cap on what we can owe. Without one, a single claim about a lost
@@ -162,8 +173,17 @@ requires you to run yourself.
 
 ## 3. What we promise
 
-* We try to send an alert within {DISPATCH_SLA_SECONDS} seconds of a
-  reading that breaks one of your limits.
+* A unit that stays out of its limits is alerted on. "Stays" means for
+  its wait: {ALERT_AFTER_MINUTES_FOOD_FRIDGE:g} minutes for a food fridge,
+  {ALERT_AFTER_MINUTES_FOOD_FREEZER:g} for a food freezer and
+  {ALERT_AFTER_MINUTES_CLINICAL_FRIDGE:g} for a vaccine or lab fridge,
+  unless you set your own for that unit. A reading
+  {ALERT_AT_ONCE_DEGREES_F:g}°F or more past a limit is alerted on at
+  once, without waiting. A door opened for a minute is not alerted on.
+* Once a unit is to be alerted on, we try to send the alert within
+  {DISPATCH_SLA_SECONDS} seconds.
+* An alert nobody answered closes on its own if the unit comes back to
+  normal, and nobody is phoned about it.
 * If nobody acknowledges it, we phone after
   {VOICE_ESCALATION_GRACE_MINUTES:g} minutes.
 * If a sensor goes quiet for {SENSOR_OFFLINE_AFTER_MINUTES} minutes, we
@@ -289,7 +309,7 @@ Ask for it within thirty days of that month.
 ## What we do not promise
 
 We don't promise a person will read the alert. We promise to try to send
-it within {DISPATCH_SLA_SECONDS} seconds. Phone companies drop texts and
+it within {DISPATCH_SLA_SECONDS} seconds of the unit's wait running out. Phone companies drop texts and
 people silence phones, which is why an alert nobody answers turns into a
 phone call after {VOICE_ESCALATION_GRACE_MINUTES:g} minutes.
 """
@@ -396,11 +416,12 @@ back to one business is hidden. Once mixed in, it can't be pulled out.
 
 ## How long we keep things
 
-**Readings: only the newest.** We keep the latest
-{MAX_READINGS_PER_SENSOR} readings for each sensor and delete older ones.
-With a reading every five minutes, that is under two days. If you need a
-longer history, download it regularly. Every report says how far back it
-can see.
+**Readings: {KEEP_READINGS_MONTHS} months.** We keep every reading for
+{KEEP_DETAIL_DAYS} days. After that we keep, for each sensor and each
+hour, the lowest, highest and average reading and how many were out of
+range, until it is {KEEP_READINGS_MONTHS} months old; then it is deleted.
+The readings around an alert are kept with the alert, in full, for as
+long as the alert is. Every report says how far back it can see.
 
 **Alerts, bills and the "who did what" record** are kept while your
 account is open, so you can show an inspector or insurer what happened.

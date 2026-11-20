@@ -1,4 +1,4 @@
-// Pilot core 1.0.1 · pilot-render.js
+// Pilot core 1.1.0 · pilot-render.js
 // A tiny, safe markdown renderer for Pilot's answers.
 //
 // An AI answer is untrusted text: it can contain anything, including words
@@ -13,7 +13,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const MAX = 40000;
 
   // Inline marks in one line of text: `code`, **bold**, *italic* or _italic_,

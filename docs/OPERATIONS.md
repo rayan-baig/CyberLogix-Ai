@@ -50,7 +50,9 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_BILLING_EMAIL` | — | Billing contact on invoices |
 | `CYBERLOGIX_BACKUP_KEEP` | `14` | Snapshots kept, oldest deleted first |
 | `CYBERLOGIX_BACKUP_MIN_FREE_MB` | `100` | A snapshot that would leave less free on its disk is refused and reported |
-| `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Readings kept per sensor, in memory and on disk; see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
+| `CYBERLOGIX_KEEP_DETAIL_DAYS` | `30` | Days every reading is kept in full; older ones become hourly lows, highs and averages |
+| `CYBERLOGIX_KEEP_READINGS_MONTHS` | `13` | Months readings are kept at all (as hourly rows after the full-detail days); see [YOUR-DATA.md](YOUR-DATA.md) |
+| `CYBERLOGIX_READINGS_PER_SENSOR` | `500` | Newest readings per sensor held in memory for alarms, the forecast and the cards (all of them stay on disk); see [LOAD-TEST.md](LOAD-TEST.md) for what it costs |
 | `CYBERLOGIX_OPERATOR_EMAIL` | — | Your own email. The daily digest goes here, and so does "alerts have stopped" (see [If the app is down](#if-the-app-is-down)) |
 | `CYBERLOGIX_OPERATOR_PHONE` | — | Your own mobile, in E.164 (`+1...`). Gets a text when alerts stop and when they are fixed, so you hear even if email is down |
 | `CYBERLOGIX_ALARM_WATCH_SECONDS` | `60` | How often the alarm-path watch looks. `0` turns it off |

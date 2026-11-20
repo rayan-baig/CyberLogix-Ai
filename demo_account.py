@@ -210,7 +210,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     opened = first + timedelta(minutes=EVERY_MINUTES * (handled_at + 1))
     incident = STORE.open_incident(
         tenant_id=tid, sensor=sensor, temperature_fahrenheit=41.0,
-        breach_details="Thermal high threshold breached: 41.0°F > 32.0°F limit.",
+        breach_details="Too warm: 41°F (limit 32°F).",
         sms_text=f"{sensor.location_name} at {COMPANY} is 41°F, 9°F above the limit.",
         sms_dispatch_source="fallback_template", opened_at=opened)
     who = f"{OPERATOR[0]} <{OPERATOR[1]}>"
@@ -229,7 +229,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     sensor = sensors[STILL_OPEN]
     STORE.open_incident(
         tenant_id=tid, sensor=sensor, temperature_fahrenheit=46.5,
-        breach_details="Thermal high threshold breached: 46.5°F > 41.0°F limit.",
+        breach_details="Too warm: 46.5°F (limit 41°F).",
         sms_text=f"{sensor.location_name} at {COMPANY} is 46.5°F, 5.5°F above the limit.",
         sms_dispatch_source="fallback_template",
         opened_at=now - timedelta(minutes=EVERY_MINUTES * 2))

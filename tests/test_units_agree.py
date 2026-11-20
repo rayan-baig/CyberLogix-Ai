@@ -212,30 +212,28 @@ def test_the_per_sensor_attestation_verifies_for_this_customer(api, cellar):
 
 
 def test_the_report_declares_the_window_it_can_answer_for(
-    api, tenant_factory, sensor_factory, short_buffer
+    api, tenant_factory, sensor_factory, monkeypatch
 ):
-    """Readings roll off. A 30-day report answered from 41 hours of data
-    is not wrong to exist — it is wrong to say nothing about it.
-
-    An inspector reading "500 readings, 100% compliant over 30 days"
-    reasonably believes that is the whole period, and nobody looking at
-    it could tell the first 28 days had been deleted.
-    """
-    MAX_READINGS_PER_SENSOR = short_buffer
+    """A report asked about a period longer than we keep readings for is
+    not wrong to exist: it is wrong to say nothing about it. (Until 3.21.0
+    that was any period over about two days; now it is 13 months, so this
+    shortens the months kept to see it.)"""
+    monkeypatch.setattr(store, "KEEP_READINGS_MONTHS", 1)
 
     headers, _ = tenant_factory(plan="enterprise")
     sensor_factory(headers, "FRZ-1", "cryostorage")
-    for _ in range(MAX_READINGS_PER_SENSOR + 20):
+    for _ in range(store.MAX_READINGS_PER_SENSOR + 20):
         api.post("/api/sensor-pulse", headers=headers,
                  json={"sensor_id": "FRZ-1", "temperature_fahrenheit": -200.0})
 
-    report = api.get("/api/autopilot/compliance?days=30", headers=headers).json()
+    report = api.get("/api/autopilot/compliance?days=60", headers=headers).json()
     coverage = report["retention"]
 
     assert coverage["covers_the_whole_period"] is False
-    assert coverage["readings_retained_per_sensor"] == MAX_READINGS_PER_SENSOR
-    assert "FRZ-1" in coverage["sensors_at_capacity"]
+    assert coverage["keeps_hourly_months"] == 1
     assert "does not cover the whole period" in coverage["caveat"]
+    # And every reading in the period is counted, not only those in memory.
+    assert report["per_sensor"][0]["readings_logged"] == store.MAX_READINGS_PER_SENSOR + 20
 
 
 def test_a_period_within_the_window_is_reported_as_complete(
@@ -253,10 +251,11 @@ def test_a_period_within_the_window_is_reported_as_complete(
 
 
 def test_the_csv_carries_the_warning_on_its_face(
-    api, tenant_factory, sensor_factory, short_buffer
+    api, tenant_factory, sensor_factory, short_buffer, monkeypatch
 ):
     """Somebody opening this in Excel must see it without going to ask."""
     MAX_READINGS_PER_SENSOR = short_buffer
+    monkeypatch.setattr(store, "KEEP_READINGS_MONTHS", 1)
 
     headers, _ = tenant_factory(plan="enterprise")
     sensor_factory(headers, "FRZ-1", "cryostorage")
@@ -264,6 +263,6 @@ def test_the_csv_carries_the_warning_on_its_face(
         api.post("/api/sensor-pulse", headers=headers,
                  json={"sensor_id": "FRZ-1", "temperature_fahrenheit": -200.0})
 
-    text = api.get("/api/autopilot/compliance.csv?days=30", headers=headers).text
+    text = api.get("/api/autopilot/compliance.csv?days=60", headers=headers).text
 
     assert "INCOMPLETE RECORD" in text

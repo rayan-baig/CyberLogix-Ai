@@ -37,7 +37,7 @@
       </span>
       <span class="brand-name">CyberLogix AI</span>
     </div>
-    <p class="gate-sub">Enterprise Operations Portal</p>
+    <p class="gate-sub">Sign in to watch your fridges and freezers</p>
 
     <form id="signin-form">
       <div class="field">
@@ -98,7 +98,7 @@
 
     <div class="gate-switch">
       <span id="switch-text">No account yet?</span>
-      <button class="linkish" id="switch-btn" type="button">Onboard a company</button>
+      <button class="linkish" id="switch-btn" type="button">Set up a new business</button>
       <span class="u-c-border-lit"> · </span>
       <button class="linkish" id="pricing-btn" type="button">Pricing</button>
     </div>
@@ -549,7 +549,7 @@
             <span class="card-title">Use a sensor you already own</span>
             <span class="mod-chip c-telemetry">3rd-party gateway</span>
           </div>
-          <p class="card-plain">Paste one message from any brand of sensor and we will read it. You do not have to buy ours.</p>
+          <p class="card-plain">Paste one message from any brand of sensor and we will read it.</p>
           <p class="card-note u-m-0-0-12">
             Push a payload as an off-the-shelf Elitech, Dickson or Monnit unit
             would, through the real ingest endpoint.
@@ -735,7 +735,7 @@
             </div>
             <div class="field">
               <label for="add-sn">Third-party device serial <span class="u-c-muted u-fw-400">(optional)</span></label>
-              <input id="add-sn" placeholder="ELITECH-00:1B:44:11:3A:B7">
+              <input id="add-sn" placeholder="e.g. 00:1B:44:11:3A:B7">
             </div>
             <button class="btn btn-primary" type="submit">Add it</button>
           </form>
@@ -1075,6 +1075,12 @@
             <p class="card-plain" id="leave-not-owner">Only an owner can download or delete everything.</p>
           </section>
       </aside>
+    </div>
+    <!-- On a phone, a new small account sees the cards that get it going;
+         the rest wait behind this, and search and the tabs still find
+         every one of them (console.js, applyFinder). -->
+    <div class="more-cards" id="more-cards" hidden>
+      <button class="btn" id="more-cards-btn" type="button">More</button>
     </div>
   </main>
 </div>

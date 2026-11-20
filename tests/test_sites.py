@@ -165,7 +165,7 @@ def test_a_european_fleet_reports_in_celsius(
                     json={"sensor_id": "V-1", "temperature_celsius": 40.0}).json()
     # 40C is 104F, which is over the 90F engine-bay limit.
     assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
-    assert "104.0°F" in body["breach_details"]
+    assert "104°F" in body["breach_details"]
 
 
 def test_display_switches_to_celsius_without_rewriting_history(

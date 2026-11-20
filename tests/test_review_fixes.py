@@ -62,7 +62,10 @@ def test_a_walk_in_cooler_at_37f_does_not_alarm(api):
     _add(api, owner, kind="fridge")
 
     assert _pulse(api, owner, "WALKIN-1", 37.0)["status"] == "nominal"
-    assert _pulse(api, owner, "WALKIN-1", 42.0)["status"].startswith("CRITICAL")
+    # Over the limit waits to see if it stays over (a door, a delivery);
+    # far over it alerts at once.
+    assert _pulse(api, owner, "WALKIN-1", 42.0)["status"] == "WATCHING"
+    assert _pulse(api, owner, "WALKIN-1", 57.0)["status"].startswith("CRITICAL")
 
 
 def test_a_freezer_gets_a_freezers_limit(api):
@@ -71,7 +74,8 @@ def test_a_freezer_gets_a_freezers_limit(api):
 
     assert made["sensor"]["danger_above"] == 10.0
     assert _pulse(api, owner, "FRZ-1", 2.0)["status"] == "nominal"
-    assert _pulse(api, owner, "FRZ-1", 15.0)["status"].startswith("CRITICAL")
+    assert _pulse(api, owner, "FRZ-1", 15.0)["status"] == "WATCHING"
+    assert _pulse(api, owner, "FRZ-1", 26.0)["status"].startswith("CRITICAL")
 
 
 def test_with_no_answer_a_restaurant_unit_gets_a_fridges_limit(api):

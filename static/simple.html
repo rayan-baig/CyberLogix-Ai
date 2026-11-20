@@ -24,13 +24,36 @@
     <a class="btn btn-sm" href="/console?view=full">All the detail</a>
   </div>
 
-  <!-- Somebody opening this for the first time has been handed a link and
+  <!-- The answer first, for everybody, every time: is there anything I
+       have to do. An alert nobody has answered is the first thing on the
+       page, with the two buttons that deal with it, above any
+       explanation. "Everything is fine" while an alert was open and a
+       call had gone out was the worst thing this page could say. -->
+  <div id="verdict" class="verdict watch">
+    <h1>Checking&hellip;</h1>
+    <p>Reading what your fridges and freezers said last.</p>
+  </div>
+
+  <section id="needs-wrap" class="needs" hidden>
+    <h2 class="plain needs-h">Needs you now</h2>
+    <div id="needs"></div>
+  </section>
+
+  <div id="todo-wrap" hidden>
+    <h2 class="plain">What needs you</h2>
+    <div id="todo"></div>
+  </div>
+
+  <h2 class="plain">Your fridges and freezers</h2>
+  <div id="things"><p class="sub">Loading&hellip;</p></div>
+
+  <!-- Below the answer, folded for anyone who has read it. Somebody opening this for the first time has been handed a link and
        no explanation. Four sentences, no jargon, before any number. It
        stays on the page rather than being a one-time tour, because the
        person who needs it is not the person who set the account up and
        may only open this once a month. -->
-  <section class="intro">
-    <h2 class="intro-h">What this is</h2>
+  <details class="intro" id="intro">
+    <summary class="intro-h">What this is, and how it works</summary>
     <p class="intro-lede">CyberLogix watches the fridges and freezers a
        business depends on, and wakes somebody up when one starts to
        fail.</p>
@@ -45,19 +68,20 @@
       </li>
       <li>
         <b>We watch the number.</b>
-        Every reading is checked against the range that food has to stay
-        in. Not just <em>too warm now</em> &mdash; also <em>warming up
-        faster than it should be</em>, which is the hour before it is a
-        disaster.
+        <span id="how-watch">Every reading is checked against the range that
+        food has to stay in. A door opened for a minute is not an alarm: a
+        fridge has to stay too warm for a while, or get far too warm,
+        before anybody is woken.</span>
       </li>
       <li id="how-alert">
         <b id="how-alert-head">We text the people on your list.</b>
-        <span id="how-alert-body">Everyone on call gets a text the moment
-        something is wrong, saying which fridge and how warm.</span>
+        <span id="how-alert-body">Everyone on call gets a text when a fridge
+        stays too warm, saying which fridge and how warm.</span>
       </li>
       <li>
         <b>We keep the receipts.</b>
-        Every reading is saved and sealed. When a health inspector asks
+        Every reading is saved and sealed, and kept for 13 months. When a
+        health inspector asks
         what the walk-in was doing last March, the answer is a record you
         can print, not a promise. If food spoils anyway, that record is
         what an insurer needs before they pay.
@@ -68,20 +92,7 @@
        of dollars. It fails quietly, overnight, on a weekend, and the
        first anybody knows is the smell on Monday. This is the thing that
        wakes somebody up on Saturday instead.</p>
-  </section>
-
-  <div id="verdict" class="verdict watch">
-    <h1>Checking&hellip;</h1>
-    <p>Reading what your fridges and freezers said last.</p>
-  </div>
-
-  <div id="todo-wrap" hidden>
-    <h2 class="plain">What needs you</h2>
-    <div id="todo"></div>
-  </div>
-
-  <h2 class="plain">Your fridges and freezers</h2>
-  <div id="things"><p class="sub">Loading&hellip;</p></div>
+  </details>
 
   <div class="foot">
     <a class="btn btn-sm" href="/console?view=full">Open the full console</a>

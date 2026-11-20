@@ -33,6 +33,7 @@ from store import (
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
+    _parse,
     display_temperature,
     iso,
     utc_now,
@@ -46,51 +47,45 @@ router = APIRouter(prefix="/api/autopilot", tags=["Autonomous Compliance Clerk"]
 
 
 def retention_coverage(tenant, since) -> Dict[str, Any]:
-    """Whether the retained readings actually cover the period asked for.
+    """Whether the readings we keep actually cover the period asked for.
 
-    Readings are a bounded ring buffer: the oldest are deleted once a
-    sensor passes MAX_READINGS_PER_SENSOR. At the default of 500 and a
-    five-minute pulse that is about 41 hours, so "the last 30 days"
-    was being answered from under two days of data — and the report said
-    nothing at all about the difference.
-
-    A compliance document that silently under-reports is worse than no
-    document. An inspector reading "500 readings, 100% compliant over 30
-    days" reasonably believes that is the whole period; nobody reading it
-    can tell that the first 28 days were deleted. So every artifact that
-    counts readings now carries this, and says plainly when the window
-    it was asked about is longer than the window it can answer for.
+    Every reading is kept in full for KEEP_DETAIL_DAYS, then as an hourly
+    low, high and average for KEEP_READINGS_MONTHS (store.py). A period
+    that starts further back than that is answered from what is left, and
+    every artifact that counts readings says so plainly, because a
+    compliance document that silently under-reports is worse than none.
+    (Until 3.21.0 only the newest 500 readings a sensor were kept, under
+    two days, and "the last 30 days" was answered from that.)
     """
-    from store import MAX_READINGS_PER_SENSOR
+    from store import (KEEP_DETAIL_DAYS, KEEP_READINGS_MONTHS,
+                       MAX_READINGS_PER_SENSOR, history_cutoff)
 
     oldest = None
-    at_capacity = []
     for sensor in STORE.sensors_for(tenant.tenant_id):
-        readings = STORE.readings_for(sensor.sensor_id)
-        if not readings:
-            continue
-        first = readings[0].recorded_at
-        if oldest is None or (first is not None and first < oldest):
+        held = STORE.reading_stats(sensor.sensor_id)["oldest"]
+        first = _parse(held) if held else None
+        if first is not None and (oldest is None or first < oldest):
             oldest = first
-        if len(readings) >= MAX_READINGS_PER_SENSOR:
-            at_capacity.append(sensor.sensor_id)
 
-    complete = not at_capacity or (oldest is not None and oldest <= since)
+    kept_from = history_cutoff()
+    complete = since >= kept_from
     return {
         "readings_retained_per_sensor": MAX_READINGS_PER_SENSOR,
+        "keeps_every_reading_days": KEEP_DETAIL_DAYS,
+        "keeps_hourly_months": KEEP_READINGS_MONTHS,
         "oldest_reading_held": iso(oldest),
         "period_start": iso(since),
         "covers_the_whole_period": complete,
-        "sensors_at_capacity": at_capacity,
+        "sensors_at_capacity": [],
         "caveat": (
             ""
             if complete else
-            f"This does not cover the whole period. {len(at_capacity)} "
-            f"sensor(s) hold the most recent {MAX_READINGS_PER_SENSOR} "
-            "readings only, and older ones have been deleted, so the "
-            f"figures below start at {iso(oldest)} rather than "
-            f"{iso(since)}. Raise CYBERLOGIX_READINGS_PER_SENSOR to keep "
-            "more, or export on a schedule that fits the window retained."
+            f"This does not cover the whole period. We keep readings for "
+            f"{KEEP_READINGS_MONTHS} months (every reading for the last "
+            f"{KEEP_DETAIL_DAYS} days, then hourly lows, highs and averages), "
+            f"so the figures below start at {iso(kept_from)} rather than "
+            f"{iso(since)}. Set CYBERLOGIX_KEEP_READINGS_MONTHS to keep "
+            "more, or download the record on a schedule."
         ),
     }
 
@@ -110,15 +105,13 @@ def _sensor_compliance(sensor, since, unit: str = "F") -> Dict[str, Any]:
     reads as a catastrophe or an ordinary afternoon depending entirely on
     which scale the reader assumes.
     """
-    readings = STORE.readings_for(sensor.sensor_id, since=since)
+    # Every reading in the period, in full and from the hourly rows kept
+    # for older ones, added up without loading them (store.reading_stats).
+    stats = STORE.reading_stats(sensor.sensor_id, since=since)
     profile = INDUSTRY_PROFILES[sensor.industry_vertical]
-    total = len(readings)
-    breaches = sum(1 for r in readings if r.breached)
+    total = stats["count"]
+    breaches = stats["breached"]
     in_band = total - breaches
-
-    temps = [
-        display_temperature(r.temperature_fahrenheit, unit) for r in readings
-    ]
 
     return {
         "sensor_id": sensor.sensor_id,
@@ -128,9 +121,10 @@ def _sensor_compliance(sensor, since, unit: str = "F") -> Dict[str, Any]:
         "readings_in_band": in_band,
         "readings_breached": breaches,
         "compliance_percent": round(in_band / total * 100, 2) if total else None,
-        "min_temperature": min(temps) if temps else None,
-        "max_temperature": max(temps) if temps else None,
-        "mean_temperature": round(sum(temps) / len(temps), 2) if temps else None,
+        "min_temperature": display_temperature(stats["min_f"], unit),
+        "max_temperature": display_temperature(stats["max_f"], unit),
+        "mean_temperature": (round(display_temperature(stats["mean_f"], unit), 2)
+                             if stats["mean_f"] is not None else None),
         # Named on every row, so a figure lifted out of this into a
         # spreadsheet or a report carries its scale with it.
         "temperature_unit": unit,
@@ -618,6 +612,8 @@ def _retry_failed_calls(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[s
         return actions
     for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
         step = incident.voice_retry_due(now)
+        if step and not incident.site_wide and _back_in_range(tenant, incident):
+            continue
         if not step or not STORE.claim_voice_retry(incident, step):
             continue
         outcome = dispatch_voice_call(incident, tenant, hooks_in_background=True)
@@ -633,6 +629,19 @@ def _retry_failed_calls(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[s
             "voice_delivery": outcome["delivery"],
         })
     return actions
+
+
+def _back_in_range(tenant: Tenant, incident) -> bool:
+    """Whether the unit this alert is about reads in range right now."""
+    from store import evaluate_sensor_breach
+
+    sensor = STORE.get_sensor(incident.sensor_id)
+    if sensor is None or sensor.last_temperature is None:
+        return False
+    if sensor.last_seen is not None and sensor.last_seen < incident.opened_at:
+        return False
+    return evaluate_sensor_breach(sensor, sensor.last_temperature,
+                                  tenant.temperature_unit) is None
 
 
 def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
@@ -713,6 +722,17 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
         logger.exception("Site-wide check failed for tenant %s (%s).",
                          tenant.tenant_id, exc)
 
+    # Units that went out of range and have now STAYED out for their wait
+    # (telemetry.alert_due): the text goes now, even if the sensor has
+    # sent nothing since. Guarded: a fault here must not stop the calls.
+    try:
+        from telemetry import alert_held_breaches
+
+        actions.extend(alert_held_breaches(tenant, now))
+    except Exception as exc:  # noqa: BLE001 - the sweep must carry on
+        logger.exception("Held-alert check failed for tenant %s (%s).",
+                         tenant.tenant_id, exc)
+
     actions.extend(_retry_failed_alert_texts(tenant, now, auto_escalate))
 
     from costs import calls_allowed
@@ -728,6 +748,18 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
         # which a door might be shut, and every minute is more warm stock.
         if (not incident.site_wide
                 and incident.minutes_open(now) < VOICE_ESCALATION_GRACE_MINUTES):
+            continue
+        # Never phone about a unit whose newest reading is back in range.
+        # (Clearly back to normal closes the alert on its own, in
+        # telemetry.close_if_back_to_normal; this covers a reading just
+        # inside the line, which neither calls nor closes.)
+        if not incident.site_wide and _back_in_range(tenant, incident):
+            actions.append({
+                "action": "voice_escalation_held",
+                "incident_id": incident.incident_id,
+                "sensor_id": incident.sensor_id,
+                "detail": "Not called: its newest reading is back in range.",
+            })
             continue
 
         if not auto_escalate:

@@ -1,6 +1,6 @@
-/* Pilot core 1.0.1 · pilot.css
+/* Pilot core 1.1.0 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
-   dot, a gentle float and a glow while thinking. Loaded by pilot.js without holding up the page. The chat
+   dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
    An app can change the colours by setting these on .pilot-root in its own
    stylesheet. */
@@ -85,12 +85,34 @@
 @keyframes pilot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes pilot-think { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.18); } }
 
+/* The moving robot's own look is in pilot-actor.css, fetched with it. */
+.pilot-root { --pa-u: var(--pilot-size); }
+.pilot-alive .pilot-robot { visibility: hidden; animation: none; }
+.pilot-launcher .pa-stage { position: absolute; left: 44.7%; top: 100%; width: 0; height: 0; }
+
+/* Out of the way. While a pop-up of the page is open the robot steps back
+   (hidden, and clicks go through). With nowhere free to sit it tucks half
+   away at the edge until tapped. */
+.pilot-root { transition: opacity 0.2s ease, visibility 0s linear 0s; }
+.pilot-root.pilot-yield { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s ease, visibility 0s linear 0.2s; }
+.pilot-peek .pilot-launcher { opacity: 0.8; transform: translateX(58%); transition: transform 0.3s ease, opacity 0.3s ease; }
+.pilot-peek.pilot-at-bl .pilot-launcher, .pilot-peek.pilot-at-tl .pilot-launcher { transform: translateX(-58%); }
+.pilot-peek .pilot-launcher:hover, .pilot-peek .pilot-launcher:focus-visible { opacity: 1; transform: translateX(36%); }
+.pilot-peek.pilot-at-bl .pilot-launcher:hover, .pilot-peek.pilot-at-tl .pilot-launcher:hover { transform: translateX(-36%); }
+
+/* Room for the robot: a page (or an app's own stylesheet) can keep its last
+   lines and buttons clear with padding-bottom: var(--pilot-gutter), or the
+   .pilot-gutter class. Set while Pilot is on the page. */
+:root.pilot-on { --pilot-gutter: calc(88px * 0.97 + 32px); }
+.pilot-gutter { padding-bottom: var(--pilot-gutter, 0px); }
+
 @media (max-width: 720px) {
-  .pilot-root { --pilot-size: 72px; --pilot-gap: 12px; }
+  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; }
+  :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pilot-launcher { transition: none; }
+  .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher { transition: none; }
   .pilot-robot,
   .pilot-thinking .pilot-launcher::before,
   .pilot-dot-thinking { animation: none; }

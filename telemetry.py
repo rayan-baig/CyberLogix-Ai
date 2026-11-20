@@ -1,10 +1,18 @@
 """Universal IoT telemetry ingestion.
 
-Receives sensor pulses, scores each against its vertical's threshold
-profile, and opens a catastrophe incident with a Gemini-drafted SMS when a
-bound is crossed. A sensor that keeps breaching updates its existing open
-incident rather than opening a new one, so a failing freezer produces one
-alert to act on instead of a pager storm.
+Receives sensor pulses, scores each against its unit's limit, and opens
+an alert, with a text to everyone on call, when the unit STAYS out of
+range: over its limit continuously for its wait (20 minutes for a food
+fridge, 30 for a freezer, 10 for a vaccine fridge; each unit can be set
+by its owner), or for a set number of readings in a row where the owner
+asked for that. A reading far past the limit alerts at once, and so does
+a sensor going quiet (automation.py). A door held open for a minute
+alerts nobody. A unit that comes back to normal before anybody answers
+closes its own alert, with a plain note, and nobody is phoned.
+
+A sensor that keeps breaching updates its existing open incident rather
+than opening a new one, so a failing freezer produces one alert to act on
+instead of a pager storm.
 """
 
 from __future__ import annotations
@@ -12,8 +20,8 @@ from __future__ import annotations
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -23,6 +31,13 @@ from models import Finite
 from gemini import safe_generate
 from auth import IngestPrincipal, require_ingest
 from notifications import send_sms
+from domain import (
+    alert_after_minutes,
+    back_to_normal,
+    far_out_of_range,
+    minutes_words,
+    plain_temperature,
+)
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -30,6 +45,7 @@ from store import (
     ImplausibleReading,
     evaluate_sensor_breach,
     display_temperature,
+    iso,
     require_plausible,
     to_fahrenheit,
     utc_now,
@@ -268,6 +284,77 @@ def _routine_defrost(sensor, temperature: float):
     return patterns.defrost_in_progress(history, above)
 
 
+def out_of_range_spell(sensor) -> "tuple[Optional[datetime], int]":
+    """When the current out-of-range spell began, and its readings over.
+
+    Walked back from the newest reading until one is back to normal (in
+    range by BACK_TO_NORMAL_MARGIN_F). A reading a hair inside the line is
+    neither: it does not count as over, and it does not restart the wait,
+    so a unit hovering at its limit is still alerted on.
+    """
+    began: Optional[datetime] = None
+    over = 0
+    for reading in reversed(STORE.readings_for(sensor.sensor_id)):
+        if back_to_normal(sensor, reading.temperature_fahrenheit):
+            break
+        if reading.breached:
+            began = reading.recorded_at
+            over += 1
+    return began, over
+
+
+def alert_due(sensor, temperature: float, now=None) -> Optional[Dict[str, Any]]:
+    """Why this out-of-range unit should be alerted on now, or None to wait.
+
+    In order: the owner set it to alert at once; the reading is far past
+    the limit (ALERT_AT_ONCE_DEGREES_F), which is never a door; it has been
+    out of range continuously for its wait; or, where the owner set one,
+    that many readings in a row have been over.
+    """
+    now = now or utc_now()
+    wait = alert_after_minutes(sensor)
+    began, over = out_of_range_spell(sensor)
+    began = began or now
+    minutes = max(0.0, (now - began).total_seconds() / 60.0)
+    base = {"out_since": began, "minutes_out": round(minutes, 2),
+            "readings_over": over, "wait_minutes": wait}
+    if wait <= 0:
+        return dict(base, because="set to alert on the first reading over")
+    if far_out_of_range(sensor, temperature):
+        return dict(base, because="far past its limit")
+    if minutes >= wait:
+        return dict(base, because=f"out of range for {minutes_words(minutes)}")
+    count = sensor.alert_after_readings
+    if count and over >= count:
+        return dict(base, because=f"{over} readings in a row out of range")
+    return None
+
+
+def _waiting(sensor, temperature: float, unit: str) -> Dict[str, Any]:
+    """What a held, out-of-range unit is waiting for, in plain words."""
+    from domain import ALERT_AT_ONCE_DEGREES_F
+
+    wait = alert_after_minutes(sensor)
+    began, over = out_of_range_spell(sensor)
+    minutes = max(0.0, (utc_now() - (began or utc_now())).total_seconds() / 60.0)
+    above, below = sensor.bounds()
+    if above is not None and temperature > above:
+        far = plain_temperature(above + ALERT_AT_ONCE_DEGREES_F, unit)
+        past = f"goes over {far}"
+    else:
+        far = plain_temperature((below or 0.0) - ALERT_AT_ONCE_DEGREES_F, unit)
+        past = f"drops under {far}"
+    return {
+        "minutes_out": round(minutes, 2),
+        "readings_over": over,
+        "wait_minutes": wait,
+        "alert_at": iso((began or utc_now()) + timedelta(minutes=wait)),
+        "words": (f"Out of range for {minutes_words(minutes)}. We alert if it "
+                  f"stays out for {minutes_words(wait)}, or at once if it "
+                  f"{past}, so a door open for a moment wakes nobody."),
+    }
+
+
 def process_reading(
     tenant: Tenant,
     sensor,
@@ -298,13 +385,17 @@ def process_reading(
             sensor.industry_vertical,
             temperature,
         )
+        recovered = (close_if_back_to_normal(tenant, sensor, temperature)
+                     if back_to_normal(sensor, temperature) else None)
         return {
             "status": "nominal",
             "industry": profile["name"],
             "sensor_id": sensor.sensor_id,
             "current_temperature": display_temperature(temperature, unit),
             "temperature_unit": unit,
-            "message": "Telemetry parameters stable within safe operating bounds.",
+            "message": (recovered or {}).get("note")
+            or "In range.",
+            "back_to_normal": recovered,
         }
 
     # Paused by the owner (retention.py): the reading is kept, and nobody
@@ -326,8 +417,8 @@ def process_reading(
                         f"{pause['resume_at'][:10]}, so nobody was alerted."),
         }
 
-    logger.critical(
-        "Catastrophe breach: sensor=%s vertical=%s temp=%s°F reason=%s",
+    logger.warning(
+        "Out of range: sensor=%s vertical=%s temp=%s°F reason=%s",
         sensor.sensor_id,
         sensor.industry_vertical,
         temperature,
@@ -368,6 +459,38 @@ def process_reading(
             "message": defrost["because"],
         }
 
+    # Stays out of range: a door held open for a delivery pushes a fridge
+    # over its line for a few minutes and back. Nobody is texted until the
+    # unit has stayed out for its wait, unless it is far past its limit.
+    # The sweep (alert_held_breaches) raises it on time even if the sensor
+    # sends nothing more in the meantime.
+    due = alert_due(sensor, temperature) if existing is None else None
+    if existing is None and due is None:
+        waiting = _waiting(sensor, temperature, unit)
+        logger.info("Out of range, waiting to see if it stays: sensor=%s temp=%s°F",
+                    sensor.sensor_id, temperature)
+        return {
+            "status": "WATCHING",
+            "industry": profile["name"],
+            "sensor_id": sensor.sensor_id,
+            "location": sensor.location_name,
+            "current_temperature": display_temperature(temperature, unit),
+            "temperature_unit": unit,
+            "breach_details": breach_reason,
+            "waiting": waiting,
+            "message": waiting["words"],
+        }
+
+    return raise_alert(tenant, sensor, temperature, humidity, breach_reason,
+                       existing=existing, due=due)
+
+
+def raise_alert(tenant: Tenant, sensor, temperature: float,
+                humidity: Optional[float], breach_reason: str,
+                existing=None, due: Optional[Dict[str, Any]] = None) -> dict:
+    """Open the alert and text everyone on call, or update the open one."""
+    profile = INDUSTRY_PROFILES[sensor.industry_vertical]
+    unit = tenant.temperature_unit
     if existing is None:
         sms_text, sms_source = build_emergency_sms(
             sensor, temperature, humidity, tenant.tenant_id, unit
@@ -385,6 +508,8 @@ def process_reading(
             # SMS has gone out; a second one would be the duplicate this
             # whole path exists to prevent.
             existing = incident
+        elif due is not None:
+            STORE.note_out_since(incident, due.get("out_since"))
 
     if existing is not None:
         STORE.update_incident_breach(existing, temperature, breach_reason)
@@ -455,7 +580,96 @@ def process_reading(
     payload["current_temperature"] = display_temperature(temperature, unit)
     payload["temperature_unit"] = unit
     payload["webhook_fanout"] = webhook_results
+    if due is not None:
+        payload["alerted_because"] = due["because"]
     return payload
+
+
+def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
+    """Close the unanswered alert on a unit that came back to normal.
+
+    Never phone about a fridge that is fine: the pending call is cancelled
+    by closing the alert before the sweep reaches it (the claim on the call
+    refuses a closed alert). An alert somebody acknowledged is theirs to
+    close, with what they did, so it is left alone. The people texted get
+    a short all-clear, so nobody drives in for nothing.
+    """
+    import wording
+    from voice_dispatch import _notify_hooks
+
+    incident = STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id)
+    if incident is None or not incident.open:
+        return None
+    began = incident.out_since or incident.opened_at
+    minutes = max(0.0, (utc_now() - began).total_seconds() / 60.0)
+    called = incident.voice_escalated_at is not None
+    note = wording.back_to_normal_note(minutes, called=called)
+    if not STORE.resolve_back_to_normal(incident, note):
+        return None
+    logger.info("Back to normal, alert %s closed on its own: sensor=%s",
+                incident.incident_id, sensor.sensor_id)
+    told = []
+    if incident.texts_landed:
+        text = wording.back_to_normal_sms(tenant, sensor, temperature,
+                                          tenant.temperature_unit, minutes)
+        for contact in STORE.alert_recipients(tenant, incident):
+            told.append(dict(send_sms(contact.phone, text, tenant.tenant_id),
+                             contact_id=contact.contact_id))
+    try:
+        from auth import write_audit
+
+        write_audit(tenant, None, "incident.resolved",
+                    f"{incident.incident_id} on {incident.sensor_id}: {note}",
+                    fallback_actor="CyberLogix (back to normal)")
+    except Exception:  # noqa: BLE001 - the record of it must not stop the close
+        logger.exception("Audit entry for %s failed.", incident.incident_id)
+    _notify_hooks(tenant, incident, "resolved", note, background=True)
+    return {"incident_id": incident.incident_id, "note": note,
+            "minutes_out": round(minutes, 2), "all_clear_texts": told}
+
+
+def alert_held_breaches(tenant: Tenant, now=None) -> List[Dict[str, Any]]:
+    """Raise, on time, the alerts that were waiting to see if a unit stays out.
+
+    A sensor that reports every fifteen minutes, or goes quiet after going
+    warm, sends nothing at the moment its wait runs out; this is called by
+    every sweep so the alert goes when it is due, not at the next reading.
+    The unit's newest reading decides: if it is out of range and has been
+    for the unit's wait, the alert opens exactly as a reading would open it.
+    """
+    from auth import licence_state
+    from retention import current_pause
+    from store import evaluate_sensor_breach
+
+    now = now or utc_now()
+    if licence_state(tenant, now) not in ("active", "grace"):
+        return []
+    if current_pause(tenant.tenant_id, now) is not None:
+        return []
+    actions: List[Dict[str, Any]] = []
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        temperature = sensor.last_temperature
+        if temperature is None or sensor.clock_skewed(now):
+            continue
+        reason = evaluate_sensor_breach(sensor, temperature, tenant.temperature_unit)
+        if reason is None:
+            continue
+        if STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id):
+            continue
+        if _routine_defrost(sensor, temperature) is not None:
+            continue
+        due = alert_due(sensor, temperature, now)
+        if due is None:
+            continue
+        payload = raise_alert(tenant, sensor, temperature, sensor.last_humidity,
+                              reason, due=due)
+        actions.append({
+            "action": "held_alert_raised",
+            "sensor_id": sensor.sensor_id,
+            "incident_id": payload.get("incident_id"),
+            "detail": f"Alerted: {due['because']}.",
+        })
+    return actions
 
 
 def resolve_owned_sensor(tenant: Tenant, sensor_id: str):

@@ -234,7 +234,7 @@ $("switch-btn").addEventListener("click", () => {
   $("signin-form").hidden = onboarding;
   $("onboard-form").hidden = !onboarding;
   $("switch-text").textContent = onboarding ? "Already have a key?" : "No account yet?";
-  $("switch-btn").textContent = onboarding ? "Sign in" : "Onboard a company";
+  $("switch-btn").textContent = onboarding ? "Sign in" : "Set up a new business";
 });
 
 $("signin-form").addEventListener("submit", async (event) => {
@@ -535,12 +535,33 @@ $("add-vertical").addEventListener("change", (event) => {
 });
 
 /* "Fridge or freezer?" for the sectors where the answer sets the limit.
- * A fridge is the default: most of what a kitchen watches is one. */
-function unitKindLabel(k) {
+ * A required choice with no default, because a freezer saved as a fridge
+ * alarms far too late. Guessed from the name where the name says it
+ * ("walk-in freezer", "milk fridge"), and never over a choice made by
+ * hand. */
+function unitKindDeg(f) {
   const unit = (state.data && state.data.tenant && state.data.tenant.temperature_unit) || "F";
-  const deg = (f) => unit === "C" ? `${Math.round((f - 32) * 5 / 9)}°C` : `${f}°F`;
-  if (k.danger_below != null) return `between ${deg(k.danger_below)} and ${deg(k.danger_above)}`;
-  return `over ${deg(k.danger_above)}`;
+  return unit === "C" ? `${Math.round((f - 32) * 5 / 9)}°C` : `${f}°F`;
+}
+
+function unitKindLabel(k) {
+  const deg = unitKindDeg;
+  const wait = k.alert_after_minutes ? ` for ${k.alert_after_minutes} minutes` : "";
+  if (k.danger_below != null) {
+    return `outside ${deg(k.danger_below)} to ${deg(k.danger_above)}${wait}`;
+  }
+  const far = k.alert_at_once_degrees
+    ? `, or at once if it reaches ${deg(k.danger_above + k.alert_at_once_degrees)}` : "";
+  return `over ${deg(k.danger_above)}${wait}${far}`;
+}
+
+const FREEZER_WORDS = /freez|ice ?cream|gelato|frozen|blast chill|sorbet/i;
+const FRIDGE_WORDS = /fridge|cooler|chiller|refrig|reach-?in|milk|dairy|drinks|beverage|salad|prep|deli|vaccine/i;
+
+function guessUnitKind(name) {
+  if (FREEZER_WORDS.test(name || "")) return "freezer";
+  if (FRIDGE_WORDS.test(name || "")) return "fridge";
+  return "";
 }
 
 function showUnitKinds(vertical) {
@@ -550,9 +571,21 @@ function showUnitKinds(vertical) {
   if (!field) return;
   field.hidden = !kinds.length;
   const previous = $("add-kind").value;
-  $("add-kind").innerHTML = kinds
+  $("add-kind").innerHTML = `<option value="">Choose one</option>` + kinds
     .map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join("");
+  // Required only while it is shown: a hidden required field would
+  // block the form for a sector that does not ask.
+  $("add-kind").required = kinds.length > 0;
   if (kinds.some((k) => k.kind === previous)) $("add-kind").value = previous;
+  else guessKindFromName();
+  showUnitKindHint();
+}
+
+function guessKindFromName() {
+  if (state.kindChosenByHand) return;
+  const guess = guessUnitKind($("add-loc").value);
+  const offered = Array.from($("add-kind").options).some((o) => o.value === guess);
+  $("add-kind").value = offered ? guess : "";
   showUnitKindHint();
 }
 
@@ -560,11 +593,16 @@ function showUnitKindHint() {
   const profile = (state.industries || []).find((i) => i.vertical === $("add-vertical").value);
   const kind = ((profile && profile.unit_kinds) || []).find((k) => k.kind === $("add-kind").value);
   $("add-kind-hint").textContent = kind
-    ? `We alert if it stays ${unitKindLabel(kind)}. You can change this later.`
-    : "";
+    ? `We alert if it stays ${unitKindLabel(kind)}, so a door opened for a minute `
+      + "wakes nobody. You can change this later."
+    : "Choose one: a freezer gets a freezer's limit.";
 }
 
-$("add-kind").addEventListener("change", showUnitKindHint);
+$("add-kind").addEventListener("change", () => {
+  state.kindChosenByHand = $("add-kind").value !== "";
+  showUnitKindHint();
+});
+$("add-loc").addEventListener("input", guessKindFromName);
 
 /* Open every sector picker on the sector this customer actually runs.
  *
@@ -999,20 +1037,25 @@ function render(d, health) {
   $("tiles").innerHTML = [
     tile(`${Noun(2)} online`, `${s.sensors_online}`,
          `of ${s.sensors_total} under watch`),
-    tile("Breaching now", `${s.sensors_breaching}`,
+    tile("Out of range now", `${s.sensors_breaching}`,
          s.sensors_breaching
-           ? `${noun(s.sensors_breaching)} at risk`
-           : "all within tolerance"),
-    tile("Open incidents", `${s.open_incidents}`,
-         s.escalation_due ? `${s.escalation_due} due for a call` : "none awaiting escalation"),
+           ? `${noun(s.sensors_breaching)} too warm or cold`
+           : "all within their limits"),
+    tile("Open alerts", `${s.open_incidents}`,
+         s.escalation_due ? `${s.escalation_due} due for a call` : "none waiting for a call"),
     tile("At-risk forecast", d.entitlements.predictive_forecasting ? `${s.at_risk}` : "—",
          d.entitlements.predictive_forecasting ? "projected to breach" : "upgrade to unlock"),
-    tile("Compliance", s.compliance_percent === null ? "—" : `${s.compliance_percent}%`,
-         `last ${s.compliance_days} days`),
+    // Readings in range, as a share: shown only after a day of readings,
+    // because "80%" after five minutes (one warm reading in five) is not
+    // a figure anybody should act on.
+    tile("Readings in range",
+         s.compliance_ready && s.compliance_percent !== null ? `${s.compliance_percent}%` : "—",
+         s.compliance_ready ? `last ${s.compliance_days} days`
+           : `shown after ${s.compliance_after_hours || 24} hours of readings`),
     tile("Flat batteries", `${s.low_battery ?? 0}`,
          s.low_battery ? "replace before they go dark" : "all healthy"),
     tile("Readings logged", `${s.readings_logged}`,
-         `${s.readings_breached} out of band`),
+         `${s.readings_breached} out of range`),
   ].join("");
   animateFigures($("tiles"));
 
@@ -1124,7 +1167,7 @@ function siteWideCard(a) {
         <span class="badge s-critical"><span class="dot" aria-hidden="true"></span>Site-wide</span>
         ${badge(a.state === "open" ? "critical" : a.state === "acknowledged" ? "elevated" : "low", a.state)}
         <span class="incident-title grow">${esc(a.catastrophe_type)}</span>
-        <span class="card-note">${esc((a.group_units || []).length)} units · ${esc(a.minutes_open)} min</span>
+        <span class="card-note">${esc((a.group_units || []).length)} units · ${esc(minutesWords(a.minutes_open))}</span>
       </div>
       <div class="card-note">${esc(a.breach_details)}</div>
       ${siteWideUnits(a)}
@@ -1143,7 +1186,25 @@ function siteWideCard(a) {
    estate spanning several falls back to "asset", which is what nobody
    says. "Assets under watch" is a phrase from a spreadsheet, not from a
    kitchen, so the generic case says the plain thing instead. */
-const GENERIC_NOUNS = new Set(["asset", "assets", "unit", "units"]);
+// A kitchen calls them fridges and freezers, whatever the sector's word
+// for the thing being watched ("walk-in" for every restaurant unit read
+// "WALK-INS ONLINE" over a milk fridge).
+const GENERIC_NOUNS = new Set(["asset", "assets", "unit", "units", "walk-in", "walk-ins",
+  "kitchen", "kitchens"]);
+
+/* "about 1 minute", "3 minutes", "about 2 hours": never "0.73 min" or
+   "1 minutes". */
+function minutesWords(value) {
+  const m = Number(value);
+  if (!Number.isFinite(m) || m < 0.5) return "under a minute";
+  if (m >= 90) {
+    const h = Math.round(m / 60);
+    return `about ${h} hour${h === 1 ? "" : "s"}`;
+  }
+  const n = Math.round(m);
+  const about = Math.abs(m - n) > 0.05 ? "about " : "";
+  return `${about}${n} minute${n === 1 ? "" : "s"}`;
+}
 
 function noun(count) {
   const d = state.data || {};
@@ -1334,10 +1395,15 @@ function sensorCard(s) {
             ? esc(below) + "–" : "&lt; "}${esc(above)}°${esc(unit)}${
           s.uses_override ? ' <span class="u-c-warning">tuned</span>' : ""
         }</span>
+        <span>${s.alert_after_minutes
+            ? `alerts after ${esc(s.alert_after_minutes)} min out`
+            : "alerts at the first reading out"}${
+          s.alert_after_minutes_own != null ? ' <span class="u-c-warning">set</span>' : ""}</span>
       </div>
       <div class="sensor-actions">
         <button class="btn btn-sm" data-detail="${esc(s.sensor_id)}">History</button>
         <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Retune</button>
+        <button class="btn btn-sm" data-wait="${esc(s.sensor_id)}">Alert wait</button>
         <button class="btn btn-sm" data-rekey="${esc(s.sensor_id)}">New key</button>
         <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
       </div>
@@ -1698,7 +1764,7 @@ function incidentTimeline(i) {
   const steps = [];
 
   steps.push({ cls: "hit", when: i.opened_at,
-    text: `Breach detected at ${i.temperature_display ?? i.temperature_fahrenheit}°`
+    text: `Out of range: ${i.temperature_display ?? i.temperature_fahrenheit}°`
         + `${i.temperature_unit || state.unit}` });
 
   const texted = (i.sms_fanout || []).length || (i.sms_delivery ? 1 : 0);
@@ -1727,11 +1793,12 @@ function incidentTimeline(i) {
       text: `Acknowledged by ${i.acknowledged_by || "someone"}` });
   }
   if (i.resolved_at) {
-    steps.push({ cls: "done", when: i.resolved_at, text: "Resolved" });
+    steps.push({ cls: "done", when: i.resolved_at,
+      text: i.resolved_note || "Resolved" });
   }
   if (!i.acknowledged_at && !i.resolved_at) {
     steps.push({ cls: "", when: null,
-      text: `Still open after ${Math.round(i.minutes_open)} minutes` });
+      text: `Still open after ${minutesWords(i.minutes_open)}` });
   }
 
   return `<ul class="timeline">${steps.map((s) =>
@@ -1750,7 +1817,8 @@ function renderIncidents(incidents, entitlements, siteWide) {
     const total = (state.data && state.data.sensors.length) || 0;
     $("incidents").innerHTML = `<div class="empty">${
       total
-        ? `All ${total} ${noun(total)} are within tolerance.`
+        ? (total === 1 ? `Your ${noun(1)} is within its limits.`
+          : `All ${total} ${noun(total)} are within their limits.`)
         : `Nothing to report yet.<span class="sub">Anything that goes out of
              its safe range shows up here, once something is being
              watched.</span>` + nextSteps([["sensor", `Add a ${noun(1)}`]])
@@ -1768,7 +1836,7 @@ function renderIncidents(incidents, entitlements, siteWide) {
       <div class="incident-top">
         ${badge(stateKind, i.state)}
         <span class="incident-title grow">${esc(i.catastrophe_type)}</span>
-        <span class="card-note">${esc(i.sensor_id)} · ${esc(i.minutes_open)} min</span>
+        <span class="card-note">${esc(i.sensor_id)} · ${esc(minutesWords(i.minutes_open))}</span>
       </div>
       <div class="card-note">${esc(i.breach_details)}</div>
       ${textsFailedNote(i)}
@@ -1921,9 +1989,9 @@ function upgradeBlock(tenant) {
       <div class="u-fs-12-5 u-c-ink-2 u-mb-3">
         Move off the trial</div>
       <div class="u-fs-11-5 u-c-muted u-mb-8">
-        Unlocks phone-call escalation and the 12-hour forecast. You are
-        invoiced afterwards — nothing is charged here and no card is asked
-        for.</div>
+        Growth and Enterprise add phone calls and the 12-hour forecast;
+        Starter keeps texts. You are invoiced afterwards — nothing is
+        charged here and no card is asked for.</div>
       <div class="u-d-flex u-gap-8 u-flex-wrap">
         ${starter ? `<button class="btn btn-sm" data-upgrade="starter">
           Starter · ${esc(starter.monthly_label)} a month · 1 location,
@@ -3902,7 +3970,7 @@ function renderForecast(fleet) {
   if (!risky.length) {
     $("forecast-body").innerHTML =
       `<div class="empty u-p-14">
-         Nothing is trending out of band.
+         Nothing is trending out of range.
          <span class="sub">${esc(fleet.sensors_analysed)} sensor(s) modelled
          over ${esc(fleet.window_hours)} hours${
            unknown ? `; ${esc(unknown)} without enough history yet` : ""}.</span>
@@ -4097,7 +4165,7 @@ async function openPacket(incidentId) {
       <td class="num${r.breached ? " u-c-critical" : ""}">${
         esc(r.temperature)}°${esc(ev.temperature_unit)}</td>
       <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
-      <td>${r.breached ? "out of band" : "in band"}</td>
+      <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
 
   $("drawer").innerHTML = `
@@ -4328,7 +4396,7 @@ async function openInspectorLog(from, to, print) {
             <td>${b.acknowledged_by
               ? `${esc(b.acknowledged_by)}<span class="log-sub">${
                   esc(stamp(b.acknowledged_at))}${b.minutes_to_acknowledge !== null
-                  ? ` · after ${esc(b.minutes_to_acknowledge)} min` : ""}</span>`
+                  ? ` · after ${esc(minutesWords(b.minutes_to_acknowledge))}` : ""}</span>`
               : `<strong>Nobody</strong>`}</td>
             <td>${b.corrective_action
               ? `${esc(b.corrective_action)}${b.product_disposition
@@ -4372,7 +4440,7 @@ async function openInspectorLog(from, to, print) {
           <td>${esc(g.units.join(", "))}</td>
           <td>${g.acknowledged_by
             ? `${esc(g.acknowledged_by)}${g.minutes_to_acknowledge !== null
-                ? `<span class="log-sub">after ${esc(g.minutes_to_acknowledge)} min</span>` : ""}`
+                ? `<span class="log-sub">after ${esc(minutesWords(g.minutes_to_acknowledge))}</span>` : ""}`
             : `<strong>Nobody</strong>`}</td>
           <td>${g.closed_at ? esc(stamp(g.closed_at)) : "still open"}</td>
         </tr>`).join("")}</tbody>
@@ -4639,7 +4707,7 @@ async function openDrawer(sensorId, options = {}) {
       <td class="num${r.breached ? " u-c-critical u-fw-650" : ""}">
         ${esc(r.temperature)}°${esc(unit)}</td>
       <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
-      <td>${r.breached ? "out of band" : "in band"}</td>
+      <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
 
   $("drawer").innerHTML = `
@@ -4683,7 +4751,7 @@ async function openDrawer(sensorId, options = {}) {
     <div class="card-head u-mt-18">
       <span class="card-title">Recent history</span>
       <span class="card-note">${esc(detail.readings.length)} points ·
-        ${esc(detail.breached_count)} out of band</span>
+        ${esc(detail.breached_count)} out of range</span>
     </div>
     ${historyChart(detail)}
     <div class="scrollx"><table>
@@ -5775,6 +5843,30 @@ document.addEventListener("click", (event) => {
     ), value === null ? "Restored the industry default." : `Limit set to ${value}°${unit}.`);
   }
 
+  if (btn.dataset.wait) {
+    const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.wait);
+    if (!sensor) return;
+    const answer = prompt(
+      `How many minutes may ${sensor.location_name || sensor.sensor_id} stay out `
+      + "of range before we text anybody?\n"
+      + "0 texts on the first reading. A reading far past the limit is always "
+      + `sent at once.\nBlank restores the default (${sensor.alert_after_minutes_default} minutes).`,
+      sensor.alert_after_minutes_own == null ? "" : String(sensor.alert_after_minutes_own)
+    );
+    if (answer === null) return;
+    const minutes = answer.trim() === "" ? null : Number(answer);
+    if (minutes !== null && !(Number.isFinite(minutes) && minutes >= 0)) {
+      toast("That is not a number of minutes.", "err");
+      return;
+    }
+    act(() => api(
+      `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/alert-rule`,
+      { method: "POST", body: JSON.stringify({
+          alert_after_minutes: minutes,
+          alert_after_readings: sensor.alert_after_readings ?? null }) }
+    ), minutes === null ? "Back to the default wait." : `Alerts after ${minutes} minutes out of range.`);
+  }
+
   if (btn.dataset.shortcut) {
     const vertical = btn.dataset.shortcut;
     btn.disabled = true;
@@ -5871,6 +5963,7 @@ $("add-form").addEventListener("submit", (event) => {
       }),
     });
     event.target.reset();
+    state.kindChosenByHand = false;
     // reset() puts the picker back on the first sector in the list; the
     // next unit is far likelier to be in the same one as this.
     $("add-vertical").value = made.sensor.industry_vertical;
@@ -6299,12 +6392,25 @@ function smallAccount(d = state.data) {
   return SMALL_PLANS.has(t.plan) && (d.sensors || []).length <= SMALL_MAX_UNITS;
 }
 
+/* On a phone, a small account's Everything list is the few cards that
+   get a new business going, with the rest behind "More": it was thirteen
+   thousand pixels of cards on the first day. Search and the tabs still
+   show everything. */
+const FIRST_CARDS = new Set(["fleet-card", "find-incidents", "find-add-to-the-estate",
+  "find-on-call-roster", "find-vendor-clouds", "find-about"]);
+
+function shortList(searching) {
+  if (finder.more || searching || finder.tab !== "all" || !smallAccount()) return false;
+  try { return window.matchMedia("(max-width: 720px)").matches; } catch (_) { return false; }
+}
+
 /* Whether a card belongs in the tab being shown. */
 function inTab(card, searching) {
   const advanced = card.getAttribute("data-advanced") === "1";
   if (finder.tab === "advanced") return advanced;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
   if (hiddenAsAdvanced) return false;
+  if (shortList(searching) && !FIRST_CARDS.has(card.id)) return false;
   return finder.tab === "all" || card.getAttribute("data-group") === finder.tab;
 }
 
@@ -6341,6 +6447,17 @@ function applyFinder() {
       : "Nothing in this group yet.";
   }
   $("find-clear").hidden = !query;
+  // "More": how many cards the short list is leaving out, if any.
+  const short = shortList(words.length > 0);
+  let folded = 0;
+  if (short) {
+    finder.more = true;
+    folded = findableCards().filter((card) => inTab(card, false)
+      && card.dataset.empty !== "1").length - showing;
+    finder.more = false;
+  }
+  $("more-cards").hidden = !short || folded <= 0;
+  $("more-cards-btn").textContent = `More (${folded} other things you can do)`;
   const advNote = $("adv-note");
   if (advNote) advNote.hidden = !smallAccount() || finder.tab === "advanced" || Boolean(query);
   renderTabEmpty();
@@ -6387,6 +6504,11 @@ document.querySelectorAll(".f-tab").forEach((tab) => {
     // renders below where the reader is already looking.
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+});
+
+$("more-cards-btn").addEventListener("click", () => {
+  finder.more = true;
+  applyFinder();
 });
 
 $("find-q").addEventListener("input", (event) => {

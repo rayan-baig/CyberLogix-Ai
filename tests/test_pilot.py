@@ -28,19 +28,54 @@ import main
 ROOT = Path(__file__).resolve().parent.parent
 PILOT = ROOT / "static" / "pilot"
 CORE = ("pilot.js", "pilot-store.js", "pilot-mascot.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.js",
-        "pilot-render.js", "pilot-panel.js", "pilot.css", "pilot-panel.css")
+        "pilot-render.js", "pilot-panel.js", "pilot.css", "pilot-panel.css", "pilot-motion.js", "pilot-actor.js",
+        "pilot-actor.css")
 LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.js", "pilot-render.js",
-        "pilot-panel.css", "pilot-cyberlogix-pack.js")
+        "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.0.1 as it ships on the MTRX Horizyn site. A newer core is
-# copied into every app together, and these change with it.
+# Pilot core 1.1.0 as it ships on the MTRX Horizyn site (commit 710d52d).
+# A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot.js": "228517a95ecd6f9e", "pilot-store.js": "944f407cbcd4ab6e", "pilot-mascot.js": "5980ef22d752c863",
-    "pilot-engine.js": "9b4a34558b8a40e7", "pilot-providers.js": "e8da895f2aa86d7a", "pilot-media.js": "f2369fad66e0fe1c",
-    "pilot-render.js": "d482c85f99ad7738", "pilot-panel.js": "0f55289b846f8461", "pilot.css": "ff1455a4c0353831",
-    "pilot-panel.css": "19ff24c7ffeb3a45", "pilot-robot-128.webp": "05a92f32d99b8076",
+    "pilot-actor.css": "cfd0be07b6ed78ca",
+    "pilot-actor.js": "c4039a641be98121",
+    "pilot-engine.js": "752e8e719f6f1d98",
+    "pilot-mascot.js": "a9dd3f81fc0a7bce",
+    "pilot-media.js": "c8869cfd44eb7253",
+    "pilot-motion.js": "dbe85b9b30ba06c0",
+    "pilot-panel.css": "84a3e2695b7f8b0c",
+    "pilot-panel.js": "ab3f101f7235e2c5",
+    "pilot-providers.js": "14a0e0c8aca95578",
+    "pilot-render.js": "f085e611e73a0cff",
+    "pilot-rest-body.webp": "121ef0b2da9fd734",
+    "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
+    "pilot-rest-head.webp": "5eb064f177cffcb3",
+    "pilot-robot-128.webp": "05a92f32d99b8076",
     "pilot-robot-256.webp": "7f4c60546b37759e",
+    "pilot-store.js": "434ebe2e635ac6b6",
+    "pilot.css": "6309a2ce5a7a6df4",
+    "pilot.js": "5a3583516e67bcb1",
+}
+# The moving robot's pose pictures (static/pilot/poses/), copied with the core.
+POSES_SHA256 = {
+    "arms-crossed.webp": "d97c356154f8cd89",
+    "celebrate.webp": "ce62dadd1576964b",
+    "climb1.webp": "edb6710eb1e4bb55",
+    "flip.webp": "04300f4d67d6cfc4",
+    "fly.webp": "1e429f636bcd7a01",
+    "kick.webp": "10929d8c415dbd82",
+    "land.webp": "27e2c2e7c4ed521d",
+    "love.webp": "9c3a2e67ee4da3b1",
+    "point.webp": "265e2cf3deeb5ddf",
+    "power.webp": "12460c2a579edeff",
+    "run1.webp": "69531e3afc79f654",
+    "sitting.webp": "25880d4fad611832",
+    "slide.webp": "85433b9284a38e76",
+    "standing.webp": "523b8e7f6126eee8",
+    "tennis.webp": "d82fdcd4b7b5e5d1",
+    "throw.webp": "246444d9edb1f385",
+    "walk1.webp": "374a948be8aded8c",
+    "wave.webp": "a20b54e78d27654a",
 }
 
 
@@ -156,15 +191,22 @@ def test_keys_and_ai_calls_never_touch_this_server():
 def test_the_core_is_the_shared_core_unchanged():
     for name, digest in CORE_SHA256.items():
         assert hashlib.sha256((PILOT / name).read_bytes()).hexdigest().startswith(digest), name
-    assert sorted(p.name for p in PILOT.iterdir()) == sorted(CORE_SHA256)
+    for name, digest in POSES_SHA256.items():
+        assert hashlib.sha256((PILOT / "poses" / name).read_bytes()).hexdigest().startswith(digest), name
+    assert sorted(p.name for p in PILOT.iterdir() if p.is_file()) == sorted(CORE_SHA256)
+    assert sorted(p.name for p in PILOT.iterdir() if p.is_dir()) == ["poses"]
+    assert sorted(p.name for p in (PILOT / "poses").iterdir()) == sorted(POSES_SHA256)
     versions = set()
     for name in CORE:
         first = (PILOT / name).read_text().splitlines()[0]
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.0.1"}
-    assert "core 1.0.1" in (ROOT / "docs/PILOT.md").read_text()
+    assert versions == {"1.1.0"}
+    for name in CORE:
+        if name.endswith(".js"):
+            assert 'const VERSION = "1.1.0";' in (PILOT / name).read_text(), name
+    assert "core 1.1.0" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -263,3 +305,59 @@ def test_pilot_in_node():
                                 capture_output=True, text=True, timeout=120)
         assert result.returncode == 0, result.stdout + result.stderr
         assert "# fail 0" in result.stdout, suite
+
+
+# --- the moving robot (core 1.1.0) -----------------------------------------
+
+
+def test_the_moving_robot_loads_late_and_never_under_reduce_motion(api):
+    """Fetched only once the page is idle, and not at all when the visitor
+    asks for less motion; small pictures, and pose pictures only when a move
+    needs them: the page names them and loads none."""
+    loader = (PILOT / "pilot.js").read_text()
+    assert 'window.matchMedia("(prefers-reduced-motion: reduce)").matches' in loader
+    assert "requestIdleCallback" in loader
+    actor = (PILOT / "pilot-actor.js").read_text()
+    assert 'win.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;' in actor
+    for part in ("body", "head", "eyes"):
+        data = (PILOT / f"pilot-rest-{part}.webp").read_bytes()
+        assert data[:4] == b"RIFF" and data[8:12] == b"WEBP" and len(data) < 12_000, part
+    total = 0
+    for pose in (PILOT / "poses").iterdir():
+        data = pose.read_bytes()
+        assert data[:4] == b"RIFF" and data[8:12] == b"WEBP" and len(data) < 25_000, pose.name
+        total += len(data)
+    assert total < 420_000, total
+    page = _page(api, "/").text
+    poses = re.search(r'data-poses="([^"]*)"', page).group(1).split()
+    assert len(poses) == 18
+    for pair in poses:
+        name, url = pair.split("=", 1)
+        assert re.fullmatch(rf"/static/pilot/poses/{re.escape(name)}\.webp\?v=[0-9a-f]{{12}}", url), pair
+        assert not re.search(rf'(?:src|href)="[^"]*poses/{re.escape(name)}', page), name
+    for name in ("pilot-rest-body.webp", "pilot-rest-head.webp", "pilot-rest-eyes.webp"):
+        assert re.search(rf'data-rest-[a-z]+="/static/pilot/{re.escape(name)}\?v=[0-9a-f]{{12}}"', page), name
+
+
+def test_a_new_pose_picture_is_picked_up(tmp_path):
+    """Adding a pose is just putting its picture in static/pilot/poses/."""
+    assert main.pilot_pose_files(tmp_path) == {}
+    (tmp_path / "kick.png").write_bytes(b"x")
+    (tmp_path / "notes.txt").write_bytes(b"x")
+    (tmp_path / "dance.webp").write_bytes(b"x")
+    assert main.pilot_pose_files(tmp_path) == {"kick": "kick.png"}
+    (tmp_path / "kick.webp").write_bytes(b"x")
+    assert main.pilot_pose_files(tmp_path) == {"kick": "kick.webp"}
+    motion = (PILOT / "pilot-motion.js").read_text()
+    names = re.search(r"const POSES = \[([^\]]+)\]", motion).group(1)
+    assert tuple(re.findall(r'"([a-z0-9-]+)"', names)) == main.PILOT_POSES
+
+
+def test_the_robot_keeps_clear_of_alerts_and_the_page_keeps_clear_of_it():
+    """avoid: the console's alert banners and the buttons that answer an
+    alert; and on a phone the page's last lines sit above the robot."""
+    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    for selector in ("#site-wide-banner", "#account-banner", "#needs-wrap", ".incident-actions"):
+        assert f'"{selector}"' in config, selector
+    theme = (ROOT / "static/theme.css").read_text()
+    assert ":root.pilot-on body { padding-bottom: var(--pilot-gutter, 0px); }" in theme

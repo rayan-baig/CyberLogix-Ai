@@ -920,7 +920,7 @@ async function checkSwitcher(browser, base) {
       body: JSON.stringify({ sensor_id: unit, industry_vertical: "restaurant",
                              location_name: `${b.name} cold room` }) });
     await fetch(`${base}/api/sensor-pulse`, { method: "POST", headers,
-      body: JSON.stringify({ sensor_id: unit, temperature_fahrenheit: 50 }) });
+      body: JSON.stringify({ sensor_id: unit, temperature_fahrenheit: 60 }) });
   }
   const florist = businesses[4];
   const grill = businesses[0];
@@ -1070,7 +1070,7 @@ async function checkPartner(browser, base) {
   await call(base, business.token, "POST", "/api/licenses/me/sensors",
              { sensor_id: "PS-WALKIN", industry_vertical: "restaurant", location_name: "Walk-in" });
   await call(base, business.token, "POST", "/api/sensor-pulse",
-             { sensor_id: "PS-WALKIN", temperature_fahrenheit: 51 });
+             { sensor_id: "PS-WALKIN", temperature_fahrenheit: 60 });
 
   for (const [label, viewport] of [["phone", PHONE], ["desktop", DESKTOP]]) {
     const context = await browser.newContext({ viewport, serviceWorkers: "block" });

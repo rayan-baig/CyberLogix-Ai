@@ -51,21 +51,23 @@
   const LIVE = [["What's warm now?", "Which units are warm or out of range right now?"],
     ["Show open alerts", "Show my open alerts."],
     ["Is the food still OK?", "Is the food still OK in the unit that went warm?"]];
+  // Written for the person most of these pages are for: a café or small
+  // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
-    "/": [["How does it work?", "How does CyberLogix work, in plain words?"],
-      ["What do I need?", "What do I need to start? Which sensors work?"],
-      ["What does it cost?", "What does CyberLogix cost, and what's in the free trial?"]],
-    "/pricing": [["Which plan fits me?", "Which plan fits my business? Ask me one or two questions first."],
-      ["What's in the trial?", "What's in the free trial, and do I need a card?"],
-      ["Why is it better?", "What makes CyberLogix better than other ways of watching fridges?"]],
-    "/help": [["How do alerts escalate?", "What happens when a fridge goes out of range, and what if nobody answers?"],
-      ["A sensor is offline", "A sensor says offline. What should I do?"],
-      ["Proof for my insurer", "How do I make a proof of monitoring report?"]],
-    "/help/sensors": [["Which sensor should I buy?", "Which sensors work with CyberLogix, and roughly what do they cost?"],
-      ["Set up step by step", "Walk me through setting up my first sensor."],
-      ["Power or internet goes off?", "What happens if the power or the internet goes off?"]],
-    "/for": [["Is it for my trade?", "Does CyberLogix work for my kind of business?"],
-      ["What does it cost?", "What does CyberLogix cost?"]],
+    "/": [["Will it work for my café?", "I run a small café with a couple of fridges and a freezer. How would CyberLogix work for me, in plain words?"],
+      ["What do I need to start?", "What do I need to start watching my fridges and freezer? What's the easiest kind of sensor?"],
+      ["What would it cost me?", "What would CyberLogix cost a café with three fridges, and what's in the free trial?"]],
+    "/pricing": [["Which plan for a café?", "Which plan fits a café with a few fridges and a freezer? Ask me one or two questions first."],
+      ["Do you phone us?", "Which plans phone us if nobody answers the text?"],
+      ["What's in the trial?", "What's in the free trial, and do I need a card?"]],
+    "/help": [["A fridge is warm: what now?", "A fridge is too warm. What happens, and what should I do?"],
+      ["Will a door left open wake us?", "If someone leaves the walk-in door open for a minute, does everyone get texted?"],
+      ["A log for the inspector", "How do I print a temperature log for a health inspector?"]],
+    "/help/sensors": [["Easiest way to set up", "What's the easiest way to set up a sensor, with no coding?"],
+      ["Set up step by step", "Walk me through setting up my first fridge sensor."],
+      ["Power or Wi-Fi goes off?", "What happens if the power or the Wi-Fi goes off?"]],
+    "/for": [["Is it for my café?", "Does CyberLogix work for a café or small restaurant?"],
+      ["What would it cost me?", "What would CyberLogix cost a café with three fridges?"]],
     "/demo": [["What am I seeing?", "What is this demo showing me?"],
       ["What happens next?", "What happens after the alert text, if nobody answers?"],
       ["Start a free trial", "How do I start a free trial?"]],
@@ -76,7 +78,7 @@
 
   const TASKS = {
     live: "Show my open alerts and tell me what to check first",
-    "/": "Help me work out what I need to start watching my fridges: ",
+    "/": "Help me work out what my café needs to start watching its fridges: ",
     "/pricing": "Help me pick a plan for my business: ",
     "/help/sensors": "Help me set up this sensor: ",
   };
@@ -86,7 +88,7 @@
     if ((onConsole || onToday) && signedIn()) list = LIVE;
     else if (onConsole) list = CHIPS["/console-out"];
     else if (path.startsWith("/for/")) list = [["How would this work for me?", "How would CyberLogix work for a business like mine?"],
-      ["What limit is set?", "What temperature limits does CyberLogix use for this trade, and can I change them?"],
+      ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
       ["What does it cost?", "What does CyberLogix cost?"]];
     else list = CHIPS[path] || [];
     return list.map(([label, prompt]) => ({ label, prompt }));
@@ -106,6 +108,11 @@
     keyNote: "Pilot uses your own AI key, and your AI provider bills you for it. AI keys are for grown-ups (the AI companies require 18+).",
     audienceNote: "The people using this run businesses with fridges and freezers to keep cold: restaurants, pharmacies, labs and more. Many read on a phone in a busy kitchen, so keep answers short and practical. If a unit is warm right now, say to check it first. Pilot never makes a food safety decision: when asked if food is OK, give what was measured and the rule of thumb with its note that it is not a ruling, and say their own written food safety plan and local code decide.",
     kidView: () => false,
+    // Never sit on top of an alert, a banner or the buttons that answer
+    // one: the robot moves to a free corner instead (core 1.1.0).
+    avoid: ["#site-wide-banner", "#stale-banner", "#account-banner", "#delivery-banner",
+      "#offline-banner", "#terms-banner", "#role-banner", "#needs-wrap", ".need-acts",
+      ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#add-form button[type=submit]"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),
@@ -115,6 +122,8 @@
       trialDays: d.trialDays || "", trialUnits: d.trialUnits || "", trialCalls: d.trialCalls || "",
       fridgeLimit: d.fridgeLimit || "", freezerLimit: d.freezerLimit || "", offlineMinutes: d.offlineMinutes || "",
       callAfterMinutes: d.callAfterMinutes || "", textWithinSeconds: d.textWithinSeconds || "",
+      alertAfterFridge: d.alertAfterFridge || "", alertAfterFreezer: d.alertAfterFreezer || "",
+      alertAfterVaccine: d.alertAfterVaccine || "", alertAtOnceDegrees: d.alertAtOnceDegrees || "",
     },
   });
 })();

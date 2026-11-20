@@ -1319,7 +1319,7 @@ def caught_failure(incident: Any) -> Tuple[bool, str]:
 
     start = incident.opened_at - timedelta(minutes=SAVE_BASELINE_MINUTES)
     end = incident.resolved_at or utc_now()
-    history = sorted((r for r in STORE.readings_for(incident.sensor_id, since=start)
+    history = sorted((r for r in STORE.readings_for(incident.sensor_id, since=start, complete=True, until=end)
                       if r.recorded_at <= end), key=lambda r: r.recorded_at)
     before = [r.temperature_fahrenheit for r in history
               if r.recorded_at < incident.opened_at and r.temperature_fahrenheit <= above]

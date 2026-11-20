@@ -23,6 +23,7 @@ from store import (
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
+    _parse,
     display_temperature,
     iso,
     utc_now,
@@ -269,12 +270,12 @@ def console_overview(
     )
 
     since = now - timedelta(days=compliance_days)
-    logged = 0
-    breached = 0
-    for sensor in STORE.sensors_for(tenant.tenant_id):
-        readings = STORE.readings_for(sensor.sensor_id, since=since)
-        logged += len(readings)
-        breached += sum(1 for r in readings if r.breached)
+    logged, breached, data_since = _week_counts(tenant, since, compliance_days, now)
+    # A percentage of five minutes is not a figure: "80%" after one warm
+    # reading out of five. Shown once there is a day of readings.
+    first = _parse(data_since) if data_since else None
+    compliance_ready = first is not None and now - first >= timedelta(
+        hours=COMPLIANCE_AFTER_HOURS)
 
     # The estate's own vocabulary. One vertical means we can speak it
     # throughout; a mixed estate has to fall back to something neutral.
@@ -345,6 +346,8 @@ def console_overview(
                 round((logged - breached) / logged * 100, 1) if logged else None
             ),
             "compliance_days": compliance_days,
+            "compliance_ready": compliance_ready,
+            "compliance_after_hours": COMPLIANCE_AFTER_HOURS,
         },
         "sensors": sensors,
         "incidents": incidents,
@@ -355,6 +358,80 @@ def console_overview(
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
     }
+
+
+# Hours of readings before the console shows a compliance percentage.
+COMPLIANCE_AFTER_HOURS = 24
+# How long the console's reading counts are reused before they are counted
+# again in full. Counted over every reading kept (a week at one a minute is
+# ten thousand a sensor), which is about 15 ms a sensor, and the console
+# asks every twenty seconds. In between, the readings that arrived since
+# are added from memory, so a new reading shows on the very next poll.
+COUNTS_FRESH_SECONDS = 600
+_counts: Dict[Any, Any] = {}
+
+
+def _week_counts(tenant: Tenant, since, days: int, now):
+    """(readings, out of range, oldest held) over the console's window."""
+    key = (tenant.tenant_id, days)
+    hit = _counts.get(key)
+    if hit is None or (now - hit[0]).total_seconds() >= COUNTS_FRESH_SECONDS:
+        per_sensor: Dict[str, Any] = {}
+        for sensor in STORE.sensors_for(tenant.tenant_id):
+            # Counted by SQLite over every reading kept, not only the ones
+            # in memory, so a busy sensor's week is the whole week.
+            stats = STORE.reading_stats(sensor.sensor_id, since=since)
+            per_sensor[sensor.sensor_id] = (stats["count"], stats["breached"], stats["oldest"])
+        if len(_counts) > 5000:
+            _counts.clear()
+        hit = (now, per_sensor)
+        _counts[key] = hit
+    counted_at, per_sensor = hit
+    logged = breached = 0
+    data_since = None
+    for sensor in STORE.sensors_for(tenant.tenant_id):
+        base = per_sensor.get(sensor.sensor_id)
+        if base is None:                        # added since the count
+            base = (0, 0, None)
+            fresh = STORE.readings_for(sensor.sensor_id)
+        else:
+            fresh = [r for r in STORE.readings_for(sensor.sensor_id)
+                     if r.recorded_at > counted_at]
+        logged += base[0] + len(fresh)
+        breached += base[1] + sum(1 for r in fresh if r.breached)
+        oldest = base[2] or (iso(fresh[0].recorded_at) if fresh else None)
+        if oldest and (data_since is None or oldest < data_since):
+            data_since = oldest
+    return logged, breached, data_since
+
+
+def forget_counts() -> None:
+    """Drop the reused counts. For tests, which reuse tenant ids."""
+    _counts.clear()
+
+
+def _daily(sensor, unit: str) -> List[Dict[str, Any]]:
+    """Lowest, highest and out-of-range count a day, newest first."""
+    from store import history_cutoff
+
+    since = history_cutoff()
+    days: Dict[str, Dict[str, Any]] = {}
+
+    def add(day, low, high, count, out):
+        slot = days.setdefault(day, {"day": day, "low": low, "high": high,
+                                     "readings": 0, "out_of_range": 0})
+        slot["low"], slot["high"] = min(slot["low"], low), max(slot["high"], high)
+        slot["readings"] += count
+        slot["out_of_range"] += out
+
+    for hour in STORE.hourly_for(sensor.sensor_id, since):
+        add(hour["hour"][:10], hour["min_f"], hour["max_f"], hour["count"], hour["breached"])
+    for reading in STORE.readings_for(sensor.sensor_id, since=since, complete=True):
+        t = reading.temperature_fahrenheit
+        add(iso(reading.recorded_at)[:10], t, t, 1, 1 if reading.breached else 0)
+    return [dict(slot, low=display_temperature(slot["low"], unit),
+                 high=display_temperature(slot["high"], unit))
+            for _, slot in sorted(days.items(), reverse=True)]
 
 
 # Readings shown on a sensor's own page. Twelve points is enough for a card
@@ -382,6 +459,7 @@ def sensor_detail(
     unit = tenant.temperature_unit
     history = STORE.readings_for(sensor.sensor_id)[-DETAIL_POINTS:]
     site = STORE.get_site(sensor.site_id) if sensor.site_id else None
+    kept = STORE.reading_stats(sensor.sensor_id)
 
     incidents = [
         i.public()
@@ -409,7 +487,12 @@ def sensor_detail(
             }
             for r in history
         ],
-        "readings_total": len(STORE.readings_for(sensor.sensor_id)),
+        "readings_total": kept["count"],
+        "readings_kept_since": kept["oldest"],
+        # One line a day for as long as readings are kept: the lowest and
+        # highest, from every reading and from the hourly rows kept for
+        # older ones. What the inspector asks about "last March".
+        "daily": _daily(sensor, unit),
         "breached_count": sum(1 for r in history if r.breached),
         "incidents": incidents,
         "open_incidents": sum(1 for i in incidents if i["state"] == "open"),

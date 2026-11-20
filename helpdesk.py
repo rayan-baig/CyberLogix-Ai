@@ -203,12 +203,14 @@ def faq() -> List[Dict[str, Any]]:
     from costs import TRIAL_CALLS_TOTAL
     from patterns import DEFROST_MAX_MINUTES
     from domain import (
+        ALERT_AT_ONCE_DEGREES_F,
         DISPATCH_SLA_SECONDS,
         PLAN_TIERS,
         SENSOR_OFFLINE_AFTER_MINUTES,
         SMS_RETRY_AFTER_MINUTES,
         VOICE_ESCALATION_GRACE_MINUTES,
     )
+    from domain import wait_words as _wait_words
     from firstday import TEST_ALERT_COOLDOWN_SECONDS, TEST_ALERTS_PER_DAY
     from pricing import (
         ADD_ONS,
@@ -230,7 +232,7 @@ def faq() -> List[Dict[str, Any]]:
         yearly_label,
     )
     from sitewide import settings as site_wide_settings
-    from store import MAX_READINGS_PER_SENSOR
+    from store import KEEP_DETAIL_DAYS, KEEP_READINGS_MONTHS
 
     sw = site_wide_settings()
     e = html.escape
@@ -382,11 +384,18 @@ def faq() -> List[Dict[str, Any]]:
             "q": "What happens when a fridge goes out of range?",
             "a": [
                 "Every reading is checked against the safe range for your "
-                "trade, or the one you set for that unit. When a reading is "
-                "out of range we open one problem for it and text everyone "
-                f"on call, within {DISPATCH_SLA_SECONDS} seconds. More "
-                "readings from the same fridge update that problem instead "
-                "of sending more texts.",
+                "trade, or the one you set for that unit. A door opened for "
+                "a minute does not alert anybody: a unit has to STAY out of "
+                f"range, {_wait_words()}, before we open one problem for it "
+                f"and text everyone on call, within {DISPATCH_SLA_SECONDS} "
+                "seconds. A reading far past the limit "
+                f"({ALERT_AT_ONCE_DEGREES_F:g}°F or more over) is sent at "
+                "once. More readings from the same fridge update that problem "
+                "instead of sending more texts.",
+                "If it comes back to normal before anybody answers, the alert "
+                "closes on its own with a note saying so, the people texted "
+                "get a short all-clear, and nobody is phoned. You can change "
+                "how long a unit waits on its card in the console.",
                 "If your team uses Slack, Teams or PagerDuty, a copy goes "
                 "there as well.",
             ],
@@ -491,9 +500,11 @@ def faq() -> List[Dict[str, Any]]:
                 "everything, and presses Download everything. You get one "
                 "file with every record we keep for the business. Passwords "
                 "and keys are never included.",
-                f"We keep the newest {MAX_READINGS_PER_SENSOR} readings for "
-                "each sensor, plus the readings around every alert. Download "
-                "regularly if you need a longer history.",
+                f"We keep every reading for {KEEP_DETAIL_DAYS} days, then "
+                "each hour's lowest, highest and average reading, until it is "
+                f"{KEEP_READINGS_MONTHS} months old. The readings around "
+                "every alert are kept in full with the alert. The download "
+                "holds all of it.",
             ],
         },
         {

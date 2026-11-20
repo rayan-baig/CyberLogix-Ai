@@ -198,7 +198,7 @@ def attest_sensor(
     can load as often as they like and must not be a way to fill the
     database.
     """
-    readings = STORE.readings_for(sensor.sensor_id, since=since)
+    readings = STORE.readings_for(sensor.sensor_id, since=since, complete=True)
     if until is not None:
         readings = [r for r in readings if r.recorded_at <= until]
     unit = tenant.temperature_unit
@@ -347,7 +347,7 @@ def sensor_attestation(
 
     if include_chain:
         attestation["chain"] = build_chain(
-            STORE.readings_for(sensor.sensor_id, since=since)
+            STORE.readings_for(sensor.sensor_id, since=since, complete=True)
         )
     return attestation
 
@@ -357,8 +357,9 @@ def _anchored_run(readings: List[Reading], anchor, buffer_full: bool):
     ("broken", None) or ("empty", None).
 
     `readings` is everything still retained for the sensor, oldest first.
-    A run can only be missing because of retention if the buffer is full
-    and its oldest reading is newer than the run's start; anything else
+    A run can only be missing because of retention if older readings have
+    been folded into hourly rows (`buffer_full`, named when this was a ring
+    buffer) and its oldest reading is newer than the run's start; anything else
     missing was removed, and that is tampering. (This used to treat any
     short run as evicted, so deleting the newest attested reading passed
     as intact; and it assumed the oldest retained reading was the run's
@@ -369,7 +370,8 @@ def _anchored_run(readings: List[Reading], anchor, buffer_full: bool):
     oldest = iso(readings[0].recorded_at) if readings else None
 
     def gone_by_retention(edge):
-        return buffer_full and oldest is not None and edge is not None and oldest > edge
+        # Everything folded into hours (nothing left in full) counts too.
+        return buffer_full and edge is not None and (oldest is None or oldest > edge)
 
     first_id = getattr(anchor, "first_reading_id", None)
     last_id = getattr(anchor, "last_reading_id", None)
@@ -378,7 +380,7 @@ def _anchored_run(readings: List[Reading], anchor, buffer_full: bool):
         if last_id not in where:
             return ("evicted", None) if gone_by_retention(anchor.period_end) else ("broken", None)
         if first_id not in where:
-            return ("evicted", None) if (buffer_full and oldest is not None and oldest >= anchor.period_start) \
+            return ("evicted", None) if (buffer_full and (oldest is None or oldest >= anchor.period_start)) \
                 else ("broken", None)
         return "ok", readings[where[first_id]:where[last_id] + 1]
 
@@ -424,7 +426,7 @@ def verify_sensor(
     """
     sensor = _owned_sensor(tenant, sensor_id)
     since = utc_now() - timedelta(days=days)
-    readings = STORE.readings_for(sensor.sensor_id, since=since)
+    readings = STORE.readings_for(sensor.sensor_id, since=since, complete=True)
     current = chain_head(readings)
 
     anchors = [
@@ -454,10 +456,11 @@ def verify_sensor(
     # would let somebody bury the honest ones under enough new ones. The
     # store limits how many a sensor can collect a day instead.
     relevant = [a for a in anchors if not a.period_end or a.period_end >= iso(since)]
-    retained = STORE.readings_for(sensor.sensor_id)
-    import store as _store
-
-    buffer_full = len(retained) >= _store.MAX_READINGS_PER_SENSOR
+    # Every reading still held in full (KEEP_DETAIL_DAYS). One older than
+    # that was folded into an hourly row, which is retention, not an edit;
+    # anything missing from the newer part was removed.
+    retained = STORE.readings_for(sensor.sensor_id, complete=True)
+    buffer_full = STORE.detail_floor(sensor.sensor_id) is not None
 
     broken, evicted_any, checked, derived = [], False, 0, {}
     for anchor in relevant:

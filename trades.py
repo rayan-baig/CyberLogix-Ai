@@ -32,8 +32,8 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "name": "Florists",
         "plan": None,
         "title": "Flower cooler alarms for florists",
-        "description": ("A text and a phone call the moment your flower cooler "
-                        "warms up or starts to freeze, day or night. Temperature "
+        "description": ("A text, then a call on Growth, when your flower cooler "
+                        "stays too warm or starts to freeze, day or night. Temperature "
                         "alarms for florists, with every reading kept."),
         "lede": "We watch your flower coolers, and wake somebody up when one goes wrong.",
         "risk": (
@@ -49,7 +49,7 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "plan": None,
         "title": "Cold room and keg cooler alarms for breweries",
         "description": ("Temperature alarms for brewery cold rooms and keg "
-                        "coolers: a text and a call the moment one warms up, "
+                        "coolers: a text when one stays too warm, then a call, "
                         "and the record of every reading."),
         "lede": "We watch your cold rooms and keg coolers, all night.",
         "risk": (
@@ -64,8 +64,8 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "name": "Ice-cream shops",
         "plan": "restaurant",
         "title": "Freezer alarms for ice-cream shops",
-        "description": ("A text and a phone call the moment a dipping cabinet or "
-                        "storage freezer warms up, day or night. Freezer alarms "
+        "description": ("A text, then a call on Growth, when a dipping cabinet or "
+                        "storage freezer stays too warm, day or night. Freezer alarms "
                         "for ice-cream shops."),
         "lede": "We watch your freezers and dipping cabinets, and call you if one fails.",
         "risk": (
@@ -81,8 +81,8 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "plan": "restaurant",
         "title": "Cold room and display fridge alarms for butchers",
         "description": ("Temperature alarms for butchers' cold rooms, freezers "
-                        "and display counters: a text and a call the moment one "
-                        "warms up, and a record ready for the inspector."),
+                        "and display counters: a text when one stays too warm, "
+                        "then a call, and a record ready for the inspector."),
         "lede": "We watch your cold room, freezers and counters, day and night.",
         "risk": (
             "Meat has to stay cold from delivery to the counter. A cold room "
@@ -96,8 +96,8 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "name": "School cafeterias",
         "plan": "restaurant",
         "title": "Freezer and fridge alarms for school cafeterias",
-        "description": ("A text and a phone call when a school kitchen's freezer "
-                        "or fridge warms up, including over weekends and "
+        "description": ("A text, then a call on Growth, when a school kitchen's "
+                        "freezer or fridge stays too warm, including over weekends and "
                         "holidays. Every reading kept for your records."),
         "lede": "We watch the kitchen's fridges and freezers, even when school is out.",
         "risk": (
@@ -112,10 +112,10 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "name": "Vaccine clinics",
         "plan": "pharmacy",
         "title": "Vaccine fridge alarms for clinics",
-        "description": ("Vaccine fridge monitoring for clinics: a text and a call "
-                        "the moment a fridge leaves its range, and a continuous "
+        "description": ("Vaccine fridge monitoring for clinics: a text, then a call, "
+                        "when a fridge stays out of its range, and a continuous "
                         "temperature record for your vaccine programme."),
-        "lede": "We watch your vaccine fridges, and call somebody the moment one drifts.",
+        "lede": "We watch your vaccine fridges, and alert somebody when one drifts out of range.",
         "risk": (
             "Vaccine fridges have to stay inside a narrow range. Too warm or "
             "frozen, and doses may have to be thrown away and patients asked "
@@ -129,7 +129,7 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "plan": "restaurant",
         "title": "Fridge and freezer alarms for grocery stores",
         "description": ("Temperature alarms for grocery store cases, walk-ins and "
-                        "freezers: a text and a call the moment one warms up, "
+                        "freezers: a text when one stays too warm, then a call, "
                         "and every reading kept."),
         "lede": "We watch every case, walk-in and freezer, all night.",
         "risk": (
@@ -177,6 +177,8 @@ def index() -> List[Dict[str, str]]:
 
 def render(slug: str) -> Dict[str, str]:
     """The page's title, description and body, the body already escaped."""
+    from store import KEEP_DETAIL_DAYS, KEEP_READINGS_MONTHS
+
     trade = TRADES[slug]
     cost = price(slug)
     e = html.escape
@@ -205,14 +207,18 @@ def render(slug: str) -> Dict[str, str]:
         <li><b>We watch every {e(asset)}, all night.</b>
           A small sensor reads the temperature every few minutes and sends it
           to us. You set the range each one should stay in.</li>
-        <li><b>We phone a person until one answers.</b>
-          A text to everyone on call first, then a real phone call, then the
+        <li><b>We text, then phone a person until one answers.</b>
+          A text to everyone on call when a {e(asset)} stays out of range.
+          On Growth and up, if nobody answers, a real phone call, then the
           next name on the list.</li>
         <li><b>We tell a real fault from a normal one.</b>
-          Defrost cycles and doors left open are learned for each {e(asset)},
-          so the call you get means something.</li>
+          A door opened for a minute alerts nobody: it has to stay out of
+          range first. Defrost cycles are learned for each {e(asset)}, so the
+          call you get means something.</li>
         <li><b>We keep the record.</b>
-          Every reading is kept, so you can show what happened and when.</li>
+          Every reading for {KEEP_DETAIL_DAYS} days, then hourly lows and highs
+          for {KEEP_READINGS_MONTHS} months, so you can show what happened and
+          when.</li>
       </ol>
     </section>
 

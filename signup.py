@@ -214,7 +214,8 @@ def sectors():
         "founder": founder_offer(),
         "min_password_length": MIN_PASSWORD_LENGTH,
         # Shown first, in plain words; every sector follows under "Other".
-        "common": [{"key": k["key"], "name": k["name"]} for k in COMMON_KINDS],
+        "common": [{"key": k["key"], "name": k["name"], "sector": k["sector"]}
+                   for k in COMMON_KINDS],
         "sectors": [
             {
                 "key": key,

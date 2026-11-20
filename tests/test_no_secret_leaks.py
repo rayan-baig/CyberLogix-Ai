@@ -33,7 +33,7 @@ def test_no_endpoint_echoes_a_credential(api, operator_factory):
                    "target": "https://hooks.slack.com/services/T/B/SUPERSECRET"})
     body = api.post("/api/sensor-pulse", headers=headers,
                     json={"sensor_id": "FRZ-1",
-                          "temperature_fahrenheit": 55.0}).json()
+                          "temperature_fahrenheit": 60.0}).json()
     api.post(f"/api/voice/escalate/{body['incident_id']}?force=true",
              headers=headers)
     ack_token = STORE.get_incident(body["incident_id"]).ack_token

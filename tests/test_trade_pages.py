@@ -74,9 +74,13 @@ def test_no_made_up_numbers_or_testimonials(api):
         assert not re.search(r"\d+\s?%", body), slug
         for word in ("testimonial", "customers say", "trusted by", "“", "five stars"):
             assert word not in body.lower(), (slug, word)
-        # The only figures are the price and the Starter terms.
+        # The only figures are the price, the Starter terms and how long
+        # readings are kept, each read from the code.
+        import store
+
         figures = set(re.findall(r"\d[\d,.]*", re.sub(r"<[^>]+>", " ", body)))
-        assert figures <= {"149", "199", "10", "15", "59", "3"}, (slug, figures)
+        kept = {str(store.KEEP_DETAIL_DAYS), str(store.KEEP_READINGS_MONTHS)}
+        assert figures <= {"149", "199", "10", "15", "59", "3"} | kept, (slug, figures)
 
 
 def test_an_unknown_trade_is_a_404(api):

@@ -216,7 +216,7 @@ class Business:
         The whole point of the product, checked the same way at every step.
         """
         texts_before, calls_before = len(phone["sms"]), len(phone["calls"])
-        warm = self.pulse(48.0)
+        warm = self.pulse(60.0)
         assert warm.status_code == 200, warm.text
         assert warm.json()["status"].startswith("CRITICAL"), warm.json()
         (incident,) = STORE.open_incidents(self.tenant_id)

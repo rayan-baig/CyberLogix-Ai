@@ -146,7 +146,10 @@ def test_resolving_preserves_the_recovery_as_well(
 
     at_open = len(STORE.get_incident(incident_id).evidence_readings)
 
-    # The engineer arrives and it comes back into band.
+    # The engineer takes it, arrives, and it comes back into band. (Taken
+    # first: an alert nobody answered closes itself once it is back.)
+    api.post(f"/api/voice/acknowledge/{incident_id}", headers=headers,
+             json={"acknowledged_by": "Ops"})
     for temp in (60.0, 44.0, 38.5):
         _pulse(api, headers, temp)
     api.post(f"/api/voice/resolve/{incident_id}", headers=headers,

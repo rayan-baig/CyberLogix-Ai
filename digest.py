@@ -436,7 +436,7 @@ def customer_report(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str,
     readings = 0
     breaches = 0
     for sensor in sensors:
-        for reading in STORE.readings_for(sensor.sensor_id, since=since):
+        for reading in STORE.readings_for(sensor.sensor_id, since=since, complete=True):
             readings += 1
             if reading.breached:
                 breaches += 1

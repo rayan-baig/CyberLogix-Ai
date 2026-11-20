@@ -101,6 +101,9 @@ class Estate:
             assert api.post("/api/licenses/me/sensors", headers=key, json={
                 "sensor_id": unit, "industry_vertical": "restaurant",
                 "location_name": f"{company} cold room"}).status_code == 201
+            # Alert on the first reading over (the owner's own setting).
+            assert api.post(f"/api/licenses/me/sensors/{unit}/alert-rule", headers=key,
+                            json={"alert_after_minutes": 0}).status_code == 200
             assert api.post("/api/sensor-pulse", headers=key, json={
                 "sensor_id": unit, "temperature_fahrenheit": 55.0}).status_code == 200
             STORE.add_contact(self.ids[company], f"{company} night manager",

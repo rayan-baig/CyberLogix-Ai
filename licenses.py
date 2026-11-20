@@ -92,6 +92,27 @@ class ThresholdOverride(BaseModel):
     )
 
 
+class AlertRule(BaseModel):
+    """How long a unit must stay out of range before anybody is alerted."""
+
+    alert_after_minutes: Optional[Finite] = Field(
+        None,
+        description=(
+            "Minutes the unit must stay over (or under) its limit before "
+            "anybody is texted. 0 texts on the first reading out of range. "
+            "Null restores the default for its kind: 20 for a food fridge, "
+            "30 for a food freezer, 10 for a vaccine or lab fridge."
+        ),
+    )
+    alert_after_readings: Optional[int] = Field(
+        None,
+        description=(
+            "Optional: alert sooner once this many readings in a row are out "
+            "of range, for a sensor that reports rarely. Null: time only."
+        ),
+    )
+
+
 class SensorRegister(BaseModel):
     sensor_id: str = Field(..., min_length=1, max_length=80)
     industry_vertical: str = Field(..., min_length=1)
@@ -134,6 +155,11 @@ def apply_unit_kind(sensor, vertical: str, kind: Optional[str]) -> None:
     if limits is None:
         return
     STORE.set_sensor_overrides(sensor, limits[0], limits[1])
+    # Kept, so the unit gets its kind's wait before alerting (a freezer
+    # waits longer than a fridge: domain.default_alert_after_minutes).
+    STORE.set_alert_rule(sensor, sensor.alert_after_minutes,
+                         sensor.alert_after_readings,
+                         unit_kind=(kind or "").strip().lower())
 
 
 def check_unit_kind(vertical: str, kind: Optional[str]) -> None:
@@ -499,8 +525,14 @@ def plan_change_terms(tenant: Tenant, plan: str) -> dict:
         else:
             price_words = "Priced from the rate card for the units you add."
     months = round(tier["term_days"] / 30.4)
-    term_words = (f"A {months}-month plan. Billing starts from your next "
-                  "invoice, for the days after the move only; nothing is "
+    # Both halves said together, so "a 12-month plan" beside "cancel any
+    # time" does not read as a contradiction: the plan's term renews each
+    # year and is billed month by month, and cancelling stops the billing
+    # whenever it happens (CANCELLATION_RULE). The terms are unchanged.
+    term_words = (f"A {months}-month plan that renews each year, billed each "
+                  "month (or yearly, if you choose). It is not a lock-in: you "
+                  "can cancel any time, as below. Billing starts from your "
+                  "next invoice, for the days after the move only; nothing is "
                   "charged on this screen.")
     trial_days_left: Optional[int] = None
     trial_words = ""
@@ -778,6 +810,57 @@ def set_thresholds(
             "Overrides cleared; the industry defaults apply."
             if above is None and below is None
             else "Overrides applied."
+        ),
+    }
+
+
+@router.post("/me/sensors/{sensor_id}/alert-rule")
+def set_alert_rule(
+    sensor_id: str,
+    payload: AlertRule,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
+):
+    """Set how long this unit must stay out of range before we alert.
+
+    A walk-in that is opened all through a lunch delivery may want longer;
+    a vaccine fridge, less. A reading far past the limit
+    (domain.ALERT_AT_ONCE_DEGREES_F) and a sensor going quiet alert at once
+    whatever this says.
+    """
+    from domain import (ALERT_AFTER_MINUTES_MAX, ALERT_AFTER_READINGS_MAX,
+                        alert_after_minutes, default_alert_after_minutes)
+
+    sensor = STORE.get_sensor(sensor_id)
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
+        )
+    minutes, readings = payload.alert_after_minutes, payload.alert_after_readings
+    if minutes is not None and not 0 <= minutes <= ALERT_AFTER_MINUTES_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(f"alert_after_minutes must be between 0 and "
+                    f"{ALERT_AFTER_MINUTES_MAX:g}."),
+        )
+    if readings is not None and not 1 <= readings <= ALERT_AFTER_READINGS_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"alert_after_readings must be between 1 and {ALERT_AFTER_READINGS_MAX}.",
+        )
+    STORE.set_alert_rule(sensor, minutes, readings)
+    wait = alert_after_minutes(sensor)
+    return {
+        "sensor": sensor.public(tenant.temperature_unit),
+        "alert_after_minutes": wait,
+        "alert_after_minutes_default": default_alert_after_minutes(sensor),
+        "alert_after_readings": readings,
+        "message": (
+            "Alerts on the first reading out of range." if wait <= 0 else
+            f"Alerts once it has stayed out of range for {wait:g} minutes"
+            + (f" or {readings} readings in a row" if readings else "")
+            + ", or at once if it is far past its limit."
         ),
     }
 

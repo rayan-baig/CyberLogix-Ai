@@ -53,14 +53,15 @@ def _day(value: Optional[str], default: date, name: str) -> date:
 
 
 def _readings(sensor, start: datetime, end: datetime, incidents) -> List[Dict[str, Any]]:
-    """The readings held for this unit in the period, live and kept as evidence.
+    """The readings held in full for this unit in the period, and those
+    kept as evidence.
 
-    Readings are a rolling window, but an alert keeps a copy of the
-    readings around it, so an old out-of-range spell still shows on the
-    log after the live window has moved on.
+    Every reading is kept in full for KEEP_DETAIL_DAYS (older ones as
+    hourly rows: _hourly_rows), and an alert keeps a copy of the readings
+    around it, so an old out-of-range spell still shows reading by reading.
     """
     rows: Dict[Any, Dict[str, Any]] = {}
-    for reading in STORE.readings_for(sensor.sensor_id, since=start):
+    for reading in STORE.readings_for(sensor.sensor_id, since=start, complete=True):
         if reading.recorded_at < end:
             rows[reading.reading_id] = {
                 "at": reading.recorded_at,
@@ -77,26 +78,41 @@ def _readings(sensor, start: datetime, end: datetime, incidents) -> List[Dict[st
                 "at": at,
                 "f": kept.get("temperature_fahrenheit"),
                 "breached": bool(kept.get("breached")),
+                # A copy kept on the alert: its original may since have been
+                # folded into an hourly row, which already counts it.
+                "kept": True,
             }
     return sorted((r for r in rows.values() if r["f"] is not None), key=lambda r: r["at"])
 
 
-def _hours(readings, unit: str) -> List[Dict[str, Any]]:
-    by_hour: Dict[datetime, List[Dict[str, Any]]] = {}
+def _hours(readings, unit: str, kept=()) -> List[Dict[str, Any]]:
+    """One row an hour: lowest, highest, how many readings, how many out.
+
+    From readings held in full and the hourly rows kept for older ones; an
+    hour with both (the job folds an hour's readings in as they age) is
+    added together. A copy kept on an alert is not counted in an hour that
+    has an hourly row: the row already counts the reading it copies.
+    """
+    rolled = {h["hour"] for h in kept}
+    by_hour: Dict[str, Dict[str, Any]] = {}
     for row in readings:
-        by_hour.setdefault(row["at"].replace(minute=0, second=0, microsecond=0), []).append(row)
-    out = []
-    for hour in sorted(by_hour):
-        rows = by_hour[hour]
-        temps = [display_temperature(r["f"], unit) for r in rows]
-        out.append({
-            "hour": iso(hour),
-            "low": min(temps),
-            "high": max(temps),
-            "readings": len(rows),
-            "out_of_range": sum(1 for r in rows if r["breached"]),
-        })
-    return out
+        hour = iso(row["at"].replace(minute=0, second=0, microsecond=0))
+        if row.get("kept") and hour in rolled:
+            continue
+        temp = display_temperature(row["f"], unit)
+        slot = by_hour.setdefault(hour, {"hour": hour, "low": temp, "high": temp,
+                                         "readings": 0, "out_of_range": 0})
+        slot["low"], slot["high"] = min(slot["low"], temp), max(slot["high"], temp)
+        slot["readings"] += 1
+        slot["out_of_range"] += 1 if row["breached"] else 0
+    for h in kept:
+        low, high = display_temperature(h["min_f"], unit), display_temperature(h["max_f"], unit)
+        slot = by_hour.setdefault(h["hour"], {"hour": h["hour"], "low": low, "high": high,
+                                              "readings": 0, "out_of_range": 0})
+        slot["low"], slot["high"] = min(slot["low"], low), max(slot["high"], high)
+        slot["readings"] += h["count"]
+        slot["out_of_range"] += h["breached"]
+    return [by_hour[k] for k in sorted(by_hour)]
 
 
 def _days(hours) -> List[Dict[str, Any]]:
@@ -164,10 +180,12 @@ def build_log(tenant: Tenant, first: date, last: date) -> Dict[str, Any]:
         incidents = sorted((i for i in all_incidents if i.sensor_id == sensor.sensor_id),
                            key=lambda i: i.opened_at)
         readings = _readings(sensor, start, end, incidents)
-        hours = _hours(readings, unit)
+        kept = STORE.hourly_for(sensor.sensor_id, start, end)
+        hours = _hours(readings, unit, kept)
         above, below = sensor.bounds()
-        temps = [display_temperature(r["f"], unit) for r in readings]
-        out_of_range = sum(1 for r in readings if r["breached"])
+        temps = ([h["low"] for h in hours] + [h["high"] for h in hours])
+        out_of_range = sum(h["out_of_range"] for h in hours)
+        total = sum(h["readings"] for h in hours)
         units.append({
             "sensor_id": sensor.sensor_id,
             "location_name": sensor.location_name or sensor.sensor_id,
@@ -175,10 +193,10 @@ def build_log(tenant: Tenant, first: date, last: date) -> Dict[str, Any]:
             "industry_name": INDUSTRY_PROFILES[sensor.industry_vertical]["name"],
             "limit_above": display_temperature(above, unit) if above is not None else None,
             "limit_below": display_temperature(below, unit) if below is not None else None,
-            "readings": len(readings),
+            "readings": total,
             "out_of_range_readings": out_of_range,
-            "in_range_percent": (round((len(readings) - out_of_range) / len(readings) * 100, 1)
-                                 if readings else None),
+            "in_range_percent": (round((total - out_of_range) / total * 100, 1)
+                                 if total else None),
             "lowest": min(temps) if temps else None,
             "highest": max(temps) if temps else None,
             "hours": hours,

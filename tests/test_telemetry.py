@@ -32,7 +32,7 @@ def test_breach_opens_incident_with_gemini_sms(
     assert "94F, 16F above the 78F limit." in text
     assert "URGENT: equipment failing, attend the site now." in text
     assert text.endswith("Reply 1 if you are on it.")
-    assert "94.0°F > 78.0°F" in body["breach_details"]
+    assert "Too warm: 94°F (limit 78°F)" in body["breach_details"]
     assert body["incident_id"].startswith("INC-")
     # The model is told the trade, not the reading: the facts are not its
     # to word, and without them the answer can be cached per kind of unit.
@@ -66,7 +66,7 @@ def test_medical_lab_low_threshold_breach(api, tenant_factory, sensor_factory):
     )
     body = pulse(api, headers, sensor_id="BLOOD-07", temp=33.0).json()
     assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
-    assert "33.0°F < 36.0°F" in body["breach_details"]
+    assert "Too cold: 33°F (limit 36°F)" in body["breach_details"]
 
 
 def test_medical_lab_midband_is_nominal(api, tenant_factory, sensor_factory):

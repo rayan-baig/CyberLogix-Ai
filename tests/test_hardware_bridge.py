@@ -49,7 +49,7 @@ def test_nominal_webhook_reading(api, tenant_factory):
 def test_webhook_breach_opens_a_real_incident(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    body = webhook(api, headers["X-CyberLogix-Key"], value=45.0).json()
+    body = webhook(api, headers["X-CyberLogix-Key"], value=60.0).json()
 
     assert body["alert_triggered"] is True
     incident_id = body["telemetry_result"]["incident_id"]
@@ -74,7 +74,7 @@ def test_thresholds_follow_the_industry_not_a_flat_number(api, tenant_factory):
     )
     token = headers["X-CyberLogix-Key"]
 
-    assert webhook(api, token, serial="SN-FREEZER", value=45.0).json()["alert_triggered"] is True
+    assert webhook(api, token, serial="SN-FREEZER", value=60.0).json()["alert_triggered"] is True
     assert webhook(api, token, serial="SN-HANGAR", value=45.0).json()["alert_triggered"] is False
 
 

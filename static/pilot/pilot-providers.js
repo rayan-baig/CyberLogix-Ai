@@ -1,4 +1,4 @@
-// Pilot core 1.0.1 · pilot-providers.js
+// Pilot core 1.1.0 · pilot-providers.js
 // The AI providers Pilot can talk to, straight from the browser with the
 // user's own key. The key goes only to the provider the user chose, in the
 // header that provider asks for, and never to the app's own server.
@@ -26,7 +26,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const ANTHROPIC_VERSION = "2026-10-21";
   const DEFAULT_MAX_TOKENS = 4096; // when the provider doesn't say; fits any model
   const MOST_TOKENS = 16000; // a chat answer never needs more
@@ -94,6 +94,9 @@
       return new PilotError("quota", `${who} says this key is out of credit or over its limit. Check your account with them.`, status);
     }
     if (status === 429) return new PilotError("rate", `${who} is getting a lot of requests from this key. Wait a moment and try again.`, status);
+    if (status === 400 && /image|vision|multimodal|modalit|video input/.test(words)) {
+      return new PilotError("noimages", `${who} says this model can't look at pictures or videos. Pick a model that can, or another key, in Pilot settings.`, status);
+    }
     if (status === 404 || /model/.test(words) && status === 400) {
       return new PilotError("model", `${who} doesn't offer the model “${settings.model}” for this key. Pick another in Pilot settings.`, status);
     }

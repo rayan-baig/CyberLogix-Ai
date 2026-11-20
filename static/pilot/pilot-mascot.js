@@ -1,5 +1,10 @@
-// Pilot core 1.0.1 · pilot-mascot.js
+// Pilot core 1.1.0 · pilot-mascot.js
 // The Pilot robot and the P mark.
+//
+// Also where the robot may sit (placement): it steps back while a page's
+// own pop-up is open, keeps clear of things an app asks it to avoid (and of
+// another helper character), picking a free corner, or tucks half away at
+// the edge until tapped.
 //
 // The robot is the owner's own picture (pilot-robot-128.webp and
 // pilot-robot-256.webp, transparent), shown as an <img> at the size the
@@ -11,7 +16,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -34,7 +39,7 @@
     img.setAttribute("decoding", "async");
     img.setAttribute("draggable", "false");
     if (u.large) img.setAttribute("srcset", `${u.small} 128w, ${u.large} 256w`);
-    img.setAttribute("sizes", "(max-width: 720px) 72px, 88px");
+    img.setAttribute("sizes", "(max-width: 720px) 56px, 88px");
     img.setAttribute("src", u.small || "");
     return img;
   }
@@ -63,7 +68,83 @@
     return svg;
   }
 
-  const api = { VERSION, robot, mark };
+  // ---------------------------------------------------------------- placement
+
+  // A page's own pop-ups: while one is showing, the robot steps back.
+  const MODALS = 'dialog[open], [aria-modal="true"], [role="dialog"], [role="alertdialog"]';
+
+  function shown(el, win) {
+    if (!el || !el.getClientRects || el.getClientRects().length === 0) return false;
+    if (el.closest && el.closest("[hidden]")) return false;
+    const w = win || root;
+    const st = w && w.getComputedStyle ? w.getComputedStyle(el) : null;
+    return !st || (st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0);
+  }
+
+  // Is a pop-up of the page showing? own: Pilot's root (its window doesn't count).
+  function modalOpen(doc, own, win) {
+    const d = doc || root.document;
+    for (const el of d.querySelectorAll(MODALS)) {
+      if (own && own.contains(el)) continue;
+      if (shown(el, win)) return true;
+    }
+    return false;
+  }
+
+  const CORNERS = ["br", "bl", "tr", "tl"];
+  // The order to try corners in: the chosen one, the other side of the same
+  // edge, then the other edge.
+  function cornerOrder(corner) {
+    const c = CORNERS.includes(corner) ? corner : "br";
+    const flipSide = `${c[0]}${c[1] === "r" ? "l" : "r"}`;
+    const flipEdge = `${c[0] === "b" ? "t" : "b"}${c[1]}`;
+    const both = `${flipEdge[0]}${flipSide[1]}`;
+    return [c, flipSide, flipEdge, both];
+  }
+
+  // The robot's box in a corner. view: {width, height}; size: {width, height}.
+  function cornerBox(corner, view, size, gap) {
+    const g = gap === undefined ? 16 : gap;
+    const left = corner[1] === "l" ? g : view.width - g - size.width;
+    const top = corner[0] === "t" ? g : view.height - g - size.height;
+    return { left, top, right: left + size.width, bottom: top + size.height };
+  }
+
+  const overlaps = (a, b, pad) => {
+    const p = pad || 0;
+    return a.left - p < b.right && a.right + p > b.left && a.top - p < b.bottom && a.bottom + p > b.top;
+  };
+
+  // Where to sit: {corner, peek}. blocks: the boxes to keep clear of (things
+  // to avoid, another helper). The chosen corner if it's free, else the first
+  // free one; if none is free, the chosen corner, tucked half away (peek).
+  function choosePlace(opts) {
+    const o = opts || {};
+    const blocks = (o.blocks || []).filter(Boolean);
+    for (const c of cornerOrder(o.corner)) {
+      const box = cornerBox(c, o.view, o.size, o.gap);
+      if (!blocks.some((b) => overlaps(box, b, 6))) return { corner: c, peek: false };
+    }
+    return { corner: CORNERS.includes(o.corner) ? o.corner : "br", peek: true };
+  }
+
+  // The boxes of the visible elements matching any of the selectors.
+  function boxesOf(doc, selectors, own, win) {
+    const out = [];
+    for (const sel of selectors || []) {
+      let list = [];
+      try { list = (doc || root.document).querySelectorAll(sel); } catch (_) { continue; }
+      for (const el of list) {
+        if (own && own.contains(el)) continue;
+        if (!shown(el, win)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) out.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
+    }
+    return out;
+  }
+
+  const api = { VERSION, robot, mark, MODALS, modalOpen, cornerOrder, cornerBox, overlaps, choosePlace, boxesOf, shown };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -111,7 +111,7 @@ def test_expired_sessions_are_dropped_on_load(shared_db):
     assert second.session_by_token(session.secret) is None
 
 
-def test_reading_eviction_prunes_the_database(shared_db, monkeypatch):
+def test_memory_eviction_keeps_the_record_on_disk(shared_db, monkeypatch):
     import store as store_module
 
     monkeypatch.setattr(store_module, "MAX_READINGS_PER_SENSOR", 5)
@@ -122,9 +122,11 @@ def test_reading_eviction_prunes_the_database(shared_db, monkeypatch):
     for index in range(20):
         first.record_reading(sensor, 60.0 + index, 50.0, False)
 
-    # The ring buffer caps memory; the table must not grow past it either.
+    # The buffer caps memory; the record on disk keeps every reading.
     assert len(first.readings_for("S1")) == 5
-    assert first._db.count("reading") == 5
+    assert first._db.count("reading") == 20
+    assert [r.temperature_fahrenheit for r in first.readings_for("S1", complete=True)] == [
+        60.0 + i for i in range(20)]
 
 
 def test_decommissioning_removes_persisted_readings(shared_db):

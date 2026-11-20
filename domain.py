@@ -33,6 +33,116 @@ SENSOR_OFFLINE_AFTER_MINUTES = 30
 # How long a breach may sit unacknowledged before voice escalation is due.
 VOICE_ESCALATION_GRACE_MINUTES = 10
 
+# "Stays out of range": how long a unit must stay over (or under) its limit
+# before anybody is texted. A door held open for a delivery, or a tray of
+# warm food going in, pushes a fridge over 41°F for a few minutes and back;
+# texting the whole team for that, and phoning them ten minutes later, is
+# how alerts get switched off. A fridge that stays over the line is a real
+# problem, and that is what pages.
+#
+# Minutes, by kind of unit. A food freezer gets longer than a fridge: its
+# air warms fast when the door opens and the food inside does not. Vaccine
+# and lab fridges get less, because the rules for them are stricter.
+ALERT_AFTER_MINUTES_FOOD_FRIDGE = 20.0
+ALERT_AFTER_MINUTES_FOOD_FREEZER = 30.0
+ALERT_AFTER_MINUTES_CLINICAL_FRIDGE = 10.0
+ALERT_AFTER_MINUTES_CLINICAL_FREEZER = 15.0
+ALERT_AFTER_MINUTES_CRYO = 5.0
+ALERT_AFTER_MINUTES_OTHER = 15.0
+# What an owner may set a unit to: 0 is "text on the first reading over".
+ALERT_AFTER_MINUTES_MAX = 240.0
+ALERT_AFTER_READINGS_MAX = 100
+
+# Far over the limit is never a door: a reading this many degrees past it
+# alerts at once, without waiting. (A fridge's door open lifts the air a
+# few degrees; a fridge at 56°F is broken or something is very wrong.)
+ALERT_AT_ONCE_DEGREES_F = 15.0
+
+# "Back to normal" means back inside the limit by at least this much. A
+# unit hovering at 40.9°F, 41.2°F, 40.8°F is not recovering, and must not
+# restart the wait every time it dips a tenth under the line.
+BACK_TO_NORMAL_MARGIN_F = 1.0
+
+_FOOD_SECTORS = frozenset({"restaurant", "country_club"})
+_CLINICAL_SECTORS = frozenset({"pharmacy", "medical_lab"})
+
+
+def unit_kind_of(sensor: "Sensor") -> Optional[str]:
+    """"fridge" or "freezer" for the sectors that ask, else None.
+
+    The answer given on the add form, where one was saved; for a unit
+    added before it was saved, read from its limit, which the answer set.
+    """
+    kind = getattr(sensor, "unit_kind", None)
+    if kind:
+        return kind
+    if sensor.industry_vertical not in UNIT_KINDS:
+        return None
+    above, _ = sensor.bounds()
+    if above is None:
+        return "fridge"
+    # Every freezer limit we offer is far under 20°F, every fridge's over.
+    return "freezer" if above <= 20.0 else "fridge"
+
+
+def default_alert_after_minutes(sensor: "Sensor") -> float:
+    """How long this kind of unit may be out of range before we alert."""
+    vertical = sensor.industry_vertical
+    kind = unit_kind_of(sensor)
+    if vertical in _FOOD_SECTORS:
+        return (ALERT_AFTER_MINUTES_FOOD_FREEZER if kind == "freezer"
+                else ALERT_AFTER_MINUTES_FOOD_FRIDGE)
+    if vertical in _CLINICAL_SECTORS:
+        return (ALERT_AFTER_MINUTES_CLINICAL_FREEZER if kind == "freezer"
+                else ALERT_AFTER_MINUTES_CLINICAL_FRIDGE)
+    if vertical == "cryostorage":
+        return ALERT_AFTER_MINUTES_CRYO
+    return ALERT_AFTER_MINUTES_OTHER
+
+
+def alert_after_minutes(sensor: "Sensor") -> float:
+    """The unit's own setting if its owner chose one, else its kind's."""
+    own = getattr(sensor, "alert_after_minutes", None)
+    return float(own) if own is not None else default_alert_after_minutes(sensor)
+
+
+def far_out_of_range(sensor: "Sensor", temperature: float) -> bool:
+    """So far past the limit that nobody should wait to hear about it."""
+    above, below = sensor.bounds()
+    return ((above is not None and temperature >= above + ALERT_AT_ONCE_DEGREES_F)
+            or (below is not None and temperature <= below - ALERT_AT_ONCE_DEGREES_F))
+
+
+def back_to_normal(sensor: "Sensor", temperature: Optional[float]) -> bool:
+    """Inside the limit with room to spare, not just a tenth under it."""
+    if temperature is None:
+        return False
+    above, below = sensor.bounds()
+    if above is not None and temperature > above - BACK_TO_NORMAL_MARGIN_F:
+        return False
+    if below is not None and temperature < below + BACK_TO_NORMAL_MARGIN_F:
+        return False
+    return True
+
+
+def wait_words() -> str:
+    """The default waits in one phrase, for every page that explains them."""
+    return (f"{ALERT_AFTER_MINUTES_FOOD_FRIDGE:g} minutes for a food fridge, "
+            f"{ALERT_AFTER_MINUTES_FOOD_FREEZER:g} for a freezer and "
+            f"{ALERT_AFTER_MINUTES_CLINICAL_FRIDGE:g} for a vaccine or lab fridge")
+
+
+def minutes_words(minutes: float) -> str:
+    """"about 1 minute", "3 minutes", "about 2 hours": never "0.73 min"."""
+    whole = int(round(minutes))
+    if whole < 1:
+        return "under a minute"
+    if whole < 60:
+        return f"{whole} minute{'' if whole == 1 else 's'}"
+    hours = round(minutes / 60.0)
+    return f"about {hours} hour{'' if hours == 1 else 's'}"
+
+
 # When the sweep sends an incident's alert text again, in minutes after the
 # incident opened, if every text so far failed. After the last step the
 # normal escalation (the voice call, where the plan has one) is all there is.
@@ -196,6 +306,14 @@ def format_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
     if value is None:
         return "not reported"
     return f"{value}°{unit}"
+
+
+def plain_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
+    """"43°F" rather than "43.0°F": the way a person writes it on a log."""
+    value = display_temperature(fahrenheit, unit)
+    if value is None:
+        return "not reported"
+    return f"{value:g}°{unit}" if float(value).is_integer() else f"{value}°{unit}"
 
 
 _WRITTEN_TEMPERATURE = re.compile(r"(-?\d+(?:\.\d+)?)°([FC])\b")
@@ -481,8 +599,23 @@ UNIT_KINDS: Dict[str, List[Dict[str, Any]]] = {
 
 
 def unit_kinds(vertical: str) -> List[Dict[str, Any]]:
-    """The "fridge or freezer?" choices for a sector, or [] for none."""
-    return [dict(k) for k in UNIT_KINDS.get(vertical, [])]
+    """The "fridge or freezer?" choices for a sector, or [] for none.
+
+    Each carries how long that kind waits before alerting
+    (`alert_after_minutes`), so the add form can say the real rule.
+    """
+    out = []
+    for k in UNIT_KINDS.get(vertical, []):
+        clinical = vertical in _CLINICAL_SECTORS
+        if k["kind"] == "freezer":
+            wait = (ALERT_AFTER_MINUTES_CLINICAL_FREEZER if clinical
+                    else ALERT_AFTER_MINUTES_FOOD_FREEZER)
+        else:
+            wait = (ALERT_AFTER_MINUTES_CLINICAL_FRIDGE if clinical
+                    else ALERT_AFTER_MINUTES_FOOD_FRIDGE)
+        out.append(dict(k, alert_after_minutes=wait,
+                        alert_at_once_degrees=ALERT_AT_ONCE_DEGREES_F))
+    return out
 
 
 def unit_kind_limits(
@@ -583,15 +716,13 @@ def evaluate_breach(
 
     if above is not None and temperature > above:
         return (
-            f"Thermal high threshold breached: "
-            f"{format_temperature(temperature, unit)} > "
-            f"{format_temperature(above, unit)} limit."
+            f"Too warm: {plain_temperature(temperature, unit)} "
+            f"(limit {plain_temperature(above, unit)})."
         )
     if below is not None and temperature < below:
         return (
-            f"Thermal low threshold breached: "
-            f"{format_temperature(temperature, unit)} < "
-            f"{format_temperature(below, unit)} limit."
+            f"Too cold: {plain_temperature(temperature, unit)} "
+            f"(limit {plain_temperature(below, unit)})."
         )
     return None
 

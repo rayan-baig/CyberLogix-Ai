@@ -71,7 +71,7 @@ def trial_evidence(tenant: Tenant) -> Dict[str, Any]:
     since = tenant.activated_at
     readings = 0
     for sensor in sensors:
-        readings += len(STORE.readings_for(sensor.sensor_id, since=since))
+        readings += STORE.reading_stats(sensor.sensor_id, since=since)["count"]
 
     incidents = STORE.incidents_for(tenant.tenant_id, since=since)
     escalated = sum(1 for i in incidents if i.voice_escalated_at is not None)

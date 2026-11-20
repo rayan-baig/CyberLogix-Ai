@@ -1,4 +1,4 @@
-// Pilot core 1.0.1 · pilot-panel.js
+// Pilot core 1.1.0 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its five pill buttons, the messages, the "Type a message…"
 // box, and the gear, palette and ? buttons at the bottom. Settings (keys,
@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -777,6 +777,13 @@
         el("button", { type: "button", class: "pilot-link", text: "Delete", "aria-label": `Forget “${n}”`,
           on: { click: () => { store.forgetNote(i); drawSettings(); } } }))));
 
+      // How lively the robot is: calm (it stays put), low, normal or playful
+      // (flights and climbing too). "Reduce motion" keeps it still anyway.
+      const energy = el("select", { class: "pilot-field", "aria-label": "How Pilot's robot moves" },
+        ...[["calm", "Calm: stays put"], ["low", "Low: now and then"], ["normal", "Normal"], ["playful", "Playful: flies and climbs too"]]
+          .map(([v, t]) => el("option", { value: v, text: t, selected: store.ui().energy === v || undefined })));
+      energy.addEventListener("change", () => store.setUi({ energy: energy.value }));
+
       const forgetAll = el("button", { type: "button", class: "pilot-btn pilot-btn-quiet", text: "Remove my keys from this browser" });
       forgetAll.hidden = !a.keys.length && !a.image && !a.video;
       forgetAll.addEventListener("click", () => { store.forget(); editing = null; changed(); drawSettings(); });
@@ -800,6 +807,9 @@
         mem.on && !mem.notes.length ? el("p", { class: "pilot-small", text: "Nothing yet. Say “Remember that …” in the chat, or add one here." }) : null,
         mem.on ? el("div", { class: "pilot-inline" }, noteInput, addNote) : null,
         memMsg,
+        el("h3", { class: "pilot-h3", text: "The robot" }),
+        el("label", { class: "pilot-row" }, el("span", { text: "How it moves around the page" }), energy),
+        el("p", { class: "pilot-small", text: "It never moves while this window is open, or if your device is set to reduce motion." }),
         forgetAll);
     }
 

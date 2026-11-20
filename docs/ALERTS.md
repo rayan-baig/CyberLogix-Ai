@@ -110,6 +110,46 @@ alerts, and the sensor's first reading: nothing is called protected
 before a reading has arrived), which can send it directly: the
 words beside the button say what it is, so there is no are-you-sure.
 
+## When an alert is sent: it has to stay out of range
+
+A door held open for a delivery pushes a fridge over 41°F for a few minutes
+and back. Texting everybody for that, and phoning them ten minutes later, is
+how alerts get switched off, so a reading over the line is recorded (as out
+of range, on every log) and the unit is **watched** (`WATCHING`) rather than
+alerted on. It is alerted on when:
+
+* it has been out of range **continuously for its wait**
+  (`domain.default_alert_after_minutes`): 20 minutes for a food fridge, 30
+  for a food freezer, 10 for a vaccine or lab fridge, 15 for a vaccine
+  freezer, 5 for a cryostorage tank, 15 for anything else. "Continuously"
+  ends only at a reading back inside the limit by at least 1°F
+  (`BACK_TO_NORMAL_MARGIN_F`), so a unit hovering at its line is not
+  forgiven every time it dips a tenth under it;
+* or a reading is **15°F or more past the limit** (`ALERT_AT_ONCE_DEGREES_F`),
+  which is never a door: that alerts at once;
+* or, where the owner set one, that many **readings in a row** are out of
+  range (for a sensor that reports rarely).
+
+The sweep checks every minute too (`telemetry.alert_held_breaches`), so a
+sensor that reports every fifteen minutes, or goes quiet once warm, is still
+alerted on when its wait runs out. A sensor going quiet is its own alert at
+once (see [SENSOR-OFFLINE.md](SENSOR-OFFLINE.md)).
+
+**Each unit's own setting.** The owner (or an operator) sets the wait on the
+unit's card (**Alert wait**), or with
+`POST /api/licenses/me/sensors/{id}/alert-rule`
+`{"alert_after_minutes": 10, "alert_after_readings": null}`. `0` alerts on
+the first reading out of range; `null` puts the kind's default back.
+
+**Back to normal before anybody answered.** When a reading is back inside
+the limit by the margin and nobody has acknowledged the alert, it closes on
+its own, with a plain note ("Back to normal after 3 minutes, probably the
+door or a delivery. Nobody was phoned."), nobody is written down as having
+acknowledged it, the people who were texted get a short all-clear, and the
+pending call is cancelled: the claim on the call refuses a closed alert, and
+the sweep never phones about a unit whose newest reading is in range. An
+alert somebody acknowledged is theirs to close, with what they did.
+
 ## The escalation ladder
 
 A freezer's own defrost is not a breach anyone is paged for. When a unit
@@ -123,7 +163,10 @@ next reading pages as normal. The limit is learned from the shortest
 cycle and capped because in a real 2026 attack on store fridge controls
 the attackers stretched defrost cycles to hold off the alarms: learning
 "normal" from stretched cycles let each one excuse a longer next one.
-With no learned rhythm every breach pages.
+With no learned rhythm the "stays out of range" wait above applies. The two
+work together: a defrost that overruns is not given a second wait, because
+the spell has been out of range since it began (a freezer's 30 minutes is
+already over when a 41-minute "defrost" stops being excused).
 
 **Phone calls follow the plan.** Growth and Enterprise call; Starter sends
 texts only. The free trial may place `costs.TRIAL_CALLS_TOTAL` (5) calls in
@@ -134,7 +177,7 @@ gets alerts** when nothing would ring), the escalation preview (no call
 ladder where nothing would ring), the Simple view, and the proof report an
 insurer reads.
 
-1. A breach opens an incident and sends the SMS.
+1. A unit that stays out of range (above) opens an incident and sends the SMS.
 2. A sustained breach **updates that incident** rather than opening another,
    so a failing freezer produces one alert instead of a pager storm. Follow-up
    pulses return `CRITICAL_CATASTROPHE_ONGOING`.

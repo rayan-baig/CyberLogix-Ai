@@ -133,6 +133,14 @@ def run_money_pass() -> dict:
         paused = retention.run_pauses()
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Pause pass failed (%s).", exc)
+    kept = {"readings_folded": 0, "hours_dropped": 0}
+    try:
+        # Readings past the full-detail window into hourly rows, and hourly
+        # rows past the months kept deleted (store.roll_up_old_readings).
+        # Hourly, so each pass folds about an hour's worth.
+        kept = STORE.roll_up_old_readings()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Reading roll-up failed (%s).", exc)
     try:
         # Last, so that anything the passes above queued against a mail
         # host that was briefly down gets one more attempt in the same
@@ -166,6 +174,7 @@ def run_money_pass() -> dict:
         "kitchen_safety_bundle": bundle,
         "pauses": paused,
         "backup": backed_up,
+        "readings_kept": kept,
         "mail_queue": flushed,
     }
 

@@ -581,7 +581,7 @@ def test_a_reading_already_taken_is_not_taken_again(api, estate, monkeypatch):
     with."""
     headers, _ = estate
     made = source(api, headers).json()["source"]
-    stale = {"samples": [{"sensor": "SP-0001", "temperature": 55.0,
+    stale = {"samples": [{"sensor": "SP-0001", "temperature": 60.0,
                           "observed": "2026-09-20T10:00:00Z"}]}
     monkeypatch.setattr(pollers, "_fetch", lambda u, h: stale)
 

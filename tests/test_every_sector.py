@@ -240,7 +240,7 @@ def test_a_unit_switch_after_an_alert_leaves_no_old_scale_in_the_document(
     _no_other_scale(body["document"], "C", f"the {vertical} document")
     for incident in body["evidence"]["incidents"]:
         _no_other_scale(incident["detail"], "C", "the incident detail")
-        limit = re.findall(r"(-?\d+(?:\.\d+)?)°C limit", incident["detail"])
+        limit = re.findall(r"limit (-?\d+(?:\.\d+)?)°C", incident["detail"])
         above, below = (INDUSTRY_PROFILES[vertical]["danger_above"],
                         INDUSTRY_PROFILES[vertical]["danger_below"])
         assert limit and float(limit[0]) == pytest.approx(
