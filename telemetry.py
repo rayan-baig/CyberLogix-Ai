@@ -132,6 +132,7 @@ def list_industries():
     Public, so only published rates carry a figure: a trade priced by
     quote has `monthly_usd` null and says so in `price_label`.
     """
+    from domain import unit_kinds
     from pricing import PRICE_BOOK, custom_quote, public_price, public_price_label
 
     return {
@@ -151,6 +152,9 @@ def list_industries():
                 "unit": profile["unit"],
                 "asset_noun": profile["asset_noun"],
                 "asset_plural": profile["asset_plural"],
+                # "Fridge or freezer?" and the limit each answer gives;
+                # empty for a sector whose units all take its own limit.
+                "unit_kinds": unit_kinds(key),
                 "billing_unit": PRICE_BOOK[key]["unit"],
                 "monthly_usd": public_price(key),
                 "custom_pricing": custom_quote(key),

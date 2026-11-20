@@ -340,7 +340,7 @@ def test_upgrading_off_the_trial_lifts_the_ceiling_immediately(
     assert costs.allow_message(trial["tenant_id"], "sms")[0] is False
 
     moved = api.post("/api/licenses/me/plan",
-                     headers={**headers, **owner}, json={"plan": "growth"})
+                     headers={**headers, **owner}, json={"plan": "growth", "confirm": True})
     assert moved.status_code == 200, moved.text
     assert costs.allow_message(trial["tenant_id"], "sms")[0] is True
 

@@ -196,3 +196,12 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
   border: 1px solid var(--border); background: rgba(255,255,255,0.03);
 }
 .panel .steps li { overflow-wrap: anywhere; }
+
+/* "What you need" (sensor_guides.what_you_need_html), on /pricing and
+   /help/sensors. */
+.need h2 { margin-top: 0; }
+.need h3 { font-size: 15px; margin: 18px 0 6px; color: var(--ink); }
+.need p, .need li { color: var(--ink-2); line-height: 1.6; }
+.need ul, .need ol { padding-left: 22px; margin: 0; display: grid; gap: 6px; }
+.plan-gets { margin: 0; padding-left: 16px; display: grid; gap: 3px; min-width: 220px; }
+.plan-gets li { font-size: 13px; color: var(--ink-2); }

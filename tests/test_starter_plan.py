@@ -207,7 +207,7 @@ def test_a_trade_starter_is_not_for_asks_for_growth(api, tenant_factory, owner_h
 
 def test_moving_up_to_growth_lifts_the_limits(api, tenant_factory, owner_headers):
     both, tenant = _starter(api, tenant_factory, owner_headers, units=3)
-    moved = api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth"})
+    moved = api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth", "confirm": True})
     assert moved.status_code == 200, moved.text
     assert api.post("/api/licenses/me/sensors", headers=both, json={
         "sensor_id": "CAFE-4", "industry_vertical": "restaurant",
@@ -222,18 +222,18 @@ def test_a_trial_can_choose_starter_but_not_with_more_than_it_holds(
     both = {**headers, **owner_headers(headers)}
     for n in range(4):
         sensor_factory(headers, sensor_id=f"T-{n}", vertical="restaurant")
-    refused = api.post("/api/licenses/me/plan", headers=both, json={"plan": "starter"})
+    refused = api.post("/api/licenses/me/plan", headers=both, json={"plan": "starter", "confirm": True})
     assert refused.status_code == 409
     assert "4 units are registered" in refused.json()["detail"]
     api.delete("/api/licenses/me/sensors/T-3", headers=headers)
     assert api.post("/api/licenses/me/plan", headers=both,
-                    json={"plan": "starter"}).status_code == 200
+                    json={"plan": "starter", "confirm": True}).status_code == 200
 
 
 def test_growth_cannot_drop_itself_to_starter(api, tenant_factory, owner_headers):
     headers, _ = tenant_factory(plan="growth")
     both = {**headers, **owner_headers(headers)}
-    refused = api.post("/api/licenses/me/plan", headers=both, json={"plan": "starter"})
+    refused = api.post("/api/licenses/me/plan", headers=both, json={"plan": "starter", "confirm": True})
     assert refused.status_code == 409
 
 
@@ -295,7 +295,7 @@ def test_moving_to_growth_mid_period_bills_only_the_difference_for_the_rest(
     assert api.post("/api/contracts", headers=both, json={"term_years": 1}).status_code == 201
     run_billing()                                   # period 0, on Starter
     assert STORE.invoices_for(tenant["tenant_id"])[0].total_usd == STARTER
-    api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth"})
+    api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth", "confirm": True})
     _backdate_period_zero(tenant["tenant_id"], 0.5)
 
     run_billing()                                   # period 1, on Growth
@@ -317,7 +317,7 @@ def test_a_second_shop_after_the_move_is_caught_up_on_its_own(
     api.post(f"/api/sites/{site['site_id']}/sensors", headers=both, json={"sensor_id": "CAFE-1"})
     assert api.post("/api/contracts", headers=both, json={"term_years": 1}).status_code == 201
     run_billing()
-    api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth"})
+    api.post("/api/licenses/me/plan", headers=both, json={"plan": "growth", "confirm": True})
     second = api.post("/api/sites", headers=both, json={"name": "Market Square"}).json()
     api.post("/api/licenses/me/sensors", headers=both, json={
         "sensor_id": "MKT-1", "industry_vertical": "restaurant", "location_name": "Fridge"})

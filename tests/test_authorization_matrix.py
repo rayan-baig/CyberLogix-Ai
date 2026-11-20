@@ -263,7 +263,7 @@ def test_a_viewer_cannot_touch_the_estate_or_the_licence(api, three_roles,
         "decommission a sensor": api.delete(
             f"/api/licenses/me/sensors/{sensor['sensor_id']}", headers=viewer),
         "downgrade the plan": api.post(
-            "/api/licenses/me/plan", headers=viewer, json={"plan": "trial"}),
+            "/api/licenses/me/plan", headers=viewer, json={"plan": "trial", "confirm": True}),
         "suspend the licence": api.post("/api/licenses/me/suspend", headers=viewer),
         "change the display unit": api.post(
             "/api/licenses/me/temperature-unit", headers=viewer, json={"unit": "C"}),
@@ -293,7 +293,7 @@ def test_an_operator_can_run_the_estate_but_not_the_money(api, three_roles):
 
     for what, resp in (
         ("change the plan",
-         api.post("/api/licenses/me/plan", headers=operator, json={"plan": "growth"})),
+         api.post("/api/licenses/me/plan", headers=operator, json={"plan": "growth", "confirm": True})),
         ("suspend the licence",
          api.post("/api/licenses/me/suspend", headers=operator)),
     ):
@@ -376,7 +376,7 @@ def test_the_tenant_api_key_cannot_switch_the_company_off(api, tenant_factory,
         ("suspend the licence", api.post("/api/licenses/me/suspend",
                                          headers=key_headers)),
         ("change the plan", api.post("/api/licenses/me/plan", headers=key_headers,
-                                     json={"plan": "trial"})),
+                                     json={"plan": "trial", "confirm": True})),
     ):
         assert resp.status_code in (401, 403), (
             f"a machine credential could {what} ({resp.status_code})"

@@ -235,6 +235,10 @@ def _overlap(a: datetime, b: datetime, lo: datetime, hi: datetime) -> float:
     return max(0.0, (end - start).total_seconds())
 
 
+# No percentage online for less than an hour watched (see build).
+MIN_SECONDS_FOR_PERCENT = 3600.0
+
+
 def _floor1(value: float) -> float:
     """Down to one decimal, so 99.97% never prints as 100%."""
     return math.floor(value * 10) / 10.0
@@ -278,15 +282,22 @@ def _alert_role(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]
 
 
 def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
-    """The on-call list and the team, by role: never a name or a number."""
+    """The on-call list and the team, by role: never a name or a number.
+
+    Phone calls are mentioned only where the plan includes them. This is
+    the page an insurer reads, and it used to promise "the phone calls go
+    down the list" for a Starter account that never places one.
+    """
+    calls = bool(tenant.entitlements().get("voice_escalation"))
     roster = [c for c in STORE.contacts_for(tenant.tenant_id) if c.active]
     if site_id:
         roster = [c for c in roster if c.site_id in (None, site_id)]
     on_call = []
     for position, contact in enumerate(roster, start=1):
-        gets = ("texts and phone calls" if contact.receives_sms and contact.receives_voice
+        voice = contact.receives_voice and calls
+        gets = ("texts and phone calls" if contact.receives_sms and voice
                 else "texts" if contact.receives_sms
-                else "phone calls" if contact.receives_voice else "nothing at present")
+                else "phone calls" if voice else "nothing at present")
         on_call.append({
             "position": position,
             "role": "On-call person",
@@ -305,9 +316,12 @@ def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
         "team": [{"role": _TEAM_WORDS.get(role, role.title()), "count": count}
                  for role, count in sorted(team.items(), key=lambda kv: kv[0])
                  if role in _TEAM_WORDS],
+        "calls": calls,
         "rule": ("Every person on call gets a text at once. If nobody "
                  "acknowledges, the phone calls go down the list until "
-                 "somebody does."),
+                 "somebody does." if calls else
+                 "Every person on call gets a text at once. This plan "
+                 "sends texts only; it does not include phone calls."),
     }
 
 
@@ -358,7 +372,11 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
         if watch is not None and watch["watched"] > 0:
             total_watched += watch["watched"]
             total_offline += watch["offline"]
-            online = _floor1(100.0 * (watch["watched"] - watch["offline"]) / watch["watched"])
+            # A percentage of almost nothing is not a figure: "100% online"
+            # beside "0 hours watched" was the report for a unit added that
+            # morning. Under an hour, the hours are the honest number.
+            if watch["watched"] >= MIN_SECONDS_FOR_PERCENT:
+                online = _floor1(100.0 * (watch["watched"] - watch["offline"]) / watch["watched"])
             if watch["longest"] is not None:
                 seconds, g_from, g_to, ongoing = watch["longest"]
                 gap_minutes = _minutes(seconds)
@@ -416,7 +434,11 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
         "summary": {
             "sensors_watched": len(sensors),
             "online_percent": (_floor1(100.0 * (total_watched - total_offline) / total_watched)
-                               if total_watched > 0 else None),
+                               if total_watched >= MIN_SECONDS_FOR_PERCENT else None),
+            # The hours behind the percentage, all sensors together, so the
+            # figure is never read without what it is a percentage of.
+            "hours_watched": round(total_watched / 3600.0, 1),
+            "hours_online": round(max(0.0, total_watched - total_offline) / 3600.0, 1),
             "alerts": len(alerts),
             "alerts_acknowledged": len(times),
             "alerts_not_acknowledged": len(alerts) - len(times),
@@ -461,7 +483,12 @@ def make(tenant: Tenant, site_id: Optional[str], first: date,
          now: Optional[datetime] = None) -> Dict[str, Any]:
     """Build, freeze, hash and seal a report, and keep it."""
     body = build(tenant, site_id, first, now)
-    report_id = STORE._next_id("PRF")
+    # Numbered within this business (PRF-2-QHKX), not across every
+    # customer: the id is on a page an insurer reads.
+    report_id = STORE.account_id(
+        "PRF", tenant.tenant_id,
+        lambda: ((r["report_id"], r.get("tenant_id")) for r in STORE._db.all(KIND)),
+        lambda candidate: STORE._db.get(KIND, candidate) is not None)
     code = new_code()
     while by_code(code) is not None:  # pragma: no cover - 80 bits
         code = new_code()
@@ -531,7 +558,8 @@ def public_view(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "fingerprint": fingerprint(str(row.get("content_hash") or "")),
         "covers_the_whole_period": (body.get("coverage") or {}).get("covers_the_whole_period"),
         "summary": {key: summary.get(key) for key in (
-            "sensors_watched", "online_percent", "alerts", "alerts_acknowledged",
+            "sensors_watched", "online_percent", "hours_watched", "hours_online",
+            "alerts", "alerts_acknowledged",
             "alerts_not_acknowledged", "median_minutes_to_acknowledge",
             "longest_gap_minutes")},
     })
@@ -556,6 +584,19 @@ def _mins(value: Any) -> str:
     return f"{hours} h {minutes} min" if minutes else f"{hours} h"
 
 
+def online_words(summary: Dict[str, Any]) -> str:
+    """"Time online" with the hours it is a share of, never a bare 100%."""
+    hours = summary.get("hours_watched")
+    pct = summary.get("online_percent")
+    if pct is None:
+        if hours is None:
+            return "—"
+        return f"Not enough yet: {hours:g} hours watched so far"
+    if hours is None:  # a report made before the hours were written down
+        return f"{pct:g}%"
+    return f"{pct:g}% of {hours:g} hours watched"
+
+
 def render_verify_html(result: Dict[str, Any], code: str) -> str:
     """The public page's result, as escaped HTML."""
     e = html.escape
@@ -567,7 +608,7 @@ def render_verify_html(result: Dict[str, Any], code: str) -> str:
     if state != "genuine":
         return head
     s = result["summary"]
-    online = "—" if s["online_percent"] is None else f'{s["online_percent"]:g}%'
+    online = online_words(s)
     gap = ("under " + str(GAP_RECORD_MINUTES) + " min"
            if s["longest_gap_minutes"] is None else _mins(s["longest_gap_minutes"]))
     acknowledged = (f'{s["alerts_acknowledged"]} of {s["alerts"]}'

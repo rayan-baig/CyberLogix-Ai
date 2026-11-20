@@ -15,7 +15,7 @@ import hashlib
 import re
 import math
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from records import Sensor
@@ -240,8 +240,8 @@ def spoken_temperature(fahrenheit: Optional[float], unit: str = "F") -> str:
 # limit is nominal.
 INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     "cybersecurity": {
-        "name": "CyberTech Data Centers",
-        "catastrophe": "HVAC Circuit Trip / Cooling Fan Stalled",
+        "name": "Data centers",
+        "catastrophe": "Cooling failed (a tripped circuit or a stalled fan)",
         "slogan": "A fan stalls at three. Nobody notices until the customer does.",
         "danger_above": 78.0,
         "danger_below": None,
@@ -302,15 +302,20 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         ),
     },
     "restaurant": {
-        "name": "Franchise Restaurants",
-        "catastrophe": "Unlatched Walk-In Freezer Door Gasket Failure",
+        "name": "Restaurants & Cafés",
+        "catastrophe": "Fridge or freezer warming (door left open, or the cooling failing)",
         "slogan": "A walk-in fails on Friday. Nobody opens it until Monday.",
-        "danger_above": 32.0,
+        # A fridge's limit, because most of what a kitchen watches is a
+        # fridge: food kept cold must stay at 41°F or below. A freezer is
+        # chosen on the add form and gets its own limit (UNIT_KINDS). This
+        # was 32°F, a freezer-ish number, so a healthy walk-in cooler at
+        # 37°F opened a critical alarm on its first reading.
+        "danger_above": 41.0,
         "danger_below": None,
         "unit": "°F",
         "asset_noun": "walk-in",
         "asset_plural": "walk-ins",
-        "shortcut_name": "Health Inspector Log Formatter",
+        "shortcut_name": "Health Inspector Temperature Log",
         "shortcut_description": (
             "Formats temperature logs into official local health department audit sheets."
         ),
@@ -420,12 +425,14 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     },
     "country_club": {
         "name": "High-End Country Clubs",
-        "catastrophe": "Clubhouse Kitchen Walk-In Compressor Failure",
+        "catastrophe": "Clubhouse kitchen fridge or freezer warming",
         "slogan": (
             "The walk-in dies Sunday night. Two hundred covers are "
             "booked Tuesday."
         ),
-        "danger_above": 32.0,
+        # A fridge's limit, as for restaurants; a freezer is chosen on the
+        # add form (UNIT_KINDS).
+        "danger_above": 41.0,
         "danger_below": None,
         "unit": "°F",
         "asset_noun": "kitchen",
@@ -436,6 +443,61 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         ),
     },
 }
+
+# The limits a sector used to apply by default, before 3.19.0. A sensor
+# saved before then with no limit of its own was alarming on these, and
+# keeps alarming on them (records.Sensor.from_row pins them) until its
+# owner changes it: a new default must never quietly move the line an
+# existing fridge alarms at.
+LEGACY_DANGER_ABOVE: Dict[str, float] = {
+    "restaurant": 32.0,
+    "country_club": 32.0,
+}
+
+# "Fridge or freezer?" -- what the add form asks, and the limit each answer
+# gives. Only the sectors where the answer changes the limit have a list;
+# every other sector's unit takes the sector's own limit. The first entry
+# is the form's default.
+#
+# Food: a fridge holds 41°F or below (the food code's cold-holding rule).
+# A freezer should sit near 0°F; the alarm is at 10°F so a normal defrost
+# does not page anyone, while a freezer that is really failing does.
+# Vaccines: a fridge between 36°F and 46°F (2-8°C), a freezer between
+# -58°F and 5°F (-50°C to -15°C).
+_FOOD_KINDS: List[Dict[str, Any]] = [
+    {"kind": "fridge", "label": "Fridge", "danger_above": 41.0, "danger_below": None},
+    {"kind": "freezer", "label": "Freezer", "danger_above": 10.0, "danger_below": None},
+]
+_CLINICAL_KINDS: List[Dict[str, Any]] = [
+    {"kind": "fridge", "label": "Fridge", "danger_above": 46.0, "danger_below": 36.0},
+    {"kind": "freezer", "label": "Freezer", "danger_above": 5.0, "danger_below": -58.0},
+]
+UNIT_KINDS: Dict[str, List[Dict[str, Any]]] = {
+    "restaurant": _FOOD_KINDS,
+    "country_club": _FOOD_KINDS,
+    "pharmacy": _CLINICAL_KINDS,
+    "medical_lab": _CLINICAL_KINDS,
+}
+
+
+def unit_kinds(vertical: str) -> List[Dict[str, Any]]:
+    """The "fridge or freezer?" choices for a sector, or [] for none."""
+    return [dict(k) for k in UNIT_KINDS.get(vertical, [])]
+
+
+def unit_kind_limits(
+    vertical: str, kind: Optional[str]
+) -> Optional[Tuple[Optional[float], Optional[float]]]:
+    """(above, below) for one answer to "fridge or freezer?".
+
+    None when the sector has no such choice or the answer is not one of
+    its choices, so the caller can refuse it rather than guess.
+    """
+    for entry in UNIT_KINDS.get(vertical, []):
+        if entry["kind"] == (kind or "").strip().lower():
+            return entry["danger_above"], entry["danger_below"]
+    return None
+
 
 # Commercial plan tiers. Seat count is the number of registered sensors.
 #

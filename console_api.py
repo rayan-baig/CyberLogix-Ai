@@ -291,6 +291,7 @@ def console_overview(
         if s["risk_level"] in {"critical", "high", "elevated"}
     )
 
+    from costs import calls_offer
     from firstday import checklist
     from helpdesk import support_address
     from pricing import build_roi, build_subscription, starter_terms
@@ -309,6 +310,9 @@ def console_overview(
         "entitlements": {
             "voice_escalation": entitlements["voice_escalation"],
             "predictive_forecasting": forecasting,
+            # Whether an alert would ring a phone, and the words for it:
+            # the plan's calls, the trial's few, or texts only.
+            "calls": calls_offer(tenant),
         },
         "temperature_unit": unit,
         "fleet_noun": fleet_noun,

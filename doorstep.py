@@ -152,6 +152,9 @@ class Adopt(BaseModel):
                            description="Left out, the serial is used.")
     unit: str = Field("", max_length=20,
                       description="Required only if the device never said.")
+    unit_kind: Optional[str] = Field(
+        None, max_length=20,
+        description="\"fridge\" or \"freezer\" where the sector asks.")
 
     @field_validator("unit")
     @classmethod
@@ -222,9 +225,10 @@ def adopt(
                 "other, and it is not guessed from the number."
             ))
 
-    from licenses import refuse_off_starter_vertical
+    from licenses import apply_unit_kind, check_unit_kind, refuse_off_starter_vertical
 
     refuse_off_starter_vertical(tenant, vertical)
+    check_unit_kind(vertical, payload.unit_kind)
     cap = tenant.entitlements()["max_sensors"]
     try:
         sensor = STORE.claim_sensor_seat(
@@ -246,6 +250,9 @@ def adopt(
 
     usage.count("sensors_added")
 
+    # Before the replay, so what it sent while waiting is judged against
+    # the limit its owner just chose.
+    apply_unit_kind(sensor, vertical, payload.unit_kind)
     replayed = _replay(sensor, tenant, row, unit)
     forget(tenant.tenant_id, payload.serial)
     write_audit(tenant, operator, "doorstep.adopted",

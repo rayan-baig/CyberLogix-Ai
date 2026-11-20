@@ -60,7 +60,7 @@ def test_the_sale_the_message_offers_actually_closes(
         sensor_factory(headers, f"FRZ-{i}", "restaurant")
 
     assert api.post("/api/licenses/me/plan", headers={**headers, **owner},
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/licenses/me/sensors", headers=headers, json={
         "sensor_id": "FRZ-5", "industry_vertical": "restaurant",
         "location_name": "Sixth"}).status_code == 201

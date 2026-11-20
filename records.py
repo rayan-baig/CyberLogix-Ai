@@ -30,8 +30,13 @@ from domain import (
     mask_email,
     display_temperature,
     INDUSTRY_PROFILES,
+    LEGACY_DANGER_ABOVE,
     PLAN_TIERS,
 )
+
+# Written on every sensor row from 3.19.0. A row without it was saved
+# under the old sector defaults (domain.LEGACY_DANGER_ABOVE).
+SENSOR_DEFAULTS_VERSION = 2
 
 
 @dataclass
@@ -235,10 +240,21 @@ class Sensor:
             "last_temperature": self.last_temperature,
             "last_humidity": self.last_humidity,
             "quiet_alert_for": self.quiet_alert_for,
+            "defaults_version": SENSOR_DEFAULTS_VERSION,
         }
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "Sensor":
+        override_above = row.get("override_above")
+        # A sensor saved before 3.19.0 with no limit of its own alarmed on
+        # its sector's default at the time. That default has since changed
+        # (a restaurant's was a freezer's 32°F and is now a fridge's 41°F),
+        # and the line an existing unit alarms at must not move without
+        # its owner choosing it, so the old default is kept as its own.
+        if (override_above is None
+                and row.get("defaults_version") is None
+                and row.get("industry_vertical") in LEGACY_DANGER_ABOVE):
+            override_above = LEGACY_DANGER_ABOVE[row["industry_vertical"]]
         return cls(
             sensor_id=row["sensor_id"],
             tenant_id=row["tenant_id"],
@@ -251,7 +267,7 @@ class Sensor:
             site_id=row.get("site_id"),
             battery_percent=row.get("battery_percent"),
             signal_percent=row.get("signal_percent"),
-            override_above=row.get("override_above"),
+            override_above=override_above,
             override_below=row.get("override_below"),
             last_seen=_parse(row.get("last_seen")),
             last_temperature=row.get("last_temperature"),

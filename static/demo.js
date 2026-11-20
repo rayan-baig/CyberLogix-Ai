@@ -184,6 +184,10 @@ function fix() {
   $("fix").hidden = true;
   timeline("fixed", "done", "Fixed: the door was left open. It is cooling back down.");
   $("alert-note").textContent = "sorted";
+  // Straight away, not on the next tick: the banner kept offering "Mark it
+  // fixed" for several seconds after it was pressed, while the walk-in
+  // was still above its limit on the way back down.
+  draw();
 }
 
 /* ---------------- drawing ---------------- */
@@ -236,7 +240,12 @@ function draw() {
   }).join("");
 
   const box = $("verdict");
-  if (warm && !run.acked) {
+  if (warm && run.fixed) {
+    box.className = "demo-verdict watch";
+    box.innerHTML = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
+      <p>Marked fixed and written down. It will show as fine once it is back
+         under ${esc(fmt(warm.limit_f))}°F.</p>`;
+  } else if (warm && !run.acked) {
     box.className = "demo-verdict bad";
     box.innerHTML = `<h2>${esc(warm.name)} is too warm</h2>
       <p>${esc(people())} have been texted. Reply 1 on the phone below to say you are on it.</p>

@@ -47,8 +47,8 @@ def kitchen(api, operator_factory, sensor_factory):
                                            full_name="Robin Vale")
     key = {"X-CyberLogix-Key": api.post("/api/licenses/me/rotate-key",
                                         headers=owner).json()["api_key"]}
-    sensor_factory(key, sensor_id="HG-WALKIN", vertical="restaurant", location="Walk-in freezer")
-    sensor_factory(key, sensor_id="HG-BAR", vertical="restaurant", location="Bar fridge")
+    sensor_factory(key, sensor_id="HG-WALKIN", vertical="restaurant", location="Walk-in freezer", above=32.0)
+    sensor_factory(key, sensor_id="HG-BAR", vertical="restaurant", location="Bar fridge", above=32.0)
     for sensor in STORE.sensors_for(tenant["tenant_id"]):    # installed a while ago
         sensor.registered_at = utc_now() - timedelta(days=20)
         STORE._db.put("sensor", sensor.sensor_id, sensor.to_row())
@@ -842,7 +842,7 @@ def test_connected_is_billed_per_location_and_the_trial_is_not(
 
     headers, trial = tenant_factory(plan="trial", company_name="Trial Cafe")
     both = {**headers, **owner_headers(headers, email="t@trialcafe.example")}
-    sensor_factory(headers, sensor_id="TC-1", vertical="restaurant", location="Fridge")
+    sensor_factory(headers, sensor_id="TC-1", vertical="restaurant", location="Fridge", above=32.0)
     assert api.put("/api/connections/omniarmor", headers=both,
                    json={"address": ADDRESS, "key": KEY}).status_code == 200
     assert pricing.auto_add_ons(STORE.get_tenant(trial["tenant_id"])) == []

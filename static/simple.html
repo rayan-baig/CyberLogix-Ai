@@ -21,7 +21,7 @@
     </span>
     <span class="brand-name">CyberLogix <em>AI</em></span>
     <span class="grow"></span>
-    <a class="btn btn-sm" href="/console">All the detail</a>
+    <a class="btn btn-sm" href="/console?view=full">All the detail</a>
   </div>
 
   <!-- Somebody opening this for the first time has been handed a link and
@@ -37,10 +37,11 @@
 
     <ol class="how">
       <li>
-        <b>A thermometer sits in the freezer.</b>
-        A small battery-powered box. It reads the temperature every few
-        minutes and sends it to us, day and night, whether anybody is
-        there or not.
+        <b>A sensor sits in each fridge and freezer.</b>
+        A wireless temperature sensor, bought from a sensor maker (we do
+        not sell them). It reads the temperature every few minutes and
+        sends it to us over the internet, day and night, whether anybody
+        is there or not.
       </li>
       <li>
         <b>We watch the number.</b>
@@ -49,11 +50,10 @@
         faster than it should be</em>, which is the hour before it is a
         disaster.
       </li>
-      <li>
-        <b>We phone a human until one answers.</b>
-        Text first, then an actual phone call, then the next person on
-        the list. An alert nobody picks up is the same as no alert, so we
-        keep going until somebody does.
+      <li id="how-alert">
+        <b id="how-alert-head">We text the people on your list.</b>
+        <span id="how-alert-body">Everyone on call gets a text the moment
+        something is wrong, saying which fridge and how warm.</span>
       </li>
       <li>
         <b>We keep the receipts.</b>
@@ -84,7 +84,7 @@
   <div id="things"><p class="sub">Loading&hellip;</p></div>
 
   <div class="foot">
-    <a class="btn btn-sm" href="/console">Open the full console</a>
+    <a class="btn btn-sm" href="/console?view=full">Open the full console</a>
     <span class="sub" id="when"></span>
   </div>
 </div>

@@ -46,14 +46,14 @@ _PUSH = PRESETS["sensorpush"]
 def _add_unit_step(serial: bool) -> str:
     return (
         "In the console, open Setup and use Add a fridge or freezer: say "
-        "where it is and which industry it is in, so it gets the right "
-        "limits"
+        "where it is, which industry it is in and, where it asks, whether "
+        "it is a fridge or a freezer, so it gets the right limits"
         + (", and type the device's own serial number into Third-party "
            "device serial. That serial is how a reading finds this unit."
            if serial else
            ". Give it a Sensor ID you will recognise, such as WALKIN-1, "
            "or leave it blank and one is made from the location.")
-        + " Press Claim a seat."
+        + " Press Add it."
     )
 
 
@@ -290,6 +290,103 @@ def guides() -> List[Dict[str, Any]]:
     return GUIDES
 
 
+# --- what you need, before any of the guides --------------------------------
+#
+# CyberLogix sells no hardware. It reads wireless temperature sensors that
+# a business buys from a sensor maker. The landing page, the pricing page
+# and /help/sensors all say so, in these words, from here. No shop is
+# named and nothing is linked to: we earn nothing from any sensor sale.
+
+WHAT_YOU_NEED: Dict[str, Any] = {
+    "title": "What you need",
+    "lede": (
+        "CyberLogix does not sell sensors. You buy a wireless temperature "
+        "sensor for each fridge or freezer from a sensor maker, and point "
+        "it at us. We watch the readings and alert your team."
+    ),
+    "kinds": [
+        ("A sensor that can send to a web address",
+         "Many Wi-Fi and gateway sensors can send each reading to a web "
+         "address you give them (often called a webhook). Brands such as "
+         "Elitech and Dickson, and most devices that can be set up with a "
+         "URL, work this way."),
+        ("A sensor whose maker's cloud we can read",
+         "Some sensors only send to their maker's own app. If that cloud "
+         "lets you read readings with a web address and a key (an API), "
+         "we fetch them every few minutes. Monnit (through iMonnit) and "
+         "SensorPush are set up this way."),
+    ],
+    "cost": (
+        "Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, "
+        "and a commercial one with a probe for a walk-in or freezer about "
+        "$100 to $250. Some kinds also need a small gateway (about $100 to "
+        "$300, once per site) and some makers charge a few dollars a month "
+        "for their cloud. Prices vary by brand and change; check with the "
+        "seller before you buy. Our price does not include sensors."
+    ),
+    "steps": [
+        "Buy one sensor for each fridge or freezer you want watched. Check "
+        "that it can send to a web address, or that its maker's cloud has "
+        "an API.",
+        "Put the sensor (or its probe) inside the fridge or freezer, away "
+        "from the door, and connect it to your Wi-Fi or gateway as its "
+        "maker says.",
+        "In CyberLogix, use Add a fridge or freezer. Say where it is and "
+        "whether it is a fridge or a freezer, then copy the sensor key it "
+        "shows you.",
+        "In the sensor's app or cloud, set it to send readings to the "
+        "address in the guide for your brand below, with that key. Or, for "
+        "a maker's cloud, add it under Fetch from a sensor cloud in the "
+        "console.",
+        "Wait for the first reading. Getting started ticks First reading "
+        "received when it arrives, usually within a few minutes.",
+        "Add the people who should get alerts, and send a test alert to "
+        "check the texts arrive.",
+    ],
+}
+
+# What happens when the building loses power or internet. Said on the
+# landing page and the pricing page, from the same constant the offline
+# alert runs on.
+def outage_words() -> str:
+    from domain import SENSOR_OFFLINE_AFTER_MINUTES
+
+    return (
+        "Your sensors send readings over your internet. If the power or the "
+        "internet at your site goes off, readings stop arriving, and after "
+        f"{SENSOR_OFFLINE_AFTER_MINUTES} minutes with nothing from a sensor "
+        "we text everyone on call to say it has gone quiet, so you hear "
+        "about the outage too. Our alerts are sent from our servers, not "
+        "from your building, so they still go out. A battery sensor keeps "
+        "measuring through a power cut, but your Wi-Fi router or gateway "
+        "may not unless it is on a backup battery; some sensors store "
+        "readings and send them when the connection comes back."
+    )
+
+
+def what_you_need_html(heading_level: int = 2, with_steps: bool = True) -> str:
+    """The "What you need" section as HTML. Everything is escaped."""
+    e = html.escape
+    h = f"h{heading_level}"
+    sub = f"h{heading_level + 1}"
+    kinds = "".join(f"<li><b>{e(title)}.</b> {e(words)}</li>"
+                    for title, words in WHAT_YOU_NEED["kinds"])
+    steps = ("<" + sub + ">Setting it up, step by step</" + sub + ">"
+             + '<ol class="steps">'
+             + "".join(f"<li>{e(step)}</li>" for step in WHAT_YOU_NEED["steps"])
+             + "</ol>") if with_steps else ""
+    return (
+        f'<section class="need" id="what-you-need">'
+        f'<{h}>{e(WHAT_YOU_NEED["title"])}</{h}>'
+        f'<p>{e(WHAT_YOU_NEED["lede"])}</p>'
+        f'<{sub}>Which sensors work</{sub}><ul class="need-kinds">{kinds}</ul>'
+        f'<{sub}>Roughly what they cost</{sub}><p>{e(WHAT_YOU_NEED["cost"])}</p>'
+        f"{steps}"
+        f'<{sub}>If the power or internet goes off</{sub}><p>{e(outage_words())}</p>'
+        f"</section>"
+    )
+
+
 def _steps(guide: Dict[str, Any], base: str) -> List[str]:
     return [step.replace(BASE, base) for step in guide["steps"]]
 
@@ -300,7 +397,8 @@ def render_html(base: str) -> str:
     contents = "".join(
         f'<a class="btn btn-sm" href="#{e(g["id"])}">{e(g["title"].split(" (")[0])}</a>'
         for g in GUIDES)
-    out = [f'<div class="help-links">{contents}</div>']
+    out = [f'<div class="panel">{what_you_need_html(2)}</div>',
+           f'<div class="help-links">{contents}</div>']
     for guide in GUIDES:
         steps = "".join(f"<li>{e(step)}</li>" for step in _steps(guide, base))
         example = e(json.dumps(guide["example"], indent=2))
@@ -324,7 +422,18 @@ def render_markdown() -> str:
         "`tests/test_sensor_guides.py`; this file is generated by",
         "`sensor_guides.py`, so change that rather than this.",
         "",
+        f"## {WHAT_YOU_NEED['title']}",
+        "",
+        WHAT_YOU_NEED["lede"],
+        "",
+        "### Which sensors work",
+        "",
     ]
+    out += [f"* **{title}.** {words}" for title, words in WHAT_YOU_NEED["kinds"]]
+    out += ["", "### Roughly what they cost", "", WHAT_YOU_NEED["cost"], "",
+            "### Setting it up, step by step", ""]
+    out += [f"{n}. {step}" for n, step in enumerate(WHAT_YOU_NEED["steps"], 1)]
+    out += ["", "### If the power or internet goes off", "", outage_words(), ""]
     for guide in GUIDES:
         out += [f"## {guide['title']}", "", guide["for"], ""]
         out += [f"{n}. {step}" for n, step in enumerate(_steps(guide, DOC_BASE), 1)]

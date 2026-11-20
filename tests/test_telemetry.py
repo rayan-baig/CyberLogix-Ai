@@ -13,7 +13,7 @@ def test_nominal_reading(api, tenant_factory, sensor_factory):
     sensor_factory(headers)
     body = pulse(api, headers, temp=68.4).json()
     assert body["status"] == "nominal"
-    assert body["industry"] == "CyberTech Data Centers"
+    assert body["industry"] == "Data centers"
 
 
 def test_breach_opens_incident_with_gemini_sms(
@@ -24,7 +24,7 @@ def test_breach_opens_incident_with_gemini_sms(
     body = pulse(api, headers, temp=94.0, humidity=61.5).json()
 
     assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
-    assert body["catastrophe_type"] == "HVAC Circuit Trip / Cooling Fan Stalled"
+    assert body["catastrophe_type"] == "Cooling failed (a tripped circuit or a stalled fan)"
     assert body["sms_dispatch_source"] == "gemini"
     # Facts first, then the model's line, then how to answer.
     text = body["dispatched_sms_text"]
@@ -36,7 +36,7 @@ def test_breach_opens_incident_with_gemini_sms(
     assert body["incident_id"].startswith("INC-")
     # The model is told the trade, not the reading: the facts are not its
     # to word, and without them the answer can be cached per kind of unit.
-    assert "CyberTech Data Centers" in stub_gemini.prompts[0]
+    assert "Data centers" in stub_gemini.prompts[0]
     assert "94" not in stub_gemini.prompts[0]
 
 

@@ -86,7 +86,7 @@ NOT_FETCHED = {
     "/api/autopilot/compliance.csv", "/api/claims", "/api/contracts/billing-run",
     "/api/contracts/renew", "/api/contracts/add-ons", "/api/contracts/billing-interval",
     "/api/doorstep/adopt", "/api/legal/accept",
-    "/api/licenses/me/plan", "/api/licenses/me/sensors",
+    "/api/licenses/me/plan", "/api/licenses/me/plan/terms", "/api/licenses/me/sensors",
     "/api/licenses/me/temperature-unit",
     "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
     "/api/contacts/test-alert", "/api/simulator/units",

@@ -227,7 +227,7 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     assert approved.status_code == 200, approved.text                # repair-key
     assert api.post(f"/api/repair-partners/{rep_second}/decline",
                     headers=admin).status_code == 200                # repair-declined
-    sensor_factory(headers, "BELL-WALKIN", "restaurant", "Walk-in freezer")
+    sensor_factory(headers, "BELL-WALKIN", "restaurant", "Walk-in freezer", above=32.0)
     walkin = STORE.get_sensor("BELL-WALKIN")
     for minutes_ago, temp in enumerate([51.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0,
                                         38.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]):

@@ -270,17 +270,26 @@ def sensor_factory(api):
         sensor_id="RACK-01",
         vertical="cybersecurity",
         location="Austin DC / Hall B",
+        kind=None,
+        above=None,
     ):
-        resp = api.post(
-            "/api/licenses/me/sensors",
-            headers=headers,
-            json={
-                "sensor_id": sensor_id,
-                "industry_vertical": vertical,
-                "location_name": location,
-            },
-        )
+        body = {
+            "sensor_id": sensor_id,
+            "industry_vertical": vertical,
+            "location_name": location,
+        }
+        # "fridge" or "freezer", the add form's question (domain.UNIT_KINDS).
+        if kind:
+            body["unit_kind"] = kind
+        resp = api.post("/api/licenses/me/sensors", headers=headers, json=body)
         assert resp.status_code == 201, resp.text
+        # A limit of the unit's own, as an owner would set it. Tests written
+        # when a restaurant's default was a freezer's 32°F pass above=32.0.
+        if above is not None:
+            tuned = api.post(f"/api/licenses/me/sensors/{sensor_id}/thresholds",
+                             headers=headers, json={"danger_above": above})
+            assert tuned.status_code == 200, tuned.text
+            return tuned.json()["sensor"]
         return resp.json()["sensor"]
 
     return _make

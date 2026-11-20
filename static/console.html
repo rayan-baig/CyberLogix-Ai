@@ -180,16 +180,17 @@
       <button type="button" id="terms-accept">Read and accept</button>
     </div>
 
-    <!-- Getting started: three things, and the first fridge is protected.
-         The server ticks each one from what the account actually holds;
-         once all three are true the card is gone. -->
+    <!-- Getting started: four things, and the first fridge is protected
+         once a reading has actually arrived. The server ticks each one
+         from what the account holds; once all four are true it is gone. -->
     <section class="card first-day" id="first-day" hidden>
       <div class="card-head">
         <span class="card-title">Getting started</span>
         <span class="card-note" id="first-day-note"></span>
       </div>
-      <p class="card-plain">Three steps and your first fridge is protected.
-         Each one ticks itself when it is done.</p>
+      <p class="card-plain">Four steps. Your first fridge is protected once
+         its sensor&rsquo;s readings are arriving. Each one ticks itself when
+         it is done.</p>
       <ol class="checklist" id="first-day-list"></ol>
       <div class="checklist-out" id="first-day-out" hidden></div>
     </section>
@@ -216,8 +217,13 @@
       <button class="f-tab" data-tab="money" aria-pressed="false" type="button">Money</button>
       <button class="f-tab" data-tab="proof" aria-pressed="false" type="button">Proof</button>
       <button class="f-tab" data-tab="setup" aria-pressed="false" type="button">Setup</button>
+      <button class="f-tab f-tab-adv" data-tab="advanced" aria-pressed="false" type="button">Advanced</button>
     </div>
     <p class="finder-none" id="find-none" hidden></p>
+    <!-- On a small account the estate and operator tools wait here. -->
+    <p class="adv-note" id="adv-note" hidden>Tools for bigger estates (price
+      quotes for chains, meeting notes, staff licences, spending limits, the
+      record's fingerprints) are under <b>Advanced</b>.</p>
     <!-- A tab a new business has nothing on yet says, in one sentence, what
          will appear there, and offers the next thing to do. Never a blank
          page. Filled by renderTabEmpty() in console.js. -->
@@ -310,8 +316,203 @@
           <div id="forecast-body"></div>
         </section>
 
+        <!-- Records, locations and alert channels: beside the fleet on a
+             wide screen, so the two columns are about the same length.
+             Never on the wall. -->
+        <div class="side-cards">
+        <section class="card" id="find-proof-reports" data-group="proof" data-find="proof of monitoring report insurer insurance broker show fridges watched 24/7 verify link code share monthly" data-label="Proof of monitoring">
+          <div class="card-head">
+            <span class="card-title">Proof of monitoring</span>
+            <span class="card-note" id="proof-report-note">Owners only</span>
+          </div>
+          <p class="card-plain">Show your insurer proof that your fridges are
+             watched 24/7. A one-page report for a location and a month, with
+             a link anyone can use to check it is genuine. Nobody sees it
+             until you share the link, and you can switch the link off.</p>
+          <form id="proof-report-form" class="row u-mt-12" hidden>
+            <label class="sr" for="proof-report-site">Location</label>
+            <select id="proof-report-site" class="u-maxw-170"></select>
+            <label class="sr" for="proof-report-month">Month</label>
+            <input id="proof-report-month" type="month" required class="u-maxw-170">
+            <button class="btn btn-sm btn-primary" type="submit" id="proof-report-make">Make the report</button>
+          </form>
+          <div id="proof-report-body"></div>
+        </section>
+        <section class="card" id="find-claim-packets" data-group="proof" data-find="claim packets insurance adjuster evidence spoiled food loss paperwork insurer" data-label="Claim packets">
+          <div class="card-head">
+            <span class="card-title">Claim packets</span>
+            <span class="card-note" id="claims-note"></span>
+          </div>
+          <p class="card-plain">If food spoils, your insurer wants proof of
+             what happened and when. We hold the readings, so we can
+             assemble it in one click. This is your insurer paying out,
+             not us.</p>
+          <div id="claims-body"></div>
+        </section>
+        <section class="card" id="find-compliance-vault" data-advanced="1" data-group="proof" data-find="your safety records compliance vault evidence hash tamper audit inspector haccp" data-label="Your safety records">
+          <div class="card-head">
+            <span class="card-title">Your safety records</span>
+            <span class="card-note" id="vault-note"></span>
+          </div>
+          <p class="card-plain">Every reading, saved and sealed, so an inspector or an insurer gets a fact instead of a promise.</p>
+          <div id="vault-body"></div>
+          <div class="row u-mt-12">
+            <button class="btn btn-sm" id="vault-attest">Issue attestation</button>
+            <button class="btn btn-sm" id="vault-verify">Verify the record</button>
+          </div>
+        </section>
+        <section class="card" id="find-inspector-log" data-group="proof" data-find="log for an inspector temperature log print export haccp health inspection dates who acknowledged breaches" data-label="Log for an inspector">
+          <div class="card-head">
+            <span class="card-title">Log for an inspector</span>
+            <span class="card-note">Printable</span>
+          </div>
+          <p class="card-plain">Every unit's temperatures for the dates you pick, each time one went out of range, and who answered it. One click to print or save as PDF.</p>
+          <form id="inspector-form" class="row u-mt-12">
+            <label class="sr" for="inspector-from">From</label>
+            <input id="inspector-from" type="date" required class="u-maxw-170">
+            <label class="sr" for="inspector-to">To</label>
+            <input id="inspector-to" type="date" required class="u-maxw-170">
+            <button class="btn btn-sm btn-primary" type="submit" id="inspector-print">Print the log</button>
+          </form>
+        </section>
+        <section class="card" id="find-sector-standing" data-advanced="1" data-group="proof" data-find="how you compare sector standing benchmark compare industry ranking peers" data-label="How you compare">
+          <div class="card-head">
+            <span class="card-title">How you compare</span>
+            <span class="card-note" id="bench-note"></span>
+          </div>
+          <p class="card-plain">Your record against other places in the same industry.</p>
+          <div id="bench-body"></div>
+        </section>
+        <section class="card" id="find-sites" data-group="setup" data-find="your locations sites locations branches stores buildings" data-label="Your locations">
+          <div class="card-head">
+            <span class="card-title">Your locations</span>
+            <span class="card-note" id="site-note"></span>
+          </div>
+          <p class="card-plain">The buildings your units are spread across.</p>
+          <div id="site-body"></div>
+          <form id="site-form" class="u-mt-12">
+            <div class="row">
+              <input id="site-name" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink" placeholder="Store 118 Boca Raton"
+                     required>
+              <button class="btn btn-sm" type="submit">Add site</button>
+            </div>
+          </form>
+        </section>
+        <section class="card" id="find-alert-channels" data-group="alerts" data-find="how we reach you alert channels sms voice call notification delivery twilio" data-label="How we reach you">
+          <div class="card-head">
+            <span class="card-title">How we reach you</span>
+            <span class="card-note" id="hook-note"></span>
+          </div>
+          <p class="card-plain">Text and phone call. Whether they are working, and what they cost.</p>
+          <div id="hook-body"></div>
+          <form id="hook-form" class="u-mt-12">
+            <div class="row">
+              <select id="hook-kind" class="u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
+                <option value="slack">Slack</option>
+                <option value="teams">Teams</option>
+                <option value="pagerduty">PagerDuty</option>
+                <option value="generic">Generic JSON</option>
+              </select>
+              <input id="hook-target" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink" required
+                     placeholder="https://hooks.slack.com/services/...">
+              <button class="btn btn-sm" type="submit">Add</button>
+            </div>
+          </form>
+        </section>
+        <section class="card" id="find-vendor-clouds" data-group="setup" data-find="fetch from a sensor cloud vendor api poll sensorpush monnit gateway pull integration credentials" data-label="Fetch from a sensor cloud">
+          <div class="card-head">
+            <span class="card-title">Fetch from a sensor cloud</span>
+            <span class="card-note" id="poller-note"></span>
+          </div>
+          <p class="card-plain">Some sensors only talk to their own
+             vendor&rsquo;s cloud and never to us. Point us at that
+             cloud&rsquo;s address and we fetch from it on a timer.</p>
+          <form id="poller-form">
+            <div class="row u-mb-8">
+              <input id="poller-name" class="grow" required maxlength="120"
+                     placeholder="SensorPush" aria-label="What to call it">
+              <input id="poller-mins" type="number" min="5" max="120"
+                     value="10" class="u-maxw-96"
+                     aria-label="Minutes between fetches">
+            </div>
+            <div class="row u-mb-8">
+              <input id="poller-url" class="grow" required maxlength="2000"
+                     placeholder="https://api.example.com/samples"
+                     aria-label="The address to fetch">
+            </div>
+            <div class="row u-mb-8">
+              <input id="poller-hname" maxlength="120" placeholder="Authorization"
+                     class="u-maxw-170" aria-label="Header name">
+              <input id="poller-hval" class="grow" type="password"
+                     maxlength="4000" placeholder="your key from the vendor"
+                     aria-label="Header value">
+              <button class="btn btn-sm" type="submit">Add</button>
+            </div>
+          </form>
+          <div id="poller-body"></div>
+        </section>
+        <section class="card" id="find-omniarmor" data-group="setup" data-find="omniarmor kitchen safety bundle connection daily report temperature log checklist connect key" data-label="OmniArmor connection">
+          <div class="card-head">
+            <span class="card-title">OmniArmor connection</span>
+            <span class="card-note" id="omni-note">Owners only</span>
+          </div>
+          <p class="card-plain">The Kitchen Safety Bundle. Each day&rsquo;s
+             fridge and freezer record goes to OmniArmor after the day ends,
+             and OmniArmor fills in its temperature-log check for you. No
+             names are sent, only roles.</p>
+          <div id="omni-owner" hidden>
+            <form id="omni-form">
+              <div class="row u-mb-8">
+                <input id="omni-address" class="grow" required maxlength="200"
+                       placeholder="https://omniarmor.example.com"
+                       aria-label="OmniArmor address">
+              </div>
+              <div class="row u-mb-8">
+                <input id="omni-key" class="grow" type="password" maxlength="60"
+                       autocomplete="off"
+                       placeholder="clx_&hellip; from OmniArmor: Settings, Connections"
+                       aria-label="Connection key">
+              </div>
+              <div class="row u-mb-8">
+                <input id="omni-site-label" class="grow" maxlength="60"
+                       placeholder="Site name to show (optional)"
+                       aria-label="Site name OmniArmor shows">
+                <input id="omni-tz" class="u-maxw-170" maxlength="64"
+                       placeholder="Time zone" aria-label="The site's time zone">
+              </div>
+              <div id="omni-sites" class="u-mb-8"></div>
+              <div class="row u-gap-8 u-flex-wrap">
+                <button class="btn btn-sm btn-primary" type="submit">Save connection</button>
+                <button class="btn btn-sm" type="button" id="omni-test">Send a test report</button>
+                <button class="btn btn-sm" type="button" id="omni-remove">Disconnect</button>
+              </div>
+            </form>
+            <div id="omni-body" class="u-mt-12"></div>
+          </div>
+          <p class="card-plain" id="omni-not-owner" hidden>Only an owner can
+             connect OmniArmor.</p>
+        </section>
+        <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
+          <div class="card-head">
+            <span class="card-title">Things to do</span>
+            <span class="card-note" id="task-note"></span>
+          </div>
+          <p class="card-plain">What people agreed to do, and whether they
+             did it. Saved from a meeting, or typed in here.</p>
+          <form id="task-form" class="row u-mb-10">
+            <input id="task-title" class="grow" required maxlength="300"
+                   placeholder="Get the walk-in serviced"
+                   aria-label="What needs doing">
+            <input id="task-owner" maxlength="120" placeholder="Who"
+                   class="u-maxw-120" aria-label="Who agreed to do it">
+            <input id="task-due" type="date" aria-label="Due date">
+            <button class="btn btn-sm" type="submit">Add</button>
+          </form>
+          <div id="task-body"></div>
+        </section>
+        </div>
         <div class="modules">
-          <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-group="setup" data-find="use a sensor you already own byod sensor webhook your own sensors monnit sensorpush connect api" data-label="Use a sensor you already own">
+          <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-advanced="1" data-group="setup" data-find="use a sensor you already own byod sensor webhook your own sensors monnit sensorpush connect api" data-label="Use a sensor you already own">
           <div class="card-head">
             <span class="card-title">Use a sensor you already own</span>
             <span class="mod-chip c-telemetry">3rd-party gateway</span>
@@ -367,7 +568,7 @@
             <pre class="snippet u-mt-8" id="byod-snippet"></pre>
           </details>
           </section>
-          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-group="money" data-find="work out a price for a big customer enterprise tier calculator price quote cost estimate large" data-label="Work out a price for a big customer">
+          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-advanced="1" data-group="money" data-find="work out a price for a big customer enterprise tier calculator price quote cost estimate large" data-label="Work out a price for a big customer">
           <div class="card-head">
             <span class="card-title">Work out a price for a big customer</span>
             <span class="mod-chip c-commerce">Volume matrix</span>
@@ -407,7 +608,7 @@
             <div id="shortcut-out"></div>
           </section>
 
-          <section class="card mod-intel" id="find-meeting-intelligence" data-group="money" data-find="turn meeting notes into jobs meeting intelligence sales call prep customer notes" data-label="Turn meeting notes into jobs">
+          <section class="card mod-intel" id="find-meeting-intelligence" data-advanced="1" data-group="money" data-find="turn meeting notes into jobs meeting intelligence sales call prep customer notes" data-label="Turn meeting notes into jobs">
           <div class="card-head">
             <span class="card-title">Turn meeting notes into jobs</span>
             <span class="mod-chip c-intel">Written for you</span>
@@ -430,7 +631,7 @@
         </div>
 
         <div class="pair">
-          <section class="card" id="find-spend-controls" data-group="money" data-find="spending limits spend controls budget cap sms voice ai limit" data-label="Spending limits">
+          <section class="card" id="find-spend-controls" data-advanced="1" data-group="money" data-find="spending limits spend controls budget cap sms voice ai limit" data-label="Spending limits">
             <div class="card-head">
               <span class="card-title">Spending limits</span>
               <span class="card-note" id="cost-note"></span>
@@ -448,32 +649,6 @@
             <div id="audit-body"></div>
           </section>
 
-          <section class="card" id="find-leave" data-group="setup" data-find="download all data export delete everything erase close account leave privacy" data-label="Download or delete everything">
-            <div class="card-head">
-              <span class="card-title">Download or delete everything</span>
-              <span class="card-note">Owners only</span>
-            </div>
-            <p class="card-plain">Your data is yours. Take a copy, or delete it all.</p>
-            <div id="leave-owner" hidden>
-              <button class="btn btn-sm" id="leave-download" type="button">Download everything</button>
-              <form id="leave-form" class="u-mt-16">
-                <p class="card-plain"><strong>Delete everything</strong> removes this business,
-                  its sensors, readings, people, alerts and records, right away. It cannot be
-                  undone. We keep only the bills we already sent you, because the law says we
-                  must. Our daily backups still hold a copy for a few days, then that is gone too.</p>
-                <div class="field">
-                  <label for="leave-name">Type this business's name</label>
-                  <input id="leave-name" autocomplete="off" required>
-                </div>
-                <div class="field">
-                  <label for="leave-password">Your password</label>
-                  <input id="leave-password" type="password" autocomplete="current-password" required>
-                </div>
-                <button class="btn btn-sm danger-btn" type="submit">Delete everything</button>
-              </form>
-            </div>
-            <p class="card-plain" id="leave-not-owner">Only an owner can download or delete everything.</p>
-          </section>
         </div>
       </div>
 
@@ -509,6 +684,14 @@
             <div class="field">
               <label for="add-vertical">Industry</label>
               <select id="add-vertical"></select>
+            </div>
+            <!-- The one question that sets the alarm limit. A fridge
+                 alarms over 41°F and a freezer over 10°F (domain.py
+                 UNIT_KINDS); hidden for a sector with no such choice. -->
+            <div class="field" id="add-kind-field">
+              <label for="add-kind">Fridge or freezer?</label>
+              <select id="add-kind"></select>
+              <p class="field-hint" id="add-kind-hint"></p>
             </div>
             <!-- Optional: a name is made from the location when this is
                  left blank. Asking a restaurant to invent an identifier
@@ -552,10 +735,10 @@
 
         <section class="card" id="find-on-call-roster" data-group="people" data-find="who gets called on-call roster contacts who gets called escalation phone" data-label="Who gets called">
           <div class="card-head">
-            <span class="card-title">Who gets called</span>
+            <span class="card-title" id="roster-title">Who gets alerts</span>
             <span class="card-note" id="roster-note"></span>
           </div>
-          <p class="card-plain">The order we phone people in when something goes wrong at 3am.</p>
+          <p class="card-plain" id="roster-plain">Who we text when something goes wrong.</p>
           <div id="roster-body"></div>
           <!-- Who a real alert would actually reach, in order. The roster
                above is what was configured; this is what the dispatcher
@@ -700,7 +883,7 @@
               <input id="pw-new" type="password" required minlength="12"
                      autocomplete="new-password"
                      placeholder="New password (12 or more)">
-              <button type="submit">Change password</button>
+              <button class="btn btn-sm" type="submit">Change password</button>
             </div>
           </form>
         </section>
@@ -720,104 +903,13 @@
         <!-- The bridge assumes a sensor can be told where to send its
              readings. A SensorPush gateway cannot: it posts to
              SensorPush, and the way to get the data is to ask. -->
-        <section class="card" id="find-vendor-clouds" data-group="setup" data-find="fetch from a sensor cloud vendor api poll sensorpush monnit gateway pull integration credentials" data-label="Fetch from a sensor cloud">
-          <div class="card-head">
-            <span class="card-title">Fetch from a sensor cloud</span>
-            <span class="card-note" id="poller-note"></span>
-          </div>
-          <p class="card-plain">Some sensors only talk to their own
-             vendor&rsquo;s cloud and never to us. Point us at that
-             cloud&rsquo;s address and we fetch from it on a timer.</p>
-          <form id="poller-form">
-            <div class="row u-mb-8">
-              <input id="poller-name" class="grow" required maxlength="120"
-                     placeholder="SensorPush" aria-label="What to call it">
-              <input id="poller-mins" type="number" min="5" max="120"
-                     value="10" class="u-maxw-96"
-                     aria-label="Minutes between fetches">
-            </div>
-            <div class="row u-mb-8">
-              <input id="poller-url" class="grow" required maxlength="2000"
-                     placeholder="https://api.example.com/samples"
-                     aria-label="The address to fetch">
-            </div>
-            <div class="row u-mb-8">
-              <input id="poller-hname" maxlength="120" placeholder="Authorization"
-                     class="u-maxw-170" aria-label="Header name">
-              <input id="poller-hval" class="grow" type="password"
-                     maxlength="4000" placeholder="your key from the vendor"
-                     aria-label="Header value">
-              <button class="btn btn-sm" type="submit">Add</button>
-            </div>
-          </form>
-          <div id="poller-body"></div>
-        </section>
 
         <!-- The Kitchen Safety Bundle (omniarmor.py). Owners only: the key
              is a credential and the bundle is on the bill. The key is
              never shown again after it is saved, only its last four. -->
-        <section class="card" id="find-omniarmor" data-group="setup" data-find="omniarmor kitchen safety bundle connection daily report temperature log checklist connect key" data-label="OmniArmor connection">
-          <div class="card-head">
-            <span class="card-title">OmniArmor connection</span>
-            <span class="card-note" id="omni-note">Owners only</span>
-          </div>
-          <p class="card-plain">The Kitchen Safety Bundle. Each day&rsquo;s
-             fridge and freezer record goes to OmniArmor after the day ends,
-             and OmniArmor fills in its temperature-log check for you. No
-             names are sent, only roles.</p>
-          <div id="omni-owner" hidden>
-            <form id="omni-form">
-              <div class="row u-mb-8">
-                <input id="omni-address" class="grow" required maxlength="200"
-                       placeholder="https://omniarmor.example.com"
-                       aria-label="OmniArmor address">
-              </div>
-              <div class="row u-mb-8">
-                <input id="omni-key" class="grow" type="password" maxlength="60"
-                       autocomplete="off"
-                       placeholder="clx_&hellip; from OmniArmor: Settings, Connections"
-                       aria-label="Connection key">
-              </div>
-              <div class="row u-mb-8">
-                <input id="omni-site-label" class="grow" maxlength="60"
-                       placeholder="Site name to show (optional)"
-                       aria-label="Site name OmniArmor shows">
-                <input id="omni-tz" class="u-maxw-170" maxlength="64"
-                       placeholder="Time zone" aria-label="The site's time zone">
-              </div>
-              <div id="omni-sites" class="u-mb-8"></div>
-              <div class="row u-gap-8 u-flex-wrap">
-                <button class="btn btn-sm btn-primary" type="submit">Save connection</button>
-                <button class="btn btn-sm" type="button" id="omni-test">Send a test report</button>
-                <button class="btn btn-sm" type="button" id="omni-remove">Disconnect</button>
-              </div>
-            </form>
-            <div id="omni-body" class="u-mt-12"></div>
-          </div>
-          <p class="card-plain" id="omni-not-owner" hidden>Only an owner can
-             connect OmniArmor.</p>
-        </section>
 
-        <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
-          <div class="card-head">
-            <span class="card-title">Things to do</span>
-            <span class="card-note" id="task-note"></span>
-          </div>
-          <p class="card-plain">What people agreed to do, and whether they
-             did it. Saved from a meeting, or typed in here.</p>
-          <form id="task-form" class="row u-mb-10">
-            <input id="task-title" class="grow" required maxlength="300"
-                   placeholder="Get the walk-in serviced"
-                   aria-label="What needs doing">
-            <input id="task-owner" maxlength="120" placeholder="Who"
-                   class="u-maxw-120" aria-label="Who agreed to do it">
-            <input id="task-due" type="date" aria-label="Due date">
-            <button class="btn btn-sm" type="submit">Add</button>
-          </form>
-          <div id="task-body"></div>
-        </section>
 
-        <section class="card" id="find-licences" data-group="licences" data-find="staff licences licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Staff licences">
+        <section class="card" id="find-licences" data-advanced="1" data-group="licences" data-find="staff licences licences licence license expiry expires renewal renew certificate card permit qualification training food handler cdl forklift pharmacy" data-label="Staff licences">
           <div class="card-head">
             <span class="card-title">Staff licences</span>
             <span class="card-note" id="licence-note"></span>
@@ -829,7 +921,7 @@
 
         <!-- Who works here, and what is still owed to the ones who do
              not any more. -->
-        <section class="card" id="find-people" data-group="people" data-find="your crew people staff crew employees team members who works here fired dismissed leaver left offboarding departure roster" data-label="Your crew">
+        <section class="card" id="find-people" data-advanced="1" data-group="people" data-find="your crew people staff crew employees team members who works here fired dismissed leaver left offboarding departure roster" data-label="Your crew">
           <div class="card-head">
             <span class="card-title">Your crew</span>
             <span class="card-note" id="people-note"></span>
@@ -840,43 +932,7 @@
           <div id="leavers"></div>
         </section>
 
-        <section class="card" id="find-sites" data-group="setup" data-find="your locations sites locations branches stores buildings" data-label="Your locations">
-          <div class="card-head">
-            <span class="card-title">Your locations</span>
-            <span class="card-note" id="site-note"></span>
-          </div>
-          <p class="card-plain">The buildings your units are spread across.</p>
-          <div id="site-body"></div>
-          <form id="site-form" class="u-mt-12">
-            <div class="row">
-              <input id="site-name" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink" placeholder="Store 118 Boca Raton"
-                     required>
-              <button class="btn btn-sm" type="submit">Add site</button>
-            </div>
-          </form>
-        </section>
 
-        <section class="card" id="find-alert-channels" data-group="alerts" data-find="how we reach you alert channels sms voice call notification delivery twilio" data-label="How we reach you">
-          <div class="card-head">
-            <span class="card-title">How we reach you</span>
-            <span class="card-note" id="hook-note"></span>
-          </div>
-          <p class="card-plain">Text and phone call. Whether they are working, and what they cost.</p>
-          <div id="hook-body"></div>
-          <form id="hook-form" class="u-mt-12">
-            <div class="row">
-              <select id="hook-kind" class="u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
-                <option value="slack">Slack</option>
-                <option value="teams">Teams</option>
-                <option value="pagerduty">PagerDuty</option>
-                <option value="generic">Generic JSON</option>
-              </select>
-              <input id="hook-target" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink" required
-                     placeholder="https://hooks.slack.com/services/...">
-              <button class="btn btn-sm" type="submit">Add</button>
-            </div>
-          </form>
-        </section>
 
         <section class="card" id="find-contract" data-group="money" data-find="your agreement contract agreement terms signed pricing commitment" data-label="Your agreement">
           <div class="card-head">
@@ -913,77 +969,14 @@
 
         <!-- Proof of monitoring (proofreports.py). Owners only: sharing a
              report is a decision about the business. -->
-        <section class="card" id="find-proof-reports" data-group="proof" data-find="proof of monitoring report insurer insurance broker show fridges watched 24/7 verify link code share monthly" data-label="Proof of monitoring">
-          <div class="card-head">
-            <span class="card-title">Proof of monitoring</span>
-            <span class="card-note" id="proof-report-note">Owners only</span>
-          </div>
-          <p class="card-plain">Show your insurer proof that your fridges are
-             watched 24/7. A one-page report for a location and a month, with
-             a link anyone can use to check it is genuine. Nobody sees it
-             until you share the link, and you can switch the link off.</p>
-          <form id="proof-report-form" class="row u-mt-12" hidden>
-            <label class="sr" for="proof-report-site">Location</label>
-            <select id="proof-report-site" class="u-maxw-170"></select>
-            <label class="sr" for="proof-report-month">Month</label>
-            <input id="proof-report-month" type="month" required class="u-maxw-170">
-            <button class="btn btn-sm btn-primary" type="submit" id="proof-report-make">Make the report</button>
-          </form>
-          <div id="proof-report-body"></div>
-        </section>
 
         <!-- Claim packets used to live inside the payout-cover card, and
              went out with it. They are a different thing entirely: this
              is evidence for the customer's own insurer, not us paying
              out. It should always have had its own card. -->
-        <section class="card" id="find-claim-packets" data-group="proof" data-find="claim packets insurance adjuster evidence spoiled food loss paperwork insurer" data-label="Claim packets">
-          <div class="card-head">
-            <span class="card-title">Claim packets</span>
-            <span class="card-note" id="claims-note"></span>
-          </div>
-          <p class="card-plain">If food spoils, your insurer wants proof of
-             what happened and when. We hold the readings, so we can
-             assemble it in one click. This is your insurer paying out,
-             not us.</p>
-          <div id="claims-body"></div>
-        </section>
 
-        <section class="card" id="find-compliance-vault" data-group="proof" data-find="your safety records compliance vault evidence hash tamper audit inspector haccp" data-label="Your safety records">
-          <div class="card-head">
-            <span class="card-title">Your safety records</span>
-            <span class="card-note" id="vault-note"></span>
-          </div>
-          <p class="card-plain">Every reading, saved and sealed, so an inspector or an insurer gets a fact instead of a promise.</p>
-          <div id="vault-body"></div>
-          <div class="row u-mt-12">
-            <button class="btn btn-sm" id="vault-attest">Issue attestation</button>
-            <button class="btn btn-sm" id="vault-verify">Verify the record</button>
-          </div>
-        </section>
 
-        <section class="card" id="find-inspector-log" data-group="proof" data-find="log for an inspector temperature log print export haccp health inspection dates who acknowledged breaches" data-label="Log for an inspector">
-          <div class="card-head">
-            <span class="card-title">Log for an inspector</span>
-            <span class="card-note">Printable</span>
-          </div>
-          <p class="card-plain">Every unit's temperatures for the dates you pick, each time one went out of range, and who answered it. One click to print or save as PDF.</p>
-          <form id="inspector-form" class="row u-mt-12">
-            <label class="sr" for="inspector-from">From</label>
-            <input id="inspector-from" type="date" required class="u-maxw-170">
-            <label class="sr" for="inspector-to">To</label>
-            <input id="inspector-to" type="date" required class="u-maxw-170">
-            <button class="btn btn-sm btn-primary" type="submit" id="inspector-print">Print the log</button>
-          </form>
-        </section>
 
-        <section class="card" id="find-sector-standing" data-group="proof" data-find="how you compare sector standing benchmark compare industry ranking peers" data-label="How you compare">
-          <div class="card-head">
-            <span class="card-title">How you compare</span>
-            <span class="card-note" id="bench-note"></span>
-          </div>
-          <p class="card-plain">Your record against other places in the same industry.</p>
-          <div id="bench-body"></div>
-        </section>
 
         <section class="card" id="find-autopilot" data-group="setup" data-find="what runs by itself autopilot automation runs itself sweep schedule" data-label="What runs by itself">
           <div class="card-head">
@@ -1001,6 +994,9 @@
 
         <!-- The version comes from /api/health, which reads the VERSION
              file; CHANGELOG.md says what is in it. -->
+
+
+
         <section class="card" id="find-about" data-group="setup" data-find="about version help questions faq support contact offline sensor what to check" data-label="About and help">
           <div class="card-head">
             <span class="card-title">About and help</span>
@@ -1020,9 +1016,32 @@
              <a id="about-support-link" href="mailto:">—</a></p>
           <p class="card-plain about-line">CyberLogix AI, a product of MTRX Horizyn.</p>
         </section>
-
-
-
+          <section class="card" id="find-leave" data-group="setup" data-find="download all data export delete everything erase close account leave privacy" data-label="Download or delete everything">
+            <div class="card-head">
+              <span class="card-title">Download or delete everything</span>
+              <span class="card-note">Owners only</span>
+            </div>
+            <p class="card-plain">Your data is yours. Take a copy, or delete it all.</p>
+            <div id="leave-owner" hidden>
+              <button class="btn btn-sm" id="leave-download" type="button">Download everything</button>
+              <form id="leave-form" class="u-mt-16">
+                <p class="card-plain"><strong>Delete everything</strong> removes this business,
+                  its sensors, readings, people, alerts and records, right away. It cannot be
+                  undone. We keep only the bills we already sent you, because the law says we
+                  must. Our daily backups still hold a copy for a few days, then that is gone too.</p>
+                <div class="field">
+                  <label for="leave-name">Type this business's name</label>
+                  <input id="leave-name" autocomplete="off" required>
+                </div>
+                <div class="field">
+                  <label for="leave-password">Your password</label>
+                  <input id="leave-password" type="password" autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-sm danger-btn" type="submit">Delete everything</button>
+              </form>
+            </div>
+            <p class="card-plain" id="leave-not-owner">Only an owner can download or delete everything.</p>
+          </section>
       </aside>
     </div>
   </main>
@@ -1041,6 +1060,19 @@
 <div id="scrim" hidden></div>
 <aside id="drawer" hidden role="dialog" aria-modal="true"
        aria-labelledby="drawer-title"></aside>
+
+<!-- Moving to a paid plan is a twelve-month commitment. Nothing changes
+     until "Yes, move" here: the plan, what it costs, how long it runs,
+     what cancelling means and what happens to the trial, first. -->
+<dialog id="plan-confirm" class="confirm-dialog" aria-labelledby="plan-confirm-title">
+  <h2 class="confirm-title" id="plan-confirm-title">Move to a paid plan?</h2>
+  <dl class="confirm-terms" id="plan-confirm-terms"></dl>
+  <p class="confirm-out" id="plan-confirm-out" role="status"></p>
+  <div class="confirm-acts">
+    <button class="btn btn-primary" type="button" id="plan-confirm-yes">Yes, move</button>
+    <button class="btn" type="button" id="plan-confirm-no">Not now</button>
+  </div>
+</dialog>
 
 <div id="tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>

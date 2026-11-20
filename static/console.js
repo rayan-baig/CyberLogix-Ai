@@ -522,6 +522,7 @@ async function loadIndustries() {
     .join("");
   $("tx-vertical").innerHTML = plain;
   $("calc-vertical").innerHTML = plain;
+  showUnitKinds($("add-vertical").value);
   // The overview may already have landed; if it has, this is the call
   // that actually sets the sector.
   preferSector(state.data);
@@ -530,7 +531,40 @@ async function loadIndustries() {
 
 $("add-vertical").addEventListener("change", (event) => {
   showSectorExample(event.target.value);
+  showUnitKinds(event.target.value);
 });
+
+/* "Fridge or freezer?" for the sectors where the answer sets the limit.
+ * A fridge is the default: most of what a kitchen watches is one. */
+function unitKindLabel(k) {
+  const unit = (state.data && state.data.tenant && state.data.tenant.temperature_unit) || "F";
+  const deg = (f) => unit === "C" ? `${Math.round((f - 32) * 5 / 9)}°C` : `${f}°F`;
+  if (k.danger_below != null) return `between ${deg(k.danger_below)} and ${deg(k.danger_above)}`;
+  return `over ${deg(k.danger_above)}`;
+}
+
+function showUnitKinds(vertical) {
+  const profile = (state.industries || []).find((i) => i.vertical === vertical);
+  const kinds = (profile && profile.unit_kinds) || [];
+  const field = $("add-kind-field");
+  if (!field) return;
+  field.hidden = !kinds.length;
+  const previous = $("add-kind").value;
+  $("add-kind").innerHTML = kinds
+    .map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join("");
+  if (kinds.some((k) => k.kind === previous)) $("add-kind").value = previous;
+  showUnitKindHint();
+}
+
+function showUnitKindHint() {
+  const profile = (state.industries || []).find((i) => i.vertical === $("add-vertical").value);
+  const kind = ((profile && profile.unit_kinds) || []).find((k) => k.kind === $("add-kind").value);
+  $("add-kind-hint").textContent = kind
+    ? `We alert if it stays ${unitKindLabel(kind)}. You can change this later.`
+    : "";
+}
+
+$("add-kind").addEventListener("change", showUnitKindHint);
 
 /* Open every sector picker on the sector this customer actually runs.
  *
@@ -601,6 +635,7 @@ function preferSector(overview) {
   });
 
   showSectorExample(wanted);
+  showUnitKinds(wanted);
   state.sectorChosen = true;
   calculateBilling();
 }
@@ -720,7 +755,13 @@ async function refresh(opts = {}) {
     invoices: () => api("/api/invoices"),
     contract: () => api("/api/contracts"),
     pipeline: () => api("/api/contracts/pipeline"),
-    forecast: () => api("/api/forecast/fleet"),
+    // Not asked for on a plan without it: the 403 it would get back on
+    // every load is a known answer, and the card says it the same way.
+    forecast: () => (overview.entitlements && overview.entitlements.predictive_forecasting
+      ? api("/api/forecast/fleet")
+      : Promise.reject(Object.assign(new Error(
+        "The forecast — a warning before a unit gets too warm — comes with Growth."),
+        { status: 403 }))),
     claims: () => api("/api/claims/eligible"),
     escalation: () => api("/api/contacts/preview"),
     byodSeen: () => api("/api/v1/bridge/samples"),
@@ -769,6 +810,15 @@ async function refresh(opts = {}) {
   state.unit = overview.temperature_unit || "F";
 
   render(overview, health);
+  // A small account's Advanced cards, and the counts on the tabs, follow
+  // the account: a trial that grows past a handful of units sees them all.
+  const small = smallAccount(overview);
+  if (state.wasSmall !== small) {
+    state.wasSmall = small;
+    countTheTabs();
+    applyFinder();
+  }
+  maybeLandOnSimple(overview);
   // Never a broken panel: without the list the chip is just the name.
   try { paintBusinessChip(got.businesses || null); } catch (_) { /* the estate is the page */ }
   renderSites(overview);
@@ -890,9 +940,15 @@ function render(d, health) {
   $("chip-company").textContent = `${t.company_name} ▾`;
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
-  $("chip-spend").textContent = d.subscription
-    ? `$${d.subscription.monthly_total_usd.toLocaleString()}/mo`
-    : "—";
+  // The same "from" as the front page and the plans: a trial is free, and
+  // the plans start at Starter's price. It used to show the rate card's
+  // figure for a trial ($149/mo) beside a front page saying $59.
+  const from = d.starter && d.starter.monthly_label;
+  $("chip-spend").textContent = t.plan === "trial"
+    ? (from ? `Free trial · plans from ${from}/mo` : "Free trial")
+    : d.subscription
+      ? `$${d.subscription.monthly_total_usd.toLocaleString()}/mo`
+      : "—";
   $("chip-delivery").textContent =
     health.message_delivery === "twilio" ? "SMS + voice live" : "Delivery: dry run";
   $("unit-toggle").textContent = `°${state.unit}`;
@@ -986,7 +1042,17 @@ function render(d, health) {
   $("sim-start").hidden = !owner;
   const canTest = Boolean(state.user && state.user.role !== "viewer");
   $("test-alert-box").hidden = !canTest;
-  $("test-call-wrap").hidden = !(d.entitlements && d.entitlements.voice_escalation);
+  const calls = (d.entitlements && d.entitlements.calls) || { mode: "none", words: "" };
+  $("test-call-wrap").hidden = calls.mode === "none";
+  // The card's own promise follows the plan: "we phone" only where a
+  // phone would actually ring.
+  $("roster-title").textContent = calls.mode === "none" ? "Who gets alerts" : "Who gets called";
+  $("roster-plain").textContent = calls.mode === "plan"
+    ? "The order we phone people in when something goes wrong at 3am."
+    : calls.mode === "trial"
+      ? "Who we text when something goes wrong, and the order we phone them in. "
+        + calls.words
+      : "Who we text when something goes wrong. " + calls.words;
 
   const open = d.incidents.filter((i) => i.state !== "resolved").length;
   $("incident-note").textContent =
@@ -1238,7 +1304,7 @@ function sensorCard(s) {
       ? "—" : reading.toFixed(1);
     const above = s.danger_above_display, below = s.danger_below_display;
     const bound = s.external_device_sn
-      ? `BYOD ${esc(s.external_device_sn)}` : "Native pulse";
+      ? `Device ${esc(s.external_device_sn)}` : "Sends to us directly";
 
     return `<article class="sensor ${s.breaching ? "is-breaching" : ""}">
       <div class="sensor-top">
@@ -1576,14 +1642,32 @@ $("toggle-table").addEventListener("click", () => {
   $("toggle-table").setAttribute("aria-pressed", String(state.tableView));
 });
 
+/* Why a text or call did not go, in words. The raw provider status
+   ("NOT_CONFIGURED", "BUDGET_EXCEEDED") is what was shown before. */
+const DELIVERY_WORDS = {
+  not_configured: "texts are off on this server",
+  budget_exceeded: "today's limit was reached",
+  call_failed: "the call did not connect",
+  send_failed: "the phone network refused it",
+  failed: "it did not go through",
+  undelivered: "it did not arrive",
+  blocked: "that number is blocked",
+  invalid_number: "the number looks wrong",
+};
+
+function deliveryWords(status) {
+  const key = String(status || "").toLowerCase();
+  return DELIVERY_WORDS[key] || key.replace(/_/g, " ") || "not sent";
+}
+
 function deliveryLine(record, channel) {
-  if (!record) return `<span class="badge s-muted"><span class="dot"></span>${channel} not attempted</span>`;
+  const name = channel === "SMS" ? "Text" : channel === "Voice" ? "Call" : channel;
+  if (!record) return `<span class="badge s-muted"><span class="dot"></span>${name} not tried</span>`;
   if (record.delivered) {
-    return `<span class="badge s-good"><span class="dot"></span>${channel} sent`
-         + `${record.provider_sid ? " · " + esc(record.provider_sid) : ""}</span>`;
+    return `<span class="badge s-good"><span class="dot"></span>${name} sent</span>`;
   }
   return `<span class="badge s-warning"><span class="dot"></span>`
-       + `${channel} not sent · ${esc(record.status)}</span>`;
+       + `${name} not sent: ${esc(deliveryWords(record.status))}</span>`;
 }
 
 /* Every alert text failed. Said at the top of the card, because the card
@@ -1687,12 +1771,11 @@ function renderIncidents(incidents, entitlements, siteWide) {
       ${incidentTimeline(i)}
 
       <div class="quote">
-        <div class="quote-label">SMS dispatched${i.sms_dispatch_source === "fallback_template"
-          ? " (template fallback)" : ""}</div>
+        <div class="quote-label">The text we sent</div>
         ${esc(i.dispatched_sms_text)}
       </div>
       ${i.voice_script ? `<div class="quote">
-        <div class="quote-label">Voice call script</div>${esc(i.voice_script)}</div>` : ""}
+        <div class="quote-label">What the phone call said</div>${esc(i.voice_script)}</div>` : ""}
 
       <div class="row u-gap-6">
         ${deliveryLine(i.texts_landed && !(i.sms_delivery && i.sms_delivery.delivered)
@@ -1764,6 +1847,13 @@ function renderCosts(report) {
        </div>`;
 }
 
+/* "alert.test_sent" -> "Alert test sent": the trail's own codes, read as
+   words. */
+function auditWords(action) {
+  const words = String(action || "").replace(/[._]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
 function renderAudit(trail) {
   if (!trail.entries.length) {
     $("audit-body").innerHTML = `<div class="empty">No activity recorded yet.</div>`;
@@ -1775,7 +1865,7 @@ function renderAudit(trail) {
     });
     return `<div class="u-p-7-0 u-bb">
       <div class="u-d-flex u-gap-8 u-justify-between">
-        <span class="u-fs-12-5 u-fw-500">${esc(e.action)}</span>
+        <span class="u-fs-12-5 u-fw-500">${esc(auditWords(e.action))}</span>
         <span class="u-fs-11-5 u-c-muted u-ws-nowrap">${esc(when)}</span>
       </div>
       <div class="u-fs-12 u-c-ink-2 u-mt-2">${esc(e.detail)}</div>
@@ -1871,31 +1961,75 @@ function starterBlock(tenant, starter) {
     </div>`;
 }
 
+/* A change of plan is shown before it is made: the plan, the price, the
+   term, what cancelling means and the trial days left. One tap used to
+   commit a café to a twelve-month plan; now nothing changes until "Yes,
+   move", and the server refuses the change without that yes as well. */
+let pendingPlan = null;
+
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-upgrade]");
   if (!button) return;
   const plan = button.getAttribute("data-upgrade");
   const out = $("upgrade-out");
-  const buttons = [...document.querySelectorAll("[data-upgrade]")];
-  buttons.forEach((b) => { b.disabled = true; });
-  if (out) out.innerHTML = `<span class="u-c-muted">Moving…</span>`;
+  let terms;
+  try {
+    terms = await api(`/api/licenses/me/plan/terms?plan=${encodeURIComponent(plan)}`);
+  } catch (err) {
+    if (out) out.innerHTML = `<span class="s-warning">${esc(err.message)}</span>`;
+    else toast(err.message, "err");
+    return;
+  }
+  pendingPlan = plan;
+  $("plan-confirm-title").textContent = `Move to ${terms.name}?`;
+  const rows = [
+    ["Plan", `${terms.name}: up to ${terms.max_units.toLocaleString()} units, `
+      + (terms.calls ? "texts and phone calls." : "texts, no phone calls.")],
+    ["Price", terms.price_words],
+    ["How long", terms.term_words],
+    ["If you cancel", terms.cancel_words],
+  ];
+  if (terms.trial_words) rows.push(["Your free trial", terms.trial_words]);
+  $("plan-confirm-terms").innerHTML = rows.map(([k, v]) =>
+    `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+  $("plan-confirm-out").textContent = "";
+  $("plan-confirm-yes").disabled = false;
+  $("plan-confirm-yes").textContent = `Yes, move to ${terms.name}`;
+  const dialog = $("plan-confirm");
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+});
+
+function closePlanConfirm() {
+  pendingPlan = null;
+  const dialog = $("plan-confirm");
+  if (typeof dialog.close === "function" && dialog.open) dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+$("plan-confirm-no").addEventListener("click", closePlanConfirm);
+
+$("plan-confirm-yes").addEventListener("click", async () => {
+  const plan = pendingPlan;
+  if (!plan) return;
+  $("plan-confirm-yes").disabled = true;
+  $("plan-confirm-out").textContent = "Moving…";
   try {
     await api("/api/licenses/me/plan", {
       method: "POST",
-      body: JSON.stringify({ plan }),
+      body: JSON.stringify({ plan, confirm: true }),
     });
+    closePlanConfirm();
     // Long enough to be read, short enough not to become a permanent banner.
     state.justUpgradedTo = plan;
     setTimeout(() => { state.justUpgradedTo = null; }, 30000);
     logToConsole(`Plan changed to ${plan}.`, "ok");
     await refresh();
   } catch (err) {
-    // Left enabled: a seat-count refusal is something they can act on and
-    // try again, and a disabled button gives them nothing to try again with.
-    buttons.forEach((b) => { b.disabled = false; });
-    if (out) {
-      out.innerHTML = `<span class="s-warning">${esc(readableError(err))}</span>`;
-    }
+    // Left open with the reason: a seat-count refusal is something they
+    // can act on, and the dialog still says what they were agreeing to.
+    $("plan-confirm-yes").disabled = false;
+    $("plan-confirm-out").textContent = err.message;
   }
 });
 
@@ -1933,8 +2067,8 @@ function renderBilling(subscription, roi, tenant) {
              $${roi.loss_avoided_usd.toLocaleString()}</span>
          </div>
          <div class="u-fs-11-5 u-c-muted u-mt-3">
-           ${roi.quantified_saves} answered incident${roi.quantified_saves === 1 ? "" : "s"}
-           in verticals with a published loss figure${
+           ${roi.quantified_saves} real failure${roi.quantified_saves === 1 ? "" : "s"}
+           caught in time (false alarms and short blips are not counted)${
              roi.return_multiple ? ` · ${roi.return_multiple}× the subscription` : ""
            }
          </div>
@@ -2544,6 +2678,9 @@ function renderFounder(f) {
  * A coverage gap has no unit count, so it is named rather than priced and
  * has nothing to press. */
 function opportunities(pipeline, contract) {
+  // A café on a trial or Starter was shown "Not on this contract — $14,364
+  // a year" of estate add-ons. That list is for estates.
+  if (smallAccount()) return "";
   const rows = (pipeline.opportunities || []).slice(0, 4);
   if (!rows.length) return "";
   const attached = (contract && contract.add_ons) || [];
@@ -3822,8 +3959,12 @@ function renderEscalation(preview) {
       Text to ${texted.length ? names(texted) : "nobody"}.
       ${ladder.length
         ? "Then it calls " + names(ladder) + ", stopping at whoever answers."
-        : "No call ladder, so an unanswered text is the end of it."}
+        : (preview.calls && preview.calls.mode === "none"
+          ? "No phone call: " + esc(preview.calls.words)
+          : "No call ladder, so an unanswered text is the end of it.")}
     </div>
+    ${preview.calls && preview.calls.mode === "trial"
+      ? `<div class="card-note u-mt-8">${esc(preview.calls.words)}</div>` : ""}
     ${(preview.warnings || []).map((w) =>
       `<div class="card-note u-mt-8" role="alert">`
       + `<span class="badge s-warning"><span class="dot"></span>Gap</span> `
@@ -4884,7 +5025,7 @@ function renderTeam(team) {
     </div>`).join("")
     // The business's master key, for scripts and devices without their own
     // key. Owners can replace it the day it turns up somewhere it should not.
-    + (state.user && state.user.role === "owner" ? `
+    + (state.user && state.user.role === "owner" && !smallAccount() ? `
     <div class="u-d-flex u-items-center u-gap-9 u-p-10-0-2">
       <span class="grow u-fs-12 u-c-muted">
         Master key leaked, or someone left who had it?</span>
@@ -5026,7 +5167,9 @@ function renderFirstDay(fd) {
   if (!fd || fd.complete || !canAct || state.wall) {
     // Finished while it was on screen: say so once, as it goes.
     if (fd && fd.complete && !card.hidden) {
-      toast("All three done. Your first fridge is protected.", "ok");
+      // Only now: "complete" includes a reading that actually arrived.
+      toast("All done. Readings are arriving and your team will be alerted: "
+            + "your first fridge is protected.", "ok");
     }
     card.hidden = true;
     return;
@@ -5046,6 +5189,9 @@ function renderFirstDay(fd) {
     if (step.key === "test") {
       return `<button class="btn btn-sm btn-go" type="button"
                       data-test-now="1">Send a test</button>`;
+    }
+    if (step.key === "reading") {
+      return `<a class="btn btn-sm" href="/help/sensors">How to connect it</a>`;
     }
     return `<button class="btn btn-sm btn-go" type="button" data-go="${esc(step.key)}">${
       esc(GO_LABEL[step.key] || "Do it")}</button>`;
@@ -5637,12 +5783,14 @@ $("add-form").addEventListener("submit", (event) => {
         industry_vertical: $("add-vertical").value,
         location_name: $("add-loc").value.trim(),
         external_device_sn: serial || null,
+        unit_kind: $("add-kind-field").hidden ? null : ($("add-kind").value || null),
       }),
     });
     event.target.reset();
     // reset() puts the picker back on the first sector in the list; the
     // next unit is far likelier to be in the same one as this.
     $("add-vertical").value = made.sensor.industry_vertical;
+    showUnitKinds(made.sensor.industry_vertical);
     showIssuedKey(made.sensor.sensor_id, made.ingest_key);
   }, "Sensor registered.").then(watchForFirstReading);
 });
@@ -5670,7 +5818,7 @@ $("byod-form").addEventListener("submit", async (event) => {
         <div><span class="k">Bound sensor</span><span class="v">${esc(body.bound_sensor_id)}</span></div>
         <div><span class="k">Reading</span><span class="v">${esc(body.processed_metric)} °F</span></div>
         <div><span class="k">Alert</span><span class="v ${body.alert_triggered ? "s-critical" : "s-good"}">
-          ${body.alert_triggered ? "TRIGGERED" : "nominal"}</span></div>
+          ${body.alert_triggered ? "Too warm: alert sent" : "Within its limits"}</span></div>
       </div>
       <div class="card-note u-mt-6">${esc(body.action_taken_by_ai)}</div>`;
     logToConsole(
@@ -6021,6 +6169,31 @@ function primeTheGate() {
   }
 }
 
+/* ---------------- where a small account lands ----------------
+   A café's owner opening the app wants one answer: is anything wrong?
+   For a small account (smallAccount) that is set up, the Simple view
+   (/today) is where the console opens. Setting up happens here, so an
+   account still on Getting started stays. "All the detail" on the Simple
+   view comes back with ?view=full, which holds for the rest of the
+   session; a link to a card (#...) is always followed here. */
+function maybeLandOnSimple(d) {
+  if (state.landingDecided) return;
+  state.landingDecided = true;
+  if (state.wall || location.hash) return;
+  let chosen = null;
+  try {
+    if (new URLSearchParams(location.search).get("view") === "full") {
+      sessionStorage.setItem("cyberlogix.view", "full");
+    }
+    chosen = sessionStorage.getItem("cyberlogix.view")
+      || localStorage.getItem("cyberlogix.view");
+  } catch (_) { /* storage blocked: decide from the account alone */ }
+  if (chosen === "full") return;
+  if (!smallAccount(d) || !d.first_day || !d.first_day.complete) return;
+  state.leaving = true;
+  location.replace("/today");
+}
+
 /* ---------------- finding things ----------------
    The page is one long column of cards and no map. Filtering beats
    scrolling: pressing People should leave People on the screen, not put
@@ -6028,11 +6201,33 @@ function primeTheGate() {
 
 const finder = { tab: "all", query: "" };
 
+/* A small account: a trial or Starter with a handful of units. A café was
+   handed a wall of estate and operator tools (a volume price matrix,
+   meeting notes into jobs, staff licences, spending limits, hashes,
+   business keys). For a small account those cards wait under Advanced,
+   and a search still finds every one of them. */
+const SMALL_PLANS = new Set(["trial", "starter"]);
+const SMALL_MAX_UNITS = 5;
+
+function smallAccount(d = state.data) {
+  const t = d && d.tenant;
+  if (!t) return false;
+  return SMALL_PLANS.has(t.plan) && (d.sensors || []).length <= SMALL_MAX_UNITS;
+}
+
+/* Whether a card belongs in the tab being shown. */
+function inTab(card, searching) {
+  const advanced = card.getAttribute("data-advanced") === "1";
+  if (finder.tab === "advanced") return advanced;
+  const hiddenAsAdvanced = advanced && smallAccount() && !searching;
+  if (hiddenAsAdvanced) return false;
+  return finder.tab === "all" || card.getAttribute("data-group") === finder.tab;
+}
+
 function cardInFinder(card) {
   const words = finder.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const hay = (card.getAttribute("data-find") || "").toLowerCase();
-  return (finder.tab === "all" || card.getAttribute("data-group") === finder.tab)
-    && words.every((word) => hay.includes(word));
+  return inTab(card, words.length > 0) && words.every((word) => hay.includes(word));
 }
 
 function findableCards() {
@@ -6046,12 +6241,10 @@ function applyFinder() {
 
   findableCards().forEach((card) => {
     const hay = (card.getAttribute("data-find") || "").toLowerCase();
-    const inTab = finder.tab === "all"
-      || card.getAttribute("data-group") === finder.tab;
     // Every word has to appear somewhere, so "licence food" narrows
     // rather than widening the way an "any word" match would.
     const matches = words.every((word) => hay.includes(word));
-    const show = inTab && matches && card.dataset.empty !== "1";
+    const show = inTab(card, words.length > 0) && matches && card.dataset.empty !== "1";
     card.hidden = !show;
     if (show) showing += 1;
   });
@@ -6064,6 +6257,8 @@ function applyFinder() {
       : "Nothing in this group yet.";
   }
   $("find-clear").hidden = !query;
+  const advNote = $("adv-note");
+  if (advNote) advNote.hidden = !smallAccount() || finder.tab === "advanced" || Boolean(query);
   renderTabEmpty();
 
   document.querySelectorAll(".f-tab").forEach((tab) => {
@@ -6076,16 +6271,27 @@ function applyFinder() {
    number on it is a promise about what pressing it will do. */
 function countTheTabs() {
   const counts = {};
+  let all = 0;
+  let advanced = 0;
+  const small = smallAccount();
   findableCards().forEach((card) => {
+    const isAdvanced = card.getAttribute("data-advanced") === "1";
+    if (isAdvanced) advanced += 1;
+    // On a small account an Advanced card is counted under Advanced only.
+    if (isAdvanced && small) return;
     const group = card.getAttribute("data-group");
     counts[group] = (counts[group] || 0) + 1;
+    all += 1;
   });
   document.querySelectorAll(".f-tab").forEach((tab) => {
     const key = tab.getAttribute("data-tab");
-    const n = key === "all" ? findableCards().length : (counts[key] || 0);
-    if (!tab.querySelector(".n")) {
-      tab.insertAdjacentHTML("beforeend", ` <span class="n">${n}</span>`);
-    }
+    const n = key === "all" ? all : key === "advanced" ? advanced : (counts[key] || 0);
+    // A group with nothing in it but Advanced cards (Licences, for a café)
+    // is not offered as a tab of its own; Advanced holds them.
+    tab.hidden = small && key !== "all" && key !== "advanced" && n === 0;
+    const badge = tab.querySelector(".n");
+    if (badge) badge.textContent = String(n);
+    else tab.insertAdjacentHTML("beforeend", ` <span class="n">${n}</span>`);
   });
 }
 
@@ -6156,6 +6362,9 @@ let saved = null;
 try { saved = localStorage.getItem(TOKEN_STORAGE); } catch (_) {}
 if (saved) {
   enter(saved).catch(() => {
+    // Leaving for the Simple view aborts the requests still in flight;
+    // that is not a session that failed, and must not sign anybody out.
+    if (state.leaving) return;
     try { localStorage.removeItem(TOKEN_STORAGE); } catch (_) {}
     primeTheGate();
   });

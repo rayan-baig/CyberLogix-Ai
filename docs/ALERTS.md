@@ -97,14 +97,17 @@ get texts, and the times everyone who would be texted is in quiet hours.
 `POST /api/contacts/test-alert` (the **Send a test alert** button under "Who
 gets called") texts everyone on the roster — each number once, across every
 site — a message that starts `TEST from CyberLogix: nothing is wrong`. With
-`{"call": true}`, on a plan with calls, it also rings the first person on the
-ladder with a spoken test. Owners and operators only. It opens no incident,
+`{"call": true}`, on a plan with calls (or with one of the trial's few
+calls left, which it uses), it also rings the first person on the ladder
+with a spoken test. Owners and operators only. It opens no incident,
 posts to no Slack/Teams/PagerDuty channel and writes nothing to the
 compliance record; it goes through the same send functions as a real alert,
 so it counts against the day's spend caps and is refused the same premium
 numbers. One every ten minutes and five a day, counted from the audit trail
 so a restart does not reset it. A sent test is what ticks the last box of
-the console's Getting started checklist, which can send it directly: the
+the console's Getting started checklist (after the sensor, who gets
+alerts, and the sensor's first reading: nothing is called protected
+before a reading has arrived), which can send it directly: the
 words beside the button say what it is, so there is no are-you-sure.
 
 ## The escalation ladder
@@ -114,8 +117,22 @@ has a learned rhythm (at least three earlier warm spells, each back down,
 on a regular 4 to 18 hour timer) and a new spell starts on time, no hotter
 than its cycles get, the reading is recorded as over the line and answered
 `DEFROST_CYCLE` instead of opening an incident. If it is still warm past
-twice its usual length, or runs hotter, the next reading pages as normal.
+one and a half times its shortest recent cycle plus ten minutes, or past
+45 minutes at all (`patterns.DEFROST_MAX_MINUTES`), or runs hotter, the
+next reading pages as normal. The limit is learned from the shortest
+cycle and capped because in a real 2026 attack on store fridge controls
+the attackers stretched defrost cycles to hold off the alarms: learning
+"normal" from stretched cycles let each one excuse a longer next one.
 With no learned rhythm every breach pages.
+
+**Phone calls follow the plan.** Growth and Enterprise call; Starter sends
+texts only. The free trial may place `costs.TRIAL_CALLS_TOTAL` (5) calls in
+all, about a minute each, so the call can be tried; after that it is texts
+only and the sweep says so. Every screen words its promise from
+`costs.calls_offer`: the console's **Who gets called** card (titled **Who
+gets alerts** when nothing would ring), the escalation preview (no call
+ladder where nothing would ring), the Simple view, and the proof report an
+insurer reads.
 
 1. A breach opens an incident and sends the SMS.
 2. A sustained breach **updates that incident** rather than opening another,

@@ -33,7 +33,9 @@ def test_the_gap_between_the_two_sectors_is_the_size_of_the_bug():
     restaurant = INDUSTRY_PROFILES["restaurant"]["danger_above"]
     datacentre = INDUSTRY_PROFILES["cybersecurity"]["danger_above"]
 
-    assert datacentre - restaurant > 40, (
+    # 78°F against a fridge's 41°F: a walk-in registered as a rack would
+    # sit 37 degrees past spoiling before anyone was told.
+    assert datacentre - restaurant > 30, (
         "the wrong sector no longer means a wildly wrong alarm limit; "
         "this test file needs rewriting rather than deleting"
     )

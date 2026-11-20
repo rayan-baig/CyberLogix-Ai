@@ -224,6 +224,8 @@ a { color: var(--accent); }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
+.field-hint { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.field-hint:empty { display: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   white-space: nowrap;
@@ -415,6 +417,9 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
   letter-spacing: .05em; text-transform: uppercase;
   border: 1px solid currentColor; opacity: .92;
 }
+/* A delivery line says why in words now, which can be longer than a
+   phone is wide. */
+.incident .row .badge { white-space: normal; text-align: left; }
 .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .s-good     { color: var(--good); }
 .s-warning  { color: var(--warning); }
@@ -717,7 +722,8 @@ body.has-terminal main { padding-bottom: 148px; }
 
 /* ---------- wall display ---------- */
 body.wall .nav, body.wall .layout > aside, body.wall #terminal,
-body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !important; }
+body.wall .modules, body.wall .pair, body.wall .side-cards,
+body.wall #byod-form { display: none !important; }
 body.wall main { padding: 22px; max-width: none; }
 body.wall .layout { grid-template-columns: minmax(0, 1fr); }
 body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
@@ -1250,6 +1256,29 @@ body[data-stale] #offline-banner {
   padding: 34px 20px; text-align: center; color: var(--muted);
   font-family: var(--display); font-size: 17.5px;
 }
+.f-tab-adv { border-style: dashed; }
+.adv-note { margin: 4px 0 14px; font-size: 13px; color: var(--muted); }
+.adv-note b { color: var(--ink-2); font-weight: 600; }
+
+/* Inputs laid out in a row inside a card (Fetch from a sensor cloud, the
+   OmniArmor connection, Change password, Things to do) had no styling at
+   all and rendered as the browser's white boxes on a dark card. The same
+   look as a .field input, without its label. */
+.card form .row > input:not([type="checkbox"]):not([type="radio"]),
+.card form .row > select,
+.card form.row > input:not([type="checkbox"]):not([type="radio"]),
+.card form.row > select {
+  min-width: 0; padding: 9px 11px;
+  background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 9px; outline: none;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.card form .row > input:focus, .card form.row > input:focus,
+.card form .row > select:focus, .card form.row > select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.card form .row > input::placeholder, .card form.row > input::placeholder { color: var(--muted); }
+#password-form .row > input { flex: 1 1 180px; }
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
@@ -1482,3 +1511,22 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .cancel-line { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
                display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
                font-size: 12.5px; color: var(--muted); }
+
+/* ---------- the plan confirmation (console) ---------- */
+.confirm-dialog {
+  width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  overflow: auto; padding: 22px 22px 18px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-lit); border-radius: 14px;
+}
+.confirm-dialog::backdrop { background: rgba(3,5,10,.72); }
+.confirm-title { margin: 0 0 12px; font-size: 19px; font-weight: 650; }
+.confirm-terms { margin: 0; display: grid; gap: 10px; }
+.confirm-terms dt {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.confirm-terms dd { margin: 2px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.confirm-out { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.confirm-out:empty { display: none; }
+.confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }

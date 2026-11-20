@@ -18,7 +18,7 @@ def place(api, headers, site_id, sensor_id):
 def test_a_sensor_can_be_placed_at_a_site(api, operator_factory, sensor_factory):
     headers, _, _ = operator_factory()
     site = make_site(api, headers)
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
 
     assert place(api, headers, site["site_id"], "FRZ-1").status_code == 200
     body = api.get(f"/api/sites/{site['site_id']}", headers=headers).json()
@@ -32,8 +32,8 @@ def test_unplaced_sensors_are_listed_separately(
     """A sensor nobody assigned is billable but invisible on a site report."""
     headers, _, _ = operator_factory()
     site = make_site(api, headers)
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
-    sensor_factory(headers, sensor_id="FRZ-2", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
+    sensor_factory(headers, sensor_id="FRZ-2", vertical="restaurant", above=32.0)
     place(api, headers, site["site_id"], "FRZ-1")
 
     body = api.get("/api/sites", headers=headers).json()
@@ -47,7 +47,7 @@ def test_deleting_a_site_releases_its_sensors(
     """Removing a location must not delete the readings under it."""
     headers, _, _ = operator_factory()
     site = make_site(api, headers)
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     place(api, headers, site["site_id"], "FRZ-1")
 
     resp = api.delete(f"/api/sites/{site['site_id']}", headers=headers).json()
@@ -117,7 +117,7 @@ def test_only_the_local_manager_is_woken(
         (boca, "BOCA-1", "+15550001", "Boca manager"),
         (boynton, "BOYN-1", "+15550002", "Boynton manager"),
     ):
-        sensor_factory(headers, sensor_id=sensor_id, vertical="restaurant")
+        sensor_factory(headers, sensor_id=sensor_id, vertical="restaurant", above=32.0)
         place(api, headers, site["site_id"], sensor_id)
         api.post("/api/contacts", headers=headers,
                  json={"full_name": who, "phone": phone,
@@ -142,7 +142,7 @@ def test_tenant_wide_contacts_cover_a_site_with_none_of_its_own(
     )
     headers, _, _ = operator_factory()
     site = make_site(api, headers)
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     place(api, headers, site["site_id"], "FRZ-1")
     api.post("/api/contacts", headers=headers,
              json={"full_name": "Head office", "phone": "+15559999"})
@@ -197,7 +197,7 @@ def test_a_celsius_tenant_is_alerted_in_celsius(
 ):
     """A manager in Lyon woken at 3am should not have to convert."""
     headers, _, _ = operator_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     api.post("/api/licenses/me/temperature-unit", headers=headers,
              json={"temperature_unit": "C"})
 
@@ -217,7 +217,7 @@ def test_a_celsius_tenant_is_alerted_in_celsius(
 
     # And the wording used when the model is unreachable.
     break_gemini("outage")
-    sensor_factory(headers, sensor_id="FRZ-2", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-2", vertical="restaurant", above=32.0)
     offline = api.post("/api/sensor-pulse", headers=headers,
                        json={"sensor_id": "FRZ-2",
                              "temperature_celsius": 21.0}).json()
@@ -232,7 +232,7 @@ def test_the_escalation_call_speaks_the_tenants_unit(
     from voice_dispatch import build_voice_script
 
     headers, tenant_row, _ = operator_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     api.post("/api/licenses/me/temperature-unit", headers=headers,
              json={"temperature_unit": "C"})
     body = api.post("/api/sensor-pulse", headers=headers,
@@ -272,7 +272,7 @@ def test_battery_is_recorded_and_low_battery_flagged(
 ):
     """A battery reported before it dies is a sensor that never goes dark."""
     headers, _, _ = operator_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
 
     api.post("/api/sensor-pulse", headers=headers,
              json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 28.0,
@@ -288,7 +288,7 @@ def test_battery_is_recorded_and_low_battery_flagged(
 
 def test_healthy_battery_is_not_flagged(api, operator_factory, sensor_factory):
     headers, _, _ = operator_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     api.post("/api/sensor-pulse", headers=headers,
              json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 28.0,
                    "battery_percent": 85.0})
@@ -316,7 +316,7 @@ def test_site_reconciliation_reports_flat_batteries(
 ):
     headers, _, _ = operator_factory()
     site = make_site(api, headers)
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     place(api, headers, site["site_id"], "FRZ-1")
     api.post("/api/sensor-pulse", headers=headers,
              json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 28.0,

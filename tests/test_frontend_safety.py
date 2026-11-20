@@ -408,7 +408,10 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
     server's own refusal shown, the right one renders five totals and the
     worklist, and neither viewport scrolls sideways.
     """
-    page = api.get("/book")
+    import base64
+
+    operator = {"Authorization": "Basic " + base64.b64encode(b"op:test-admin-key").decode()}
+    page = api.get("/book", headers=operator)
     assert page.status_code == 200
     body = page.text
 

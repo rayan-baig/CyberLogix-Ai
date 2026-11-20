@@ -144,7 +144,12 @@ def test_sweep_can_report_without_calling(
 def test_sweep_on_trial_plan_reports_the_upgrade_path(
     api, tenant_factory, sensor_factory, age_incident
 ):
-    headers, _ = tenant_factory(plan="trial")
+    """Once the trial's few calls are used, the sweep says how to get more."""
+    import costs
+    from store import STORE
+
+    headers, tenant = tenant_factory(plan="trial")
+    STORE.bump_usage(tenant["tenant_id"], "voice_calls", costs.TRIAL_CALLS_TOTAL)
     incident_id = open_incident(api, headers, sensor_factory)
     age_incident(incident_id, minutes=20)
 
@@ -154,7 +159,19 @@ def test_sweep_on_trial_plan_reports_the_upgrade_path(
         a for a in body["actions"] if a["action"] == "voice_escalation_blocked"
     ]
     assert blocked[0]["incident_id"] == incident_id
-    assert "Upgrade" in blocked[0]["detail"]
+    assert "Growth" in blocked[0]["detail"]
+
+
+def test_the_trial_rings_a_phone_from_its_few_calls(
+    api, tenant_factory, sensor_factory, age_incident
+):
+    """The call is the main thing being bought, so a trial may try it."""
+    headers, _ = tenant_factory(plan="trial")
+    incident_id = open_incident(api, headers, sensor_factory)
+    age_incident(incident_id, minutes=20)
+
+    body = api.post("/api/autopilot/sweep", headers=headers).json()
+    assert body["voice_calls_placed"] == 1
 
 
 def test_acknowledged_incident_is_not_escalated_by_sweep(

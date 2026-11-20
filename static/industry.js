@@ -63,7 +63,7 @@ function renderIndustry(d) {
         <li><b>We keep the proof.</b>
           Every reading is saved and sealed. When ${esc(d.asks_after)}
           asks what happened, the answer is a record you can print rather
-          than a promise.${d.paperwork ? ` We format it as
+          than a promise.${d.paperwork ? ` It prints as a ready-made
           <strong>${esc(d.paperwork)}</strong>.` : ""}</li>
       </ol>
     </section>

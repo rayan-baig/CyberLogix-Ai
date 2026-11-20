@@ -155,19 +155,24 @@ def _landing():
             / "static" / "index.html")
 
 
-def test_the_sector_count_in_the_heading_is_the_number_shown():
-    """The heading said "Eleven sectors" above a grid of twelve.
+def test_the_sector_heading_counts_nothing_and_the_grid_shows_real_sectors():
+    """The heading said "Eleven sectors" above a grid of twelve, and then
+    "Twelve sectors" above superyachts and hangars on a page a café reads.
+    The front page now shows the sectors most visitors run, names them in
+    data-show, and sends everyone else to /for. Every one it names must be
+    a real sector, and the heading must not count them."""
+    import re
 
-    Someone added the twelfth and nothing told them the sentence above it
-    was now wrong. Spelled out, so it cannot be computed; checked here, so
-    it cannot drift again without a failure.
-    """
     from store import INDUSTRY_PROFILES
 
-    word = WORDS[len(INDUSTRY_PROFILES)]
-    assert f"<h2>{word} sectors," in _landing(), (
-        f"there are {len(INDUSTRY_PROFILES)} sectors; the heading should "
-        f"say {word}")
+    page = _landing()
+    shown = re.search(r'data-show="([^"]+)"', page).group(1).split()
+    assert shown and all(v in INDUSTRY_PROFILES for v in shown)
+    for niche in ("superyacht", "private_aviation", "solar_infrastructure",
+                  "cannabis", "cybersecurity"):
+        assert niche not in shown
+    assert not any(f"<h2>{w} sectors" in page for w in WORDS.values())
+    assert 'href="/for"' in page
 
 
 def test_no_plan_button_promises_a_plan_signup_cannot_give():

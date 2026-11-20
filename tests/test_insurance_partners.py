@@ -71,7 +71,7 @@ def _pay(api, admin_headers, settle, joined, amount=None, reference="WIRE-1"):
             "location_name": "Display fridge"}).status_code == 201
     if STORE.get_tenant(tenant_id).plan == "trial":
         assert api.post("/api/licenses/me/plan", headers=token,
-                        json={"plan": "starter"}).status_code == 200
+                        json={"plan": "starter", "confirm": True}).status_code == 200
     issued = api.post("/api/invoices", params={"tenant_id": tenant_id},
                       headers=admin_headers, json={})
     assert issued.status_code == 201, issued.text
@@ -510,7 +510,10 @@ def test_the_dashboard_page_and_the_operator_tab_are_served(api):
     assert page.status_code == 200
     assert "/static/insurance-dashboard.js" in page.text
     assert page.headers["X-Robots-Tag"].startswith("noindex")
-    book = api.get("/book").text
+    import base64
+
+    book = api.get("/book", headers={"Authorization": "Basic " + base64.b64encode(
+        b"op:test-admin-key").decode()}).text
     assert 'data-panel="partners"' in book and 'id="payout-form"' in book
     assert "/api/insurance-partners" in api.get("/static/book.js").text
 

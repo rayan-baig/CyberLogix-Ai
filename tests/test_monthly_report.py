@@ -15,7 +15,7 @@ import pytest
 import mail
 import monthly
 from digest import DIGEST_HOUR_UTC
-from store import STORE, evaluate_breach, utc_now
+from store import STORE, evaluate_sensor_breach, utc_now
 
 PASSWORD = "correct-horse-battery"
 
@@ -39,7 +39,7 @@ def at(day, hour=12, minute=0):
 
 def _reading(sensor_id, temp, when):
     sensor = STORE.get_sensor(sensor_id)
-    breached = evaluate_breach(sensor.industry_vertical, temp) is not None
+    breached = evaluate_sensor_breach(sensor, temp) is not None
     STORE.record_reading(sensor, temp, None, breached, at=when)
     sensor = STORE.get_sensor(sensor_id)
     sensor.last_seen = max(sensor.last_seen or when, when)
@@ -81,8 +81,8 @@ def grill(api, operator_factory, sensor_factory):
     headers, tenant, _ = operator_factory(company_name="Harbor Grill",
                                           email="dana@grill.example")
     tid = tenant["tenant_id"]
-    sensor_factory(headers, "HG-WALKIN", "restaurant", "Kitchen walk-in")
-    sensor_factory(headers, "HG-BAR", "restaurant", "Bar freezer")
+    sensor_factory(headers, "HG-WALKIN", "restaurant", "Kitchen walk-in", above=32.0)
+    sensor_factory(headers, "HG-BAR", "restaurant", "Bar freezer", above=32.0)
     for email, name, role in (("lee@grill.example", "Lee Park", "owner"),
                               ("sam@grill.example", "Sam Cook", "operator"),
                               ("val@grill.example", "Val Moss", "viewer")):
@@ -122,7 +122,7 @@ def bakery(api, operator_factory, sensor_factory):
                                           email="kim@bakery.example",
                                           full_name="Kim Rowe")
     tid = tenant["tenant_id"]
-    sensor_factory(headers, "HB-PROOF", "restaurant", "Proving fridge")
+    sensor_factory(headers, "HB-PROOF", "restaurant", "Proving fridge", above=32.0)
     for day in (2, 3):
         _reading("HB-PROOF", 50.0, at(day))
     _alert(tid, "HB-PROOF", 50.0, at(2), acked_by="Kim Rowe <kim@bakery.example>",
@@ -227,7 +227,7 @@ def test_the_html_part_escapes_what_a_customer_typed(
 ):
     headers, tenant, _ = operator_factory(company_name="<b>Grill</b> & Co",
                                           email="esc@grill.example")
-    sensor_factory(headers, "ESC-1", "restaurant", "<script>x</script>")
+    sensor_factory(headers, "ESC-1", "restaurant", "<script>x</script>", above=32.0)
     _reading("ESC-1", 10.0, at(3))
     monthly.run_monthly_reports(NOW)
     [message] = _messages(mailbox, "esc@grill.example")

@@ -200,6 +200,8 @@ def faq() -> List[Dict[str, Any]]:
     call time, so a test that changes a constant sees the page change.
     """
     from auth import LICENCE_GRACE_DAYS
+    from costs import TRIAL_CALLS_TOTAL
+    from patterns import DEFROST_MAX_MINUTES
     from domain import (
         DISPATCH_SLA_SECONDS,
         PLAN_TIERS,
@@ -288,6 +290,17 @@ def faq() -> List[Dict[str, Any]]:
                 "friend, in the Money tab (owners only): when a business that "
                 "used it pays its first invoice, you get a month free on one "
                 f"location, up to {REFERRAL_REWARDS_PER_YEAR} times a year.",
+            ],
+        },
+        {
+            "id": "hardware",
+            "q": "Do I need to buy sensors? Do you sell them?",
+            "a": [
+                "We do not sell sensors. You buy a wireless temperature "
+                "sensor for each fridge or freezer from a sensor maker, "
+                "and set it to send its readings to us. "
+                "<a href=\"/help/sensors#what-you-need\">What you need, "
+                "roughly what it costs, and how to set it up</a>.",
             ],
         },
         {
@@ -388,7 +401,10 @@ def faq() -> List[Dict[str, Any]]:
                 "answers and presses 1. Phone calls come with the "
                 f"{e(' and '.join(with_calls))} plans; the "
                 f"{e(' and '.join(without_calls))} "
-                f"plan{'s send' if len(without_calls) > 1 else ' sends'} texts only.",
+                f"plan{'s send' if len(without_calls) > 1 else ' sends'} texts only. "
+                f"The free trial includes {TRIAL_CALLS_TOTAL} phone calls in "
+                "all (about a minute each), so you can hear what an alert "
+                "call sounds like.",
                 "If a text fails to send, we try it again "
                 f"{_minutes(SMS_RETRY_AFTER_MINUTES)} minutes after the "
                 "problem opened.",
@@ -401,9 +417,10 @@ def faq() -> List[Dict[str, Any]]:
                 "Send a test alert. In the console, open the People tab, "
                 "find Who gets called and press Send a test alert. Everyone "
                 "on the list gets a text that starts “TEST” and says nothing "
-                "is wrong. On a plan with phone calls you can also ring the "
-                "first person. It is also the last step of Getting started, "
-                "at the top of the console.",
+                "is wrong. On a plan with phone calls, or with one of the "
+                "trial's few calls, you can also ring the first person. It "
+                "is also the last step of Getting started, at the top of "
+                "the console.",
                 "A test opens no problem and chases nobody. Owners and "
                 f"operators can send one every {cooldown_minutes} minutes, "
                 f"up to {TEST_ALERTS_PER_DAY} a day.",
@@ -425,8 +442,12 @@ def faq() -> List[Dict[str, Any]]:
                 "Freezers warm up for a while on a timer to defrost. Once we "
                 "have seen a unit do this regularly, a warm spell that comes "
                 "on time and is no warmer than usual is recorded but does "
-                "not wake anybody. If it lasts too long or gets warmer than "
-                "usual, the alert goes out as normal.",
+                "not wake anybody. If it lasts much longer than its usual "
+                "defrosts, or longer than "
+                f"{int(DEFROST_MAX_MINUTES)} minutes at all, or gets warmer "
+                "than usual, the alert goes out as normal: a defrost "
+                "stretched on purpose, by someone who has taken over the "
+                "fridge controls, still alerts.",
             ],
         },
         {
@@ -446,9 +467,10 @@ def faq() -> List[Dict[str, Any]]:
                 f"rather than after the usual {VOICE_ESCALATION_GRACE_MINUTES} "
                 "minutes. Reply 1 "
                 "or press Acknowledge to stop it.",
-                "We read our own sensors and never control a fridge, so we "
-                "still see the warming if the fridge's own controls have been "
-                "taken over, and nobody can use us to change one. We find out "
+                "We read separate sensors (ones you buy from a sensor maker), "
+                "not the fridge's own controls, and never control a fridge, "
+                "so we still see the warming if the fridge's own controls "
+                "have been taken over, and nobody can use us to change one. We find out "
                 "in minutes and call your team; we cannot stop an attack.",
             ],
         },

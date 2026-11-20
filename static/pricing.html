@@ -51,7 +51,7 @@
 
 <main class="wrap page">
   <p class="kicker">Pricing</p>
-  <h1>One flat price for each location.</h1>
+  <h1>From %%STARTER_PRICE%% a month. One flat price for each location.</h1>
   <p class="lede">Restaurants pay %%RESTAURANT_PRICE%% a month per location
     and pharmacies %%PHARMACY_PRICE%% a month per pharmacy, each for up to
     %%UNITS_PER_LOCATION%% fridges and freezers there, and
@@ -72,6 +72,13 @@
       asks you to move up first; nothing is charged until you do. A friend's
       referral code makes the free trial %%REFERRAL_DAYS%% days.</p>
   </section>
+
+  <!-- We sell no hardware: the sensors are bought from a sensor maker.
+       Words from sensor_guides.WHAT_YOU_NEED, as on the front page. -->
+  <div class="panel need-panel">
+    %%WHAT_YOU_NEED%%
+    <p class="muted small"><a href="/help/sensors">Step-by-step set-up for each kind of sensor</a></p>
+  </div>
 
   <section class="panel" aria-labelledby="calc-title">
     <h2 id="calc-title" class="calc-heading">Work out your price</h2>
@@ -194,11 +201,12 @@
     we phone people when a text goes unanswered. Starter is one flat price;
     Growth and Enterprise are priced by the rate card above.</p>
   <div class="panel scroll">
-    <table class="table">
-      <thead><tr><th>Plan</th><th class="num">Sensors</th><th>Phone calls</th><th>Term</th><th>Price</th></tr></thead>
+    <table class="table plan-table">
+      <thead><tr><th>Plan</th><th class="num">Sensors</th><th>Phone calls</th><th>Term</th><th>Price</th><th>What you get</th></tr></thead>
       <tbody>%%PLAN_ROWS%%</tbody>
     </table>
   </div>
+  <p class="muted small">%%ADDONS_WORDS%%</p>
 
   <h2>Optional extras</h2>
   <p class="muted">The Kitchen Safety Bundle (%%BUNDLE_PRICE%%) sends each

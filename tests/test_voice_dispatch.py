@@ -98,12 +98,17 @@ def test_resolution_closes_the_incident(api, tenant_factory, sensor_factory):
 def test_trial_plan_cannot_use_voice_escalation(
     api, tenant_factory, sensor_factory
 ):
-    headers, _ = tenant_factory(plan="trial")
+    """A trial whose few calls are used is texts only, and says so."""
+    import costs
+    from store import STORE
+
+    headers, tenant = tenant_factory(plan="trial")
+    STORE.bump_usage(tenant["tenant_id"], "voice_calls", costs.TRIAL_CALLS_TOTAL)
     incident_id = open_incident(api, headers, sensor_factory)
 
     resp = api.post(f"/api/voice/escalate/{incident_id}?force=true", headers=headers)
     assert resp.status_code == 403
-    assert "does not include" in resp.json()["detail"]
+    assert "have been used" in resp.json()["detail"]
 
 
 def test_voice_script_falls_back_on_outage(

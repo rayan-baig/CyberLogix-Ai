@@ -89,7 +89,7 @@ def test_a_sensor_key_cannot_touch_anything_but_readings(api, estate):
     attempts = {
         "suspend the licence": api.post("/api/licenses/me/suspend", headers=key),
         "change the plan": api.post("/api/licenses/me/plan", headers=key,
-                                    json={"plan": "trial"}),
+                                    json={"plan": "trial", "confirm": True}),
         "register another sensor": api.post(
             "/api/licenses/me/sensors", headers=key,
             json={"sensor_id": "SNEAK-01", "industry_vertical": "pharmacy",

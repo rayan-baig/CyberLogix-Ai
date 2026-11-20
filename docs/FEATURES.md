@@ -140,20 +140,32 @@ it only against a throwaway instance.
 
 | Vertical key | Sector | Common catastrophe | Breach band |
 |---|---|---|---|
-| `cybersecurity` | CyberTech Data Centers | HVAC Circuit Trip / Cooling Fan Stalled | above 78 °F |
-| `restaurant` | Franchise Restaurants | Unlatched Walk-In Freezer Door Gasket Failure | above 32 °F |
+| `cybersecurity` | Data centers | Cooling failed (a tripped circuit or a stalled fan) | above 78 °F |
+| `restaurant` | Restaurants & Cafés | Fridge or freezer warming (door left open, or the cooling failing) | above 41 °F (a fridge); a freezer added as one: above 10 °F |
 | `logistics` | High-Stakes Cold-Chain Transport | Reefer Truck Auxiliary Diesel Engine Stall | above 40 °F |
 | `solar_infrastructure` | Solar Infrastructure & Storage | Inverter Thermal Runaway Overload | above 115 °F |
 | `medical_lab` | Medical Labs & Blood Banks | Specimen Refrigerator Door Seal Degradation | above 46 °F or below 36 °F |
 | `private_aviation` | Private Aviation Hangars | Hangar Bay Humidity Moisture Infiltration | above 85 °F |
 | `superyacht` | Luxury Superyacht Engine Bays | Engine Room Ventilation Airflow Blockage | above 90 °F |
-| `country_club` | High-End Country Clubs | Clubhouse Kitchen Walk-In Compressor Failure | above 32 °F |
+| `country_club` | High-End Country Clubs | Clubhouse kitchen fridge or freezer warming | above 41 °F (a fridge); a freezer added as one: above 10 °F |
 | `pharmacy` | Retail & Hospital Pharmacies | Vaccine Refrigerator Compressor Failure | above 46 °F or below 36 °F |
 | `wine_and_art` | Fine Wine & Art Storage | Cellar Climate Control Failure | above 60 °F or below 50 °F |
 | `cannabis` | Licensed Cannabis Cultivation | Drying Room Climate Excursion | above 72 °F or below 58 °F |
 | `cryostorage` | IVF Clinics & Cryostorage | Cryogenic Tank Nitrogen Boil-Off / Vapour Space Warming | above −238 °F or below −325 °F |
 
 Thresholds are exclusive: a reading exactly at the limit is nominal.
+
+**Fridge or freezer?** The add form asks, for restaurants, country clubs,
+pharmacies and labs, and saves the answer's limit on the unit itself
+(`domain.UNIT_KINDS`): a food fridge alarms over 41 °F and a food freezer
+over 10 °F; a vaccine or specimen fridge outside 36–46 °F and a freezer
+outside −58 to 5 °F. The API takes the same answer as `unit_kind` on
+`POST /api/licenses/me/sensors` and on adopting a knocking device. Until
+3.19.0 a restaurant unit with no limit of its own alarmed over 32 °F (a
+freezer's number), so a healthy 37 °F walk-in cooler opened a critical
+alarm. Units saved before then keep the 32 °F they were alarming on, as
+their own limit, until their owner changes it: a new default never moves
+an existing unit's line.
 
 Each profile also names what that sector calls the thing being watched —
 engine bays, racks, walk-ins, cellars — and the console uses that word
@@ -250,8 +262,8 @@ already holds the readings it is made of:
 
 | Sector | Document |
 |---|---|
-| CyberTech Data Centers | Automated CISO Incident Briefing |
-| Franchise Restaurants | Health Inspector Log Formatter |
+| Data centers | Automated CISO Incident Briefing |
+| Restaurants & Cafés | Health Inspector Temperature Log |
 | Cold-Chain Logistics | Reefer Cargo Handover Pass |
 | Solar Infrastructure | Grid Thermal Yield Report |
 | Medical Labs & Blood Banks | OSHA Cold-Storage Specimen Audit |
