@@ -50,6 +50,7 @@ from forecaster import router as forecaster_router
 from gemini import dispatch_ready, dispatch_status
 from hardware_bridge import router as bridge_router
 from helpdesk import router as help_router
+from alertkey import router as alertkey_router
 from invoicing import router as invoicing_router
 from backup import router as backup_router
 from certificates import router as certificates_router
@@ -313,6 +314,7 @@ app.include_router(books_router)
 app.include_router(simulator_router)
 app.include_router(demo_router)
 app.include_router(help_router)
+app.include_router(alertkey_router)
 
 MODULES_ACTIVE = [
     "universal_iot_telemetry",
@@ -421,6 +423,19 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 _FONT_CSS = "https://fonts.googleapis.com"
 _FONT_FILES = "https://fonts.gstatic.com"
 
+# Pilot, the MTRX Horizyn assistant (docs/PILOT.md), talks to the AI
+# provider the person chose straight from their browser, on their own key:
+# never through this server. So the browser may reach exactly these
+# addresses and no others, the same list as on the MTRX Horizyn site:
+# the three providers, the OpenAI-compatible services Pilot offers, and
+# the person's own computer for a model they run themselves.
+PILOT_PROVIDER_HOSTS = ("api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com")
+PILOT_COMPATIBLE_HOSTS = ("openrouter.ai", "api.groq.com", "api.mistral.ai", "api.deepseek.com",
+                          "api.together.xyz", "api.fireworks.ai", "api.x.ai")
+PILOT_LOCAL_HOSTS = ("localhost", "127.0.0.1")
+PILOT_CONNECT = " ".join([f"https://{h}" for h in PILOT_PROVIDER_HOSTS + PILOT_COMPATIBLE_HOSTS]
+                         + [f"http://{h}:*" for h in PILOT_LOCAL_HOSTS])
+
 CONTENT_SECURITY_POLICY = "; ".join([
     "default-src 'self'",
     # No 'unsafe-inline', for script or style. Every page's script and
@@ -435,12 +450,20 @@ CONTENT_SECURITY_POLICY = "; ".join([
     f"style-src 'self' {_FONT_CSS}",
     f"font-src 'self' {_FONT_FILES}",
     "img-src 'self' data:",
-    "connect-src 'self'",
+    # blob: only for a video Pilot made with the person's own video key,
+    # shown from memory in their own browser.
+    "media-src 'self' blob:",
+    f"connect-src 'self' {PILOT_CONNECT}",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "object-src 'none'",
 ])
+
+# The microphone for this site's own pages only: Pilot's optional voice
+# input uses the browser's own speech recognition, and only while its
+# button is pressed.
+PERMISSIONS_POLICY = "geolocation=(), microphone=(self), camera=()"
 
 
 # The two API reference pages run third-party code from a CDN (Swagger UI
@@ -517,9 +540,7 @@ def _apply_security_headers(response: Response, request: Request) -> Response:
     response.headers.setdefault(
         "Referrer-Policy", "strict-origin-when-cross-origin"
     )
-    response.headers.setdefault(
-        "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
-    )
+    response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
     response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
     # A page is checked with the server every time it is opened. Without
     # this the browser kept /console fresh for a while on its own guess,
@@ -736,6 +757,11 @@ def _asset_tag(url_path: str) -> Optional[str]:
     return tag
 
 
+# Pilot's one script tag names the files it fetches later in data-*
+# attributes (the robot pictures too), so those are versioned the same way.
+_STATIC_DATA_REF = re.compile(r'(data-[a-z0-9-]+=")(/static/[^"?#]+\.(?:js|css|webp))(")')
+
+
 def versioned(page: str) -> str:
     """The page with ?v=<hash> on every /static/ file it names."""
     def tagged(found):
@@ -744,7 +770,82 @@ def versioned(page: str) -> str:
             return found.group(0)
         return f"{found.group(1)}{found.group(2)}?v={tag}{found.group(3)}"
 
-    return _STATIC_REF.sub(tagged, page)
+    page = page.replace(PILOT_MARK, pilot_tag())
+    return _STATIC_DATA_REF.sub(tagged, _STATIC_REF.sub(tagged, page))
+
+
+# --- Pilot, the MTRX Horizyn assistant (docs/PILOT.md) ----------------------
+#
+# A page that should have Pilot carries PILOT_MARK just before </body>: the
+# public pages (landing, pricing, help, /for, the demo) and the signed-in
+# console and Simple view. Never a /verify proof page, an error page, the
+# operator's /book, a reset or proof link, or anything else: no mark, no
+# Pilot. The page loads one small deferred script; once it has finished
+# loading, that fetches the robot and the config, and the chat window comes
+# only when somebody opens it. The AI is called from the person's own
+# browser on their own key; nothing about it passes through this server.
+PILOT_MARK = "<!--pilot-->"
+_pilot_tag: Dict[str, str] = {}
+
+
+def pilot_facts() -> Dict[str, str]:
+    """What Pilot's knowledge pack may quote, read from the code that charges
+    and alarms, so Pilot can never say a figure the product does not use."""
+    from costs import TRIAL_CALLS_TOTAL
+    from domain import (DISPATCH_SLA_SECONDS, SENSOR_OFFLINE_AFTER_MINUTES,
+                        VOICE_ESCALATION_GRACE_MINUTES, unit_kind_limits)
+    from pricing import PRICE_BOOK, headline
+
+    facts = headline()
+    landing = _landing_facts()
+    fridge = unit_kind_limits("restaurant", "fridge") or (None, None)
+    freezer = unit_kind_limits("restaurant", "freezer") or (None, None)
+
+    def number(value) -> str:
+        return "" if value is None else f"{value:g}"
+
+    # Dollar amounts as bare numbers: the pack writes the "$". Some pages
+    # promise to quote no price of their own, and an attribute only Pilot
+    # reads is not a price on the page.
+    def dollars(amount) -> str:
+        return f"{float(str(amount).strip('$').replace(',', '')):g}"
+
+    return {
+        "hosts": " ".join(PILOT_COMPATIBLE_HOSTS + PILOT_LOCAL_HOSTS),
+        "from-price": dollars(landing["%%FROM_PRICE%%"]),
+        "starter-units": str(facts["starter_units"]),
+        "restaurant-price": dollars(PRICE_BOOK["restaurant"]["monthly_usd"]),
+        "pharmacy-price": dollars(PRICE_BOOK["pharmacy"]["monthly_usd"]),
+        "units-per-location": str(facts["units_per_location"]),
+        "extra-unit": dollars(facts["extra_unit_usd"]),
+        "trial-days": str(facts["trial_days"]),
+        "trial-units": str(facts["trial_units"]),
+        "trial-calls": str(TRIAL_CALLS_TOTAL),
+        "fridge-limit": number(fridge[0]),
+        "freezer-limit": number(freezer[0]),
+        "offline-minutes": str(SENSOR_OFFLINE_AFTER_MINUTES),
+        "call-after-minutes": str(VOICE_ESCALATION_GRACE_MINUTES),
+        "text-within-seconds": str(DISPATCH_SLA_SECONDS),
+    }
+
+
+def pilot_tag() -> str:
+    """The one script tag, built once."""
+    if "tag" not in _pilot_tag:
+        core = {
+            "store": "pilot/pilot-store.js", "mascot": "pilot/pilot-mascot.js",
+            "app": "pilot-cyberlogix.js", "pack": "pilot-cyberlogix-pack.js",
+            "css": "pilot/pilot.css", "panel-css": "pilot/pilot-panel.css",
+            "robot": "pilot/pilot-robot-128.webp", "robot2x": "pilot/pilot-robot-256.webp",
+            "render": "pilot/pilot-render.js", "providers": "pilot/pilot-providers.js",
+            "engine": "pilot/pilot-engine.js", "media": "pilot/pilot-media.js",
+            "panel": "pilot/pilot-panel.js",
+        }
+        attrs = " ".join(f'data-{k}="/static/{v}"' for k, v in core.items())
+        facts = " ".join(f'data-{k}="{html.escape(v)}"' for k, v in pilot_facts().items())
+        _pilot_tag["tag"] = (f'<script src="/static/pilot/pilot.js" defer id="pilot-core" '
+                             f"{attrs} {facts}></script>")
+    return _pilot_tag["tag"]
 
 
 _html_files: Dict[str, tuple] = {}

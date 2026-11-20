@@ -666,6 +666,7 @@ const OPTIONAL_PANELS = {
   referrals: "referral-body",
   proofReports: "proof-report-body",
   omni: "omni-body",
+  aiKey: "aikey-body",
   tasks: "task-body",
   peopleAlerts: "licence-alerts",
   peopleCal: "people-cal",
@@ -717,7 +718,7 @@ function panelUnavailable(key, err) {
 const SLOW_PANELS = new Set([
   "costs", "audit", "roster", "rotations", "team", "businesses", "hooks",
   "invoices", "contract", "pipeline", "forecast", "claims", "peopleAlerts",
-  "referrals", "omni", "proofReports", "staff", "peopleCal", "leavers",
+  "referrals", "omni", "aiKey", "proofReports", "staff", "peopleCal", "leavers",
   "leaving",
 ]);
 const SLOW_EVERY = 5;
@@ -772,6 +773,8 @@ async function refresh(opts = {}) {
     referrals: () => api("/api/referrals/me").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     omni: () => api("/api/connections/omniarmor").catch((err) =>
+      (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
+    aiKey: () => api("/api/ai-key").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     proofReports: () => api("/api/proof-reports").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
@@ -846,6 +849,7 @@ async function refresh(opts = {}) {
   paint("pollers", () => renderPollers(got.pollers));
   paint("referrals", () => renderReferrals(got.referrals));
   paint("omni", () => renderOmni(got.omni));
+  paint("aiKey", () => renderAiKey(got.aiKey));
   paint("proofReports", () => renderProofReports(got.proofReports));
   paint("tasks", () => renderTasks(got.tasks));
   paint("peopleAlerts", () => {
@@ -3449,6 +3453,86 @@ $("omni-remove").addEventListener("click", async () => {
     const out = await api("/api/connections/omniarmor", { method: "DELETE" });
     omniSignature = null;
     renderOmni(out);
+    toast(out.message, "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+/* ---------------- the business's own AI key for alert wording ----------------
+   alertkey.py. The key never comes back: only its last four. Without the
+   server's encryption secret the form is hidden and the card says why. */
+
+function renderAiKey(seen) {
+  const owner = Boolean(seen && !seen.notOwner);
+  $("aikey-not-owner").hidden = owner;
+  $("aikey-unavailable").hidden = !owner || seen.available;
+  $("aikey-owner").hidden = !owner || !seen.available;
+  if (!owner) {
+    $("aikey-note").textContent = "Owners only";
+    return;
+  }
+  if (!seen.available) {
+    $("aikey-note").textContent = "Not available here";
+    $("aikey-unavailable").textContent = seen.why_not;
+    return;
+  }
+  $("aikey-note").textContent = seen.saved ? `Key ends ${seen.key_hint}` : "Using ours";
+  if (!$("aikey-form").contains(document.activeElement)) {
+    $("aikey-key").placeholder = seen.saved
+      ? `Saved key ends ${seen.key_hint}. Paste a new one to replace it.`
+      : `Your ${seen.provider} API key`;
+  }
+  $("aikey-test").disabled = !seen.saved;
+  $("aikey-remove").disabled = !seen.saved;
+  const last = seen.last_result;
+  $("aikey-body").innerHTML = `
+    <div class="u-fs-12-5 u-mb-8 ${seen.saved ? "s-good" : "u-c-muted"}">${esc(seen.saved
+      ? `Your key (ending ${seen.key_hint}) words your alerts' what-to-check line.`
+      : "No key saved: the line is worded on ours, or by the plain template.")}</div>
+    ${seen.model_set ? "" : `<div class="sub u-mb-8">No AI model is set on this
+      server, so every alert uses the plain wording for now, with or without
+      a key.</div>`}
+    ${last ? `<div class="sub u-mb-8 ${last.worked ? "" : "s-warning"}">${esc(last.worked
+      ? "The last line on your key worked."
+      : "The last try on your key did not work, so that alert used the plain wording.")}</div>` : ""}
+    <div class="sub">${esc(seen.note)}</div>`;
+}
+
+$("aikey-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const key = $("aikey-key").value.trim();
+  if (!key) { toast("Paste your key first.", "err"); return; }
+  try {
+    const seen = await api("/api/ai-key", { method: "PUT", body: JSON.stringify({ key }) });
+    $("aikey-key").value = "";
+    $("aikey-key").blur();
+    renderAiKey(seen);
+    toast(seen.message, "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+$("aikey-test").addEventListener("click", async () => {
+  const button = $("aikey-test");
+  button.disabled = true;
+  try {
+    const out = await api("/api/ai-key/test", { method: "POST" });
+    renderAiKey(out);
+    toast(`${out.message} “${out.line}”`, out.worked ? "ok" : "err");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("aikey-remove").addEventListener("click", async () => {
+  if (!confirm("Remove your AI key? It is deleted, and alerts go back to our wording.")) return;
+  try {
+    const out = await api("/api/ai-key", { method: "DELETE" });
+    renderAiKey(out);
     toast(out.message, "ok");
   } catch (err) {
     toast(err.message, "err");
@@ -6350,6 +6434,63 @@ if (typeof ResizeObserver === "function") {
   if (nav) new ResizeObserver(measureNav).observe(nav);
 }
 window.addEventListener("resize", measureNav);
+
+/* ---------------- Pilot ----------------
+   What Pilot, the assistant (static/pilot-cyberlogix-pack.js, docs/PILOT.md),
+   may do on this page: through this page's own api(), with the signed-in
+   person's own session and permissions, so the server checks every call
+   exactly as it checks a button press here. Pilot reads the units and the
+   alerts; it acknowledges or closes an alert, adds a unit or makes a proof
+   report only after the person presses Allow on its card. Nothing here
+   changes the plan, deletes anything, changes who gets called, or sends a
+   text or a call. */
+window.CyberLogixConsole = Object.freeze({
+  signedIn: () => Boolean(state.token),
+  api: (path, options) => api(path, options),
+  tab: () => {
+    const on = document.querySelector('.f-tab[aria-pressed="true"]');
+    return on ? on.textContent.trim() : "";
+  },
+  // The sector new units go in, and its "fridge or freezer?" choices.
+  sector: () => {
+    const vertical = $("add-vertical").value;
+    const profile = (state.industries || []).find((i) => i.vertical === vertical);
+    return {
+      vertical,
+      name: profile ? profile.name : "",
+      kinds: ((profile && profile.unit_kinds) || []).map((k) => ({ kind: k.kind, alarm: unitKindLabel(k) })),
+    };
+  },
+  // The same as the Add a fridge or freezer form. The sensor's key is shown
+  // once in that card's key box, as always, and never handed to Pilot.
+  async addSensor(location, kind) {
+    const vertical = $("add-vertical").value;
+    const profile = (state.industries || []).find((i) => i.vertical === vertical);
+    const kinds = (profile && profile.unit_kinds) || [];
+    const made = await api("/api/licenses/me/sensors", {
+      method: "POST",
+      body: JSON.stringify({
+        sensor_id: sensorIdFrom(location),
+        industry_vertical: vertical,
+        location_name: location,
+        external_device_sn: null,
+        unit_kind: kinds.length ? kind : null,
+      }),
+    });
+    showIssuedKey(made.sensor.sensor_id, made.ingest_key);
+    watchForFirstReading();
+    refresh().catch(() => { /* the next poll paints it */ });
+    return {
+      added: made.sensor.location_name,
+      sensor_id: made.sensor.sensor_id,
+      alarm_above: made.sensor.danger_above_display,
+      alarm_below: made.sensor.danger_below_display,
+      units_used: `${made.seats_used} of ${made.seats_total}`,
+      adds_to_monthly_bill_usd: made.billing ? made.billing.adds_monthly_usd : null,
+    };
+  },
+  refresh: () => refresh().catch(() => { /* the next poll paints it */ }),
+});
 
 /* ---------------- boot ---------------- */
 

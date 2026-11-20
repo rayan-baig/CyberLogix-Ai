@@ -492,6 +492,38 @@
           <p class="card-plain" id="omni-not-owner" hidden>Only an owner can
              connect OmniArmor.</p>
         </section>
+        <!-- The business's own AI key for the one line of an alert the AI
+             words (alertkey.py). Never shown again, only its last four;
+             hidden, with the reason, when this server cannot keep it. -->
+        <section class="card" id="find-ai-key" data-group="setup" data-find="your ai key for alert wording api key google ai studio own key ai line alert text what to check" data-label="Your AI key for alert wording" data-pilot-private>
+          <div class="card-head">
+            <span class="card-title">Your AI key for alert wording</span>
+            <span class="card-note" id="aikey-note">Owners only</span>
+          </div>
+          <p class="card-plain">Each alert text and call has one line saying
+             what to check first, worded by AI when it can and by a plain
+             template when it cannot. Save your own Google AI Studio API key here
+             and that line is written on your key, for your alerts only.</p>
+          <p class="card-plain" id="aikey-unavailable" hidden></p>
+          <div id="aikey-owner" hidden>
+            <form id="aikey-form">
+              <div class="row u-mb-8">
+                <input id="aikey-key" class="grow" type="password" maxlength="300"
+                       autocomplete="off" spellcheck="false"
+                       placeholder="Your Google AI Studio API key"
+                       aria-label="Your Google AI Studio API key">
+              </div>
+              <div class="row u-gap-8 u-flex-wrap">
+                <button class="btn btn-sm btn-primary" type="submit">Save key</button>
+                <button class="btn btn-sm" type="button" id="aikey-test">Try it</button>
+                <button class="btn btn-sm" type="button" id="aikey-remove">Remove key</button>
+              </div>
+            </form>
+            <div id="aikey-body" class="u-mt-12"></div>
+          </div>
+          <p class="card-plain" id="aikey-not-owner" hidden>Only an owner can
+             save an AI key.</p>
+        </section>
         <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
           <div class="card-head">
             <span class="card-title">Things to do</span>
@@ -658,7 +690,7 @@
           <p class="card-plain">Name it by where it is, and we start watching it as soon as its sensor sends a reading.</p>
           <!-- A key is shown once. A toast that fades after three seconds
                is the wrong container for something you cannot get back. -->
-          <div id="issued-key" class="banner warn" hidden
+          <div id="issued-key" class="banner warn" data-pilot-private hidden
                role="status" aria-live="polite">
             <div><b><span id="issued-kind">Sensor key for</span> <span id="issued-for">—</span></b></div>
             <div class="digest" id="issued-value" tabindex="0"></div>
@@ -1078,5 +1110,6 @@
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/console.js"></script>
+<!--pilot-->
 </body>
 </html>

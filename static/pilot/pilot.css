@@ -1,0 +1,102 @@
+/* Pilot core 1.0.1 · pilot.css
+   The robot in the corner (the owner's picture): its place, size, status
+   dot, a gentle float and a glow while thinking. Loaded by pilot.js without holding up the page. The chat
+   window's own look is in pilot-panel.css, fetched only when it opens.
+   An app can change the colours by setting these on .pilot-root in its own
+   stylesheet. */
+
+.pilot-root {
+  --pilot-blue: #3b82f6;
+  --pilot-cyan: #22d3ee;
+  --pilot-violet: #8b5cf6;
+  --pilot-ink: #eef2ff;
+  --pilot-muted: #a5b4fc;
+  --pilot-glass: rgba(13, 18, 48, 0.9);
+  --pilot-glass-2: rgba(32, 22, 82, 0.9);
+  --pilot-edge: rgba(96, 130, 255, 0.5);
+  --pilot-ready: #34d399;
+  --pilot-nokey: #fbbf24;
+  --pilot-size: 88px;
+  --pilot-gap: 16px;
+  position: fixed;
+  z-index: 2147483000;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--pilot-ink);
+  line-height: 1.4;
+}
+
+.pilot-root.pilot-at-br { right: var(--pilot-gap); bottom: var(--pilot-gap); }
+.pilot-root.pilot-at-bl { left: var(--pilot-gap); bottom: var(--pilot-gap); }
+.pilot-root.pilot-at-tr { right: var(--pilot-gap); top: var(--pilot-gap); }
+.pilot-root.pilot-at-tl { left: var(--pilot-gap); top: var(--pilot-gap); }
+
+.pilot-launcher {
+  position: relative;
+  display: block;
+  width: var(--pilot-size);
+  height: calc(var(--pilot-size) * 0.97);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s ease;
+}
+.pilot-launcher:hover { transform: translateY(-2px); }
+.pilot-launcher:focus-visible { outline: 2px solid var(--pilot-cyan); outline-offset: 4px; border-radius: 18px; }
+.pilot-dragging .pilot-launcher { cursor: grabbing; transform: scale(1.06); }
+.pilot-loading .pilot-launcher { opacity: 0.8; }
+
+/* The owner's robot picture: it floats gently, and a soft blue glow behind
+   it pulses while Pilot is thinking. The glow is a gradient behind the
+   picture, not a filter on it, so the picture stays its own small size (a
+   filter's blur would count as part of it when the browser times the page). */
+.pilot-robot {
+  position: relative; z-index: 1;
+  display: block; width: 100%; height: auto; pointer-events: none; user-select: none; -webkit-user-drag: none;
+  animation: pilot-float 4.2s ease-in-out infinite;
+}
+.pilot-launcher::before {
+  content: ""; position: absolute; inset: 8% 4% 0; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(59, 130, 246, 0.45), rgba(139, 92, 246, 0.18) 60%, transparent);
+  opacity: 0.55; pointer-events: none;
+}
+.pilot-thinking .pilot-launcher::before { animation: pilot-think 1.4s ease-in-out infinite; }
+
+/* The status dot: green ready, amber no key yet, pulsing while thinking. */
+.pilot-dot {
+  position: absolute;
+  z-index: 2;
+  top: 14%;
+  right: 4%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #0b1030;
+  background: var(--pilot-nokey);
+}
+.pilot-dot-ready { background: var(--pilot-ready); box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
+.pilot-dot-nokey { background: var(--pilot-nokey); box-shadow: 0 0 8px rgba(251, 191, 36, 0.7); }
+.pilot-dot-thinking { background: var(--pilot-cyan); animation: pilot-pulse 1s ease-in-out infinite; }
+.pilot-failed .pilot-dot { background: #f87171; }
+
+@keyframes pilot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes pilot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes pilot-think { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.18); } }
+
+@media (max-width: 720px) {
+  .pilot-root { --pilot-size: 72px; --pilot-gap: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pilot-launcher { transition: none; }
+  .pilot-robot,
+  .pilot-thinking .pilot-launcher::before,
+  .pilot-dot-thinking { animation: none; }
+  .pilot-thinking .pilot-launcher::before { opacity: 1; }
+}
+
+@media print {
+  .pilot-root { display: none; }
+}
