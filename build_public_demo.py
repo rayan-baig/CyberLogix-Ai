@@ -63,6 +63,7 @@ PATHS = [
     "/api/help/sensor-offline",
     "/api/referrals/me",
     "/api/connections/omniarmor",
+    "/api/ai-key",
     "/api/proof-reports",
     "/api/leaving",
 ]
@@ -91,7 +92,7 @@ NOT_FETCHED = {
     "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
     "/api/contacts/test-alert", "/api/simulator/units",
     "/api/tasks/from-meeting",
-    "/api/connections/omniarmor/test",
+    "/api/connections/omniarmor/test", "/api/ai-key/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
     # Pause or cancel, a founding member code and a repair quote: pressed,
@@ -352,9 +353,20 @@ def capture() -> dict:
 
         _bundle_and_referrals(client, head, home)
 
-        for path in PATHS:
-            got = client.get(path, headers=head)
-            out[path] = {"status": got.status_code, "body": got.json()}
+        # The AI key card as a business sees it on a server that can keep
+        # one: a throwaway secret for this capture only, put back after.
+        import alertkey
+        import secrets
+
+        had = os.environ.get(alertkey.SETTING)
+        os.environ[alertkey.SETTING] = had or secrets.token_urlsafe(32)
+        try:
+            for path in PATHS:
+                got = client.get(path, headers=head)
+                out[path] = {"status": got.status_code, "body": got.json()}
+        finally:
+            if had is None:
+                os.environ.pop(alertkey.SETTING, None)
 
         overview = out["/api/console/overview"]["body"]
         # The drawer for each sensor, and the peer comparison for every
@@ -565,6 +577,9 @@ def build(data: dict, page_name: str = "console.html",
 
     body = console[console.index("<body>") + len("<body>"):
                    console.rindex("</body>")]
+    # No Pilot in the public copy: it is the live site's assistant, loaded
+    # from the live site's own files, and this page has neither.
+    body = body.replace("<!--pilot-->", "")
     # The page's own script has to run after the stub is installed. It is
     # a file now (the policy refuses inline script on the real server), so
     # it is read and written in here, where no policy applies.
@@ -649,7 +664,8 @@ def build_kitchen(story: dict) -> str:
     story = dict(story, signup_href=f"{LIVE_ADDRESS}/signup?sector=restaurant")
     page = (ROOT / "static" / "demo.html").read_text()
     page = (page.replace("%%TRIAL_DAYS%%", str(headline()["trial_days"]))
-                .replace("%%THEME_COLOR%%", "#05070D"))
+                .replace("%%THEME_COLOR%%", "#05070D")
+                .replace("<!--pilot-->\n", ""))
     page = re.sub(r'\n<link rel="icon"[^>]*>', "", page)
     styles = "\n".join([offline_theme()] + [
         (ROOT / "static" / name).read_text() for name in ("demo.css", "utilities.css")])
@@ -712,6 +728,8 @@ def build_help(served: str) -> str:
     copy of (pricing, the agreements) is left as its words, not a 404.
     """
     page = served
+    # No Pilot in the public copy: it loads the live site's own files.
+    page = re.sub(r'<script src="/static/pilot/pilot\.js"[^>]*></script>\n?', "", page)
     # Previews, the canonical address and the installed-app links all name
     # the server the copy was rendered on, which is not where it is read.
     page = re.sub(r'\n<link rel="(?:canonical|icon|apple-touch-icon|manifest)"[^>]*>', "", page)

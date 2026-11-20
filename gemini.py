@@ -140,21 +140,90 @@ def dispatch_ready() -> bool:
     return client is not None and bool(GEMINI_MODEL)
 
 
+def _client_for_key(api_key: str):
+    """A client on a business's own key, with the same timeout as ours."""
+    return genai.Client(api_key=api_key, http_options=http_options())  # type: ignore[arg-type]
+
+
+def _generate_on_own_key(prompt: str, fallback: str, purpose: str, tenant_id: str,
+                         own_key: str, use_cache: bool) -> Tuple[str, str]:
+    """One alert line on the business's own key (alertkey.py).
+
+    The same deadline as every other alert line, and the template when it
+    fails: never the service's own key instead, and never a wait. Not
+    counted against the service's AI budget, because the business's
+    provider bills it. Cached under the business alone, so a line its key
+    paid for is never handed to another business.
+    """
+    import alertkey
+    from costs import cache_key, record
+
+    key = cache_key(prompt, f"{purpose}\x00own-key\x00{tenant_id}")
+    if use_cache:
+        cached = STORE.cache_get(key)
+        if cached is not None:
+            record(tenant_id, "ai_cache_hits")
+            return cached, "cache"
+    if not GEMINI_MODEL:
+        alertkey.note(tenant_id, False, "no model is set on this service")
+        return fallback, "fallback_template"
+    try:
+        call = _calls.submit(
+            lambda: _client_for_key(own_key).models.generate_content(
+                model=GEMINI_MODEL, contents=prompt))
+        try:
+            response = call.result(timeout=AI_TIMEOUT_SECONDS)
+        except _CallTimedOut:
+            call.cancel()
+            raise TimeoutError(
+                f"no answer within {AI_TIMEOUT_SECONDS:g}s") from None
+        text = (response.text or "").strip()
+        if not text:
+            raise ValueError("an empty answer")
+        if use_cache:
+            STORE.cache_put(key, text)
+        alertkey.note(tenant_id, True)
+        return text, "gemini"
+    except Exception as exc:  # noqa: BLE001 - an alert must always go out
+        # The kind of failure and the provider's words with the key taken
+        # out. No traceback: it would carry the same words again.
+        said = alertkey.scrub(str(exc), own_key)
+        logger.warning("%s on the business's own AI key failed for %s (%s: %s); "
+                       "using the template line.", purpose, tenant_id,
+                       type(exc).__name__, said)
+        alertkey.note(tenant_id, False, type(exc).__name__)
+        return fallback, "fallback_template"
+
+
 def safe_generate(
     prompt: str,
     fallback: str,
     purpose: str,
     tenant_id: Optional[str] = None,
+    business_key: bool = False,
+    use_cache: bool = True,
 ) -> Tuple[str, str]:
     """Generate text, degrading to `fallback` instead of raising.
 
     Returns a (text, source) pair where source is "gemini", "cache" or
     "fallback_template". Passing `tenant_id` meters the call and subjects it
     to that tenant's daily budget; omitting it skips both.
+
+    `business_key` is for the alert lines only: when the business has
+    saved its own AI key (alertkey.py), the line is written on that key
+    instead of the service's, with the same deadline and fallback.
     """
     # Imported here because costs.py depends on the store, which must not be
     # pulled in at gemini import time.
     from costs import allow_ai_call, cache_key, record, reserve
+
+    if business_key and tenant_id:
+        import alertkey
+
+        own_key = alertkey.key_for(tenant_id)
+        if own_key:
+            return _generate_on_own_key(prompt, fallback, purpose, tenant_id,
+                                        own_key, use_cache)
 
     key = cache_key(prompt, purpose)
     cached = STORE.cache_get(key)

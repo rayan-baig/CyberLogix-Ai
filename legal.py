@@ -87,8 +87,11 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # gives its link to.
 # 2.7 says, in one sentence, what a repair company gets when a business
 # asks for a repair quote (repairs.py), and nothing else.
-TERMS_VERSION = "2.7"
-EFFECTIVE_DATE = "2026-11-15"
+# 2.8 describes Pilot, the assistant that runs on the person's own AI key
+# from their browser (what it sends, to whom, and that we never see it),
+# and the AI key a business may save for its alert wording (alertkey.py).
+TERMS_VERSION = "2.8"
+EFFECTIVE_DATE = "2026-11-20"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -342,6 +345,34 @@ We do not sell any of it, and we do not use it to train anything.
 
 Nobody else gets your readings in bulk, your customer list, or your
 passwords.
+
+**Your own AI key for alert wording.** An owner may save the business's
+own Google AI Studio (Gemini API) key in the console (the card "Your AI key for alert
+wording"). Then the one line of each alert that says what to check first
+is written on that key, so the request above goes to Google on your key
+instead of ours, and Google bills you for it. We keep the key encrypted,
+show only its last four characters, never write it in our logs, use it
+only for your business's alerts, and delete it when you press Remove key
+or delete the business. If a call on it fails, the alert goes out on time
+with our plain wording.
+
+**Pilot, the assistant.** Pilot (the robot in the corner of our pages)
+runs on your own AI key, from your browser, with the AI company you
+choose (Anthropic, OpenAI, Google or another you name). The key stays in
+your browser and goes only to that company; we never see it, the
+conversation or the answers, and nothing about Pilot passes through our
+servers. When you send a message, your browser sends that company what
+you typed and the chat so far, Pilot's rules and our guide to the
+product, the name of the page you are on and, if you ask it to explain
+the page, the words on it (never what is typed in a box, and with email
+addresses and phone numbers blanked out). Your business's records (units,
+readings, alerts) go only when your own request runs one of Pilot's
+tools, and anything that changes something, such as acknowledging an
+alert, waits until you press Allow. Pilot cannot change your plan,
+delete anything, change who gets called, or send texts or calls. That
+company bills your key for it, under its own terms and privacy policy;
+AI keys are for adults. Remove my keys, in Pilot's settings, deletes the
+keys from your browser.
 
 **Insurance partners.** If you signed up with a code from an insurer or
 a broker, that partner sees your business name and your plan, so we can

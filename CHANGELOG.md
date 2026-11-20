@@ -4,6 +4,49 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.20.0 — 2026-11-20
+
+Pilot, the MTRX Horizyn assistant, comes to CyberLogix. No price has
+changed, and alerts work exactly as before.
+
+- **Pilot, on your own AI key.** The round robot in the corner of the
+  front page, pricing, help, the industry pages, the demo, the console and
+  the Simple view. Tap it to chat. It runs on your own key from Anthropic,
+  OpenAI, Google Gemini or another compatible service, straight from your
+  browser: we never see the key, the chat or the answers, and your AI
+  provider bills you. It looks and works the same as on the MTRX Horizyn
+  site. It isn't on proof pages, error pages or the operator's book.
+- **It knows the product.** How alerts and the calls after them work,
+  the 41°F fridge and 10°F freezer limits, what sensors you need, the
+  set-up steps, the plans from $59, the trial's 5 calls, proof reports,
+  the Simple view and the Advanced console, what happens if the power or
+  internet goes off, and an honest list of what CyberLogix does well
+  (no other company named).
+- **It can help in the console.** Signed in, ask "what's warm now?",
+  "show open alerts", "what does this alert mean?", "is the food still
+  OK?" (the same careful rule of thumb, with its note that it is not a
+  ruling) or "explain this page". It can also acknowledge an alert, mark
+  one fixed, add a fridge or freezer (it asks which) or make a proof
+  report, **only after you press Allow**, and with your own permissions.
+  It can't change your plan, delete anything, change who gets called, or
+  send texts or calls.
+- **Your own AI key for the alert line.** An owner can save the
+  business's Google AI Studio (Gemini API) key under Setup, "Your AI key for alert
+  wording". The one line of each alert that says what to check first is
+  then written on your key, for your alerts only. It is stored encrypted,
+  shown only as its last four characters, never written in our logs, and
+  can be removed or tried. If it fails or is slow, the alert goes out on
+  time with the plain wording. A new setting,
+  `CYBERLOGIX_KEY_ENCRYPTION_SECRET`, must be set on the server for this;
+  without it the card says why and hides the form.
+- **Agreements 2.8.** The privacy statement now says what Pilot sends and
+  to whom, and how a saved AI key is kept and used.
+- The security policy lets the browser reach only the AI providers Pilot
+  offers (the same list as the MTRX Horizyn site), allows a video Pilot
+  made to play, and lets the microphone be used for Pilot's voice input
+  on this site only.
+
+
 ## 3.19.0 — 2026-11-19
 
 What an honest review of the product found, fixed. No price has changed.

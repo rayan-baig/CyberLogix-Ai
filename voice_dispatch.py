@@ -110,6 +110,7 @@ def build_voice_script(incident: Incident, tenant: Tenant,
         wording.action_for(sensor),
         purpose="voice escalation script",
         tenant_id=tenant.tenant_id,
+        business_key=True,
     )
     action = wording.clean_action(line)
     if action is None:

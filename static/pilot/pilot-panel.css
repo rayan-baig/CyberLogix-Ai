@@ -1,0 +1,308 @@
+/* Pilot core 1.0.1 · pilot-panel.css
+   The chat window that opens from the robot: dark navy-to-indigo glass with
+   a blue and violet glow edge, the Pilot header, the greeting, the five
+   pills, the "Type a message…" box and the round buttons at the bottom.
+   A side window on a computer, a full-width sheet on a phone. Fetched only
+   when Pilot is first opened. The desktop app reuses it. */
+
+.pilot-panel {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--pilot-size) * 0.97 + 28px);
+  width: min(420px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - var(--pilot-size) * 0.97 - 48px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 26px;
+  border: 1px solid var(--pilot-edge);
+  background:
+    radial-gradient(120% 70% at 100% 0%, rgba(99, 102, 241, 0.28), transparent 60%),
+    radial-gradient(90% 60% at 0% 100%, rgba(139, 92, 246, 0.22), transparent 60%),
+    linear-gradient(165deg, var(--pilot-glass), var(--pilot-glass-2));
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.25),
+    0 0 26px rgba(59, 130, 246, 0.38),
+    0 0 70px rgba(139, 92, 246, 0.24),
+    0 24px 60px rgba(2, 4, 20, 0.6);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+  color: var(--pilot-ink);
+  font-size: 15px;
+}
+.pilot-panel[hidden] { display: none; }
+.pilot-at-bl .pilot-panel { right: auto; left: 16px; }
+.pilot-at-tr .pilot-panel { bottom: auto; top: calc(var(--pilot-size) * 0.97 + 28px); }
+.pilot-at-tl .pilot-panel { bottom: auto; right: auto; left: 16px; top: calc(var(--pilot-size) * 0.97 + 28px); }
+
+.pilot-panel button { font: inherit; color: inherit; }
+.pilot-icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------------------------------------------------------------- header */
+
+.pilot-head { position: relative; padding: 18px 20px 10px; }
+.pilot-winbtns { position: absolute; top: 12px; right: 12px; display: flex; gap: 2px; }
+.pilot-win {
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border: 0; border-radius: 10px; background: none; color: var(--pilot-muted); cursor: pointer;
+}
+.pilot-win:hover, .pilot-win:focus-visible { color: #fff; background: rgba(99, 130, 255, 0.16); outline: none; }
+.pilot-brand { display: flex; align-items: center; gap: 12px; padding-right: 72px; }
+.pilot-mark { width: 76px; height: 61px; flex: none; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6)); }
+.pilot-brand-words { display: flex; flex-direction: column; min-width: 0; }
+.pilot-word {
+  font-family: "Montserrat", "Inter", system-ui, sans-serif;
+  font-size: 40px; line-height: 1; font-style: italic; font-weight: 800; letter-spacing: -0.5px; color: #fff;
+}
+.pilot-tagline { margin-top: 6px; font-size: 14px; color: #c7d2fe; }
+
+/* ---------------------------------------------------------------- the scrolling part */
+
+.pilot-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 18px 12px; scrollbar-width: thin;
+  scrollbar-color: rgba(99, 130, 255, 0.4) transparent; }
+.pilot-view[hidden] { display: none; }
+
+.pilot-hello {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 14px;
+  margin: 6px 0 18px; padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(99, 130, 255, 0.45);
+  background: linear-gradient(160deg, rgba(30, 40, 100, 0.55), rgba(24, 18, 70, 0.55));
+  box-shadow: inset 0 0 18px rgba(59, 130, 246, 0.12);
+}
+.pilot-hello::after {
+  content: ""; position: absolute; left: 70px; bottom: -9px; width: 16px; height: 16px;
+  border-right: 1px solid rgba(99, 130, 255, 0.45); border-bottom: 1px solid rgba(99, 130, 255, 0.45);
+  background: rgba(26, 26, 82, 0.95); transform: rotate(45deg);
+}
+.pilot-hello .pilot-icon { width: 26px; height: 26px; margin-top: 2px; fill: #60a5fa; stroke: none;
+  filter: drop-shadow(0 0 6px rgba(96, 165, 250, 0.8)); }
+.pilot-hello p { margin: 0; font-size: 17px; line-height: 1.45; color: #fff; }
+
+.pilot-pills { display: flex; flex-direction: column; gap: 9px; margin-left: 12%; }
+.pilot-pill {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 11px 18px; border-radius: 999px; text-align: left; cursor: pointer;
+  border: 1px solid rgba(99, 130, 255, 0.38);
+  background: linear-gradient(90deg, rgba(24, 32, 84, 0.75), rgba(28, 22, 76, 0.6));
+  color: #e0e7ff; font-size: 15px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pilot-pill .pilot-icon { width: 22px; height: 22px; color: #60a5fa; }
+.pilot-pill:hover, .pilot-pill:focus-visible { border-color: rgba(96, 165, 250, 0.9); background: rgba(40, 52, 130, 0.7); outline: none; }
+
+.pilot-keycard {
+  display: flex; align-items: center; gap: 14px; width: 100%; margin: 16px 0 6px; padding: 14px 16px;
+  border-radius: 18px; border: 1px solid rgba(99, 130, 255, 0.55); text-align: left; cursor: pointer;
+  background: linear-gradient(160deg, rgba(22, 30, 80, 0.85), rgba(30, 22, 80, 0.75));
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.18);
+}
+.pilot-keycard > .pilot-icon:first-child { width: 30px; height: 30px; color: #60a5fa; }
+.pilot-keycard .pilot-icon-chevron { color: var(--pilot-muted); }
+.pilot-keycard-words { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.pilot-keycard-words b { font-size: 17px; color: #fff; font-weight: 600; }
+.pilot-keycard-words small { font-size: 13.5px; color: #c7d2fe; }
+.pilot-keycard-head { cursor: default; margin-top: 4px; }
+.pilot-grownup { margin: 8px 2px 0; font-size: 12.5px; color: var(--pilot-muted); }
+
+/* ---------------------------------------------------------------- messages */
+
+.pilot-log { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pilot-log:empty { display: none; }
+.pilot-msg { max-width: 92%; word-wrap: break-word; overflow-wrap: anywhere; }
+.pilot-msg p { margin: 0 0 8px; }
+.pilot-msg p:last-child { margin-bottom: 0; }
+.pilot-from-user {
+  align-self: flex-end; padding: 10px 14px; border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(135deg, #2563eb, #6d28d9); color: #fff;
+}
+.pilot-from-pilot {
+  position: relative; align-self: flex-start; padding: 12px 14px 12px; border-radius: 18px 18px 18px 6px;
+  border: 1px solid rgba(99, 130, 255, 0.35); background: rgba(22, 28, 74, 0.7);
+}
+.pilot-md ul, .pilot-md ol { margin: 4px 0 8px; padding-left: 20px; }
+.pilot-md li { margin: 2px 0; }
+.pilot-md code { padding: 1px 5px; border-radius: 6px; background: rgba(5, 8, 30, 0.7); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.pilot-md pre { margin: 6px 0; padding: 10px; border-radius: 10px; background: rgba(5, 8, 30, 0.8); overflow-x: auto; }
+.pilot-md pre code { padding: 0; background: none; }
+.pilot-md a { color: #7dd3fc; }
+.pilot-h { margin-top: 4px; }
+.pilot-copy {
+  position: absolute; right: 6px; bottom: -14px; width: 28px; height: 28px; display: grid; place-items: center;
+  border-radius: 50%; border: 1px solid rgba(99, 130, 255, 0.4); background: #141a46; color: var(--pilot-muted); cursor: pointer;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.pilot-copy .pilot-icon { width: 15px; height: 15px; }
+.pilot-from-pilot:hover .pilot-copy, .pilot-copy:focus-visible, .pilot-copy.done { opacity: 1; }
+.pilot-copy.done { color: var(--pilot-ready); }
+.pilot-tool { align-self: center; font-size: 12.5px; color: var(--pilot-muted); }
+.pilot-done { align-self: stretch; max-width: 100%; padding: 10px 14px; border-radius: 14px; border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(16, 48, 52, 0.35); font-size: 13.5px; color: #d1fae5; }
+.pilot-done ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.pilot-live-plan { border-color: rgba(96, 165, 250, 0.55); background: rgba(20, 30, 80, 0.55); }
+.pilot-note { align-self: center; max-width: 96%; padding: 8px 12px; border-radius: 12px; font-size: 13.5px;
+  background: rgba(99, 130, 255, 0.12); color: #dbeafe; text-align: center; }
+.pilot-note.bad { background: rgba(248, 113, 113, 0.14); color: #fecaca; }
+.pilot-plain { align-self: stretch; max-width: 100%; }
+.pilot-shared { margin-top: 6px; font-size: 12.5px; color: #e0e7ff; }
+.pilot-shared summary { cursor: pointer; }
+.pilot-shared pre { max-height: 180px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border-radius: 8px;
+  background: rgba(5, 8, 30, 0.45); font-size: 12px; }
+.pilot-dots { display: inline-flex; gap: 5px; padding: 4px 2px; }
+.pilot-dots i { width: 7px; height: 7px; border-radius: 50%; background: #93c5fd; animation: pilot-pulse 1s ease-in-out infinite; }
+.pilot-dots i:nth-child(2) { animation-delay: 0.15s; }
+.pilot-dots i:nth-child(3) { animation-delay: 0.3s; }
+.pilot-media { display: flex; flex-direction: column; gap: 8px; }
+.pilot-image, .pilot-video { display: block; width: 100%; height: auto; max-width: 340px; border-radius: 12px; background: #050816; }
+.pilot-progress { width: 100%; accent-color: var(--pilot-blue); }
+.pilot-small { font-size: 12.5px; color: var(--pilot-muted); }
+.pilot-panel .pilot-small a { color: #7dd3fc; }
+
+.pilot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pilot-chips[hidden] { display: none; }
+.pilot-chip { padding: 7px 13px; border-radius: 999px; border: 1px solid rgba(99, 130, 255, 0.4); background: rgba(24, 32, 84, 0.6);
+  font-size: 13.5px; cursor: pointer; color: #e0e7ff; }
+.pilot-chip:hover, .pilot-chip:focus-visible { border-color: rgba(96, 165, 250, 0.9); outline: none; }
+.pilot-clear { align-self: center; margin-left: 4px; font-size: 12.5px; color: var(--pilot-muted); }
+
+/* ---------------------------------------------------------------- confirm and plan cards */
+
+.pilot-cards:empty { display: none; }
+.pilot-card { margin-top: 12px; padding: 14px; border-radius: 16px; border: 1px solid rgba(251, 191, 36, 0.55);
+  background: rgba(40, 32, 18, 0.55); box-shadow: 0 0 16px rgba(251, 191, 36, 0.12); }
+.pilot-card-title { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #fde68a; }
+.pilot-card-what { margin: 0 0 10px; font-size: 15px; color: #fff; }
+.pilot-card-hint { margin: 8px 0 10px; font-size: 12.5px; color: #fde68a; }
+.pilot-plan, .pilot-plan-live { margin: 4px 0 0; padding-left: 22px; }
+.pilot-plan li, .pilot-plan-live li { margin: 3px 0; }
+.pilot-plan-live .pilot-step-running { color: #93c5fd; }
+.pilot-plan-live .pilot-step-done { color: var(--pilot-ready); }
+.pilot-plan-live .pilot-step-failed { color: #fca5a5; }
+.pilot-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.pilot-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(99, 130, 255, 0.5); background: rgba(30, 40, 100, 0.6); color: #e0e7ff; font-size: 14px; text-decoration: none;
+}
+.pilot-btn:hover, .pilot-btn:focus-visible { border-color: rgba(96, 165, 250, 0.95); outline: none; }
+.pilot-btn:disabled { opacity: 0.6; cursor: default; }
+.pilot-btn-go { border-color: transparent; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 600; }
+.pilot-btn-quiet { background: none; }
+.pilot-dl { align-self: flex-start; }
+.pilot-dl .pilot-icon { width: 16px; height: 16px; }
+.pilot-link { padding: 0; border: 0; background: none; color: #93c5fd; cursor: pointer; font-size: 13.5px; text-decoration: underline; }
+
+/* ---------------------------------------------------------------- settings and help */
+
+.pilot-back { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 6px; text-decoration: none; }
+.pilot-back .pilot-icon { width: 16px; height: 16px; }
+.pilot-h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 600; letter-spacing: 0.3px; color: #c7d2fe; }
+.pilot-row { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; font-size: 13.5px; color: #c7d2fe; }
+.pilot-row[hidden] { display: none; }
+.pilot-row small, .pilot-where { font-size: 12px; color: var(--pilot-muted); }
+.pilot-field {
+  width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 12px;
+  border: 1px solid rgba(99, 130, 255, 0.45); background: rgba(5, 8, 30, 0.6); color: #fff; font: inherit; font-size: 14.5px;
+}
+.pilot-field:focus { outline: 2px solid rgba(96, 165, 250, 0.7); outline-offset: 0; }
+.pilot-field[hidden] { display: none; }
+.pilot-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; font-size: 13.5px; color: #dbeafe; }
+.pilot-check input { margin-top: 3px; accent-color: var(--pilot-blue); }
+.pilot-msg-line { min-height: 1em; margin: 8px 0 0; font-size: 13px; color: var(--pilot-ready); }
+.pilot-msg-line.bad { color: #fca5a5; }
+.pilot-keys, .pilot-notes, .pilot-facts { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pilot-keys li, .pilot-notes li { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 12px;
+  border: 1px solid rgba(99, 130, 255, 0.3); background: rgba(22, 28, 74, 0.55); font-size: 14px; }
+.pilot-keys li.on { border-color: rgba(52, 211, 153, 0.6); }
+.pilot-key-name, .pilot-notes li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pilot-key-name small { display: block; color: var(--pilot-ready); font-size: 12px; }
+.pilot-keyform { margin: 8px 0; padding: 4px 12px 12px; border-radius: 14px; border: 1px solid rgba(99, 130, 255, 0.3); background: rgba(10, 14, 44, 0.5); }
+.pilot-section { margin: 12px 0; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(99, 130, 255, 0.25); }
+.pilot-section summary { cursor: pointer; font-weight: 600; color: #e0e7ff; }
+.pilot-inline { display: flex; gap: 8px; }
+.pilot-facts li { padding-left: 16px; position: relative; font-size: 13.5px; color: #dbeafe; }
+.pilot-facts li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; }
+
+/* ---------------------------------------------------------------- the box and the bottom row */
+
+.pilot-foot { padding: 10px 18px 14px; border-top: 1px solid rgba(99, 130, 255, 0.18); }
+.pilot-compose {
+  display: flex; align-items: flex-end; gap: 6px; padding: 6px 6px 6px 16px; border-radius: 18px;
+  border: 1px solid rgba(99, 130, 255, 0.55); background: rgba(10, 14, 44, 0.65);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.15);
+}
+.pilot-input {
+  flex: 1; min-width: 0; height: 40px; max-height: 120px; padding: 9px 0; resize: none; border: 0; background: none;
+  color: #fff; font: inherit; font-size: 15.5px; line-height: 1.4; outline: none;
+}
+.pilot-input.pilot-tall { height: 96px; }
+.pilot-input::placeholder { color: #a5b4fc; opacity: 0.9; }
+.pilot-send, .pilot-mic {
+  width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 14px; border: 0;
+  background: none; color: #60a5fa; cursor: pointer;
+}
+.pilot-send .pilot-icon { width: 28px; height: 28px; stroke-width: 1.6; filter: drop-shadow(0 0 6px rgba(96, 165, 250, 0.7)); }
+.pilot-send:hover, .pilot-send:focus-visible, .pilot-mic:hover, .pilot-mic:focus-visible { background: rgba(99, 130, 255, 0.16); outline: none; }
+.pilot-send.pilot-stop { color: #fca5a5; }
+.pilot-send.pilot-stop .pilot-icon { width: 20px; height: 20px; fill: currentColor; filter: none; }
+.pilot-send:disabled { opacity: 0.5; cursor: default; }
+.pilot-mic.on { color: #f87171; animation: pilot-pulse 1s ease-in-out infinite; }
+
+.pilot-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.pilot-state { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; color: #c7d2fe; }
+.pilot-state span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilot-state-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--pilot-nokey); }
+.pilot-state-ready .pilot-state-dot { background: var(--pilot-ready); box-shadow: 0 0 6px rgba(52, 211, 153, 0.8); }
+.pilot-state-thinking .pilot-state-dot { background: var(--pilot-cyan); animation: pilot-pulse 1s ease-in-out infinite; }
+.pilot-rounds { display: flex; gap: 10px; flex: none; }
+.pilot-round {
+  width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(99, 130, 255, 0.5); background: rgba(16, 22, 62, 0.7); color: #c7d2fe;
+}
+.pilot-round .pilot-icon { width: 22px; height: 22px; }
+.pilot-round:hover, .pilot-round:focus-visible, .pilot-round.on { color: #fff; border-color: rgba(96, 165, 250, 0.95);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.4); outline: none; }
+
+/* ---------------------------------------------------------------- the calmer look (the palette button) */
+
+.pilot-theme-calm .pilot-panel {
+  background: #10142e;
+  box-shadow: 0 18px 50px rgba(2, 4, 20, 0.55);
+  border-color: rgba(148, 163, 184, 0.35);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.pilot-theme-calm .pilot-mark, .pilot-theme-calm .pilot-send .pilot-icon, .pilot-theme-calm .pilot-hello .pilot-icon { filter: none; }
+.pilot-theme-calm .pilot-hello, .pilot-theme-calm .pilot-pill, .pilot-theme-calm .pilot-keycard, .pilot-theme-calm .pilot-compose {
+  box-shadow: none; background: #161b3d; }
+
+/* ---------------------------------------------------------------- phones: a full-width sheet */
+
+@media (max-width: 720px) {
+  .pilot-panel,
+  .pilot-at-bl .pilot-panel,
+  .pilot-at-tr .pilot-panel,
+  .pilot-at-tl .pilot-panel {
+    left: 0; right: 0; top: auto; bottom: 0;
+    width: 100%; height: min(88vh, 720px); height: min(88dvh, 720px);
+    border-radius: 24px 24px 0 0; border-bottom: 0;
+  }
+  .pilot-open .pilot-launcher { visibility: hidden; }
+  .pilot-head { padding: 14px 16px 6px; }
+  .pilot-brand { padding-right: 60px; gap: 10px; }
+  .pilot-winbtns { top: 8px; right: 8px; }
+  .pilot-mark { width: 52px; height: 42px; }
+  .pilot-word { font-size: 30px; }
+  .pilot-tagline { font-size: 13px; margin-top: 4px; }
+  .pilot-scroll { padding: 4px 14px 10px; }
+  .pilot-pills { margin-left: 6%; }
+  .pilot-foot { padding: 8px 14px calc(12px + env(safe-area-inset-bottom)); }
+  .pilot-input { font-size: 16px; } /* no zoom-in on iPhone */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pilot-dots i, .pilot-mic.on, .pilot-state-thinking .pilot-state-dot { animation: none; }
+  .pilot-pill, .pilot-copy { transition: none; }
+}

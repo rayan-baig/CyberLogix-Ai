@@ -173,6 +173,13 @@ HSTS is sent only over HTTPS — a browser that honours it on a plain-http
 response cannot then reach a development server, and a header that makes
 the product unrunnable locally is one somebody deletes rather than fixes.
 
+`connect-src` names this site and, for Pilot (the assistant that runs
+on the person's own AI key from their browser, [PILOT.md](PILOT.md)),
+exactly the AI providers' addresses it offers and the person's own
+computer; nothing else. `media-src` adds `blob:` for a video Pilot made,
+and the Permissions-Policy allows the microphone for this site only, for
+Pilot's voice input.
+
 Two of these are not generic hygiene. `frame-ancestors` stops the console
 being loaded invisibly inside somebody else's page, where a customer
 thinks they are clicking one thing and is clicking *suspend this licence*

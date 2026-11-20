@@ -1,0 +1,857 @@
+// Pilot core 1.0.1 · pilot-panel.js
+// The web chat window that opens from the robot: the Pilot header, the
+// greeting and its five pill buttons, the messages, the "Type a message…"
+// box, and the gear, palette and ? buttons at the bottom. Settings (keys,
+// models, image and video keys, memory) and help open inside the same frame.
+// Loaded only when the user first opens Pilot (pilot.js).
+//
+// Every word on screen is placed with textContent or built by
+// pilot-render.js from text nodes: nothing is ever set as HTML. No style
+// attributes either; the look is all classes in pilot-panel.css.
+(function () {
+  "use strict";
+
+  const VERSION = "1.0.1";
+  const SCREEN_LIMIT = 3500;
+  const R = window.PilotRender;
+  const P = window.PilotProviders;
+  const M = window.PilotMedia;
+  const SVGNS = "http://www.w3.org/2000/svg";
+
+  function el(tag, props, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props || {})) {
+      if (value === null || value === undefined || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key === "on") for (const [ev, fn] of Object.entries(value)) node.addEventListener(ev, fn);
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);
+    return node;
+  }
+
+  // replaceChildren() turns null into the text "null", so empty slots are dropped first.
+  function put(node, ...kids) {
+    node.replaceChildren(...kids.filter((k) => k !== null && k !== undefined && k !== false));
+  }
+
+  // Line icons, drawn with SVG paths (no pictures, no icon font).
+  const ICONS = {
+    gear: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 3a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.4 7.4 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.4 7.4 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z",
+    palette: "M12 3a9 9 0 0 0 0 18c1.1 0 1.7-.8 1.7-1.6 0-.9-.7-1.3-.7-2.1 0-.9.7-1.6 1.6-1.6H17a4 4 0 0 0 4-4C21 6.9 17 3 12 3ZM7.5 12a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6Zm2.5-3.6a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6Zm4 0a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6Zm2.5 3.6a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6Z",
+    help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2.6-11.6A2.7 2.7 0 0 1 12 7.5c1.6 0 2.8 1 2.8 2.4 0 1.9-2.6 2-2.6 3.8M12 16.6v.4",
+    send: "M3.5 11.5 20.5 4l-4.6 16.2-4.4-6.1-8-2.6Zm8 2.6 9-10.1",
+    stop: "M7 7h10v10H7z",
+    mic: "M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v3",
+    chat: "M4 5h16v11H9l-5 4V5Zm4 5.5h.01M12 10.5h.01M16 10.5h.01",
+    bolt: "M13 2 5 13.5h6L10 22l8-11.5h-6L13 2Z",
+    code: "M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5M13.5 5l-3 14",
+    bars: "M5 20v-6M10 20V9M15 20v-8M20 20V5",
+    key: "M14.5 3.5a5.5 5.5 0 0 0-5.2 7.3L3.5 16.6v3.9h3.9l1-1V18h1.5v-1.5h1.5l1.2-1.2A5.5 5.5 0 1 0 14.5 3.5Zm1.5 5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z",
+    copy: "M9 9h10v10H9zM5 15V5h10",
+    spark: "M12 2.5l2.2 6.6 6.8 2.4-6.8 2.4L12 20.5l-2.2-6.6L3 11.5l6.8-2.4Z",
+    chevron: "M9 5l7 7-7 7",
+    back: "M15 6l-6 6 6 6",
+    minus: "M5 12h14",
+    close: "M6 6l12 12M18 6 6 18",
+    download: "M12 4v11m-5-5 5 5 5-5M5 20h14",
+  };
+
+  function icon(name) {
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("class", `pilot-icon pilot-icon-${name}`);
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  // ---------------------------------------------------------------- what the screen shows
+  // "Analyze & explain…" and "Summarise this" send a text outline of what is
+  // on the page now: headings and visible words. Never what is typed into a
+  // box (no input, textarea or select is read), nothing hidden, nothing the
+  // app marks data-pilot-private (a key, a code), nothing of Pilot's own,
+  // and email addresses and phone numbers are blanked out.
+
+  const SKIP = "script,style,noscript,template,svg,canvas,input,textarea,select,option,button,[hidden],[aria-hidden='true'],"
+    + "[data-pilot-private],.pilot-root,dialog:not([open])";
+  const BLOCK = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,td,th,figcaption,blockquote,summary,label,legend,a,small,b,strong,span,div,section,article,header,footer,main,nav";
+
+  function redact(text) {
+    return text
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+      .replace(/\+?\d[\d\s().-]{7,}\d/g, "[number]");
+  }
+
+  function screenText(rootNode) {
+    const start = rootNode || document.querySelector("main") || document.body;
+    const walker = document.createTreeWalker(start, NodeFilter.SHOW_TEXT);
+    const lines = [];
+    let lastBlock = null;
+    let used = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const words = node.nodeValue.replace(/\s+/g, " ").trim();
+      if (!words) continue;
+      const parent = node.parentElement;
+      if (!parent || parent.closest(SKIP)) continue;
+      if (!parent.getClientRects().length) continue; // not shown
+      const block = parent.closest(BLOCK) || parent;
+      const heading = /^H[1-4]$/.test(block.tagName);
+      if (block === lastBlock && lines.length) lines[lines.length - 1] += ` ${words}`;
+      else lines.push(heading ? `## ${words}` : words);
+      lastBlock = block;
+      used += words.length;
+      if (used > SCREEN_LIMIT * 2) break;
+    }
+    const out = [];
+    for (const line of lines) if (line !== out[out.length - 1]) out.push(line);
+    return redact(out.join("\n")).slice(0, SCREEN_LIMIT);
+  }
+
+  // ---------------------------------------------------------------- the window
+
+  function create(options) {
+    const { root, launcher, store, config, pilot } = options;
+    let isOpen = false;
+    let view = "chat";
+    let drawQueued = false;
+    let state = { messages: store.loadChat(), busy: false, streaming: "", status: "" };
+    let otherStream = "";
+    let otherBusy = false;
+    const cards = new Set(); // confirm and plan cards waiting for an answer
+    const media = []; // pictures and videos made on this page: {at, kind, ...}
+    let lastShared = 0;
+    let editing = null; // which key form is open in settings
+
+    const screen = () => {
+      try { return (typeof config.screen === "function" && config.screen()) || { name: document.title }; } catch (_) { return { name: document.title }; }
+    };
+    const hosts = config.compatibleHosts || [];
+
+    // ---------------------------------------------------------------- the engine's host
+
+    let streamTimer = null;
+    let streamLatest = "";
+    function streamPost(text) {
+      streamLatest = text;
+      if (streamTimer) return;
+      streamTimer = setTimeout(() => { streamTimer = null; pilot.post({ type: "stream", text: streamLatest }); }, 300);
+    }
+
+    const host = {
+      fetch: window.fetch.bind(window),
+      exclusive: (fn) => pilot.exclusive(fn),
+      update(next) {
+        const before = state.messages.length;
+        state = next;
+        if (next.messages.length !== before || !next.busy) pilot.post({ type: "chat", messages: next.messages });
+        if (next.streaming) streamPost(next.streaming);
+        queueDraw();
+        pilot.status();
+      },
+      confirm(label, step) { return card("confirm", { label, step }); },
+      plan(labels) { return card("plan", { labels }); },
+      progress(i, how) {
+        const live = cardBox.querySelector(".pilot-plan-live");
+        if (live) {
+          const li = live.querySelectorAll("li")[i];
+          if (li) li.className = `pilot-step-${how}`;
+        }
+      },
+      cancelCards() {
+        for (const c of Array.from(cards)) c.answer(c.kind === "plan" ? "cancel" : false);
+      },
+      image: (prompt) => makeImage(prompt),
+      video: (prompt) => makeVideo(prompt),
+    };
+
+    const engineConfig = {
+      appName: config.appName,
+      compatibleHosts: hosts,
+      kidView: config.kidView,
+      audienceNote: config.audienceNote,
+      knowledge: () => (window.PilotPack && window.PilotPack.knowledge) || config.knowledge || "",
+      strengths: () => (window.PilotPack && window.PilotPack.strengths) || config.strengths || [],
+      tools: () => (window.PilotPack && typeof window.PilotPack.tools === "function" ? window.PilotPack.tools() : config.tools || []),
+      screen: () => {
+        const s = screen();
+        const extra = window.PilotPack && typeof window.PilotPack.facts === "function" ? window.PilotPack.facts(s) : "";
+        return { name: s.name, facts: [s.facts, extra].filter(Boolean).join("\n") };
+      },
+    };
+    const engine = window.PilotEngine.create({ store, providers: P, config: engineConfig, host });
+
+    // ---------------------------------------------------------------- building the frame
+
+    const minBtn = el("button", { type: "button", class: "pilot-win", "aria-label": "Minimise Pilot", title: "Minimise" }, icon("minus"));
+    const closeBtn = el("button", { type: "button", class: "pilot-win", "aria-label": "Close Pilot", title: "Close" }, icon("close"));
+    const head = el("header", { class: "pilot-head" },
+      el("div", { class: "pilot-winbtns" }, minBtn, closeBtn),
+      el("div", { class: "pilot-brand" }, window.PilotMascot.mark(document),
+        el("div", { class: "pilot-brand-words" },
+          el("b", { class: "pilot-word", text: config.name || "Pilot" }),
+          el("span", { class: "pilot-tagline", text: config.tagline || "Your AI copilot. Powered by you." }))));
+
+    const welcome = el("div", { class: "pilot-welcome" });
+    const log = el("ol", { class: "pilot-log", "aria-live": "polite", "aria-label": "Chat with Pilot" });
+    const cardBox = el("div", { class: "pilot-cards" });
+    const chips = el("div", { class: "pilot-chips", role: "group", "aria-label": "Suggestions" });
+    const chatView = el("div", { class: "pilot-view pilot-chat-view" }, welcome, log, cardBox, chips);
+    const settingsView = el("div", { class: "pilot-view pilot-settings-view", hidden: true });
+    const helpView = el("div", { class: "pilot-view pilot-help-view", hidden: true });
+    const scroller = el("div", { class: "pilot-scroll" }, chatView, settingsView, helpView);
+
+    const input = el("textarea", { class: "pilot-input", rows: "1", maxlength: "4000", placeholder: "Type a message…",
+      "aria-label": "Message to Pilot", autocomplete: "off" });
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mic = Speech ? el("button", { type: "button", class: "pilot-mic", "aria-label": "Speak your message",
+      title: "Speak (your browser's own speech recognition)" }, icon("mic")) : null;
+    const sendBtn = el("button", { type: "submit", class: "pilot-send", "aria-label": "Send" }, icon("send"));
+    const form = el("form", { class: "pilot-compose" }, input, mic, sendBtn);
+
+    const statusLine = el("span", { class: "pilot-state", role: "status" }, el("i", { class: "pilot-state-dot" }), el("span"));
+    const gear = el("button", { type: "button", class: "pilot-round", "aria-label": "Settings", title: "Settings" }, icon("gear"));
+    const palette = el("button", { type: "button", class: "pilot-round", "aria-label": "Change Pilot's look", title: "Theme" }, icon("palette"));
+    const helpBtn = el("button", { type: "button", class: "pilot-round", "aria-label": "Help", title: "Help" }, icon("help"));
+    const bottom = el("div", { class: "pilot-bottom" }, statusLine, el("span", { class: "pilot-rounds" }, gear, palette, helpBtn));
+    const foot = el("footer", { class: "pilot-foot" }, form, bottom);
+
+    const panel = el("section", { class: "pilot-panel", role: "dialog", "aria-label": `${config.name || "Pilot"} chat`, hidden: true },
+      head, scroller, foot);
+    root.appendChild(panel);
+    applyTheme(store.ui().theme);
+
+    function applyTheme(theme) {
+      root.classList.toggle("pilot-theme-calm", theme === "calm");
+    }
+
+    // ---------------------------------------------------------------- the welcome
+
+    function pill(name, label, run) {
+      return el("button", { type: "button", class: "pilot-pill", on: { click: run } }, icon(name), el("span", { text: label }));
+    }
+
+    function keyCard() {
+      return el("button", { type: "button", class: "pilot-keycard", on: { click: () => show("settings") } },
+        icon("key"),
+        el("span", { class: "pilot-keycard-words" }, el("b", { text: "Bring Your Own API Key" }),
+          el("small", { text: "Use your OpenAI, Claude, Gemini, or any compatible API key." })),
+        icon("chevron"));
+    }
+
+    function drawWelcome() {
+      const s = screen();
+      let task = "";
+      try { task = typeof config.taskPrompt === "function" ? config.taskPrompt(s) : ""; } catch (_) { task = ""; }
+      put(welcome,
+        el("div", { class: "pilot-hello" }, icon("spark"),
+          el("p", {}, el("span", { text: "Hello! I'm Pilot." }), el("br"), el("span", { text: "How can I help you today?" }))),
+        el("div", { class: "pilot-pills" },
+          pill("chat", "Ask anything…", () => { input.focus(); }),
+          pill("bolt", "Get things done…", () => fill(task || "What can you do for me on this page?")),
+          pill("code", "Help with code…", () => fill("Help me with this code: ")),
+          pill("bars", "Analyze & explain…", () => shareScreen("Explain this screen: what is it for, and what can I do here?", "Analyze & explain this screen")),
+          pill("gear", "Customize with your API key", () => show("settings"))),
+        store.ready() ? null : keyCard(),
+        !store.ready() && config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null);
+    }
+
+    function fill(text) {
+      input.value = text;
+      grow();
+      input.focus();
+      try { input.setSelectionRange(text.length, text.length); } catch (_) { /* fine */ }
+    }
+
+    // ---------------------------------------------------------------- drawing the chat
+
+    function queueDraw() {
+      if (drawQueued) return;
+      drawQueued = true;
+      requestAnimationFrame(() => { drawQueued = false; draw(); });
+    }
+
+    function drawStatus() {
+      const s = store.settings();
+      let words;
+      let kind;
+      if (state.busy || otherBusy) { words = state.status === "acting" ? "Working…" : "Thinking…"; kind = "thinking"; }
+      else if (!store.ready(s)) { words = "No key yet"; kind = "nokey"; }
+      else { words = `Online · ${P.providerName(s)} · ${s.model}`; kind = "ready"; }
+      statusLine.className = `pilot-state pilot-state-${kind}`;
+      statusLine.lastChild.textContent = words;
+      statusLine.setAttribute("title", words);
+    }
+
+    function copyButton(text) {
+      const b = el("button", { type: "button", class: "pilot-copy", "aria-label": "Copy this answer", title: "Copy" }, icon("copy"));
+      b.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(R.plain(text)); b.classList.add("done"); setTimeout(() => b.classList.remove("done"), 1200); }
+        catch (_) { /* the browser said no */ }
+      });
+      return b;
+    }
+
+    function messageNode(m) {
+      if (m.role === "user") {
+        const li = el("li", { class: "pilot-msg pilot-from-user" }, el("p", { text: m.label || m.text }));
+        if (m.shared) {
+          li.append(el("details", { class: "pilot-shared" },
+            el("summary", { text: `What Pilot sent from this screen (${m.shared.length} characters)` }),
+            el("pre", { text: m.shared })));
+        }
+        return li;
+      }
+      if (m.role === "assistant") {
+        if (!m.text) return null;
+        const body = el("div", { class: "pilot-md" });
+        body.append(R.render(m.text, document));
+        return el("li", { class: "pilot-msg pilot-from-pilot" }, body, copyButton(m.text));
+      }
+      if (m.role === "tool") {
+        const shown = m.results.map((r) => r.shown).filter(Boolean);
+        if (shown.length) {
+          return el("li", { class: "pilot-msg pilot-done" },
+            el("ul", {}, ...shown.join("\n").split("\n").map((line) => el("li", { text: line }))));
+        }
+        const names = m.results.map((r) => r.name.replace(/_/g, " "));
+        return el("li", { class: "pilot-msg pilot-tool", text: `Pilot looked at: ${names.join(", ")}` });
+      }
+      if (m.role === "note") return el("li", { class: `pilot-msg pilot-note${m.kind === "error" ? " bad" : ""}`, text: m.text });
+      return null;
+    }
+
+    function mediaNode(item) {
+      if (item.kind === "image") {
+        if (item.error) return el("li", { class: "pilot-msg pilot-note bad", text: item.error });
+        if (item.url) {
+          return el("li", { class: "pilot-msg pilot-from-pilot" }, el("p", {}, el("span", { text: "The picture is ready at your provider: " }),
+            el("a", { href: item.url, target: "_blank", rel: "noopener noreferrer", text: "open it" })));
+        }
+        const src = `data:${item.mime};base64,${item.data}`;
+        return el("li", { class: "pilot-msg pilot-from-pilot pilot-media" },
+          el("img", { src, alt: `Picture: ${item.prompt}`, width: "512", height: "512", class: "pilot-image" }),
+          el("a", { class: "pilot-btn pilot-dl", href: src, download: `pilot-image.${item.mime.split("/")[1] || "png"}` }, icon("download"),
+            el("span", { text: "Download" })),
+          el("small", { class: "pilot-small", text: "Kept on this page only. Download it to keep it." }));
+      }
+      // A video.
+      if (item.error) return el("li", { class: "pilot-msg pilot-note bad", text: item.error });
+      if (item.blobUrl) {
+        return el("li", { class: "pilot-msg pilot-from-pilot pilot-media" },
+          el("video", { src: item.blobUrl, controls: true, playsinline: true, class: "pilot-video", width: "512", height: "288" }),
+          el("a", { class: "pilot-btn pilot-dl", href: item.blobUrl, download: "pilot-video.mp4" }, icon("download"), el("span", { text: "Download" })),
+          el("small", { class: "pilot-small", text: "Kept on this page only. Download it to keep it." }));
+      }
+      const bar = el("progress", { class: "pilot-progress", max: "100" });
+      if (item.progress !== null && item.progress !== undefined) bar.value = item.progress;
+      return el("li", { class: "pilot-msg pilot-from-pilot pilot-media" },
+        el("p", { text: `Making your video${item.progress ? ` · ${Math.round(item.progress)}%` : "…"}` }), bar,
+        el("small", { class: "pilot-small", text: "This can take a few minutes. You can keep chatting; stay on this page to see it." }));
+    }
+
+    function draw() {
+      drawStatus();
+      panel.classList.toggle("pilot-busy", state.busy || otherBusy);
+      drawWelcome();
+      const nodes = [];
+      state.messages.forEach((m, i) => {
+        for (const item of media) if (item.at === i) nodes.push(mediaNode(item));
+        nodes.push(messageNode(m));
+      });
+      for (const item of media) if (item.at >= state.messages.length) nodes.push(mediaNode(item));
+      const live = state.busy ? state.streaming : otherBusy ? otherStream : "";
+      if (live) {
+        const body = el("div", { class: "pilot-md" });
+        body.append(R.render(live, document));
+        nodes.push(el("li", { class: "pilot-msg pilot-from-pilot pilot-live" }, body));
+      } else if ((state.busy || otherBusy) && !cards.size) {
+        nodes.push(el("li", { class: "pilot-msg pilot-from-pilot pilot-wait" },
+          el("span", { class: "pilot-dots", role: "img",
+            "aria-label": otherBusy && !state.busy ? "Pilot is answering in another tab" : "Pilot is thinking" },
+          el("i"), el("i"), el("i"))));
+      }
+      put(log, ...nodes.filter(Boolean));
+      // A plan's live progress goes once the turn is over: its summary is in the chat.
+      if (!state.busy) { const live = cardBox.querySelector(".pilot-live-plan"); if (live) live.remove(); }
+      put(sendBtn, icon(state.busy ? "stop" : "send"));
+      sendBtn.setAttribute("aria-label", state.busy ? "Stop" : "Send");
+      sendBtn.classList.toggle("pilot-stop", state.busy);
+      sendBtn.type = state.busy ? "button" : "submit";
+      sendBtn.disabled = otherBusy && !state.busy;
+      drawChips();
+      // The greeting stays in view until a conversation starts; then the
+      // newest message is kept in view.
+      if (view === "chat") scroller.scrollTop = state.messages.length || cards.size ? scroller.scrollHeight : 0;
+    }
+
+    // Suggestions for this page, under the conversation once it has started.
+    function drawChips() {
+      const busy = state.busy || otherBusy;
+      chips.hidden = busy || cards.size > 0 || state.messages.length === 0;
+      if (chips.hidden) return;
+      const s = screen();
+      let list = [];
+      try { list = (typeof config.chips === "function" ? config.chips(s) : config.chips) || []; } catch (_) { list = []; }
+      const all = list.slice(0, 3).map((c) => ({ label: c.label, run: () => ask(c.prompt || c.label) }));
+      all.push({ label: "Summarise this", run: () => shareScreen("Summarise what's on this screen in a few short points.", "Summarise this screen") });
+      put(chips, ...all.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: c.run } })),
+        el("button", { type: "button", class: "pilot-link pilot-clear", text: "Clear chat", on: { click: clearChat } }));
+    }
+
+    function clearChat() {
+      engine.clear();
+      media.length = 0;
+      state = { messages: [], busy: false, streaming: "", status: "" };
+      pilot.post({ type: "chat", messages: [] });
+      draw();
+    }
+
+    // ---------------------------------------------------------------- cards (confirm and plan)
+
+    function card(kind, data) {
+      return new Promise((resolve) => {
+        const box = el("div", { class: `pilot-card pilot-card-${kind}`, role: "group" });
+        const entry = { kind, answer: null };
+        const done = (value) => {
+          if (!cards.has(entry)) return;
+          cards.delete(entry);
+          box.remove();
+          if (kind === "plan" && (value === "all" || value === "step")) {
+            // The plan stays on screen while it runs, with a mark per step.
+            const run = el("ol", { class: "pilot-plan-live" }, ...data.labels.map((l) => el("li", { text: l })));
+            const old = cardBox.querySelector(".pilot-live-plan");
+            if (old) old.remove();
+            cardBox.prepend(el("div", { class: "pilot-card pilot-live-plan" }, el("p", { class: "pilot-card-title", text: "Pilot is doing (Stop works at any time):" }), run));
+          }
+          drawChips();
+          resolve(value);
+        };
+        entry.answer = done;
+        if (kind === "confirm") {
+          const step = data.step;
+          box.append(
+            el("p", { class: "pilot-card-title", text: step ? `Step ${step.step} of ${step.of}: Pilot wants to` : "Pilot wants to:" }),
+            el("p", { class: "pilot-card-what", text: data.label }),
+            el("div", { class: "pilot-card-actions" },
+              el("button", { type: "button", class: "pilot-btn pilot-btn-go", text: "Allow", on: { click: () => done(true) } }),
+              el("button", { type: "button", class: "pilot-btn", text: "Cancel", on: { click: () => done(false) } })));
+          box.setAttribute("aria-label", `Pilot wants to ${data.label}`);
+        } else {
+          box.append(
+            el("p", { class: "pilot-card-title", text: `Pilot's plan (${data.labels.length} step${data.labels.length === 1 ? "" : "s"}):` }),
+            el("ol", { class: "pilot-plan" }, ...data.labels.map((l) => el("li", { text: l }))),
+            el("p", { class: "pilot-card-hint", text: "Nothing changes until you choose. You can stop at any point." }),
+            el("div", { class: "pilot-card-actions" },
+              el("button", { type: "button", class: "pilot-btn pilot-btn-go", text: "Approve all", on: { click: () => done("all") } }),
+              el("button", { type: "button", class: "pilot-btn", text: "Step through", on: { click: () => done("step") } }),
+              el("button", { type: "button", class: "pilot-btn", text: "Cancel", on: { click: () => done("cancel") } })));
+          box.setAttribute("aria-label", "Pilot's plan");
+        }
+        cards.add(entry);
+        cardBox.append(box);
+        drawChips();
+        scroller.scrollTop = scroller.scrollHeight;
+        const first = box.querySelector(".pilot-btn-go");
+        if (first) first.focus({ preventScroll: true });
+      });
+    }
+
+    // ---------------------------------------------------------------- pictures and videos
+
+    async function makeImage(prompt) {
+      const key = store.media("image");
+      if (!key) return { error: "No image key is set." };
+      const item = { at: state.messages.length, kind: "image", prompt: String(prompt).slice(0, 300) };
+      try {
+        const pic = await M.image(key, prompt, { fetch: window.fetch.bind(window), compatibleHosts: hosts });
+        if (pic.data && !/^[A-Za-z0-9+/=\s]+$/.test(pic.data.slice(0, 2000))) throw new Error("bad picture");
+        Object.assign(item, pic.data ? { mime: /^image\/(png|jpeg|webp|gif)$/.test(pic.mime) ? pic.mime : "image/png", data: pic.data.replace(/\s+/g, "") } : pic);
+        media.push(item);
+        queueDraw();
+        return "The picture was made and is shown to the user, with a download button.";
+      } catch (e) {
+        item.error = (e && e.kind && e.message) || "The picture couldn't be made.";
+        media.push(item);
+        queueDraw();
+        return { error: item.error };
+      }
+    }
+
+    async function makeVideo(prompt) {
+      const key = store.media("video");
+      if (!key) return { error: "No video key is set." };
+      const opts = { fetch: window.fetch.bind(window), compatibleHosts: hosts };
+      const item = { at: state.messages.length, kind: "video", prompt: String(prompt).slice(0, 300), progress: null };
+      let job;
+      try { job = await M.startVideo(key, prompt, opts); } catch (e) {
+        item.error = (e && e.kind && e.message) || "The video couldn't be started.";
+        media.push(item); queueDraw();
+        return { error: item.error };
+      }
+      media.push(item);
+      queueDraw();
+      // Check on it every few seconds, for up to 20 minutes, on this page.
+      (async () => {
+        const until = Date.now() + 20 * 60 * 1000;
+        while (Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 6000));
+          let now;
+          try { now = await M.checkVideo(key, job.id, opts); } catch (e) { item.error = (e && e.message) || "Lost track of the video."; break; }
+          if (now.state === "working") { item.progress = now.progress; queueDraw(); continue; }
+          if (now.state === "failed") { item.error = now.message; break; }
+          try {
+            const blob = await M.fetchVideo(key, job.id, now, opts);
+            item.blobUrl = URL.createObjectURL(blob);
+          } catch (e) { item.error = (e && e.message) || "The video was made but couldn't be fetched."; }
+          break;
+        }
+        if (!item.blobUrl && !item.error) item.error = "The video is taking too long. Check it with your provider.";
+        queueDraw();
+      })();
+      return "The video has started. The chat shows its progress and the video when it's ready.";
+    }
+
+    // ---------------------------------------------------------------- sending
+
+    async function ask(text, extra) {
+      const words = String(text || "").trim();
+      if (!words) return;
+      // "Remember that …" with memory on: kept in this browser, not sent.
+      const remember = words.match(/^(?:please\s+)?remember(?:\s+that)?[:,]?\s+(.{3,})$/i);
+      if (remember && store.memory().on && !extra) {
+        const r = store.remember(remember[1].replace(/[.!]+$/, ""));
+        const next = state.messages.concat([{ role: "user", text: words },
+          { role: "note", kind: r.error ? "error" : "info", text: r.error || "Saved to Pilot's memory in this browser. See it in settings." }]);
+        engine.replace(next);
+        state = { ...state, messages: engine.messages };
+        pilot.post({ type: "chat", messages: state.messages });
+        queueDraw();
+        return;
+      }
+      if (!store.ready()) { show("settings"); return; }
+      await engine.send(words, extra);
+    }
+
+    function shareScreen(prompt, label) {
+      if (Date.now() - lastShared < 800) return;
+      lastShared = Date.now();
+      if (!store.ready()) { show("settings"); return; }
+      const s = screen();
+      const outline = (window.PilotPack && typeof window.PilotPack.screenText === "function" && window.PilotPack.screenText()) || screenText();
+      ask(prompt, { shared: `Screen: ${s.name || document.title}\n${outline}`, label });
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (state.busy) return;
+      const text = input.value;
+      input.value = "";
+      grow();
+      if (view !== "chat") show("chat");
+      ask(text);
+    });
+    sendBtn.addEventListener("click", (e) => { if (state.busy) { e.preventDefault(); engine.stop(); } });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+    });
+    function grow() { input.classList.toggle("pilot-tall", input.value.length > 48 || input.value.includes("\n")); }
+    input.addEventListener("input", grow);
+
+    // Voice: the browser's own speech recognition, only where it has one.
+    // The words land in the box to check before sending. Nothing goes to the
+    // app's server; some browsers send the sound to their own maker to turn
+    // it into words (help says so).
+    let listening = null;
+    if (mic) {
+      mic.addEventListener("click", () => {
+        if (listening) { listening.stop(); return; }
+        let rec;
+        try { rec = new Speech(); } catch (_) { mic.hidden = true; return; }
+        rec.lang = document.documentElement.lang || "en";
+        rec.interimResults = true;
+        rec.continuous = false;
+        const before = input.value ? `${input.value.trim()} ` : "";
+        rec.onresult = (event) => {
+          let words = "";
+          for (let i = 0; i < event.results.length; i += 1) words += event.results[i][0].transcript;
+          input.value = (before + words).slice(0, 4000);
+          grow();
+        };
+        rec.onend = () => { listening = null; mic.classList.remove("on"); input.focus(); };
+        rec.onerror = () => { listening = null; mic.classList.remove("on"); };
+        listening = rec;
+        mic.classList.add("on");
+        try { rec.start(); } catch (_) { listening = null; mic.classList.remove("on"); }
+      });
+    }
+
+    gear.addEventListener("click", () => show(view === "settings" ? "chat" : "settings"));
+    helpBtn.addEventListener("click", () => show(view === "help" ? "chat" : "help"));
+    palette.addEventListener("click", () => {
+      const next = store.ui().theme === "calm" ? "glow" : "calm";
+      store.setUi({ theme: next });
+      applyTheme(next);
+    });
+    minBtn.addEventListener("click", () => { pilot.close(); launcher.focus(); });
+    closeBtn.addEventListener("click", () => { pilot.close(); launcher.focus(); });
+    panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { pilot.close(); launcher.focus(); } });
+
+    // ---------------------------------------------------------------- settings
+
+    function show(which) {
+      view = which;
+      chatView.hidden = which !== "chat";
+      settingsView.hidden = which !== "settings";
+      helpView.hidden = which !== "help";
+      gear.classList.toggle("on", which === "settings");
+      helpBtn.classList.toggle("on", which === "help");
+      if (which === "settings") drawSettings();
+      if (which === "help") drawHelp();
+      scroller.scrollTop = which === "chat" && state.messages.length ? scroller.scrollHeight : 0;
+      if (which === "chat") { draw(); input.focus({ preventScroll: true }); }
+    }
+
+    const backButton = () => el("button", { type: "button", class: "pilot-link pilot-back", on: { click: () => show("chat") } },
+      icon("back"), el("span", { text: "Back to chat" }));
+
+    // A form for one key: chat ("chat"), pictures ("image") or videos ("video").
+    function keyForm(kind, existing, done) {
+      const providers = kind === "chat" ? P.LIST : P.LIST.filter((p) => p.id !== "anthropic");
+      const e = existing || {};
+      let models = [];
+      const provider = el("select", { class: "pilot-field", "aria-label": "Provider" },
+        el("option", { value: "", text: "Choose a provider…" }),
+        ...providers.map((p) => el("option", { value: p.id, text: p.id === "compatible" ? "Any compatible API" : p.label })));
+      provider.value = e.provider || "";
+      const baseUrl = el("input", { class: "pilot-field", type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false",
+        placeholder: "https://…/v1 or http://localhost:…/v1", "aria-label": "Its base address" });
+      baseUrl.value = e.baseUrl || "";
+      const baseRow = el("label", { class: "pilot-row" }, el("span", { text: "Base URL (OpenAI-compatible)" }), baseUrl,
+        el("small", { text: `This site's security settings let your browser reach: ${hosts.join(", ")}.` }));
+      const key = el("input", { class: "pilot-field", type: "password", autocomplete: "off", spellcheck: "false",
+        placeholder: "Paste your API key", "aria-label": "API key", maxlength: "400" });
+      key.value = e.key || "";
+      const showKey = el("button", { type: "button", class: "pilot-link", text: "Show" });
+      showKey.addEventListener("click", () => { key.type = key.type === "password" ? "text" : "password"; showKey.textContent = key.type === "password" ? "Show" : "Hide"; });
+      const modelSelect = el("select", { class: "pilot-field", "aria-label": "Model", hidden: true });
+      const modelText = el("input", { class: "pilot-field", type: "text", autocomplete: "off", spellcheck: "false",
+        placeholder: "Or type a model name", "aria-label": "Model name", maxlength: "200" });
+      modelText.value = e.model || "";
+      const msg = el("p", { class: "pilot-msg-line", role: "status" });
+      const say = (text, bad) => { msg.textContent = text; msg.classList.toggle("bad", Boolean(bad)); };
+      const where = el("small", { class: "pilot-where" });
+      function drawProvider() {
+        const p = P.LIST.find((x) => x.id === provider.value);
+        baseRow.hidden = provider.value !== "compatible";
+        key.placeholder = p ? p.keyHint : "Paste your API key";
+        where.textContent = p && p.where ? `Get a key at ${p.where}. A key with a spending limit is safest.` : "";
+      }
+      provider.addEventListener("change", () => { models = []; modelSelect.hidden = true; drawProvider(); });
+      drawProvider();
+      modelSelect.addEventListener("change", () => { if (modelSelect.value) modelText.value = modelSelect.value; });
+      const current = () => ({ provider: provider.value, key: key.value.trim(), baseUrl: baseUrl.value.trim(), model: modelText.value.trim() });
+
+      const check = el("button", { type: "button", class: "pilot-btn", text: "Check key and list models" });
+      check.addEventListener("click", async () => {
+        const c = current();
+        if (!c.provider) { say("Choose a provider first.", true); return; }
+        say("Checking with the provider…");
+        check.disabled = true;
+        try {
+          const opts = { fetch: window.fetch.bind(window), compatibleHosts: hosts };
+          models = kind === "chat" ? await P.listModels(c, opts) : await M.listModels(kind, c, opts);
+          put(modelSelect, el("option", { value: "", text: "Choose a model…" }),
+            ...models.map((m) => el("option", { value: m.id, text: m.label && m.label !== m.id ? `${m.label} (${m.id})` : m.id })));
+          modelSelect.hidden = models.length === 0;
+          if (models.some((m) => m.id === c.model)) modelSelect.value = c.model;
+          say(models.length ? `Key works. ${models.length} model${models.length === 1 ? "" : "s"} to choose from.`
+            : "Key works, but no models were listed. Type a model name instead.");
+        } catch (err) {
+          models = [];
+          modelSelect.hidden = true;
+          say(`${(err && err.kind && err.message) || "Couldn't list the models."} You can still type a model name.`, true);
+        } finally {
+          check.disabled = false;
+        }
+      });
+
+      const save = el("button", { type: "button", class: "pilot-btn pilot-btn-go", text: "Save" });
+      save.addEventListener("click", () => {
+        const c = current();
+        if (!c.provider) { say("Choose a provider first.", true); return; }
+        if (c.provider === "compatible") {
+          const bad = P.checkBaseUrl(c.baseUrl, hosts);
+          if (bad) { say(bad.message, true); return; }
+        } else if (!c.key) { say("Paste your API key first.", true); return; }
+        if (!c.model) { say("Choose or type a model.", true); return; }
+        const picked = models.find((m) => m.id === c.model);
+        const same = e.provider === c.provider && e.model === c.model;
+        done({ ...c, id: e.id, maxTokens: picked ? picked.maxTokens || 0 : (same ? e.maxTokens || 0 : 0),
+          method: picked ? picked.method || "" : (same ? e.method || "" : ""), noTools: same ? Boolean(e.noTools) : false });
+      });
+      const cancel = el("button", { type: "button", class: "pilot-btn pilot-btn-quiet", text: "Cancel",
+        on: { click: () => { editing = null; drawSettings(); } } });
+
+      return el("div", { class: "pilot-keyform" },
+        el("label", { class: "pilot-row" }, el("span", { text: "Provider" }), provider, where),
+        baseRow,
+        el("label", { class: "pilot-row" }, el("span", {}, el("span", { text: "API key " }), showKey), key),
+        el("div", { class: "pilot-row" }, check),
+        el("label", { class: "pilot-row" }, el("span", { text: "Model" }), modelSelect, modelText),
+        el("div", { class: "pilot-card-actions" }, save, cancel),
+        msg);
+    }
+
+    function changed() {
+      pilot.post({ type: "settings", settings: store.all() });
+      pilot.changed();
+    }
+
+    const label = (k) => `${k.provider === "compatible" ? P.providerName(k) : (P.NAMES[k.provider] || k.provider)} · ${k.model || "no model"}`;
+
+    function drawSettings() {
+      const a = store.all();
+      const keyRows = a.keys.map((k) => el("li", { class: k.id === a.active ? "on" : "" },
+        el("span", { class: "pilot-key-name" }, el("b", { text: label(k) }), el("small", { text: k.id === a.active ? "In use" : "" })),
+        k.id === a.active ? null : el("button", { type: "button", class: "pilot-link", text: "Use",
+          on: { click: () => { store.useKey(k.id); changed(); drawSettings(); } } }),
+        el("button", { type: "button", class: "pilot-link", text: "Edit", on: { click: () => { editing = `chat:${k.id}`; drawSettings(); } } }),
+        el("button", { type: "button", class: "pilot-link", text: "Remove", "aria-label": `Remove the ${label(k)} key`,
+          on: { click: () => { store.removeKey(k.id); changed(); drawSettings(); } } })));
+
+      const chatForm = editing && editing.startsWith("chat:")
+        ? keyForm("chat", a.keys.find((k) => `chat:${k.id}` === editing) || null, (profile) => {
+          if (profile.id) store.saveSettings(profile);
+          else { const r = store.addKey(profile); if (r.error) return; }
+          editing = null; changed(); drawSettings();
+        }) : null;
+      const addBtn = el("button", { type: "button", class: "pilot-btn", text: a.keys.length ? "+ Add another key" : "+ Add a key",
+        on: { click: () => { editing = "chat:new"; drawSettings(); } } });
+
+      const remember = el("input", { type: "checkbox" });
+      remember.checked = a.remember;
+      remember.addEventListener("change", () => { store.saveAll({ ...store.all(), remember: remember.checked }); changed(); });
+
+      function mediaSection(kind, title, what) {
+        const m = a[kind];
+        const open = editing === kind;
+        return el("details", { class: "pilot-section", open: open || Boolean(m) || undefined },
+          el("summary", { text: title }),
+          el("p", { class: "pilot-small", text: what }),
+          m && !open ? el("ul", { class: "pilot-keys" }, el("li", { class: "on" },
+            el("span", { class: "pilot-key-name" }, el("b", { text: label(m) })),
+            el("button", { type: "button", class: "pilot-link", text: "Edit", on: { click: () => { editing = kind; drawSettings(); } } }),
+            el("button", { type: "button", class: "pilot-link", text: "Remove",
+              on: { click: () => { store.setMedia(kind, null); changed(); drawSettings(); } } }))) : null,
+          open ? keyForm(kind, m, (profile) => { store.setMedia(kind, profile); editing = null; changed(); drawSettings(); })
+            : (m ? null : el("button", { type: "button", class: "pilot-btn", text: `+ Add a ${kind} key`,
+              on: { click: () => { editing = kind; drawSettings(); } } })));
+      }
+
+      // Memory: off by default; notes stay in this browser only.
+      const mem = store.memory();
+      const memOn = el("input", { type: "checkbox" });
+      memOn.checked = mem.on;
+      memOn.addEventListener("change", () => {
+        if (!memOn.checked && mem.notes.length && !window.confirm("Turn memory off and forget everything Pilot remembers?")) {
+          memOn.checked = true; return;
+        }
+        store.setMemoryOn(memOn.checked);
+        drawSettings();
+      });
+      const noteInput = el("input", { class: "pilot-field", type: "text", maxlength: "200", autocomplete: "off",
+        placeholder: "e.g. I prefer short answers", "aria-label": "Something for Pilot to remember" });
+      const memMsg = el("p", { class: "pilot-msg-line", role: "status" });
+      const addNote = el("button", { type: "button", class: "pilot-btn", text: "Add" });
+      addNote.addEventListener("click", () => {
+        const r = store.remember(noteInput.value);
+        if (r.error) { memMsg.textContent = r.error; memMsg.classList.add("bad"); return; }
+        drawSettings();
+      });
+      const notes = el("ul", { class: "pilot-notes" }, ...mem.notes.map((n, i) => el("li", {}, el("span", { text: n }),
+        el("button", { type: "button", class: "pilot-link", text: "Delete", "aria-label": `Forget “${n}”`,
+          on: { click: () => { store.forgetNote(i); drawSettings(); } } }))));
+
+      const forgetAll = el("button", { type: "button", class: "pilot-btn pilot-btn-quiet", text: "Remove my keys from this browser" });
+      forgetAll.hidden = !a.keys.length && !a.image && !a.video;
+      forgetAll.addEventListener("click", () => { store.forget(); editing = null; changed(); drawSettings(); });
+
+      put(settingsView,
+        backButton(),
+        el("div", { class: "pilot-keycard pilot-keycard-head" }, icon("key"),
+          el("span", { class: "pilot-keycard-words" }, el("b", { text: "Bring Your Own API Key" }),
+            el("small", { text: "Use your OpenAI, Claude, Gemini, or any compatible API key." })), icon("chevron")),
+        config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null,
+        el("h3", { class: "pilot-h3", text: "Chat keys" }),
+        a.keys.length ? el("ul", { class: "pilot-keys" }, ...keyRows) : el("p", { class: "pilot-small", text: "No key yet. Add one to start chatting." }),
+        chatForm || addBtn,
+        el("label", { class: "pilot-check" }, remember,
+          el("span", { text: "Remember my keys on this device (otherwise they're forgotten when this tab closes)" })),
+        mediaSection("image", "Image generation", "Lets Pilot make pictures in the chat, with your own image key."),
+        mediaSection("video", "Video generation", "Lets Pilot make short videos, with your own video key. Videos can cost more: your provider bills each one."),
+        el("h3", { class: "pilot-h3", text: "What Pilot remembers" }),
+        el("label", { class: "pilot-check" }, memOn, el("span", { text: "Let Pilot remember notes about how you like answers (only in this browser)" })),
+        mem.on ? notes : null,
+        mem.on && !mem.notes.length ? el("p", { class: "pilot-small", text: "Nothing yet. Say “Remember that …” in the chat, or add one here." }) : null,
+        mem.on ? el("div", { class: "pilot-inline" }, noteInput, addNote) : null,
+        memMsg,
+        forgetAll);
+    }
+
+    function drawHelp() {
+      put(helpView,
+        backButton(),
+        el("h3", { class: "pilot-h3", text: "How Pilot works" }),
+        el("ul", { class: "pilot-facts" },
+          el("li", { text: "Pilot runs on your own AI key. Your key stays in this browser and goes only to the provider you chose, never to us." }),
+          el("li", { text: "What you type goes to that provider. “Analyze & explain” and “Summarise” also send an outline of the words on this screen; you can see exactly what was sent. Typed boxes and hidden things are never read." }),
+          el("li", { text: "Pilot asks before it changes anything. Several changes are shown as a plan first: approve all, step through, or cancel. Stop works at any time." }),
+          el("li", { text: "Pilot never pays for anything, deletes anything, changes a plan or messages anyone." }),
+          el("li", { text: Speech ? "The microphone uses your browser's own speech recognition. Nothing goes to us, but some browsers send the sound to their maker to turn it into words."
+            : "Voice isn't offered in this browser because it has no speech recognition." }),
+          el("li", { text: "Your AI provider bills your key for what Pilot uses. A key with a spending limit is safest." }),
+          el("li", { text: "The chat follows you from page to page and tab to tab, and is forgotten when you close the tab (unless you choose to remember your keys)." })),
+        config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null,
+        config.privacyUrl ? el("p", { class: "pilot-small" }, el("a", { href: config.privacyUrl, text: "Read the privacy page" })) : null);
+    }
+
+    // ---------------------------------------------------------------- the API for pilot.js
+
+    const api = {
+      VERSION,
+      get isOpen() { return isOpen; },
+      get busy() { return state.busy; },
+      open() {
+        isOpen = true;
+        panel.hidden = false;
+        root.classList.add("pilot-open");
+        show(view);
+        draw();
+      },
+      close() {
+        isOpen = false;
+        panel.hidden = true;
+        root.classList.remove("pilot-open");
+      },
+      replace(list) {
+        engine.replace(list);
+        state = { ...state, messages: engine.messages };
+        otherStream = "";
+        queueDraw();
+      },
+      streamFromOtherTab(text) { otherStream = text; queueDraw(); },
+      otherTabBusy(on) { otherBusy = on; if (!on) otherStream = ""; queueDraw(); },
+      engine,
+      screenText,
+    };
+    pilot.onChange(() => { if (view === "chat") queueDraw(); });
+    return api;
+  }
+
+  window.PilotPanel = { VERSION, create, screenText, redact };
+})();

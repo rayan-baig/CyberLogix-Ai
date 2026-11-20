@@ -193,7 +193,7 @@ def build_emergency_sms(
     # serve the same failure on the same kind of unit twice.
     line, source = safe_generate(
         wording.action_prompt(sensor, facts), wording.action_for(sensor),
-        purpose="emergency SMS", tenant_id=tenant_id,
+        purpose="emergency SMS", tenant_id=tenant_id, business_key=True,
     )
     action = wording.clean_action(line)
     if action is None:
