@@ -130,7 +130,7 @@ def test_a_partner_from_first_day_to_last(api):
 
     # 9. The customer moves to a paid plan, signs, is billed and pays.
     assert api.post("/api/licenses/me/plan", headers=owner,
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/contracts", headers=owner,
                     json={"term_years": 1}).status_code == 201
     assert api.get("/api/partners/me", headers=portal).json()[

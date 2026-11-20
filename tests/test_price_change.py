@@ -110,7 +110,9 @@ def test_the_front_page_quotes_the_lowest_published_price(api):
     facts = pricing.headline()
     assert facts["from_label"] == "$149" and facts["from_unit"] == "location"
     page = _words(api.get("/").text)
-    assert "From $149 a month per location, with no setup fee." in page
+    # The lowest price anybody can pay is Starter's flat price, and the
+    # front page, the plans and the console all start from it.
+    assert f"From {facts['starter_label']} a month, no setup fee." in page
 
 
 # ---- units at one location -------------------------------------------------

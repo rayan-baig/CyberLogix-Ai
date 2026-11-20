@@ -85,6 +85,14 @@ TRIAL_MAX_AI_CALLS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_AI_CALLS_PER_DAY", 2
 TRIAL_MAX_SMS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_SMS_PER_DAY", 15)
 TRIAL_MAX_VOICE_CALLS_PER_DAY = _env_int("CYBERLOGIX_TRIAL_MAX_VOICE_CALLS_PER_DAY", 3)
 
+# Phone calls on the free trial. The trial plan does not include calls,
+# but the call is the thing being bought, so a trial may place a handful
+# of them in all -- enough to hear a real escalation call and a test call,
+# not enough to be anybody's free phone line. Each call reads its message
+# twice and lasts about a minute, so this is about five call minutes for
+# the whole trial. Counted from the usage record, which survives restarts.
+TRIAL_CALLS_TOTAL = 5
+
 TRIAL_CAPS = {
     "ai_calls": TRIAL_MAX_AI_CALLS_PER_DAY,
     "sms": TRIAL_MAX_SMS_PER_DAY,
@@ -95,6 +103,59 @@ TRIAL_CAPS = {
 def _on_trial(tenant_id: Optional[str]) -> bool:
     tenant = STORE.get_tenant(tenant_id) if tenant_id else None
     return tenant is not None and tenant.plan == "trial"
+
+
+def trial_calls_used(tenant_id: str) -> int:
+    """Phone calls this account has placed, over the whole trial."""
+    return sum(u.voice_calls for u in STORE.usage_history(tenant_id, days=400))
+
+
+def trial_calls_left(tenant_id: Optional[str]) -> int:
+    """Calls a trial may still place; 0 for anything that is not a trial."""
+    if not _on_trial(tenant_id) or not tenant_id:
+        return 0
+    return max(0, TRIAL_CALLS_TOTAL - trial_calls_used(tenant_id))
+
+
+def calls_allowed(tenant) -> bool:
+    """Whether an alert may ring a phone for this account right now.
+
+    A plan that includes calls, or a trial with some of its few calls left.
+    """
+    if tenant.entitlements().get("voice_escalation"):
+        return True
+    return tenant.plan == "trial" and trial_calls_left(tenant.tenant_id) > 0
+
+
+def calls_offer(tenant) -> Dict[str, Any]:
+    """What every screen says about phone calls, from one place.
+
+    `mode` is "plan" (the plan includes calls), "trial" (a few calls to
+    try, `left` of `total` still to use) or "none" (texts only). The
+    console, the Simple view and the proof report all word their promise
+    from this, so none of them says "we call" when nothing would ring.
+    """
+    if tenant.entitlements().get("voice_escalation"):
+        return {"mode": "plan", "left": None, "total": None,
+                "words": "If nobody answers the text, we phone them until "
+                         "somebody does."}
+    if tenant.plan == "trial":
+        left = trial_calls_left(tenant.tenant_id)
+        total = TRIAL_CALLS_TOTAL
+        if left > 0:
+            return {"mode": "trial", "left": left, "total": total,
+                    "words": (f"Your free trial includes {total} phone calls "
+                              f"(about a minute each) so you can hear what an "
+                              f"alert call sounds like; {left} left. After "
+                              "that, alerts are texts only until you move to "
+                              "a plan with calls (Growth).")}
+        return {"mode": "none", "left": 0, "total": total,
+                "words": (f"Your free trial's {total} phone calls have been "
+                          "used, so alerts are texts only. Growth includes "
+                          "phone calls.")}
+    return {"mode": "none", "left": None, "total": None,
+            "words": (f"Your {tenant.entitlements()['name']} plan sends texts, "
+                      "not phone calls. Growth includes phone calls.")}
 
 
 def caps_for(tenant_id: Optional[str]) -> Dict[str, int]:
@@ -153,6 +214,13 @@ def allow_message(tenant_id: Optional[str], channel: str) -> Tuple[bool, str]:
         cap, used = caps["voice_calls"], usage.voice_calls
     else:
         return True, ""
+
+    # The trial's few calls are for the whole trial, not per day.
+    if channel == "voice" and _on_trial(tenant_id) and trial_calls_left(tenant_id) <= 0:
+        return False, (
+            f"The free trial's {TRIAL_CALLS_TOTAL} phone calls have been used. "
+            "A plan with calls (Growth) rings phones again."
+        )
 
     if cap > 0 and used >= cap:
         # Naming the plan matters here. A trial hitting a trial ceiling is

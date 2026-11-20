@@ -25,8 +25,48 @@
    in stays, because that is the one thing the header is for. */
 @media (max-width: 720px) {
   .top { padding: 14px 20px; gap: 12px; }
-  .top nav a:not(.btn) { display: none; }
+  .top > nav a:not(.btn) { display: none; }
 }
+
+/* The phone's menu: the links the bar above had to drop, behind one tap.
+   A details element, so it needs no script. Hidden on a wide screen,
+   where the bar has room for them. */
+.menu { display: none; position: relative; }
+.menu summary {
+  list-style: none; cursor: pointer; font-size: 14px; color: var(--ink-2);
+  padding: 7px 12px; border: 1px solid var(--border-lit); border-radius: 9px;
+}
+.menu summary::-webkit-details-marker { display: none; }
+.menu[open] summary { color: var(--ink); border-color: var(--accent); }
+.menu nav {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
+  display: grid; gap: 2px; min-width: 190px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border-lit);
+  border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.45);
+}
+.menu nav a {
+  display: block; padding: 10px 12px; border-radius: 8px;
+  color: var(--ink-2); text-decoration: none; font-size: 15px;
+}
+.menu nav a:hover, .menu nav a:focus-visible { background: var(--raised); color: var(--ink); }
+@media (max-width: 720px) {
+  .menu { display: block; }
+  /* The menu sits beside "Sign in"; the bar's own nav keeps the button. */
+  .top > nav { margin-left: auto; }
+}
+
+/* --- what you need --------------------------------------------------- */
+.need { max-width: 860px; }
+.need h2 { margin-bottom: 14px; }
+.need h3 {
+  font-family: var(--mono); font-size: 12px; font-weight: 400;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--accent-cyan);
+  margin: 26px 0 10px;
+}
+.need p, .need li { color: var(--ink-2); font-size: 15.5px; line-height: 1.62; }
+.need p { margin: 0; max-width: 70ch; }
+.need ul, .need ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.need b { color: var(--ink); }
 
 /* --- hero ---------------------------------------------------------- */
 .hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
@@ -168,7 +208,12 @@ h3 {
    a 360px phone is wide; nowrap pushed the whole column, and the page,
    sideways. It wraps instead. */
 .plan .btn { white-space: normal; text-align: center; }
-@media (min-width: 800px) { .plans { grid-template-columns: repeat(3, 1fr); } }
+/* Four plans: two by two, then four in a row. Three columns left
+   Enterprise alone on a second row. */
+@media (min-width: 640px) { .plans { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1040px) { .plans { grid-template-columns: repeat(4, 1fr); } }
+.addons-note { margin: 18px 0 0; max-width: 80ch; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.addons-note:empty { display: none; }
 .plan {
   border: 1px solid var(--border); border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 82%, transparent);

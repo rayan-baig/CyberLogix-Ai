@@ -187,13 +187,13 @@ curl -X POST localhost:8080/api/licenses/me/sensors \
   "location_name": "Clubhouse Kitchen / Walk-In"
 }'
 
-# 3. Pulse it. 28F is inside the limit, so nothing happens: one reading
-#    recorded, no incident, nobody woken.
+# 3. Pulse it. 28F is inside the limit (a fridge's 41F), so nothing
+#    happens: one reading recorded, no incident, nobody woken.
 curl -X POST localhost:8080/api/sensor-pulse \
   -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 28.0}'
 
-# 4. Now break it. 61F is past the 32F country-club limit, so this opens
+# 4. Now break it. 61F is past the 41F country-club limit, so this opens
 #    an incident and texts the roster.
 curl -X POST localhost:8080/api/sensor-pulse \
   -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \

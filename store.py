@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import secrets
 import threading
 from collections import OrderedDict, deque
@@ -251,6 +252,8 @@ class HubStore:
 
     def __init__(self, db: Optional[Database] = None) -> None:
         self._lock = threading.RLock()
+        # The last per-account number handed out, by (prefix, tenant).
+        self._account_seq: Dict[Tuple[str, str], int] = {}
         self._tenants: Dict[str, Tenant] = {}
         self._keys: Dict[str, str] = {}
         self._sensors: Dict[str, Sensor] = {}
@@ -310,7 +313,10 @@ class HubStore:
                     self._devices[sensor.external_device_sn] = sensor.sensor_id
                 if sensor.ingest_key_hash:
                     self._ingest_keys[sensor.ingest_key_hash] = sensor.sensor_id
-                if "ingest_key" in row:
+                # Written before keys were hashed, or before 3.19.0 changed
+                # the sector defaults (the old limit is pinned on the
+                # sensor by from_row; this saves it as the sensor's own).
+                if "ingest_key" in row or "defaults_version" not in row:
                     self._db.put("sensor", sensor.sensor_id, sensor.to_row())
 
             # Ordered by time, then by id. The id tiebreak is not
@@ -534,6 +540,7 @@ class HubStore:
             self._mail_keys.clear()
             self._suppressions.clear()
             self._counter = 0
+            self._account_seq.clear()
             self._gap_since = None
 
     def reset(self) -> None:
@@ -559,6 +566,51 @@ class HubStore:
             self._counter += 1
             self._db.put("meta", "counter", {"value": self._counter})
             return f"{prefix}-{self._counter:06d}"
+
+    # Letters only (no I or O), so the tag never adds digits to the number.
+    _TAG_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+    def account_id(self, prefix: str, tenant_id: str, taken, exists) -> str:
+        """An id numbered within one account: INC-3-QHKX, the third.
+
+        `_next_id` counts across every customer at once, so the incident
+        id a café read on its alert (INC-000292) told it how many alerts
+        everybody else had had. This one counts that account's own, from
+        one, and ends with four random letters so it is unique across all
+        of them. The next number is one past the highest this account has,
+        whatever the format, so a reply naming an old alert's number still
+        finds only that alert. Ids made before 3.19.0 keep working as they
+        are.
+
+        `taken()` yields (id, tenant_id) for every id already made; it is
+        walked once per account per process, and the count kept after
+        that, so the alarm path does not scan every incident each time.
+        `exists(id)` says whether an id is already used.
+        """
+        with self._lock:
+            key = (prefix, tenant_id)
+            highest = self._account_seq.get(key)
+            if highest is None:
+                highest = 0
+                for existing, owner in taken():
+                    if owner != tenant_id:
+                        continue
+                    found = re.match(r"^[A-Za-z]+-0*(\d+)", existing or "")
+                    if found:
+                        highest = max(highest, int(found.group(1)))
+            highest += 1
+            self._account_seq[key] = highest
+            while True:
+                tag = "".join(secrets.choice(self._TAG_LETTERS) for _ in range(4))
+                candidate = f"{prefix}-{highest}-{tag}"
+                if not exists(candidate):
+                    return candidate
+
+    def _incident_id(self, tenant_id: str) -> str:
+        return self.account_id(
+            "INC", tenant_id,
+            lambda: ((i.incident_id, i.tenant_id) for i in self._incidents.values()),
+            lambda candidate: candidate in self._incidents)
 
     # ---- tenants -------------------------------------------------------
 
@@ -1337,7 +1389,7 @@ class HubStore:
         with self._lock:
             profile = INDUSTRY_PROFILES[sensor.industry_vertical]
             incident = Incident(
-                incident_id=self._next_id("INC"),
+                incident_id=self._incident_id(tenant_id),
                 tenant_id=tenant_id,
                 sensor_id=sensor.sensor_id,
                 industry_vertical=sensor.industry_vertical,
@@ -1758,7 +1810,7 @@ class HubStore:
             from records import SITE_WIDE_KIND
 
             incident = Incident(
-                incident_id=self._next_id("INC"),
+                incident_id=self._incident_id(tenant.tenant_id),
                 tenant_id=tenant.tenant_id,
                 # Not a real sensor id, so nothing that looks a unit's
                 # incident up by its sensor can ever land on this one.

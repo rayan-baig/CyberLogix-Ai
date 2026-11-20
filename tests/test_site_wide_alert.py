@@ -94,7 +94,7 @@ def _estate(tenant_factory, sensor_factory, sites, company="Harbor Grill",
         for n in range(count):
             sensor_id = f"{prefix}S{s_index}-U{n + 1}"
             sensor_factory(headers, sensor_id=sensor_id, vertical="restaurant",
-                           location=f"{name} freezer {n + 1}")
+                           location=f"{name} freezer {n + 1}", kind="freezer")
             STORE.assign_sensor_to_site(STORE.get_sensor(sensor_id), site.site_id)
             units[name].append(sensor_id)
     return STORE.get_tenant(tenant["tenant_id"]), site_ids, units
@@ -106,7 +106,7 @@ def _readings(sensor_id, points):
     now = utc_now()
     for ago, temp in sorted(points, key=lambda p: -p[0]):
         STORE.record_reading(sensor=sensor, temperature_fahrenheit=temp,
-                             humidity_percent=None, breached=temp > 32.0,
+                             humidity_percent=None, breached=temp > 10.0,
                              at=now - timedelta(minutes=ago))
 
 
@@ -571,6 +571,9 @@ def test_the_text_always_fits_one_segment():
 def test_a_plan_without_calls_still_texts(tenant_factory, sensor_factory, phones):
     tenant, _, units = _estate(tenant_factory, sensor_factory, {"Main Street": 5},
                                plan="trial")
+    # A trial whose few calls (costs.TRIAL_CALLS_TOTAL) are used: texts only.
+    import costs
+    STORE.bump_usage(tenant.tenant_id, "voice_calls", costs.TRIAL_CALLS_TOTAL)
     warming(*units["Main Street"][:3])
     cold(*units["Main Street"][3:])
 

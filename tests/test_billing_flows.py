@@ -335,7 +335,7 @@ def test_moving_up_a_plan_mid_term_neither_rebills_nor_skips_a_month(
     expires = STORE.get_tenant(tenant["tenant_id"]).expires_at
 
     moved = api.post("/api/licenses/me/plan", headers={**headers, **owner},
-                     json={"plan": "enterprise"})
+                     json={"plan": "enterprise", "confirm": True})
     assert moved.status_code == 200, moved.text
     assert run_billing()["invoices_issued"] == 0
     # Choosing a plan is not paying for one.

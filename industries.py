@@ -43,8 +43,9 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
         # The one line about fridge controls being taken over (October
         # 2026), on the pages of the trades it happened to.
         "controls_line": (
-            "If someone takes over your fridge controls, our own sensors "
-            "still see the warming, and we call your team within minutes."
+            "If someone takes over your fridge controls, a separate sensor "
+            "in each fridge still sees the warming, and we alert your team "
+            "within minutes."
         ),
         "licences": ["Food handler cards", "Food protection manager",
                      "Allergen awareness", "Alcohol service permits"],
@@ -59,8 +60,9 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
         ),
         "asks_after": "the board of pharmacy, and the manufacturer",
         "controls_line": (
-            "If someone takes over your fridge controls, our own sensors "
-            "still see the warming, and we call your team within minutes."
+            "If someone takes over your fridge controls, a separate sensor "
+            "in each fridge still sees the warming, and we alert your team "
+            "within minutes."
         ),
         "licences": ["Pharmacist licence", "Pharmacy technician registration",
                      "Immunisation certification",
@@ -213,6 +215,28 @@ def page(vertical: str) -> Dict[str, Any]:
     else:
         band = "inside the range you set"
         trips = "leaves the range you set"
+
+    # Where the add form asks "fridge or freezer?", the limit depends on
+    # the answer, so say both. A restaurant page that said "under 32°F"
+    # told every owner their healthy 37°F walk-in cooler was failing.
+    from domain import unit_kinds
+
+    def kind_band(k: Dict[str, Any]) -> str:
+        if k["danger_below"] is not None:
+            return f"between {deg(k['danger_below'])} and {deg(k['danger_above'])}"
+        return f"under {deg(k['danger_above'])}"
+
+    kinds = unit_kinds(vertical)
+    if kinds:
+        band = " or ".join(
+            f"{kind_band(k)} ({k['label'].lower()}s)" for k in kinds)
+        def kind_trip(k: Dict[str, Any]) -> str:
+            if k["danger_below"] is not None:
+                return (f"{deg(k['danger_below'])} to {deg(k['danger_above'])} "
+                        f"for a {k['label'].lower()}")
+            return f"{deg(k['danger_above'])} for a {k['label'].lower()}"
+
+        trips = "goes past its limit (" + ", ".join(kind_trip(k) for k in kinds) + ")"
 
     # What we do, in one paragraph, for the reader who reads nothing else.
     # Built from the profile, so the limit quoted is the limit the product

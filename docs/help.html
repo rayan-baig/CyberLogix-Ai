@@ -385,6 +385,8 @@ a { color: var(--accent); }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
+.field-hint { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.field-hint:empty { display: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   white-space: nowrap;
@@ -576,6 +578,9 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
   letter-spacing: .05em; text-transform: uppercase;
   border: 1px solid currentColor; opacity: .92;
 }
+/* A delivery line says why in words now, which can be longer than a
+   phone is wide. */
+.incident .row .badge { white-space: normal; text-align: left; }
 .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .s-good     { color: var(--good); }
 .s-warning  { color: var(--warning); }
@@ -878,7 +883,8 @@ body.has-terminal main { padding-bottom: 148px; }
 
 /* ---------- wall display ---------- */
 body.wall .nav, body.wall .layout > aside, body.wall #terminal,
-body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !important; }
+body.wall .modules, body.wall .pair, body.wall .side-cards,
+body.wall #byod-form { display: none !important; }
 body.wall main { padding: 22px; max-width: none; }
 body.wall .layout { grid-template-columns: minmax(0, 1fr); }
 body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
@@ -1411,6 +1417,29 @@ body[data-stale] #offline-banner {
   padding: 34px 20px; text-align: center; color: var(--muted);
   font-family: var(--display); font-size: 17.5px;
 }
+.f-tab-adv { border-style: dashed; }
+.adv-note { margin: 4px 0 14px; font-size: 13px; color: var(--muted); }
+.adv-note b { color: var(--ink-2); font-weight: 600; }
+
+/* Inputs laid out in a row inside a card (Fetch from a sensor cloud, the
+   OmniArmor connection, Change password, Things to do) had no styling at
+   all and rendered as the browser's white boxes on a dark card. The same
+   look as a .field input, without its label. */
+.card form .row > input:not([type="checkbox"]):not([type="radio"]),
+.card form .row > select,
+.card form.row > input:not([type="checkbox"]):not([type="radio"]),
+.card form.row > select {
+  min-width: 0; padding: 9px 11px;
+  background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 9px; outline: none;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.card form .row > input:focus, .card form.row > input:focus,
+.card form .row > select:focus, .card form.row > select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.card form .row > input::placeholder, .card form.row > input::placeholder { color: var(--muted); }
+#password-form .row > input { flex: 1 1 180px; }
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
@@ -1644,6 +1673,25 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
                display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
                font-size: 12.5px; color: var(--muted); }
 
+/* ---------- the plan confirmation (console) ---------- */
+.confirm-dialog {
+  width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  overflow: auto; padding: 22px 22px 18px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-lit); border-radius: 14px;
+}
+.confirm-dialog::backdrop { background: rgba(3,5,10,.72); }
+.confirm-title { margin: 0 0 12px; font-size: 19px; font-weight: 650; }
+.confirm-terms { margin: 0; display: grid; gap: 10px; }
+.confirm-terms dt {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.confirm-terms dd { margin: 2px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.confirm-out { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.confirm-out:empty { display: none; }
+.confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.
@@ -1845,6 +1893,15 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 }
 .panel .steps li { overflow-wrap: anywhere; }
 
+/* "What you need" (sensor_guides.what_you_need_html), on /pricing and
+   /help/sensors. */
+.need h2 { margin-top: 0; }
+.need h3 { font-size: 15px; margin: 18px 0 6px; color: var(--ink); }
+.need p, .need li { color: var(--ink-2); line-height: 1.6; }
+.need ul, .need ol { padding-left: 22px; margin: 0; display: grid; gap: 6px; }
+.plan-gets { margin: 0; padding-left: 16px; display: grid; gap: 3px; min-width: 220px; }
+.plan-gets li { font-size: 13px; color: var(--ink-2); }
+
 </style>
 </head>
 <body>
@@ -1880,16 +1937,17 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 
   <h2>Common questions</h2>
   <details class="qa" id="trial"><summary>How long is the free trial, and do I need a card?</summary><div class="qa-body"><p>The trial lasts 14 days and covers up to 5 sensors. You do not give us a card to start it, and nothing is charged while it runs.</p><p>When it ends, your sensors are still watched for 14 more days. To keep going after that, the owner picks a paid plan under What you pay, in the Money tab.</p><p>Started with a friend's referral code? Your trial is 30 days. Your own code is under Bring a friend, in the Money tab (owners only): when a business that used it pays its first invoice, you get a month free on one location, up to 12 times a year.</p></div></details>
+<details class="qa" id="hardware"><summary>Do I need to buy sensors? Do you sell them?</summary><div class="qa-body"><p>We do not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and set it to send its readings to us. <a href="sensors.html#what-you-need">What you need, roughly what it costs, and how to set it up</a>.</p></div></details>
 <details class="qa" id="price"><summary>What does it cost?</summary><div class="qa-body"><p>Restaurants: $149 a month per location; Pharmacies: $199 a month per pharmacy. Each price covers up to 10 fridges and freezers at that location; each one past 10 at the same location is $15 a month.</p><p>A small café or shop can take Starter instead: $59 a month for one location and up to 3 fridges or freezers.</p><p>Every other trade: custom pricing — ask for a quote. <a class="talk-link" href="help.html#help">Talk to us</a>.</p><p>Chain discounts for restaurants and pharmacies: 10% off each location from 5 locations, 20% off from 20. For example, 20 restaurants pay $119.20 each, $2,384 a month. It comes off automatically, on its own line of the invoice.</p><p>There is no setup fee. The published prices are on the pricing page, with a calculator that works out your monthly or yearly price.</p></div></details>
 <details class="qa" id="yearly"><summary>Can I pay yearly, and what if I cancel?</summary><div class="qa-body"><p>Yes. Paying yearly costs 10 times the monthly price and covers 12 months: 2 months free. It covers everything on the bill, after any chain discount. You get one invoice for the year and nothing until it renews, except a prorated charge for the rest of the year if you add a location or units.</p><p>We email 30 and 7 days before the year renews. You can switch between monthly and yearly at renewal: an owner changes it under Money, Contract, and the change starts when what you have paid for runs out.</p><p><b>Cancelling:</b> Cancel any time. Nothing more is billed after you cancel, and the service carries on to the end of the month or year you have already paid for. What you have already paid is not refunded, in part or in full.</p></div></details>
 <details class="qa" id="extras"><summary>Are there extras, or a share of what you save me?</summary><div class="qa-body"><p>Never a share of savings. The optional extras are flat monthly fees: Certified Compliance Vault ($499 a month), Sector Benchmarks ($299 a month), Equipment Intelligence ($399 a month), Kitchen Safety Bundle ($29 a month per location).</p><p>The Kitchen Safety Bundle sends each day's fridge and freezer record to OmniArmor, which fills in its temperature-log checks, and includes OmniArmor Pro for that location. Connect it under Setup, OmniArmor connection. It is free during the trial and billed while it is connected.</p><p>Paying yearly makes the extras 2 months free too, like everything else on the bill.</p></div></details>
 <details class="qa" id="plans"><summary>What is the difference between the plans?</summary><div class="qa-body"><p>Plans set how many sensors you can run and whether we phone people. Trial: up to 5 sensors, text alerts only. Starter: up to 3 sensors, text alerts only. Growth: up to 50 sensors, with phone calls. Enterprise: up to 1,000 sensors, with phone calls.</p><p>Starter is $59 a month for one location, with texts and the site-wide alert. A unit past 3, or a second location, asks you to move to Growth first; nothing is charged until you do, and then only from the day you move.</p></div></details>
 <details class="qa" id="alerts"><summary>What happens when a fridge goes out of range?</summary><div class="qa-body"><p>Every reading is checked against the safe range for your trade, or the one you set for that unit. When a reading is out of range we open one problem for it and text everyone on call, within 60 seconds. More readings from the same fridge update that problem instead of sending more texts.</p><p>If your team uses Slack, Teams or PagerDuty, a copy goes there as well.</p></div></details>
-<details class="qa" id="escalation"><summary>What if nobody answers the text?</summary><div class="qa-body"><p>If nobody acknowledges the problem within 10 minutes, we phone the people on call, in the order you set, until one of them answers and presses 1. Phone calls come with the Growth and Enterprise plans; the Trial and Starter plans send texts only.</p><p>If a text fails to send, we try it again 1, 5 and 15 minutes after the problem opened.</p></div></details>
-<details class="qa" id="test-alert"><summary>How do I check the alerts really reach us?</summary><div class="qa-body"><p>Send a test alert. In the console, open the People tab, find Who gets called and press Send a test alert. Everyone on the list gets a text that starts “TEST” and says nothing is wrong. On a plan with phone calls you can also ring the first person. It is also the last step of Getting started, at the top of the console.</p><p>A test opens no problem and chases nobody. Owners and operators can send one every 10 minutes, up to 5 a day.</p></div></details>
+<details class="qa" id="escalation"><summary>What if nobody answers the text?</summary><div class="qa-body"><p>If nobody acknowledges the problem within 10 minutes, we phone the people on call, in the order you set, until one of them answers and presses 1. Phone calls come with the Growth and Enterprise plans; the Trial and Starter plans send texts only. The free trial includes 5 phone calls in all (about a minute each), so you can hear what an alert call sounds like.</p><p>If a text fails to send, we try it again 1, 5 and 15 minutes after the problem opened.</p></div></details>
+<details class="qa" id="test-alert"><summary>How do I check the alerts really reach us?</summary><div class="qa-body"><p>Send a test alert. In the console, open the People tab, find Who gets called and press Send a test alert. Everyone on the list gets a text that starts “TEST” and says nothing is wrong. On a plan with phone calls, or with one of the trial's few calls, you can also ring the first person. It is also the last step of Getting started, at the top of the console.</p><p>A test opens no problem and chases nobody. Owners and operators can send one every 10 minutes, up to 5 a day.</p></div></details>
 <details class="qa" id="offline"><summary>A sensor says offline. What do I do?</summary><div class="qa-body"><p>We have not heard from it for 30 minutes. Follow the <a href="#sensor-offline">steps below</a>: power, gateway, signal, key, and account.</p></div></details>
-<details class="qa" id="defrost"><summary>My freezer warmed up during defrost. Why no alert?</summary><div class="qa-body"><p>Freezers warm up for a while on a timer to defrost. Once we have seen a unit do this regularly, a warm spell that comes on time and is no warmer than usual is recorded but does not wake anybody. If it lasts too long or gets warmer than usual, the alert goes out as normal.</p></div></details>
-<details class="qa" id="site-wide"><summary>What if many fridges warm up at once?</summary><div class="qa-body"><p>When several units at one site start warming at about the same time (by default 3 or more, or half of the site's units, within 20 minutes, and 2 at night), or units at several of your sites do, we send one urgent site-wide alert on top of each unit's own. It can mean a power cut, a door left open, or someone tampering with the fridge controls.</p><p>It goes straight away to everyone on call for that site and to the business's own number, quiet hours or not, and on a plan with calls we phone every one of them straight away rather than after the usual 10 minutes. Reply 1 or press Acknowledge to stop it.</p><p>We read our own sensors and never control a fridge, so we still see the warming if the fridge's own controls have been taken over, and nobody can use us to change one. We find out in minutes and call your team; we cannot stop an attack.</p></div></details>
+<details class="qa" id="defrost"><summary>My freezer warmed up during defrost. Why no alert?</summary><div class="qa-body"><p>Freezers warm up for a while on a timer to defrost. Once we have seen a unit do this regularly, a warm spell that comes on time and is no warmer than usual is recorded but does not wake anybody. If it lasts much longer than its usual defrosts, or longer than 45 minutes at all, or gets warmer than usual, the alert goes out as normal: a defrost stretched on purpose, by someone who has taken over the fridge controls, still alerts.</p></div></details>
+<details class="qa" id="site-wide"><summary>What if many fridges warm up at once?</summary><div class="qa-body"><p>When several units at one site start warming at about the same time (by default 3 or more, or half of the site's units, within 20 minutes, and 2 at night), or units at several of your sites do, we send one urgent site-wide alert on top of each unit's own. It can mean a power cut, a door left open, or someone tampering with the fridge controls.</p><p>It goes straight away to everyone on call for that site and to the business's own number, quiet hours or not, and on a plan with calls we phone every one of them straight away rather than after the usual 10 minutes. Reply 1 or press Acknowledge to stop it.</p><p>We read separate sensors (ones you buy from a sensor maker), not the fridge's own controls, and never control a fridge, so we still see the warming if the fridge's own controls have been taken over, and nobody can use us to change one. We find out in minutes and call your team; we cannot stop an attack.</p></div></details>
 <details class="qa" id="units"><summary>Can I see temperatures in Celsius?</summary><div class="qa-body"><p>Yes. Press the °F button at the top of the console to switch between Fahrenheit and Celsius. Reports and documents use the unit you pick.</p></div></details>
 <details class="qa" id="export"><summary>How do I download our data?</summary><div class="qa-body"><p>An owner opens the Setup tab, finds Download or delete everything, and presses Download everything. You get one file with every record we keep for the business. Passwords and keys are never included.</p><p>We keep the newest 500 readings for each sensor, plus the readings around every alert. Download regularly if you need a longer history.</p></div></details>
 <details class="qa" id="delete"><summary>How do I delete our account and data?</summary><div class="qa-body"><p>An owner opens the Setup tab, finds Download or delete everything, types the business's name and their password, and presses Delete everything. It happens straight away and cannot be undone, so download a copy first.</p><p>Anything owed must be paid first. We keep only the bills already sent, because the law says we must.</p></div></details>

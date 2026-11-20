@@ -841,8 +841,9 @@ def _landing_facts() -> Dict[str, str]:
     a front page that will one day quote one the product does not charge.
     These come off the rate card and the plan tiers as they are now.
     """
+    from costs import TRIAL_CALLS_TOTAL
     from helpdesk import talk_to_us
-    from pricing import headline
+    from pricing import PRICE_BOOK, headline
 
     facts = headline()
     talk = talk_to_us()
@@ -851,8 +852,15 @@ def _landing_facts() -> Dict[str, str]:
         # Where a sector card priced by quote sends "Talk to us".
         "%%TALK_HREF%%": talk["href"],
         "%%TALK_ADDRESS%%": talk["address"],
-        "%%FROM_PRICE%%": facts["from_label"],
+        # "From" is the lowest price anybody can pay: Starter's flat price.
+        # The hero said "from $149" while the plans below it said $59, and
+        # the console header said something else again.
+        "%%FROM_PRICE%%": min(facts["starter_label"], facts["from_label"],
+                              key=lambda label: float(label.strip("$").replace(",", ""))),
         "%%FROM_UNIT%%": facts["from_unit"],
+        "%%STARTER_UNITS%%": str(facts["starter_units"]),
+        "%%RESTAURANT_PRICE%%": f"${PRICE_BOOK['restaurant']['monthly_usd']:,.0f}",
+        "%%TRIAL_CALLS%%": str(TRIAL_CALLS_TOTAL),
         "%%TRIAL_DAYS%%": str(facts["trial_days"]),
         "%%TRIAL_UNITS%%": str(facts["trial_units"]),
         "%%INDUSTRIES_MORE%%": str(max(0, facts["industries"] - named)),
@@ -953,7 +961,10 @@ def landing_page(request: Request):
     password was for. The console has moved to /console, where the people
     who have one will look for it.
     """
-    return _serve_page(LANDING_HTML, request, _landing_facts())
+    from sensor_guides import what_you_need_html
+
+    return _serve_page(LANDING_HTML, request, _landing_facts(),
+                       markup={"%%WHAT_YOU_NEED%%": what_you_need_html(2)})
 
 
 @app.get("/console", include_in_schema=False)
@@ -1224,15 +1235,51 @@ def demo_page(request: Request):
                        {"%%TRIAL_DAYS%%": str(headline()["trial_days"])})
 
 
-@app.get("/book", include_in_schema=False)
-def book_page():
-    """The operator's own view of the whole customer book.
+def _is_operator(request: Request) -> bool:
+    """Whether the browser has given the platform admin key (HTTP Basic).
 
-    Served to anyone; it renders nothing until the platform key is
-    supplied, and every figure on it comes from an endpoint that checks
-    that key. The page itself holds no secret.
+    Any user name; the password is CYBERLOGIX_ADMIN_KEY. Compared in
+    constant time, and never when no key is configured.
     """
-    return _html_file(BOOK_HTML)
+    import base64
+    import secrets as _secrets
+
+    from auth import PLATFORM_ADMIN_KEY
+
+    header = request.headers.get("authorization", "")
+    if not PLATFORM_ADMIN_KEY or not header.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[6:].strip()).decode("utf-8")
+    except Exception:  # noqa: BLE001 - a malformed header is no credential
+        return False
+    _, _, password = decoded.partition(":")
+    return _secrets.compare_digest(password.encode(), PLATFORM_ADMIN_KEY.encode())
+
+
+@app.get("/book", include_in_schema=False)
+def book_page(request: Request):
+    """The operator's own view of the whole customer book. Operators only.
+
+    A member of the public who found the address was shown a branded
+    "Platform admin key" prompt. Now anyone without the key gets the
+    ordinary "page not found", and nothing says an operator page is here.
+    The operator opens /book?sign-in, which asks the browser for the key
+    (any user name, the admin key as the password); the browser then
+    sends it with every later visit. Every figure on the page still comes
+    from an endpoint that checks the key itself, and the page holds no
+    secret.
+    """
+    from auth import PLATFORM_ADMIN_KEY
+
+    if _is_operator(request):
+        return _html_file(BOOK_HTML)
+    if "sign-in" in request.query_params and PLATFORM_ADMIN_KEY:
+        return HTMLResponse(
+            "Operators only.", status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="CyberLogix operator", charset="UTF-8"',
+                     "X-Robots-Tag": "noindex, nofollow"})
+    return _error_page(request, 404)
 
 
 @app.get("/reset", include_in_schema=False)
@@ -1265,8 +1312,11 @@ def pricing_page(request: Request):
     the markup by static/pricing.js, so the page cannot quote a price the
     invoice will not charge.
     """
+    from sensor_guides import what_you_need_html
+
     return _serve_page(PRICING_HTML, request, _pricing_text(),
-                       markup=_pricing_markup())
+                       markup={**_pricing_markup(),
+                               "%%WHAT_YOU_NEED%%": what_you_need_html(2, with_steps=False)})
 
 
 @app.get("/help", include_in_schema=False)
@@ -1528,11 +1578,24 @@ def _pricing_markup() -> Dict[str, str]:
         f'<span class="per-year">{money(ph["each_yearly_usd"])} a&nbsp;year</span></td></tr>'
         for r, ph in zip(restaurant, pharmacy))
 
+    from costs import TRIAL_CALLS_TOTAL
+    from pricing import add_ons_words, plan_features
+
+    def calls(key: str, t) -> str:
+        if t["voice_escalation"]:
+            return "Yes"
+        if key == "trial":
+            return f"{TRIAL_CALLS_TOTAL} to try"
+        return "No, texts only"
+
     plan_rows = "".join(
         f'<tr><td>{e(t["name"])}</td><td class="num">{t["max_sensors"]:,}</td>'
-        f'<td>{"Yes" if t["voice_escalation"] else "No, texts only"}</td>'
+        f'<td>{e(calls(key, t))}</td>'
         f'<td>{e(term(int(t["term_days"])))}</td>'
-        f'<td>{e(plan_price(key))}</td></tr>'
+        f'<td>{e(plan_price(key))}</td>'
+        f'<td><ul class="plan-gets">'
+        + "".join(f"<li>{e(line)}</li>" for line in plan_features(key))
+        + '</ul></td></tr>'
         for key, t in PLAN_TIERS.items())
     return {
         "%%RATE_OPTIONS%%": options,
@@ -1540,6 +1603,7 @@ def _pricing_markup() -> Dict[str, str]:
         "%%ADDON_CHECKBOXES%%": addon_boxes,
         "%%ADDON_ROWS%%": addon_rows,
         "%%PLAN_ROWS%%": plan_rows,
+        "%%ADDONS_WORDS%%": e(add_ons_words()),
         "%%CHAIN_ROWS%%": chain_rows,
         "%%STARTER_POINTS%%": starter_points,
         "%%TALK_LINK%%": talk,

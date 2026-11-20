@@ -175,6 +175,19 @@ class SignupRequest(BaseModel):
     )
 
 
+# The kinds of business most people signing up actually run, first in the
+# picker and in their own words. Each is one of the sectors underneath: a
+# shop's fridges are a kitchen's fridges, and a clinic's vaccine fridge is
+# a pharmacy's. Chosen here, the sector key is what is stored.
+COMMON_KINDS = [
+    {"key": "restaurant", "name": "Restaurant or café", "sector": "restaurant"},
+    {"key": "shop", "name": "Shop, grocery or convenience store", "sector": "restaurant"},
+    {"key": "pharmacy", "name": "Pharmacy", "sector": "pharmacy"},
+    {"key": "clinic", "name": "Clinic (doctor, dentist, vet or vaccines)", "sector": "pharmacy"},
+]
+_KIND_TO_SECTOR = {k["key"]: k["sector"] for k in COMMON_KINDS}
+
+
 @router.get("/sectors")
 def sectors():
     """What to offer in the sector picker, and the trial's shape."""
@@ -200,6 +213,8 @@ def sectors():
         # None when it is off, and then nothing is said about it.
         "founder": founder_offer(),
         "min_password_length": MIN_PASSWORD_LENGTH,
+        # Shown first, in plain words; every sector follows under "Other".
+        "common": [{"key": k["key"], "name": k["name"]} for k in COMMON_KINDS],
         "sectors": [
             {
                 "key": key,
@@ -236,6 +251,7 @@ def start_trial(payload: SignupRequest, request: Request):
         )
 
     vertical = (payload.industry_vertical or "").strip().lower()
+    vertical = _KIND_TO_SECTOR.get(vertical, vertical)
     if vertical and vertical not in INDUSTRY_PROFILES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -56,14 +56,27 @@ PEOPLE = [
     {"name": "Alex", "role": "Head chef"},
 ]
 
-# The units, each with the limit a kitchen would set for it. The restaurant
-# profile's own limit is a freezer's; a cooler or a fridge is given its
-# own, as an owner would in the console.
+# The units, each on the limit the product itself gives it when it is
+# added: the add form's "Fridge or freezer?" answer (domain.UNIT_KINDS).
+# The demo used to hand-set its own limits while a real walk-in cooler was
+# given a freezer's 32°F, so the demo and the product disagreed.
+def _limit(kind: str) -> float:
+    from domain import unit_kind_limits
+
+    limits = unit_kind_limits("restaurant", kind)
+    assert limits is not None and limits[0] is not None
+    return limits[0]
+
+
 UNITS: List[Dict[str, Any]] = [
-    {"id": "WALK-IN-1", "name": "Walk-in cooler", "limit_f": 41.0, "start_f": 37.2},
-    {"id": "FREEZER-1", "name": "Freezer", "limit_f": 10.0, "start_f": -1.5},
-    {"id": "PREP-1", "name": "Prep fridge", "limit_f": 41.0, "start_f": 36.4},
-    {"id": "BAR-1", "name": "Bar fridge", "limit_f": 45.0, "start_f": 39.0},
+    {"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge",
+     "limit_f": _limit("fridge"), "start_f": 37.2},
+    {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer",
+     "limit_f": _limit("freezer"), "start_f": -1.5},
+    {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge",
+     "limit_f": _limit("fridge"), "start_f": 36.4},
+    {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge",
+     "limit_f": _limit("fridge"), "start_f": 37.0},
 ]
 DRIFTING = "WALK-IN-1"
 

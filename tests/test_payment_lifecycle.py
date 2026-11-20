@@ -225,7 +225,9 @@ class Business:
         # Nobody answers, so the sweep phones them, on a plan with calls.
         incident.opened_at -= timedelta(minutes=VOICE_ESCALATION_GRACE_MINUTES + 1)
         STORE._db.put("incident", incident.incident_id, incident.to_row())
-        calls = 1 if self.tenant.entitlements()["voice_escalation"] else 0
+        # A plan with calls, or a trial with some of its few calls left.
+        from costs import calls_allowed
+        calls = 1 if calls_allowed(self.tenant) else 0
         swept = sweep_tenant(self.tenant, auto_escalate=True)
         assert swept["voice_calls_placed"] == calls, swept
         assert len(phone["calls"]) == calls_before + calls
@@ -303,7 +305,7 @@ def test_trial_paid_late_paid_by_card(api, stripe, phone, mailbox, admin_headers
 
     # ---- 2. Paid ---------------------------------------------------------
     upgraded = api.post("/api/licenses/me/plan", headers=biz.owner,
-                        json={"plan": "growth"})
+                        json={"plan": "growth", "confirm": True})
     assert upgraded.status_code == 200, upgraded.text
     signed = api.post("/api/contracts", headers=biz.owner,
                       json={"term_years": 1, "escalator_percent": 5.0})
@@ -459,7 +461,7 @@ def test_a_contract_customer_is_watched_while_a_bill_is_unpaid(
     walk-in is still watched, still texted about and still phoned about."""
     biz = Business(api)
     assert api.post("/api/licenses/me/plan", headers=biz.owner,
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/contracts", headers=biz.owner,
                     json={"term_years": 1}).status_code == 201
     run_billing()
@@ -491,7 +493,7 @@ def test_without_a_contract_the_licence_still_runs_out(api, phone):
 def test_a_cancelled_contract_does_not_keep_the_licence_on(api, phone):
     biz = Business(api)
     assert api.post("/api/licenses/me/plan", headers=biz.owner,
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/contracts", headers=biz.owner,
                     json={"term_years": 1}).status_code == 201
     sub = STORE.active_subscription(biz.tenant_id)
@@ -514,7 +516,7 @@ def test_a_contract_customer_is_not_told_their_monitoring_is_ending(api, stripe)
     assert "ends" in (biz.account()["headline"] or "")
 
     assert api.post("/api/licenses/me/plan", headers=biz.owner,
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/contracts", headers=biz.owner,
                     json={"term_years": 1}).status_code == 201
 
@@ -540,7 +542,7 @@ def test_the_console_offers_the_pay_link_on_the_banner():
 def billed(api, stripe, mailbox):
     biz = Business(api)
     assert api.post("/api/licenses/me/plan", headers=biz.owner,
-                    json={"plan": "growth"}).status_code == 200
+                    json={"plan": "growth", "confirm": True}).status_code == 200
     assert api.post("/api/contracts", headers=biz.owner,
                     json={"term_years": 1}).status_code == 201
     run_billing()

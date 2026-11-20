@@ -17,7 +17,7 @@ def test_every_vertical_offers_a_shortcut(api):
     body = api.get("/api/shortcuts").json()
     assert body["count"] == len(INDUSTRY_PROFILES)
     names = {s["vertical"]: s["shortcut_name"] for s in body["shortcuts"]}
-    assert names["restaurant"] == "Health Inspector Log Formatter"
+    assert names["restaurant"] == "Health Inspector Temperature Log"
     assert names["logistics"] == "Reefer Cargo Handover Pass"
     assert names["medical_lab"] == "OSHA Cold-Storage Specimen Audit"
     assert all(s["description"] for s in body["shortcuts"])
@@ -32,7 +32,7 @@ def test_shortcut_is_generated_from_real_readings(
 
     body = api.post("/api/shortcuts/restaurant?days=30", headers=headers).json()
     assert body["status"] == "SHORTCUT_GENERATED"
-    assert body["shortcut_name"] == "Health Inspector Log Formatter"
+    assert body["shortcut_name"] == "Health Inspector Temperature Log"
     assert body["document_source"] == "gemini"
     assert body["document"].startswith("HEALTH DEPARTMENT")
 
@@ -90,7 +90,7 @@ def test_fallback_document_still_carries_the_figures(
     body = api.post("/api/shortcuts/restaurant", headers=headers).json()
     assert body["document_source"] == "fallback_template"
     document = body["document"]
-    assert "Health Inspector Log Formatter" in document
+    assert "Health Inspector Temperature Log" in document
     assert "FRZ-1" in document
     assert "Readings logged: 3" in document
     assert "Excursions outside the safe band: 1" in document
@@ -125,7 +125,7 @@ def test_generation_is_audited_under_the_operator(
     trail = api.get("/api/accounts/audit", headers=headers).json()
     entry = [e for e in trail["entries"] if e["action"] == "shortcut.generated"][0]
     assert entry["actor"] == "Dana Reyes <dana@example.com>"
-    assert "Health Inspector Log Formatter" in entry["detail"]
+    assert "Health Inspector Temperature Log" in entry["detail"]
 
 
 def test_shortcuts_require_authentication(api):

@@ -132,7 +132,7 @@ def test_the_breaking_pulse_actually_breaks(walkthrough):
     fourth = walkthrough[3].json()
     assert "incident_id" in fourth, fourth
     assert fourth["temperature_fahrenheit"] == 61.0
-    assert "32.0" in fourth["breach_details"]
+    assert "41.0" in fourth["breach_details"]
     # "and texts the roster" — composed and attempted, whatever Twilio says.
     assert fourth["dispatched_sms_text"]
     assert fourth["sms_delivery"]["to"]

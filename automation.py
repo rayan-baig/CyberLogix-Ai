@@ -612,7 +612,9 @@ def _retry_failed_calls(tenant: Tenant, now, auto_escalate: bool) -> List[Dict[s
     first call, claimed and stored before dialling like the first.
     """
     actions: List[Dict[str, Any]] = []
-    if not auto_escalate or not tenant.entitlements()["voice_escalation"]:
+    from costs import calls_allowed
+
+    if not auto_escalate or not calls_allowed(tenant):
         return actions
     for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
         step = incident.voice_retry_due(now)
@@ -713,7 +715,10 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
 
     actions.extend(_retry_failed_alert_texts(tenant, now, auto_escalate))
 
-    voice_allowed = tenant.entitlements()["voice_escalation"]
+    from costs import calls_allowed
+
+    # A plan with calls, or a free trial with some of its few calls left.
+    voice_allowed = calls_allowed(tenant)
     escalated = 0
 
     for incident in STORE.open_incidents(tenant.tenant_id, include_site_wide=True):
@@ -745,8 +750,11 @@ def sweep_tenant(tenant: Tenant, auto_escalate: bool = True) -> Dict[str, Any]:
                     "sensor_id": incident.sensor_id,
                     "minutes_unacknowledged": incident.minutes_open(now),
                     "detail": (
+                        "The free trial's phone calls have been used; "
+                        "a plan with calls (Growth) rings phones again."
+                        if tenant.plan == "trial" else
                         f"The {tenant.entitlements()['name']} plan does not "
-                        "include voice escalation. Upgrade to unlock it."
+                        "include phone calls. Growth includes them."
                     ),
                 }
             )

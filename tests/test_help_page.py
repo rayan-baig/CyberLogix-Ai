@@ -22,10 +22,11 @@ def _answer(item_id):
     return " ".join(item["a"])
 
 
-def test_there_are_twelve_to_sixteen_real_questions():
-    # Sixteen since paying yearly and cancelling got a question of their own.
+def test_there_are_twelve_to_seventeen_real_questions():
+    # Sixteen since paying yearly and cancelling got a question of their own;
+    # seventeen since "do I need to buy sensors?" did (3.19.0).
     items = helpdesk.faq()
-    assert 12 <= len(items) <= 16
+    assert 12 <= len(items) <= 17
     assert len({i["id"] for i in items}) == len(items)
     for item in items:
         assert item["q"].strip() and item["a"]

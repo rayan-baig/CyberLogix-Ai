@@ -125,7 +125,7 @@ def test_a_lapsed_customer_can_still_upgrade_and_pay(api, trial):
     headers = {**key, **bearer}
 
     moved = api.post("/api/licenses/me/plan", headers=headers,
-                     json={"plan": "growth"})
+                     json={"plan": "growth", "confirm": True})
     assert moved.status_code == 200, moved.text
 
     signed = api.post("/api/contracts", headers=headers,
@@ -141,7 +141,7 @@ def test_upgrading_restores_monitoring_at_once(api, trial):
     }).status_code == 402
 
     api.post("/api/licenses/me/plan", headers={**key, **bearer},
-             json={"plan": "growth"})
+             json={"plan": "growth", "confirm": True})
     assert api.post("/api/sensor-pulse", headers=key, json={
         "sensor_id": "FRIDGE-1", "temperature_fahrenheit": 40.0
     }).status_code == 200
@@ -154,7 +154,7 @@ def test_a_lapsed_customer_can_still_read_and_settle_invoices(
 
     key, bearer, tenant = trial
     headers = {**key, **bearer}
-    api.post("/api/licenses/me/plan", headers=headers, json={"plan": "growth"})
+    api.post("/api/licenses/me/plan", headers=headers, json={"plan": "growth", "confirm": True})
     api.post("/api/contracts", headers=headers, json={"term_years": 1})
     run_billing()
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]

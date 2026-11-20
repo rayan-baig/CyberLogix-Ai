@@ -20,9 +20,9 @@ def _estate(api, operator_factory, sensor_factory, company="Harbor Grill",
             email="owner@example.com", prefix="HG"):
     headers, tenant, _ = operator_factory(company_name=company, email=email)
     sensor_factory(headers, sensor_id=f"{prefix}-WALKIN", vertical="restaurant",
-                   location="Kitchen walk-in")
+                   location="Kitchen walk-in", above=32.0)
     sensor_factory(headers, sensor_id=f"{prefix}-BAR", vertical="restaurant",
-                   location="Bar freezer")
+                   location="Bar freezer", above=32.0)
     for temp in (20.0, 22.0, 45.0, 58.0):
         api.post("/api/sensor-pulse", headers=headers,
                  json={"sensor_id": f"{prefix}-WALKIN", "temperature_fahrenheit": temp})
@@ -150,7 +150,7 @@ def test_the_invoice_prints_with_its_period_and_the_company_footer(
 
     monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "admin-key-for-tests-1234")
     headers, tenant, _ = operator_factory(company_name="Harbor Grill")
-    sensor_factory(headers, sensor_id="HG-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="HG-1", vertical="restaurant", above=32.0)
     made = api.post(f"/api/invoices?tenant_id={tenant['tenant_id']}",
                     headers={"X-CyberLogix-Admin": "admin-key-for-tests-1234"},
                     json={"period_days": 30})

@@ -83,15 +83,16 @@
 }
 
 /* ---------- scrolling into view ---------- */
+/* Only a small rise, never hidden: a page captured without scrolling (a
+   link preview, a full-page screenshot, a crawler) used to come out as a
+   headline and a blank page, because everything below the fold waited at
+   opacity 0 for a scroll that never came. */
 .motion [data-reveal] {
-  opacity: 0;
-  transform: translateY(26px);
-  filter: blur(6px);
-  transition: opacity .8s var(--ease), transform .8s var(--ease),
-              filter .8s var(--ease);
+  transform: translateY(14px);
+  transition: transform .8s var(--ease);
   transition-delay: calc(var(--d, 0) * 90ms);
 }
-.motion [data-reveal].in { opacity: 1; transform: none; filter: none; }
+.motion [data-reveal].in { transform: none; }
 
 /* section headings draw a line under themselves as they arrive */
 .motion h2[data-reveal] { position: relative; padding-bottom: 12px; }

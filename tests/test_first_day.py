@@ -18,7 +18,7 @@ import pytest
 import firstday
 import industries
 import simulator
-from pricing import PRICE_BOOK, headline
+from pricing import headline
 from store import INDUSTRY_PROFILES, PLAN_TIERS, STORE
 from pages import page_source, served_page
 
@@ -102,22 +102,26 @@ def test_the_first_screen_says_who_it_is_for_the_price_and_the_trial(api):
     hero = page[page.index('<section class="hero">'):page.index("</section>")]
 
     assert "Who it is for" in hero
-    assert f"From {facts['from_label']} a month per {facts['from_unit']}" in hero
+    # The lowest price anybody pays: Starter's. The plans and the console
+    # say the same "from".
+    assert f"From {facts['starter_label']} a month" in hero
     assert (f"{facts['trial_days']} days on up to {facts['trial_units']} "
-            "sensors. No card.") in hero
+            "sensors, with ") in hero and "No card." in hero
     assert "%%" not in page, "a token was left unsubstituted"
 
 
 def test_the_figures_come_off_the_rate_card_not_the_page(api, monkeypatch):
     """Change the rate card and the trial, and the front page follows.
     A figure typed into the HTML would not."""
-    monkeypatch.setitem(PRICE_BOOK["restaurant"], "monthly_usd", 139.0)
+    import pricing
+
+    monkeypatch.setattr(pricing, "STARTER_MONTHLY_USD", 49.0)
     monkeypatch.setitem(PLAN_TIERS["trial"], "term_days", 21)
     monkeypatch.setitem(PLAN_TIERS["trial"], "max_sensors", 7)
 
     page = api.get("/").text
 
-    assert "From $139 a month per location" in page
+    assert "From $49 a month" in page
     assert "21 days on up to 7 sensors" in page
     assert not re.search(r"\$\d", LANDING), "the page source carries a price"
     hero = LANDING[LANDING.index('<section class="hero">'):]
@@ -128,10 +132,15 @@ def test_the_figures_come_off_the_rate_card_not_the_page(api, monkeypatch):
 
 
 def test_the_trades_named_on_the_front_page_are_ones_the_product_covers(api):
-    for vertical in ("restaurant", "pharmacy", "medical_lab", "cybersecurity"):
-        assert vertical in INDUSTRY_PROFILES
-    more = len(INDUSTRY_PROFILES) - 4
-    assert f"data centres and\n          {more} more" in api.get("/").text
+    """Restaurants, cafés, shops, pharmacies and clinics: each is a kind of
+    business sign-up offers first, and each maps to a real sector."""
+    from signup import COMMON_KINDS
+
+    assert "Restaurants, caf&eacute;s, shops, pharmacies and clinics." in api.get("/").text
+    names = " ".join(k["name"] for k in COMMON_KINDS).lower()
+    for word in ("restaurant", "café", "shop", "pharmacy", "clinic"):
+        assert word in names
+    assert all(k["sector"] in INDUSTRY_PROFILES for k in COMMON_KINDS)
 
 
 def test_the_trial_on_the_front_page_needs_no_card():
@@ -158,7 +167,7 @@ def test_each_industry_page_states_the_fix_with_the_limit_it_alarms_on(vertical)
         if bound is not None:
             assert f"{bound:g}°F" in fix, f"{vertical}: the fix omits {bound}"
     assert "None" not in fix and "None" not in page["band"]
-    assert page["band"].endswith("°F"), "a limit with no unit is not a limit"
+    assert "°F" in page["band"], "a limit with no unit is not a limit"
 
 
 def test_the_industry_page_leads_with_the_problem_then_the_fix(api):
@@ -167,7 +176,11 @@ def test_the_industry_page_leads_with_the_problem_then_the_fix(api):
     fix = html.index("<h2>The fix</h2>")
     assert problem < fix
     assert "${esc(d.fix)}" in html[fix:fix + 200]
-    assert "under 32°F" in api.get("/api/for/restaurant").json()["band"]
+    # A fridge's limit, and a freezer's: never a freezer's limit for a
+    # walk-in cooler, which told every owner a healthy 37°F cooler failed.
+    band = api.get("/api/for/restaurant").json()["band"]
+    assert "under 41°F (fridges)" in band and "under 10°F (freezers)" in band
+    assert "32°F" not in band
 
 
 # --- C4: the checklist ticks itself -------------------------------------------
@@ -178,19 +191,23 @@ def test_a_new_business_starts_with_nothing_ticked(api):
 
     steps, complete = _steps(api, owner)
 
-    assert steps == {"sensor": False, "oncall": False, "test": False}
+    assert steps == {"sensor": False, "oncall": False, "reading": False,
+                     "test": False}
     assert complete is False
 
 
-def test_getting_started_is_three_steps_in_order(api):
-    """Add your first sensor, add who gets alerts, send a test alert:
-    the whole of "this fridge is protected", and nothing more."""
+def test_getting_started_is_four_steps_in_order(api):
+    """Add your first sensor, add who gets alerts, see its first reading,
+    send a test alert: the whole of "this fridge is protected". The third
+    step is the reading, because a sensor that never reports protects
+    nothing."""
     owner, _, _ = _sign_up(api)
     body = api.get("/api/console/overview", headers=owner).json()["first_day"]
 
     assert [s["label"] for s in body["steps"]] == [
-        "Add your first sensor", "Add who gets alerts", "Send a test alert"]
-    assert body["total"] == 3 and body["done"] == 0
+        "Add your first sensor", "Add who gets alerts",
+        "First reading received", "Send a test alert"]
+    assert body["total"] == 4 and body["done"] == 0
 
 
 def test_each_box_ticks_from_what_the_account_holds(api, wire):
@@ -200,7 +217,7 @@ def test_each_box_ticks_from_what_the_account_holds(api, wire):
     api.post("/api/sites", headers=owner, json={"name": "Harbour Street"})
     assert set(_steps(api, owner)[0].values()) == {False}
 
-    api.post("/api/licenses/me/sensors", headers=owner, json={
+    added = api.post("/api/licenses/me/sensors", headers=owner, json={
         "sensor_id": "WALKIN-1", "industry_vertical": "restaurant",
         "location_name": "Kitchen walk-in"})
     assert _steps(api, owner)[0]["sensor"] is True
@@ -211,7 +228,15 @@ def test_each_box_ticks_from_what_the_account_holds(api, wire):
 
     assert api.post("/api/contacts/test-alert", headers=owner).status_code == 200
     steps, complete = _steps(api, owner)
-    assert steps["test"] is True and complete is True
+    # Everything set up, and still not "protected": nothing has reported.
+    assert steps["test"] is True and steps["reading"] is False
+    assert complete is False
+
+    reading_headers = {"X-CyberLogix-Sensor-Key": added.json()["ingest_key"]}
+    assert api.post("/api/sensor-pulse", headers=reading_headers, json={
+        "sensor_id": "WALKIN-1", "temperature_fahrenheit": 37.0}).status_code == 200
+    steps, complete = _steps(api, owner)
+    assert steps["reading"] is True and complete is True
 
     # Ticked from state, not stored as ticked: take the person off the
     # roster and the box is empty again.
@@ -349,12 +374,26 @@ def test_the_limit_survives_a_restart(api, wire):
 
 
 def test_a_test_call_needs_a_plan_with_calls(api, wire):
-    owner, _, _ = _sign_up(api)  # a trial: texts only
+    owner, tenant_id, _ = _sign_up(api)
+    STORE.change_plan(STORE.get_tenant(tenant_id), "starter", extend_term=False)
 
     body = api.post("/api/contacts/test-alert", headers=owner, json={"call": True}).json()
 
     assert wire["voice"] == []
     assert "does not include phone calls" in body["message"]
+
+
+def test_the_trial_can_try_a_test_call_from_its_few(api, wire):
+    """The call is the thing being bought, so the trial may try it."""
+    import costs
+
+    owner, tenant_id, _ = _sign_up(api)  # a trial
+    api.post("/api/contacts", headers=owner, json={"full_name": "Ana", "phone": "+15550111"})
+
+    api.post("/api/contacts/test-alert", headers=owner, json={"call": True})
+
+    assert len(wire["voice"]) == 1
+    assert costs.trial_calls_left(tenant_id) == costs.TRIAL_CALLS_TOTAL - 1
 
 
 def test_a_test_call_rings_the_first_person_and_says_it_is_a_test(

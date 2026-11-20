@@ -533,11 +533,11 @@ def test_choosing_your_own_plan_again_does_not_renew_it(api):
     dana = _signup(api, DANA)
     tenant = STORE.get_tenant(dana["tenant"]["tenant_id"])
     trial_end = tenant.expires_at
-    up = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth"})
+    up = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth", "confirm": True})
     assert up.status_code == 200, up.text
     # The plan moved; the paid term did not appear from nowhere.
     assert STORE.get_tenant(tenant.tenant_id).expires_at == trial_end
-    again = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth"})
+    again = api.post("/api/licenses/me/plan", headers=_bearer(dana["token"]), json={"plan": "growth", "confirm": True})
     assert again.status_code == 409
 
 

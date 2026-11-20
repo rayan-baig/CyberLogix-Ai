@@ -40,7 +40,7 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_FOUNDER_PERCENT` | `20` | What the founding member code takes off, in percent (1 to 90)... |
 | `CYBERLOGIX_FOUNDER_MONTHS` | `3` | ...of the first this-many monthly invoices (1 to 12), or this many months' worth once on a yearly invoice. Once per business, ever |
 | `CYBERLOGIX_FOUNDER_UNTIL` | — | The last day the code can be entered (YYYY-MM-DD, UTC). Unset: no end date. A date that cannot be read closes the code |
-| `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration; unset closes it |
+| `CYBERLOGIX_ADMIN_KEY` | — | Gates partner administration and the operator's page; unset closes both. Open the page at `/book?sign-in`: the browser asks for a name (anything) and a password (this key). Without it `/book` is an ordinary "page not found" |
 | `CYBERLOGIX_ALLOW_PRIVATE_WEBHOOKS` | — | Allow webhook targets on a private network |
 | `CYBERLOGIX_LEGAL_NAME` | `MTRX Horizyn` | Issuer name on invoices and in the agreements: MTRX Horizyn's registered name |
 | `CYBERLOGIX_ADDRESS` | — | Issuer address on invoices |

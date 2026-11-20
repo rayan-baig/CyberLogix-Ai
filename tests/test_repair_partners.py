@@ -77,9 +77,9 @@ def shop(api, operator_factory, sensor_factory):
     """A restaurant with a failing walk-in, a drifting freezer and a fine one."""
     headers, tenant, user = operator_factory(company_name="Harbor Grill",
                                              email="dana@harborgrill.example")
-    sensor_factory(headers, "HG-WALKIN", "restaurant", "Walk-in freezer")
-    sensor_factory(headers, "HG-CHEST", "restaurant", "Chest freezer")
-    sensor_factory(headers, "HG-FINE", "restaurant", "Bar freezer")
+    sensor_factory(headers, "HG-WALKIN", "restaurant", "Walk-in freezer", above=32.0)
+    sensor_factory(headers, "HG-CHEST", "restaurant", "Chest freezer", above=32.0)
+    sensor_factory(headers, "HG-FINE", "restaurant", "Bar freezer", above=32.0)
     # Sat at 0°F, then went over its 32°F limit 35 minutes ago and stayed.
     _seed("HG-WALKIN", [0.0] * 6 + [38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 51.0])
     # Creeping up 5°F an hour, in range, heading for 32°F.
@@ -253,7 +253,7 @@ def test_leads_take_turns_between_partners_covering_an_area(api, admin_headers, 
     order = []
     for n in range(6):
         headers, _, _ = operator_factory(company_name=f"Shop {n}", email=f"o{n}@shops.example")
-        sensor_factory(headers, f"S{n}-F", "restaurant", "Freezer")
+        sensor_factory(headers, f"S{n}-F", "restaurant", "Freezer", above=32.0)
         _seed(f"S{n}-F", [0.0] * 6 + [40.0 + i for i in range(8)])
         resp = _quote(api, {"headers": headers}, sensor_id=f"S{n}-F")
         assert resp.status_code == 201, resp.text

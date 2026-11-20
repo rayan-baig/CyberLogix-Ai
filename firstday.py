@@ -4,10 +4,10 @@ Two things a business needs to have done before the night a freezer
 fails, and that nothing used to tell it to do:
 
 * **The checklist** ("Getting started"). Add a sensor, add who gets
-  alerts, and send a test alert. Each line is read from what the account
+  alerts, see its first reading arrive, and send a test alert. Each line is read from what the account
   actually holds -- there is no "mark as done" button, because a box
   somebody ticked is a promise, and a box the roster ticked is a fact.
-  When all three are true the checklist is gone, and it does not come
+  When all four are true the checklist is gone, and it does not come
   back.
 
 * **The test alert.** The roster is the one part of the product a
@@ -108,10 +108,11 @@ def has_sent_test(tenant_id: str) -> bool:
 
 
 def checklist(tenant: Tenant) -> Dict[str, Any]:
-    """Getting started: three things, each read from what the account holds.
+    """Getting started: four things, each read from what the account holds.
 
-    A sensor, somebody to alert, and a test that reached them. That is
-    the whole of "this fridge is protected": a site is useful, and the
+    A sensor, somebody to alert, a first reading from that sensor, and a
+    test that reached them. That is the whole of "this fridge is
+    protected": a site is useful, and the
     console offers one, but a business with one kitchen does not need it
     before its first night.
     """
@@ -129,6 +130,16 @@ def checklist(tenant: Tenant) -> Dict[str, Any]:
             "detail": "The people we text and call when something gets warm. "
                       "You can add yourself.",
             "done": any(c.active for c in STORE.contacts_for(tid)),
+        },
+        {
+            # Not "protected" until a reading has actually arrived: a
+            # registered sensor that never reports is watching nothing,
+            # and the checklist used to call that fridge protected.
+            "key": "reading",
+            "label": "First reading received",
+            "detail": "Set your sensor to send its readings to us. This "
+                      "ticks itself when the first one arrives.",
+            "done": any(s.last_seen is not None for s in STORE.sensors_for(tid)),
         },
         {
             "key": "test",
@@ -246,9 +257,14 @@ def send_test_alert(
 
         call_note: Optional[str] = None
         if wants_call:
-            if not tenant.entitlements().get("voice_escalation"):
-                call_note = (f"The {tenant.entitlements()['name']} plan does not "
-                             "include phone calls, so only the texts were sent.")
+            from costs import calls_allowed
+
+            if not calls_allowed(tenant):
+                call_note = (
+                    "The free trial's phone calls have been used, so only the "
+                    "texts were sent." if tenant.plan == "trial" else
+                    f"The {tenant.entitlements()['name']} plan does not "
+                    "include phone calls, so only the texts were sent.")
             else:
                 ladder = STORE.voice_ladder(tenant)
                 first = ladder[0] if ladder else None

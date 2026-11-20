@@ -48,8 +48,8 @@ def test_erasing_one_business_leaves_anothers_vault_verifying(
                                        email="keep@example.com")
     gone_h, gone, _ = operator_factory(company_name="Leaves Ltd",
                                        email="gone@example.com")
-    sensor_factory(keep_h, sensor_id="KEEP-1", vertical="restaurant")
-    sensor_factory(gone_h, sensor_id="GONE-1", vertical="restaurant")
+    sensor_factory(keep_h, sensor_id="KEEP-1", vertical="restaurant", above=32.0)
+    sensor_factory(gone_h, sensor_id="GONE-1", vertical="restaurant", above=32.0)
     for temp in (20.0, 21.0, 40.0, 22.0):
         _pulse(api, keep_h, "KEEP-1", temp)
         _pulse(api, gone_h, "GONE-1", temp)
@@ -92,7 +92,7 @@ def test_readings_saved_at_the_opening_survive_the_buffer_rolling(
     api, tenant_factory, sensor_factory, tiny_buffer
 ):
     headers, tenant = tenant_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     for temp in (20.0, 21.0, 22.0):
         _pulse(api, headers, "FRZ-1", temp)
     opened = _pulse(api, headers, "FRZ-1", 45.0)
@@ -121,7 +121,7 @@ def test_readings_during_a_long_breach_are_not_lost_to_the_buffer(
     asks about first. Saved only when the incident opened and when it
     closed, a breach longer than the buffer lost everything in between."""
     headers, tenant = tenant_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     _pulse(api, headers, "FRZ-1", 20.0)
     opened = _pulse(api, headers, "FRZ-1", 40.0)
     peak = 70.0
@@ -141,7 +141,7 @@ def test_the_claim_packet_counts_every_saved_excursion(
     api, tenant_factory, sensor_factory, tiny_buffer
 ):
     headers, tenant = tenant_factory()
-    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant", above=32.0)
     opened = _pulse(api, headers, "FRZ-1", 40.0)
     for temp in (45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0):
         _pulse(api, headers, "FRZ-1", temp)

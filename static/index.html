@@ -50,7 +50,7 @@
   </span>
   <nav aria-label="Sections">
     <a href="#how">How it works</a>
-    <a href="#sectors">Sectors</a>
+    <a href="#what-you-need">What you need</a>
     <a href="#proof">Evidence</a>
     <a href="#insurers">Insurers</a>
     <a href="/pricing">Pricing</a>
@@ -58,6 +58,18 @@
     <a href="/demo">See it live</a>
     <a class="btn btn-sm" href="/console">Sign in</a>
   </nav>
+  <!-- On a phone the links above are hidden for room; this opens them.
+       No script: a details element opens and closes by itself. -->
+  <details class="menu">
+    <summary>Menu</summary>
+    <nav aria-label="Menu">
+      <a href="/pricing">Pricing</a>
+      <a href="/help">Help</a>
+      <a href="#what-you-need">What you need</a>
+      <a href="/demo">See it live</a>
+      <a href="/for">Who it is for</a>
+    </nav>
+  </details>
 </header>
 
 <main>
@@ -78,15 +90,14 @@
          plan tiers (pricing.headline), never typed here. -->
     <dl class="facts" id="facts">
       <div><dt>Who it is for</dt>
-        <dd>Any business with something that must hold a temperature:
-          restaurants, pharmacies, labs, data centres and
-          %%INDUSTRIES_MORE%% more. <a href="/for">Find yours</a></dd></div>
+        <dd>Restaurants, caf&eacute;s, shops, pharmacies and clinics.
+          <a href="/for">Find yours</a></dd></div>
       <div><dt>What it costs</dt>
-        <dd>From %%FROM_PRICE%% a month per %%FROM_UNIT%%, with no setup fee.
-          Restaurants and pharmacies have a set price; every other trade gets
-          a quote: <a href="/pricing">work out yours</a>.</dd></div>
+        <dd>From %%FROM_PRICE%% a month, no setup fee. Sensors are bought
+          separately: <a href="#what-you-need">what you need</a>.</dd></div>
       <div><dt>Free trial</dt>
-        <dd>%%TRIAL_DAYS%% days on up to %%TRIAL_UNITS%% sensors. No card.</dd></div>
+        <dd>%%TRIAL_DAYS%% days on up to %%TRIAL_UNITS%% sensors, with %%TRIAL_CALLS%% alert calls.
+          No card.</dd></div>
     </dl>
     <div class="cta-row">
       <a class="btn btn-primary" href="/signup">Start a free trial</a>
@@ -127,8 +138,8 @@
       <div class="rung">
         <p class="rung-when">If nobody answers</p>
         <h3>The phone rings</h3>
-        <p>A spoken call that reads out what is failing and asks the person to
-           press 1. Until somebody does, it is not acknowledged, and the
+        <p>The escalation: a spoken call that reads out what is failing and
+           asks the person to press 1. Until somebody does, it is not acknowledged, and the
            system keeps behaving as though nobody knows.</p>
       </div>
       <div class="rung">
@@ -139,6 +150,16 @@
            are actually buying.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ========================== WHAT YOU NEED ========================= -->
+<!-- We sell no hardware. The words are sensor_guides.WHAT_YOU_NEED, the
+     same as /pricing and /help/sensors. -->
+<section class="band band-need">
+  <div class="wrap">
+    %%WHAT_YOU_NEED%%
+    <p class="controls-limit"><a href="/help/sensors">Set-up guides for each kind of sensor</a></p>
   </div>
 </section>
 
@@ -158,9 +179,10 @@
     </div>
     <div class="proof">
       <div class="proof-item">
-        <h3>Its own sensors</h3>
-        <p>CyberLogix watches with its own separate sensors, so it notices the
-           warming even if the fridge&rsquo;s controls are taken over.</p>
+        <h3>A separate sensor</h3>
+        <p>CyberLogix reads a separate wireless sensor in each fridge (one you
+           buy from a sensor maker), not the fridge&rsquo;s own controls, so
+           it notices the warming even if those controls are taken over.</p>
       </div>
       <div class="proof-item">
         <h3>It reads, it never controls</h3>
@@ -184,7 +206,7 @@
 <section class="band" id="sectors">
   <div class="wrap">
     <div class="band-head">
-      <h2>Twelve sectors, each with its own way of going wrong.</h2>
+      <h2>Food and medicine, each with its own limits.</h2>
       <p>
         Thresholds, the language of the alert, the unit on the invoice and the
         paperwork produced afterwards are all specific to the trade. A flat
@@ -192,10 +214,15 @@
         for every other trade, and never a share of what the monitoring saved.
       </p>
     </div>
+    <!-- The sectors most visitors run. Every other one (data centres,
+         hangars, yachts and more) is on /for. -->
     <div class="sectors" id="sectors-grid" data-talk-href="%%TALK_HREF%%"
-         data-talk-address="%%TALK_ADDRESS%%">
+         data-talk-address="%%TALK_ADDRESS%%"
+         data-show="restaurant pharmacy medical_lab cryostorage logistics wine_and_art">
       <p class="loading">Loading sectors…</p>
     </div>
+    <p class="controls-limit">Something else to keep cold or warm?
+      <a href="/for">Every business we cover</a>.</p>
   </div>
 </section>
 
@@ -282,13 +309,14 @@
   <div class="wrap">
     <div class="band-head">
       <h2>Plans</h2>
-      <p>Seats are sensors. The price for your trade is above; the
-         plan decides how many you can run and what the system is allowed to
-         do when one of them fails.</p>
+      <p>From %%FROM_PRICE%% a month. Each plan says how many sensors you
+         can run and what happens when one of them fails. Sensors are bought
+         separately, from a sensor maker.</p>
     </div>
     <div class="plans" id="plans-grid">
       <p class="loading">Loading plans…</p>
     </div>
+    <p class="addons-note" id="plans-addons"></p>
   </div>
 </section>
 

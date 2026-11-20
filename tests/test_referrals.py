@@ -57,7 +57,7 @@ def _pay_first_invoice(api, admin_headers, settle, joined, amount=None, referenc
             "location_name": "Display fridge"}).status_code == 201
     if STORE.get_tenant(tenant_id).plan == "trial":
         assert api.post("/api/licenses/me/plan", headers=token,
-                        json={"plan": "starter"}).status_code == 200
+                        json={"plan": "starter", "confirm": True}).status_code == 200
     issued = api.post("/api/invoices", params={"tenant_id": tenant_id},
                       headers=admin_headers, json={})
     assert issued.status_code == 201, issued.text
@@ -214,7 +214,7 @@ def test_a_payment_through_stripe_earns_it_too(api, referrer, admin_headers):
     api.post("/api/licenses/me/sensors", headers=key, json={
         "sensor_id": "CC-1", "industry_vertical": "restaurant", "location_name": "Fridge"})
     api.post("/api/licenses/me/plan", headers={"Authorization": f"Bearer {joined['token']}"},
-             json={"plan": "starter"})
+             json={"plan": "starter", "confirm": True})
     invoice = api.post("/api/invoices", params={"tenant_id": tenant_id},
                        headers=admin_headers, json={}).json()
     result = payments.apply_event({"id": "evt_ref", "type": "checkout.session.completed",
@@ -321,7 +321,7 @@ def test_cancelled_before_paying_earns_nothing(api, referrer, admin_headers, set
     key = {"X-CyberLogix-Key": joined["api_key"]}
     api.post("/api/licenses/me/sensors", headers=key, json={
         "sensor_id": "CX-1", "industry_vertical": "restaurant", "location_name": "Fridge"})
-    api.post("/api/licenses/me/plan", headers=token, json={"plan": "starter"})
+    api.post("/api/licenses/me/plan", headers=token, json={"plan": "starter", "confirm": True})
     assert api.post("/api/contracts", headers={**key, **token},
                     json={"term_years": 1}).status_code == 201
     from contracts import run_billing

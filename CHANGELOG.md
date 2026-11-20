@@ -4,6 +4,78 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.19.0 — 2026-11-19
+
+What an honest review of the product found, fixed. No price has changed.
+
+- **A healthy fridge no longer alarms.** A restaurant's walk-in cooler
+  was given a freezer's 32°F limit, so a correct 37°F reading opened a
+  critical alarm. The add form now asks **Fridge or freezer?**: a food
+  fridge alarms over 41°F and a food freezer over 10°F (vaccine and
+  specimen units get their own ranges), and that limit is saved on the
+  unit. A restaurant unit added without an answer gets a fridge's 41°F.
+  The demo uses the same limits as the product, and the restaurant page
+  says 41°F for fridges and 10°F for freezers. **Units you already have
+  keep the limit they were alarming on** (32°F for a restaurant unit with
+  no limit of its own) until you change it; nothing moved by itself.
+- **We say plainly that we do not sell sensors.** The pages used to say
+  "its own separate sensors" and "a small battery-powered box". The front
+  page, the pricing page and the sensor help page now have **What you
+  need**: which wireless sensors work (ones that can send to a web
+  address, or whose maker's cloud we can read, such as Monnit and
+  SensorPush), roughly what they cost, and the set-up in six steps. No
+  shop is linked.
+- **What happens if the internet or power goes off** is said on the front
+  page and the pricing page: after 30 minutes with no readings we text
+  everyone on call, and our alerts still go out from our servers.
+- **"Protected" only once readings arrive.** Getting started is four
+  steps now: add a sensor, add who gets alerts, **first reading
+  received**, and a test alert. Nothing is called protected before the
+  sensor has reported.
+- **Calls are only promised where they happen.** The console's Who gets
+  called card (now "Who gets alerts" on Starter), the escalation preview,
+  the Simple view and the proof report for your insurer mention phone
+  calls only when your plan includes them. **The free trial can now try
+  the call:** 5 alert calls in all (about a minute each), then texts only,
+  and every screen says how many are left.
+- **No plan changes without a yes.** Moving to a paid plan shows the plan,
+  the price, that it is a 12-month plan, what cancelling means and your
+  trial days left. Nothing changes until you press **Yes, move**, and the
+  server refuses a change that was not confirmed.
+- **A small café sees a small console.** On a trial or Starter with a few
+  units, the console opens on the Simple view once you are set up, and
+  the tools for bigger estates (price quotes for chains, meeting notes,
+  staff licences, spending limits, the record's fingerprints, the business
+  key, the estate add-ons list) wait under a new **Advanced** tab. A
+  search still finds everything. Delete everything is at the bottom of the
+  page, away from the add form; the cloud, OmniArmor, password and to-do
+  forms are styled; the two columns are about the same length.
+- **One price story.** The front page, the plans and the console header
+  all start "From $59 a month" (Starter). Each plan lists what it gives,
+  the extras say they cost extra, and the four plans sit in one row.
+- **The businesses that sign up are first.** Sign-up offers Restaurant or
+  café, Shop or grocery, Pharmacy and Clinic first. The front page shows
+  food and medicine; data centres, hangars, yachts, solar and growers are
+  on /for. "CyberTech Data Centers" is now "Data centers".
+- **No more overclaiming.** "Loss avoided" counts only a real failure
+  caught in time: answered within two hours, out of range for at least 15
+  minutes and at least 5°F warmer than normal. A false alarm is not a
+  $15,000 save. The proof report shows the hours watched beside the
+  percentage online, and no percentage at all for under an hour.
+- **A defrost stretched on purpose still alerts.** Attackers in a real
+  2026 incident stretched defrost cycles to hold off alarms. A defrost
+  much longer than the unit's normal ones, or longer than 45 minutes at
+  all, now alerts.
+- **Smaller fixes.** The restaurant page's "We format it as Health
+  Inspector Log Formatter" now reads properly. The console no longer asks
+  for the forecast on a plan without it. "Mark it fixed" in the demo
+  updates at once. The front page has a menu on phones and its sections
+  show without scrolling. The operator's page (/book) is a plain "page
+  not found" to the public. The help says "Press Add it". Alert and report
+  numbers count your own (INC-3-QHKX), not everybody's; old numbers still
+  work. Codes in the console are words. "Nobody finds out until seven"
+  everywhere.
+
 ## 3.18.0 — 2026-11-19
 
 Fast and solid: if alerts stop, you hear about it, and the console opens

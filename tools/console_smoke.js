@@ -52,7 +52,7 @@ const ROOT = path.resolve(__dirname, "..");
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1366, height: 900 };
 const TABS = ["all", "fridges", "alerts", "licences", "people", "money",
-              "proof", "setup"];
+              "proof", "setup", "advanced"];
 // Words that only reach a page when a value was missing.
 const JUNK = /\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|Infinity/;
 
@@ -149,9 +149,18 @@ const CSP_PATTERN = /CSP violation|Content Security Policy/;
 
 function watchPolicy(browser) {
   const open = browser.newContext.bind(browser);
-  browser.newContext = async (options) => {
-    const context = await open(options);
+  browser.newContext = async (options = {}) => {
+    // A small account that is set up opens on the Simple view (/today).
+    // Every walk here is about the full console, so it asks for that,
+    // except the one that checks the landing itself (landOnSimple).
+    const { landOnSimple, ...rest } = options;
+    const context = await open(rest);
     await context.addInitScript(CSP_INIT);
+    if (!landOnSimple) {
+      await context.addInitScript(() => {
+        try { localStorage.setItem("cyberlogix.view", "full"); } catch (_) { /* blocked */ }
+      });
+    }
     context.on("console", (msg) => {
       if (CSP_PATTERN.test(msg.text())) {
         let where = "";
@@ -293,6 +302,8 @@ async function shoot(page, name) {
 
 async function walkTabs(page, label) {
   for (const tab of TABS) {
+    // A small account hides a group that has nothing outside Advanced.
+    if (!(await page.isVisible(`.f-tab[data-tab="${tab}"]`))) continue;
     await page.click(`.f-tab[data-tab="${tab}"]`);
     await page.waitForTimeout(150);
     const showing = await page.$$eval("#app [data-find]",
@@ -586,7 +597,7 @@ async function checkLanding(browser, base) {
     await shoot(page, `landing ${label}`);
     const where = `landing ${label}`;
     if (got.raw) fail(where, "a %%TOKEN%% was left on the page");
-    for (const want of [/Who it is for/i, /From \$\d[\d,]* a month per/, /\d+ days on up to \d+ sensors\. No card\./]) {
+    for (const want of [/Who it is for/i, /From \$\d[\d,]* a month/, /\d+ days on up to \d+ sensors, with \d+ alert calls\.\s+No card\./]) {
       if (!want.test(got.text)) fail(where, `the first screen does not say ${want}`);
     }
     if (got.factsBottom > got.height) fail(where, `who/price/trial end at ${Math.round(got.factsBottom)}px, below the ${got.height}px screen`);
@@ -598,7 +609,8 @@ async function checkLanding(browser, base) {
 
 async function checkFirstDay(browser, base) {
   const label = "first day";
-  const context = await browser.newContext({ viewport: PHONE, serviceWorkers: "block" });
+  const context = await browser.newContext({ viewport: PHONE, serviceWorkers: "block",
+                                             landOnSimple: true });
   const page = await context.newPage();
   const flush = watchErrors(page, label);
   await page.goto(`${base}/signup`);
@@ -644,13 +656,17 @@ async function checkFirstDay(browser, base) {
   await page.waitForSelector("#sim-zone", { state: "hidden" });
 
   // Getting started, one step at a time, through its own buttons: a
-  // sensor, "Add me" (the mobile given at sign-up), and the test, which
-  // goes from the checklist itself with no are-you-sure.
+  // sensor ("Fridge or freezer?" answered: a fridge, 41F), "Add me" (the
+  // mobile given at sign-up), and the test, which goes from the checklist
+  // itself with no are-you-sure. The first reading is the sensor's, so it
+  // is sent the way a sensor sends it, and only then is it "protected".
   const steps = [
     ["sensor", `#first-day [data-go="sensor"]`, async () => {
-      await page.fill("#add-loc", "Kitchen walk-in"); await page.click("#add-form button[type=submit]"); }],
+      await page.fill("#add-loc", "Kitchen walk-in");
+      if (!(await page.isVisible("#add-kind"))) fail(label, "the add form does not ask fridge or freezer");
+      else await page.selectOption("#add-kind", "fridge");
+      await page.click("#add-form button[type=submit]"); }],
     ["oncall", `#first-day [data-go="addme"]`, async () => {}],
-    ["test", `#first-day [data-test-now]`, async () => {}],
   ];
   for (const [step, button, doIt] of steps) {
     if (!(await page.isVisible(button))) { fail(label, `no checklist button for ${step}`); continue; }
@@ -662,7 +678,19 @@ async function checkFirstDay(browser, base) {
       fail(label, `the ${step} box did not tick itself`);
     }
   }
-  await page.waitForTimeout(800);
+  // Not protected yet: nothing has reported. Then the sensor's first
+  // reading, a healthy 37F, which must not alarm a fridge.
+  if (!(await page.isVisible("#first-day"))) fail(label, "the checklist said done before any reading arrived");
+  const token = await page.evaluate(() => localStorage.getItem("cyberlogix.session"));
+  const mine = await call(base, token, "GET", "/api/licenses/me/sensors");
+  const unit = mine.sensors[0];
+  if (!unit || unit.danger_above !== 41) fail(label, `a fridge was given a limit of ${unit && unit.danger_above}`);
+  const first = await call(base, token, "POST", "/api/sensor-pulse",
+                           { sensor_id: unit.sensor_id, temperature_fahrenheit: 37 });
+  if (first.status !== "nominal") fail(label, `a healthy 37F fridge alarmed: ${first.status}`);
+  if (!(await page.isVisible(`#first-day [data-test-now]`))) fail(label, "no checklist button for test");
+  else await page.click(`#first-day [data-test-now]`);
+  await page.waitForTimeout(3500);
   if (await page.isVisible("#first-day")) fail(label, "the checklist is still there with everything done");
   else ok(`${label}: the checklist ticks itself and goes when it is done`);
   const result = await page.textContent("#test-alert-out");
@@ -670,6 +698,26 @@ async function checkFirstDay(browser, base) {
   const incidents = await page.$$eval("#incidents .incident", (els) => els.length);
   if (incidents) fail(label, "the test alert opened an incident");
   await shoot(page, "first day done");
+
+  // Set up, and small: opening the console now lands on the Simple view,
+  // and "All the detail" there comes back to the full console.
+  await page.goto(`${base}/console`);
+  try {
+    await page.waitForURL(`${base}/today`, { timeout: 10000 });
+    ok(`${label}: a small account that is set up opens on the Simple view`);
+    await page.waitForLoadState("load");
+    const link = page.locator('a[href="/console?view=full"]').first();
+    if (!(await link.isVisible())) fail(label, "the Simple view has no way to the full console");
+    // A DOM click: the page's background canvas is drawn on every frame,
+    // so Playwright never sees the link "stable" long enough to press it.
+    await link.evaluate((a) => a.click());
+    await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
+    await page.waitForTimeout(1500);
+    if (!/\/console/.test(page.url())) fail(label, "All the detail did not stay on the console");
+    else ok(`${label}: All the detail opens the full console and stays`);
+  } catch (err) {
+    fail(label, `the Simple view landing (at ${page.url()}): ${String(err.message || err).split("\n")[0]}`);
+  }
   flush();
   await context.close();
 }

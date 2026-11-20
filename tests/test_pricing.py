@@ -143,16 +143,53 @@ def test_industry_picker_carries_the_price(api):
     assert "cargo rejection" in rows["logistics"]["pitch"]
 
 
+def _normal_hour(sensor_id, temp=37.0):
+    """An hour of ordinary readings, so an alarm has a "before"."""
+    from datetime import timedelta
+
+    from store import STORE, utc_now
+
+    sensor = STORE.get_sensor(sensor_id)
+    for minutes_ago in range(120, 60, -10):
+        STORE.record_reading(sensor=sensor, temperature_fahrenheit=temp,
+                             humidity_percent=None, breached=False,
+                             at=utc_now() - timedelta(minutes=minutes_ago))
+
+
+def _warm_for(sensor_id, minutes, temp):
+    """Readings over the line for `minutes`, ending now."""
+    from datetime import timedelta
+
+    from store import STORE, utc_now
+
+    sensor = STORE.get_sensor(sensor_id)
+    for minutes_ago in range(minutes, -1, -5):
+        STORE.record_reading(sensor=sensor, temperature_fahrenheit=temp,
+                             humidity_percent=None, breached=True,
+                             at=utc_now() - timedelta(minutes=minutes_ago))
+
+
 def test_roi_counts_only_answered_incidents(
     api, tenant_factory, sensor_factory
 ):
     """An unanswered alert is a warning nobody heeded, not a save."""
+    from datetime import timedelta
+
+    from store import STORE
+
     headers, _ = tenant_factory()
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant")
+    _normal_hour("FRZ-1")
     first = api.post(
         "/api/sensor-pulse", headers=headers,
         json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 45.0},
     ).json()["incident_id"]
+    # It opened most of an hour ago and the unit has stayed warm since: a
+    # real failure, not a door opened for a delivery.
+    incident = STORE.get_incident(first)
+    incident.opened_at -= timedelta(minutes=55)
+    STORE._db.put("incident", first, incident.to_row())
+    _warm_for("FRZ-1", 55, 47.0)
 
     unanswered = api.get("/api/billing/roi", headers=headers).json()
     assert unanswered["incidents_total"] == 1
@@ -166,6 +203,43 @@ def test_roi_counts_only_answered_incidents(
     assert answered["subscription_cost_usd"] == 149.0
     # One saved walk-in against one month: $15,000 / $149.
     assert answered["return_multiple"] == pytest.approx(15000.0 / 149.0, abs=0.1)
+
+
+def test_a_false_alarm_answered_at_once_avoided_no_loss(
+    api, tenant_factory, sensor_factory
+):
+    """The review's case: a healthy fridge alarming against a wrong limit
+    on its first readings, answered and closed, was shown as "$15,000
+    avoided, 100.7x the subscription". Nothing was in danger."""
+    headers, _ = tenant_factory()
+    sensor_factory(headers, sensor_id="WALKIN-1", vertical="restaurant", above=32.0)
+    opened = api.post("/api/sensor-pulse", headers=headers, json={
+        "sensor_id": "WALKIN-1", "temperature_fahrenheit": 37.0}).json()["incident_id"]
+    api.post(f"/api/voice/acknowledge/{opened}", headers=headers, json={})
+    api.post(f"/api/voice/resolve/{opened}", headers=headers, json={})
+
+    roi = api.get("/api/billing/roi", headers=headers).json()
+    assert roi["incidents_answered"] == 1
+    assert roi["quantified_saves"] == 0
+    assert roi["loss_avoided_usd"] == 0
+    assert roi["return_multiple"] is None
+
+
+def test_a_door_left_open_for_a_minute_avoided_no_loss(
+    api, tenant_factory, sensor_factory
+):
+    """Over the line for a moment, back at once: not a failure caught."""
+    headers, _ = tenant_factory()
+    sensor_factory(headers, sensor_id="WALKIN-1", vertical="restaurant")
+    _normal_hour("WALKIN-1")
+    opened = api.post("/api/sensor-pulse", headers=headers, json={
+        "sensor_id": "WALKIN-1", "temperature_fahrenheit": 48.0}).json()["incident_id"]
+    api.post(f"/api/voice/acknowledge/{opened}", headers=headers, json={})
+    api.post("/api/sensor-pulse", headers=headers, json={
+        "sensor_id": "WALKIN-1", "temperature_fahrenheit": 37.0})
+    api.post(f"/api/voice/resolve/{opened}", headers=headers, json={})
+
+    assert api.get("/api/billing/roi", headers=headers).json()["loss_avoided_usd"] == 0
 
 
 def test_roi_never_invents_a_figure(api, tenant_factory, sensor_factory):

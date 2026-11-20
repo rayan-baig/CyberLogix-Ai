@@ -59,13 +59,22 @@ async function boot() {
     $("password").minLength = info.min_password_length;
 
     const select = $("industry_vertical");
-    for (const sector of info.sectors) {
-      const option = document.createElement("option");
-      // textContent, not innerHTML: an <option> is still a place a tag
-      // would be parsed.
-      option.value = sector.key;
-      option.textContent = sector.name;
-      select.appendChild(option);
+    // The common kinds first, in plain words; every sector after them.
+    const groups = [["Most businesses", info.common || []],
+                    ["Other kinds of business", info.sectors]];
+    for (const [label, rows] of groups) {
+      if (!rows.length) continue;
+      const group = document.createElement("optgroup");
+      group.label = label;
+      for (const sector of rows) {
+        const option = document.createElement("option");
+        // textContent, not innerHTML: an <option> is still a place a tag
+        // would be parsed.
+        option.value = sector.key;
+        option.textContent = sector.name;
+        group.appendChild(option);
+      }
+      select.appendChild(group);
     }
     // Arriving from the demo or a trade page, the kind of business is
     // already known: chosen for them, and still changeable.

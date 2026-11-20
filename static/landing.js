@@ -13,7 +13,12 @@ async function paintSectors() {
     const res = await fetch("/api/industries");
     if (!res.ok) throw new Error(res.status);
     const body = await res.json();
-    const rows = body.industries || body;
+    const all = body.industries || body;
+    // The page names the sectors it shows (data-show); the rest are on /for.
+    const wanted = (grid.dataset.show || "").split(/\s+/).filter(Boolean);
+    const rows = wanted.length
+      ? wanted.map((key) => all.find((r) => r.vertical === key)).filter(Boolean)
+      : all;
     // A trade priced by quote has no figure in the catalogue at all; its
     // card says so and offers the support address (set on the grid by the
     // server), as a link and as text that can be copied.
@@ -47,29 +52,20 @@ async function paintPlans() {
   try {
     const res = await fetch("/api/licenses/plans");
     if (!res.ok) throw new Error(res.status);
-    const plans = (await res.json()).plans || [];
+    const body = await res.json();
+    const plans = body.plans || [];
+    // Each plan's own lines, from pricing.plan_features: what it gives and
+    // what it does not, so no two cards read the same.
     grid.innerHTML = plans.map(p => `
       <article class="plan" data-featured="${p.plan === "growth" ? "yes" : "no"}">
         <div>
           <div class="plan-name">${esc(p.name)}</div>
-          <div class="plan-seats">Up to ${p.max_sensors.toLocaleString("en-US")}
-            sensor${p.max_sensors === 1 ? "" : "s"}${p.max_locations
-              ? ` at ${p.max_locations} location${p.max_locations === 1 ? "" : "s"}` : ""}</div>
           ${p.monthly_usd != null
-            ? `<div class="plan-price">${money(p.monthly_usd)} a month, flat</div>` : ""}
+            ? `<div class="plan-price">${money(p.monthly_usd)} a month, flat</div>`
+            : p.plan === "trial" ? `<div class="plan-price">Free</div>`
+              : `<div class="plan-price">Priced by the rate card</div>`}
         </div>
-        <ul>
-          <li>Breach detection on every reading</li>
-          <li>The whole on-call roster texted</li>
-          <li data-has="${p.voice_escalation ? "yes" : "no"}">
-            Spoken escalation call until somebody presses 1</li>
-          <li data-has="${p.predictive_forecasting ? "yes" : "no"}">
-            Forecasting — warned before it breaches</li>
-          <li>Tamper-evident log and claim packets</li>
-          <li>${p.term_days < 30
-                ? p.term_days + "-day trial"
-                : "Annual term"}</li>
-        </ul>
+        <ul>${(p.features || []).map(f => `<li${/^No /.test(f) ? ' data-has="no"' : ""}>${esc(f)}</li>`).join("")}</ul>
         <!-- Every one of these starts a trial -- signup cannot hand out a
              paid plan, and should not -- so none of them may promise one.
              "Start on Enterprise" used to produce a 14-day, 5-sensor trial
@@ -79,6 +75,8 @@ async function paintPlans() {
              ? "Start the free trial"
              : "Start free, then move to " + esc(p.name)}</a>
       </article>`).join("");
+    const addons = document.getElementById("plans-addons");
+    if (addons && body.add_ons) addons.textContent = body.add_ons;
   } catch (err) {
     grid.innerHTML = `<p class="empty">Plans could not be loaded
       (${esc(err.message)}). They are served from

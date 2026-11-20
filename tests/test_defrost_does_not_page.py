@@ -36,7 +36,7 @@ def _history(spell_started_ago, interval=8 * HOUR, cycles=3, warm=20, hot=40.0,
     """Earlier defrosts every `interval` minutes, and the current one so far.
 
     Minutes are counted back from now. Each earlier spell is `warm`
-    minutes over the 32°F line and back to 0°F; the current one started
+    minutes over the freezer's 10°F line and back to 0°F; the current one started
     `spell_started_ago` minutes ago and is still going.
     """
     sensor = STORE.get_sensor("FRZ-1")
@@ -53,7 +53,7 @@ def _history(spell_started_ago, interval=8 * HOUR, cycles=3, warm=20, hot=40.0,
     points += [(m, current_hot) for m in range(spell_started_ago, 0, -10)]
     for ago, temp in sorted(points, key=lambda p: -p[0]):
         STORE.record_reading(sensor=sensor, temperature_fahrenheit=temp,
-                             humidity_percent=None, breached=temp > 32.0,
+                             humidity_percent=None, breached=temp > 10.0,
                              at=now - timedelta(minutes=ago))
 
 
@@ -68,7 +68,7 @@ def _pulse(api, headers, temp):
 def freezer(tenant_factory, sensor_factory):
     headers, _ = tenant_factory()
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant",
-                   location="Walk-in freezer")
+                   location="Walk-in freezer", kind="freezer")
     return headers
 
 
@@ -132,3 +132,38 @@ def test_with_no_learned_rhythm_it_pages(api, freezer, texts):
 
 def test_a_freezer_with_no_history_pages_on_its_first_breach(api, freezer, texts):
     assert _pulse(api, freezer, 40.0)["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
+
+
+# --- a defrost stretched on purpose (the 2026 attack on store fridge controls)
+
+
+def test_a_defrost_much_longer_than_its_usual_ones_pages(api, freezer, texts):
+    """Usual cycles are 20 minutes. Attackers who take over the controls
+    stretch the defrost to hold the alarm off. At 41 minutes (about twice
+    the usual length) the old rule, typical x2 + 10 = 50, still excused it;
+    it must page."""
+    _history(spell_started_ago=41)
+
+    body = _pulse(api, freezer, 40.0)
+
+    assert body["status"] != "DEFROST_CYCLE"
+    assert len(texts) == 1
+
+
+def test_stretched_cycles_cannot_teach_it_a_longer_normal(api, freezer, texts):
+    """Three earlier "defrosts" already stretched to 60 minutes: learning the
+    typical length from them excused two hours. No defrost is excused past
+    the hard ceiling, whatever the history."""
+    import patterns
+
+    _history(spell_started_ago=int(patterns.DEFROST_MAX_MINUTES) + 10, warm=60)
+
+    assert _pulse(api, freezer, 40.0)["status"] != "DEFROST_CYCLE"
+    assert len(texts) == 1
+
+
+def test_a_normal_length_defrost_still_pages_nobody(api, freezer, texts):
+    _history(spell_started_ago=25)
+
+    assert _pulse(api, freezer, 40.0)["status"] == "DEFROST_CYCLE"
+    assert texts == []

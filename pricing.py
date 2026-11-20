@@ -722,6 +722,53 @@ def starter_terms() -> Dict[str, Any]:
     }
 
 
+def plan_features(plan: str) -> List[str]:
+    """What each plan gives, in a few plain lines, distinct from the next.
+
+    The landing page's plan cards, the pricing page's plan table and the
+    console's plan buttons all read these, so a plan cannot be described
+    two ways. Prices come from the constants above, never typed here.
+    """
+    from costs import TRIAL_CALLS_TOTAL
+
+    tier = PLAN_TIERS[plan]
+    restaurant = PRICE_BOOK["restaurant"]["monthly_usd"]
+    if plan == "trial":
+        return [f"Free for {tier['term_days']} days, no card",
+                f"Up to {tier['max_sensors']} sensors",
+                "Text alerts to everyone on call",
+                f"{TRIAL_CALLS_TOTAL} alert phone calls to try (about a minute each)",
+                "The inspector's log and proof reports"]
+    if plan == STARTER_PLAN:
+        return [f"${STARTER_MONTHLY_USD:,.0f} a month, flat",
+                f"One location, up to {tier['max_sensors']} fridges or freezers",
+                "Text alerts to everyone on call",
+                "The site-wide alert when several units warm at once",
+                "The inspector's log and the monthly proof report",
+                "No phone calls and no forecast (Growth has them)"]
+    if plan == "growth":
+        return [f"The rate card: ${restaurant:,.0f} a month per restaurant location",
+                f"Up to {tier['max_sensors']} sensors, any number of locations",
+                "Everything in Starter",
+                "Phone calls until somebody answers",
+                "The forecast: a warning before a unit gets too warm"]
+    return [f"The rate card, with chain discounts from {CHAIN_DISCOUNT_TIERS[0][0]} locations",
+            f"Up to {tier['max_sensors']:,} sensors",
+            "Everything in Growth",
+            "A contract and invoices for a chain or an estate"]
+
+
+def add_ons_words() -> str:
+    """The extras, priced, in one line: they cost extra on any plan."""
+    parts = []
+    for entry in ADD_ONS.values():
+        basis = "per location" if entry["basis"] == "per location" else ""
+        parts.append(f"{entry['name']} (+${entry['monthly_usd']:,.0f} a month"
+                     f"{' ' + basis if basis else ''})")
+    return ("Optional add-ons, at extra cost on any plan that takes them: "
+            + ", ".join(parts) + ".")
+
+
 # ---- bring a friend ---------------------------------------------------
 #
 # A business that signs up with another's referral code gets a longer
@@ -1232,6 +1279,64 @@ def chain_factor(counts: Dict[str, int]) -> float:
     return chain_discount(total, places)["after_usd"] / total
 
 
+# What makes an alert a caught failure rather than noise, for the "loss
+# avoided" figure. The figure used to count every answered incident, so a
+# healthy fridge alarming against a wrong limit, answered and closed, was
+# shown as "$15,000 avoided, 100× the subscription".
+SAVE_ANSWERED_WITHIN_HOURS = 2.0   # food is still recoverable (disposition.py)
+SAVE_MIN_MINUTES_OUT = 15.0        # a door opened for a delivery is not a failure
+SAVE_MIN_RISE_F = 5.0              # it was warming, not sitting above a low limit
+SAVE_BASELINE_MINUTES = 60         # what "normal" was, just before
+
+
+def caught_failure(incident: Any) -> Tuple[bool, str]:
+    """Whether an incident was a genuinely dangerous failure, caught in time.
+
+    All of: somebody answered it within two hours; it is a unit's own
+    alert (a site-wide alert sits on top of its units' alerts and would
+    count them twice); the food was not thrown away; and the readings show
+    a real failure -- out of range for at least fifteen minutes, and at
+    least 5°F warmer than the same unit in the hour before. A unit whose
+    first readings were already over its limit has no "before", and that
+    is the shape of a limit set wrong at setup, not of a failure.
+    """
+    from datetime import timedelta
+
+    if incident.acknowledged_at is None:
+        return False, "nobody answered it"
+    if getattr(incident, "kind", "unit") != "unit":
+        return False, "a site-wide alert, counted through its units"
+    waited = (incident.acknowledged_at - incident.opened_at).total_seconds() / 3600.0
+    if waited > SAVE_ANSWERED_WITHIN_HOURS:
+        return False, "answered after the food was likely past saving"
+    if (incident.product_disposition or "") == "discarded":
+        return False, "the food was thrown away"
+    sensor = STORE.get_sensor(incident.sensor_id)
+    above = sensor.bounds()[0] if sensor is not None else None
+    if above is None:
+        return False, "no upper limit to measure against"
+    from disposition import exposure
+
+    start = incident.opened_at - timedelta(minutes=SAVE_BASELINE_MINUTES)
+    end = incident.resolved_at or utc_now()
+    history = sorted((r for r in STORE.readings_for(incident.sensor_id, since=start)
+                      if r.recorded_at <= end), key=lambda r: r.recorded_at)
+    before = [r.temperature_fahrenheit for r in history
+              if r.recorded_at < incident.opened_at and r.temperature_fahrenheit <= above]
+    during = [r for r in history if r.recorded_at >= incident.opened_at]
+    if not before:
+        return False, "no normal readings before it to compare with"
+    measured = exposure(during, above, now=end)
+    peak = max([incident.temperature_fahrenheit]
+               + [r.temperature_fahrenheit for r in during])
+    baseline = sorted(before)[len(before) // 2]  # the median of "before"
+    if peak - baseline < SAVE_MIN_RISE_F:
+        return False, "a small rise, not a failure"
+    if measured["minutes_above"] < SAVE_MIN_MINUTES_OUT:
+        return False, "back in range within minutes"
+    return True, "a real failure, answered in time"
+
+
 def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
     """Weigh what the subscription costs against what it caught.
 
@@ -1250,6 +1355,7 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
 
     for incident in incidents:
         entry = PRICE_BOOK[incident.industry_vertical]
+        caught, why = caught_failure(incident)
         row = {
             "incident_id": incident.incident_id,
             "sensor_id": incident.sensor_id,
@@ -1257,14 +1363,17 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
             "catastrophe": incident.catastrophe,
             "opened_at": iso(incident.opened_at),
             "answered": incident.acknowledged_at is not None,
+            "caught_failure": caught,
+            "why": why,
             "loss_avoided_usd": entry["loss_avoided_usd"],
         }
         (quantified if entry["loss_avoided_usd"] else unquantified).append(row)
 
-    # Only an answered incident is a prevented loss. One nobody responded to
-    # is a warning that went unheeded, and claiming it as a save would be a
-    # lie the customer can check.
-    answered = [row for row in quantified if row["answered"]]
+    # Only a genuinely dangerous failure that somebody answered in time is a
+    # prevented loss. One nobody responded to is a warning that went
+    # unheeded, and a false alarm prevented nothing; claiming either as a
+    # save would be a lie the customer can check.
+    answered = [row for row in quantified if row["caught_failure"]]
     protected = round(sum(row["loss_avoided_usd"] for row in answered), 2)
     period_cost = round(subscription["monthly_total_usd"] * (days / 30.0), 2)
 
@@ -1284,8 +1393,11 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
         ),
         "detail": quantified + unquantified,
         "note": (
-            "Counts only incidents a person answered, in verticals with a "
-            "supplied loss figure. Verticals without one are listed but "
+            "Counts only real failures a person answered within two hours: "
+            "out of range for at least 15 minutes and at least 5°F warmer "
+            "than normal, with the food not thrown away. False alarms, short "
+            "door-open blips and alerts nobody answered are not counted. "
+            "Verticals without a supplied loss figure are listed but "
             "excluded from the total rather than estimated."
         ),
     }

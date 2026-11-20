@@ -71,6 +71,14 @@ class PlanChange(BaseModel):
     # On a money-bearing model a misspelt field has to be a 422.
     model_config = ConfigDict(extra="forbid")
     plan: str = Field(..., description="One of: trial, starter, growth, enterprise")
+    # A paid plan is a twelve-month commitment, and one tap used to make
+    # it. The console shows the terms (GET /me/plan/terms) and sends this
+    # only from the button that says "Yes, move to ...".
+    confirm: bool = Field(
+        False,
+        description=("Must be true for a self-service change: the owner has "
+                     "seen the terms from GET /api/licenses/me/plan/terms."),
+    )
 
 
 class ThresholdOverride(BaseModel):
@@ -96,6 +104,51 @@ class SensorRegister(BaseModel):
             "BYOD webhook bridge."
         ),
     )
+    unit_kind: Optional[str] = Field(
+        None,
+        max_length=20,
+        description=(
+            "\"fridge\" or \"freezer\" for the sectors that ask "
+            "(GET /api/industries lists each sector's unit_kinds). It sets "
+            "the unit's alarm limit, saved as its own. Left out, the "
+            "sector's own limit applies (a fridge's, where the sector asks)."
+        ),
+    )
+
+
+def apply_unit_kind(sensor, vertical: str, kind: Optional[str]) -> None:
+    """Save the limit "fridge or freezer?" gives, as the unit's own.
+
+    Saved on the sensor rather than left to the sector default, so the
+    line a unit alarms at is the one its owner chose when adding it, and
+    a later change to a default can never move it.
+    """
+    from domain import unit_kind_limits, unit_kinds
+
+    # Only when asked. Left out (an API caller that has never heard of the
+    # question), the sector's own limit applies, which for the sectors that
+    # ask is the first choice's anyway.
+    if not kind or not unit_kinds(vertical):
+        return
+    limits = unit_kind_limits(vertical, kind)
+    if limits is None:
+        return
+    STORE.set_sensor_overrides(sensor, limits[0], limits[1])
+
+
+def check_unit_kind(vertical: str, kind: Optional[str]) -> None:
+    """Refuse an answer to "fridge or freezer?" the sector does not offer."""
+    from domain import unit_kind_limits, unit_kinds
+
+    if not kind:
+        return
+    choices = unit_kinds(vertical)
+    if choices and unit_kind_limits(vertical, kind) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=("unit_kind must be one of "
+                    f"{[c['kind'] for c in choices]}."),
+        )
 
 
 def _validate_plan(plan: str) -> str:
@@ -115,14 +168,17 @@ def list_plans():
     Starter carries its flat price; the other plans are priced by the
     rate card, so theirs is null.
     """
-    from pricing import STARTER_MONTHLY_USD, STARTER_PLAN
+    from pricing import STARTER_MONTHLY_USD, STARTER_PLAN, add_ons_words, plan_features
 
     return {
         "plans": [
             {"plan": key, **tier,
-             "monthly_usd": STARTER_MONTHLY_USD if key == STARTER_PLAN else None}
+             "monthly_usd": STARTER_MONTHLY_USD if key == STARTER_PLAN else None,
+             # A few plain lines, distinct per plan (pricing.plan_features).
+             "features": plan_features(key)}
             for key, tier in PLAN_TIERS.items()
-        ]
+        ],
+        "add_ons": add_ons_words(),
     }
 
 
@@ -407,6 +463,77 @@ def refuse_off_starter_vertical(tenant: Tenant, vertical: str) -> None:
         )
 
 
+def plan_change_terms(tenant: Tenant, plan: str) -> dict:
+    """What moving to `plan` means, in the words the confirmation shows.
+
+    The plan, what it would cost for what is registered now, how long the
+    term is, what cancelling means, and what happens to the free trial.
+    Nothing here changes anything.
+    """
+    from dataclasses import replace
+    from math import ceil
+
+    from pricing import (CANCELLATION_RULE, STARTER_MONTHLY_USD,
+                         build_subscription, public_price)
+    from store import utc_now
+
+    tier = PLAN_TIERS[plan]
+    units = STORE.seat_count(tenant.tenant_id)
+    monthly: Optional[float]
+    if plan == "starter":
+        monthly = float(STARTER_MONTHLY_USD)
+        price_words = f"${STARTER_MONTHLY_USD:,.0f} a month, flat."
+    else:
+        try:
+            monthly = float(build_subscription(replace(tenant, plan=plan))["monthly_total_usd"])
+        except Exception:  # noqa: BLE001 - the words below still stand
+            monthly = None
+        rate = public_price(tenant.industry_vertical or "restaurant")
+        if monthly:
+            price_words = (f"About ${monthly:,.2f} a month for the {units} "
+                           f"unit{'s' if units != 1 else ''} you have now, from "
+                           "the rate card. It changes as you add or remove units.")
+        elif rate is not None:
+            price_words = (f"${rate:,.0f} a month per location from the rate card, "
+                           "for the units you add.")
+        else:
+            price_words = "Priced from the rate card for the units you add."
+    months = round(tier["term_days"] / 30.4)
+    term_words = (f"A {months}-month plan. Billing starts from your next "
+                  "invoice, for the days after the move only; nothing is "
+                  "charged on this screen.")
+    trial_days_left: Optional[int] = None
+    trial_words = ""
+    if tenant.plan == "trial":
+        trial_days_left = max(0, ceil((tenant.expires_at - utc_now()).total_seconds() / 86400))
+        trial_words = (f"Your free trial has {trial_days_left} day"
+                       f"{'s' if trial_days_left != 1 else ''} left. Moving now "
+                       "ends the trial; staying on it costs nothing until then.")
+    return {
+        "plan": plan,
+        "name": tier["name"],
+        "monthly_usd": monthly,
+        "price_words": price_words,
+        "term_days": tier["term_days"],
+        "term_words": term_words,
+        "cancel_words": CANCELLATION_RULE,
+        "trial_days_left": trial_days_left,
+        "trial_words": trial_words,
+        "calls": bool(tier["voice_escalation"]),
+        "max_units": tier["max_sensors"],
+    }
+
+
+@router.get("/me/plan/terms")
+def plan_terms(
+    plan: str,
+    tenant: Tenant = Depends(require_tenant_any_state),
+    owner: User = Depends(require_role("owner")),
+):
+    """The confirmation screen for a change of plan. Changes nothing."""
+    return plan_change_terms(tenant, _validate_plan(plan))
+
+
 @router.post("/me/plan")
 def change_plan(
     payload: PlanChange,
@@ -453,6 +580,19 @@ def change_plan(
                 f"sensors are registered but the plan allows {new_cap}. "
                 "Decommission sensors first."
             ),
+        )
+
+    # Nothing changes until the owner has seen the terms and said yes.
+    # Checked after every other refusal, so a change that could never
+    # happen says why rather than asking to be confirmed first.
+    if not operator_led and not payload.confirm and plan != tenant.plan:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail={
+                "message": (f"Moving to {PLAN_TIERS[plan]['name']} needs a yes: "
+                            "send confirm: true once the terms have been shown."),
+                "terms": plan_change_terms(tenant, plan),
+            },
         )
 
     # A self-service change moves the plan and nothing else. It used to start
@@ -520,6 +660,7 @@ def register_sensor(
         )
 
     refuse_off_starter_vertical(tenant, vertical)
+    check_unit_kind(vertical, payload.unit_kind)
     sensor_id = payload.sensor_id.strip()
     serial = (payload.external_device_sn or "").strip() or None
     cap = tenant.entitlements()["max_sensors"]
@@ -551,6 +692,8 @@ def register_sensor(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=detail
         ) from None
+
+    apply_unit_kind(sensor, vertical, payload.unit_kind)
 
     import usage
 

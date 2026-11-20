@@ -23,7 +23,6 @@ from gemini import safe_generate
 from auth import (
     actor_label,
     optional_operator,
-    require_entitlement,
     require_tenant,
     write_audit,
     require_role_or_machine,
@@ -355,9 +354,10 @@ def _ack_words(body: str) -> tuple[bool, Optional[int]]:
 
 
 def _alert_number(incident: Incident) -> int:
-    """INC-000012 -> 12: what a person types back."""
-    digits = re.sub(r"\D", "", incident.incident_id)
-    return int(digits) if digits else 0
+    """INC-12-QHKX (or, from before 3.19.0, INC-000012) -> 12: what a
+    person types back. The number counts this account's alerts only."""
+    found = re.match(r"^[A-Za-z]+-0*(\d+)", incident.incident_id)
+    return int(found.group(1)) if found else 0
 
 
 def _alerted(tenant: Tenant, incident: Incident, phone: str):
@@ -521,11 +521,23 @@ def pending_escalations(tenant: Tenant = Depends(require_tenant)):
     }
 
 
+def require_calls(tenant: Tenant = Depends(require_tenant)) -> Tenant:
+    """A plan with calls, or a free trial with some of its few calls left."""
+    from costs import calls_allowed, calls_offer
+
+    if not calls_allowed(tenant):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=calls_offer(tenant)["words"],
+        )
+    return tenant
+
+
 @router.post("/escalate/{incident_id}")
 def escalate_to_voice(
     incident_id: str,
     force: bool = False,
-    tenant: Tenant = Depends(require_entitlement("voice_escalation")),
+    tenant: Tenant = Depends(require_calls),
     operator: Optional[User] = Depends(optional_operator),
     # Dialling somebody is an action, not a view.
     _: object = Depends(require_role_or_machine("operator")),

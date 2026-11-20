@@ -384,6 +384,8 @@ a { color: var(--accent); }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
+.field-hint { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.field-hint:empty { display: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   white-space: nowrap;
@@ -575,6 +577,9 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
   letter-spacing: .05em; text-transform: uppercase;
   border: 1px solid currentColor; opacity: .92;
 }
+/* A delivery line says why in words now, which can be longer than a
+   phone is wide. */
+.incident .row .badge { white-space: normal; text-align: left; }
 .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .s-good     { color: var(--good); }
 .s-warning  { color: var(--warning); }
@@ -877,7 +882,8 @@ body.has-terminal main { padding-bottom: 148px; }
 
 /* ---------- wall display ---------- */
 body.wall .nav, body.wall .layout > aside, body.wall #terminal,
-body.wall .modules, body.wall .pair, body.wall #byod-form { display: none !important; }
+body.wall .modules, body.wall .pair, body.wall .side-cards,
+body.wall #byod-form { display: none !important; }
 body.wall main { padding: 22px; max-width: none; }
 body.wall .layout { grid-template-columns: minmax(0, 1fr); }
 body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
@@ -1410,6 +1416,29 @@ body[data-stale] #offline-banner {
   padding: 34px 20px; text-align: center; color: var(--muted);
   font-family: var(--display); font-size: 17.5px;
 }
+.f-tab-adv { border-style: dashed; }
+.adv-note { margin: 4px 0 14px; font-size: 13px; color: var(--muted); }
+.adv-note b { color: var(--ink-2); font-weight: 600; }
+
+/* Inputs laid out in a row inside a card (Fetch from a sensor cloud, the
+   OmniArmor connection, Change password, Things to do) had no styling at
+   all and rendered as the browser's white boxes on a dark card. The same
+   look as a .field input, without its label. */
+.card form .row > input:not([type="checkbox"]):not([type="radio"]),
+.card form .row > select,
+.card form.row > input:not([type="checkbox"]):not([type="radio"]),
+.card form.row > select {
+  min-width: 0; padding: 9px 11px;
+  background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 9px; outline: none;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.card form .row > input:focus, .card form.row > input:focus,
+.card form .row > select:focus, .card form.row > select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.card form .row > input::placeholder, .card form.row > input::placeholder { color: var(--muted); }
+#password-form .row > input { flex: 1 1 180px; }
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
@@ -1642,6 +1671,25 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .cancel-line { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
                display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
                font-size: 12.5px; color: var(--muted); }
+
+/* ---------- the plan confirmation (console) ---------- */
+.confirm-dialog {
+  width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  overflow: auto; padding: 22px 22px 18px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-lit); border-radius: 14px;
+}
+.confirm-dialog::backdrop { background: rgba(3,5,10,.72); }
+.confirm-title { margin: 0 0 12px; font-size: 19px; font-weight: 650; }
+.confirm-terms { margin: 0; display: grid; gap: 10px; }
+.confirm-terms dt {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.confirm-terms dd { margin: 2px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.confirm-out { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.confirm-out:empty { display: none; }
+.confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
 /* See it live (demo.html). Layout only: every colour is a token from
    theme.css, so the demo looks like the console it stands for. */
@@ -2047,7 +2095,7 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
   <p class="demo-small demo-error" id="error" hidden></p>
 </main>
 
-<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "limit_f": 45.0, "start_f": 39.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "alert_index": 4, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "ALERT Walk-in cooler (WALK-IN-1) at Corner Bistro: 42F, 1F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is CyberLogix AI with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.6 degrees Fahrenheit. That is 5.6 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "CyberLogix: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from CyberLogix: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://cyberlogix.mtrxhorizyn.com/signup?sector=restaurant"}</script>
+<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 37.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "alert_index": 4, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "ALERT Walk-in cooler (WALK-IN-1) at Corner Bistro: 42F, 1F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is CyberLogix AI with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.6 degrees Fahrenheit. That is 5.6 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "CyberLogix: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from CyberLogix: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://cyberlogix.mtrxhorizyn.com/signup?sector=restaurant"}</script>
 <script>
 /* The background: a field of the mark, breathing.
  *
@@ -2497,6 +2545,10 @@ function fix() {
   $("fix").hidden = true;
   timeline("fixed", "done", "Fixed: the door was left open. It is cooling back down.");
   $("alert-note").textContent = "sorted";
+  // Straight away, not on the next tick: the banner kept offering "Mark it
+  // fixed" for several seconds after it was pressed, while the walk-in
+  // was still above its limit on the way back down.
+  draw();
 }
 
 /* ---------------- drawing ---------------- */
@@ -2549,7 +2601,12 @@ function draw() {
   }).join("");
 
   const box = $("verdict");
-  if (warm && !run.acked) {
+  if (warm && run.fixed) {
+    box.className = "demo-verdict watch";
+    box.innerHTML = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
+      <p>Marked fixed and written down. It will show as fine once it is back
+         under ${esc(fmt(warm.limit_f))}°F.</p>`;
+  } else if (warm && !run.acked) {
     box.className = "demo-verdict bad";
     box.innerHTML = `<h2>${esc(warm.name)} is too warm</h2>
       <p>${esc(people())} have been texted. Reply 1 on the phone below to say you are on it.</p>

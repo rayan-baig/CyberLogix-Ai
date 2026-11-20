@@ -102,7 +102,7 @@ class World:
     def upgrade(self):
         target = self.rng.choice(["growth", "enterprise"])
         resp = self.api.post("/api/licenses/me/plan", headers=self.both,
-                             json={"plan": target})
+                             json={"plan": target, "confirm": True})
         self.log.append(f"upgrade({target}) -> {resp.status_code}")
 
     def sign(self):

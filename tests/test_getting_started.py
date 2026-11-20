@@ -45,7 +45,7 @@ def _checklist(api, owner):
 # --- the checklist ticks itself ---------------------------------------------
 
 
-def test_the_three_steps_tick_one_by_one_and_then_it_is_complete(api):
+def test_the_four_steps_tick_one_by_one_and_then_it_is_complete(api):
     owner = _sign_up(api)
     seen = []
 
@@ -54,9 +54,10 @@ def test_the_three_steps_tick_one_by_one_and_then_it_is_complete(api):
         seen.append((fd["done"], [s["done"] for s in fd["steps"]], fd["complete"]))
 
     note()
-    api.post("/api/licenses/me/sensors", headers=owner, json={
+    added = api.post("/api/licenses/me/sensors", headers=owner, json={
         "location_name": "Walk-in cooler", "sensor_id": "WALK-IN-1",
-        "industry_vertical": "restaurant"}).raise_for_status()
+        "industry_vertical": "restaurant"})
+    added.raise_for_status()
     note()
     # "Add me": the console sends the name and mobile given at sign-up.
     me = api.get("/api/console/overview", headers=owner).json()["tenant"]
@@ -68,12 +69,20 @@ def test_the_three_steps_tick_one_by_one_and_then_it_is_complete(api):
     sent = api.post("/api/contacts/test-alert", headers=owner)
     assert sent.status_code == 200 and sent.json()["incident_opened"] is False
     note()
+    # The sensor's first reading: only now is the first fridge protected.
+    api.post("/api/sensor-pulse",
+             headers={"X-CyberLogix-Sensor-Key": added.json()["ingest_key"]},
+             json={"sensor_id": "WALK-IN-1", "temperature_fahrenheit": 37.0}
+             ).raise_for_status()
+    note()
 
+    # sensor, who gets alerts, first reading, test alert
     assert seen == [
-        (0, [False, False, False], False),
-        (1, [True, False, False], False),
-        (2, [True, True, False], False),
-        (3, [True, True, True], True),
+        (0, [False, False, False, False], False),
+        (1, [True, False, False, False], False),
+        (2, [True, True, False, False], False),
+        (3, [True, True, False, True], False),
+        (4, [True, True, True, True], True),
     ]
 
 
@@ -92,7 +101,9 @@ def test_the_card_offers_add_me_and_a_test_straight_from_the_list():
     assert "step.done" in render and "localStorage" not in render
     # Gone when complete, with one word to say so.
     assert "fd.complete" in render and "card.hidden = true" in render
-    assert "Your first fridge is protected" in render
+    assert "your first fridge is protected" in render
+    # Said only once readings flow: "complete" includes the first reading.
+    assert "Readings are arriving" in render
 
 
 def test_add_me_posts_the_sign_up_contact():

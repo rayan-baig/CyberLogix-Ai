@@ -106,7 +106,7 @@ def test_what_readiness_says_about_paid_accounts_is_what_the_app_does(
     monkeypatch.setattr(licenses, "PROVISIONING_KEY", "")
 
     upgraded = api.post("/api/licenses/me/plan",
-                        headers=owner_headers(headers), json={"plan": "growth"})
+                        headers=owner_headers(headers), json={"plan": "growth", "confirm": True})
     paid_happened = upgraded.status_code == 200
 
     assert readiness.report()["paid_accounts_possible"] is paid_happened

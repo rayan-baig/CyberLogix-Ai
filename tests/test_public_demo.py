@@ -215,8 +215,13 @@ def test_the_plain_view_explains_the_product_to_a_stranger():
     page = build_public_demo.build(build_public_demo.capture(), "simple.html")
 
     assert "What this is" in page
-    assert "A thermometer sits in the freezer" in page
-    assert "We phone a human until one answers" in page
+    assert "A sensor sits in each fridge and freezer" in page
+    # Bought from a sensor maker: we do not sell hardware, and say so.
+    assert "we do\n        not sell them" in page or "we do not sell them" in page
+    # The phone-call promise is the plan's (simple.js, from the overview's
+    # calls); the page without it promises only texts.
+    assert "We text the people on your list" in page
+    assert "We phone a human until one answers" in page  # in simple.js, for a plan with calls
     assert "We keep the receipts" in page
 
 

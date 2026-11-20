@@ -47,10 +47,10 @@ def test_clearing_restores_the_industry_default(api, tenant_factory, sensor_fact
     set_bounds(api, headers, "FRZ-1", above=25.0)
 
     cleared = set_bounds(api, headers, "FRZ-1").json()
-    assert cleared["effective_above"] == 32.0
+    assert cleared["effective_above"] == 41.0
     assert cleared["sensor"]["uses_override"] is False
     assert "industry defaults apply" in cleared["message"]
-    assert pulse(api, headers, "FRZ-1", 28.0)["status"] == "nominal"
+    assert pulse(api, headers, "FRZ-1", 38.0)["status"] == "nominal"
 
 
 def test_impossible_band_is_rejected(api, tenant_factory, sensor_factory):

@@ -100,8 +100,10 @@ function verdict(units, jobs, paused) {
     box.innerHTML =
       `<h1>${urgent} thing${urgent === 1 ? "" : "s"} need${
         urgent === 1 ? "s" : ""} you now</h1>
-       <p>Food could be spoiling while this is on the screen. What to do
-          is written under each one.</p>`;
+       <p>${jobs.some((j) => j.now && j.mark === "!")
+          ? "A fridge or freezer is warmer than its limit. Check it now."
+          : "A sensor has stopped reporting, so that food is not being watched."}
+          What to do is written under each one.</p>`;
     return;
   }
   if (jobs.length) {
@@ -129,9 +131,27 @@ function verdict(units, jobs, paused) {
         all ${n} are reporting in. There is nothing for you to do.</p>`;
 }
 
+/* What happens when nobody answers, in the words of this account's plan.
+   "We phone a human until one answers" was printed for a Starter account
+   that never places a call. */
+function alertWords(calls) {
+  if (!calls) return;
+  if (calls.mode === "plan") {
+    $("how-alert-head").textContent = "We phone a human until one answers.";
+    $("how-alert-body").textContent = "Text first, then an actual phone call, "
+      + "then the next person on the list. An alert nobody picks up is the "
+      + "same as no alert, so we keep going until somebody does.";
+  } else {
+    $("how-alert-head").textContent = "We text the people on your list.";
+    $("how-alert-body").textContent = "Everyone on call gets a text the moment "
+      + "something is wrong, saying which fridge and how warm. " + calls.words;
+  }
+}
+
 function render(data) {
   const units = data.sensors || [];
   const jobs = [];
+  alertWords((data.entitlements || {}).calls);
 
   units.forEach((unit) => {
     const state = stateOf(unit);

@@ -49,7 +49,12 @@ function figs(s) {
     : "no alerts this month";
   return [
     ["Sensors watched", String(s.sensors_watched), "at this location"],
-    ["Time online", pct(s.online_percent), "all sensors together"],
+    // The hours behind the share, so 100% of nothing never reads as 100%.
+    ["Time online", s.online_percent === null || s.online_percent === undefined
+      ? (s.hours_watched === undefined ? "—" : "Not enough yet")
+      : pct(s.online_percent),
+     s.hours_watched === undefined ? "all sensors together"
+       : `of ${s.hours_watched} sensor-hours watched`],
     ["Temperature alerts", String(s.alerts), acknowledged],
     ["Typical answer", mins(s.median_minutes_to_acknowledge),
      s.slowest_minutes_to_acknowledge === null ? "time to acknowledge"
@@ -71,7 +76,7 @@ function render(seen) {
 
   $("sensors").innerHTML = r.sensors.map((s) => `<tr>
       <td>${esc(s.name)}<span class="sub">${esc(s.watched_hours)} hours watched</span></td>
-      <td class="num">${esc(pct(s.online_percent))}</td>
+      <td class="num">${esc(s.online_percent === null ? "under an hour" : pct(s.online_percent))}</td>
       <td class="num">${esc(s.longest_gap_minutes === null ? "none" : mins(s.longest_gap_minutes))}</td>
       <td class="num">${esc(s.alerts)}</td>
     </tr>`).join("");

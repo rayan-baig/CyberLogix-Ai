@@ -79,8 +79,17 @@ RECOVERY_TOLERANCE_F = 2.0
 # come out of defrost, which is a real failure with a real warm freezer
 # in it -- and it is exactly the failure a schedule-aware classifier
 # would otherwise excuse for ever, because it began on time.
-OVERRUN_FACTOR = 2.0
+#
+# Measured from the *shortest* of the recent cycles, not the typical one,
+# and never more than DEFROST_MAX_MINUTES. In a real 2026 attack on store
+# fridge controls, the attackers stretched defrost cycles to hold off the
+# alarms. A limit learned from the typical cycle grows with every stretched
+# one -- two 50-minute "defrosts" made the next 110 minutes look normal --
+# so a defrost much longer than this unit's normal ones now pages, and no
+# defrost at all is excused past the hard ceiling.
+OVERRUN_FACTOR = 1.5
 OVERRUN_GRACE_MINUTES = 10.0
+DEFROST_MAX_MINUTES = 45.0
 
 
 def _warm_events(
@@ -218,7 +227,8 @@ def classify(
     # cycle: true enough that it is not a fault, and it throws away the
     # schedule, which is the thing worth knowing.
     if rhythm is not None:
-        allowed = rhythm["typical_minutes"] * OVERRUN_FACTOR + OVERRUN_GRACE_MINUTES
+        allowed = min(rhythm["typical_minutes"] * OVERRUN_FACTOR + OVERRUN_GRACE_MINUTES,
+                      DEFROST_MAX_MINUTES)
         overrunning = current["ongoing"] and current["minutes"] > allowed
         _rhythmic = _on_schedule(real, rhythm) and not overrunning
         if _rhythmic and (current["recovered"] or current["ongoing"]):
@@ -307,8 +317,10 @@ def defrost_in_progress(
     * the unit has a learned rhythm from at least three earlier spells,
       every one of which came back down;
     * this spell started when that rhythm said it would;
-    * it has not run past twice its usual length (a unit that fails to
-      come out of defrost started on time, and is a real failure);
+    * it has not run past one and a half times this unit's shortest
+      recent cycle, plus ten minutes, nor past DEFROST_MAX_MINUTES at all
+      (a unit that fails to come out of defrost started on time and is a
+      real failure; a cycle stretched on purpose is an attack);
     * it is no warmer than the earlier cycles got.
 
     `classify` cannot be used for this: it ignores a spell until it has
@@ -329,7 +341,9 @@ def defrost_in_progress(
         return None
     if not _on_schedule(past + [current], rhythm):
         return None
-    allowed = rhythm["typical_minutes"] * OVERRUN_FACTOR + OVERRUN_GRACE_MINUTES
+    shortest = min(e["minutes"] for e in recent)
+    allowed = min(shortest * OVERRUN_FACTOR + OVERRUN_GRACE_MINUTES,
+                  DEFROST_MAX_MINUTES)
     if current["minutes"] > allowed:
         return None
     hottest = max(e["peak_f"] for e in recent)

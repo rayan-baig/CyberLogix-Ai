@@ -322,7 +322,7 @@ def test_the_classifier_gets_a_longer_window_than_the_slope(
     from store import STORE, utc_now
 
     headers, _ = tenant_factory(plan="enterprise")
-    sensor_factory(headers, "BACKBAR-1", "restaurant")
+    sensor_factory(headers, "BACKBAR-1", "restaurant", kind="freezer")
     sensor = STORE.get_sensor("BACKBAR-1")
     now = utc_now()
     # Four cycles, eight hours apart: thirty-two hours of history, all of

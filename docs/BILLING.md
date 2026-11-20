@@ -12,7 +12,7 @@ other trade is priced by quote.
 | Trade | Price | What it covers |
 |---|---|---|
 | Starter (a small cafe or shop) | **$59** a month, flat | 1 location, up to 3 fridges or freezers |
-| Franchise Restaurants | **$149** / location / month | up to 10 units at that location |
+| Restaurants & Cafés | **$149** / location / month | up to 10 units at that location |
 | Retail & Hospital Pharmacies | **$199** / pharmacy / month | up to 10 units at that pharmacy |
 | A unit past 10 at one location | **+$15** / unit / month | restaurants and pharmacies |
 | Kitchen Safety Bundle | **+$29** / location / month | the daily OmniArmor report, and OmniArmor Pro for that location |
@@ -304,6 +304,28 @@ vessel, a tank) at its rate in `PRICE_BOOK`.
 A trial estate is priced but not charged, so a prospect can see what their
 real fleet would cost. Downgrades that would strand units are refused with
 `409`; decommission sensors first.
+
+**A change of plan needs a yes.** `GET /api/licenses/me/plan/terms?plan=growth`
+(owner) returns what the console's confirmation shows: the plan, its price
+for what is registered now, the term (12 months), what cancelling means
+(`CANCELLATION_RULE`) and the trial days left. `POST /api/licenses/me/plan`
+refuses a self-service change without `"confirm": true` (`428`, with those
+terms in `detail.terms`), so nothing changes until the owner has seen them
+and pressed **Yes, move**. The operator's provisioning key needs no
+confirm.
+
+**What each plan gives** is `pricing.plan_features`, the same few lines on
+the front page's plan cards, the pricing page's plan table and `GET
+/api/licenses/plans` (`features`, with `add_ons`: the extras cost extra on
+any plan that takes them). Every page starts from the lowest price anybody
+pays, Starter's: "From $59 a month".
+
+**The loss avoided figure** (`build_roi`) counts only a real failure that
+somebody answered within two hours: out of range for at least 15 minutes,
+at least 5°F warmer than the same unit in the hour before, its own alert
+(not a site-wide one), and the food not thrown away. A false alarm, a
+short door-open blip, a unit whose first readings were already over a
+limit set wrong, or an alert nobody answered is not counted.
 
 ### Starter, for a small cafe or shop
 

@@ -111,7 +111,9 @@ def roster_gaps(tenant: Tenant) -> List[str]:
         return _rotation_gaps(tenant, roster)
     fallback = f"{tenant.contact_name} on {tenant.contact_phone}"
     channels = [("sms", "alert text")]
-    if tenant.entitlements()["voice_escalation"]:
+    from costs import calls_allowed
+
+    if calls_allowed(tenant):
         channels.append(("voice", "escalation call"))
     gaps = []
     for channel, label in channels:
@@ -353,6 +355,12 @@ def preview_routing(tenant: Tenant = Depends(require_tenant)):
     Worth checking after editing the roster: a rota nobody has verified is
     the reason an alert reaches an empty desk.
     """
+    from costs import calls_allowed, calls_offer
+
+    # No ladder where nothing would ring: a Starter account, or a trial
+    # whose few calls are used, was shown "then it calls ..." for a call
+    # that would never be placed.
+    calls = calls_allowed(tenant)
     return {
         "sms_recipients": [
             {"name": c.full_name, "phone": c.phone}
@@ -361,12 +369,17 @@ def preview_routing(tenant: Tenant = Depends(require_tenant)):
         "voice_ladder": [
             {"name": c.full_name, "phone": c.phone, "position": index + 1}
             for index, c in enumerate(STORE.voice_ladder(tenant))
-        ],
+        ] if calls else [],
+        "calls": calls_offer(tenant),
         "note": (
             "The text goes to everyone listed. The call walks the ladder and "
             "stops at the first person actually reached. Right now: people "
             "in a rotation count only on their shift, and anybody in quiet "
             "hours is texted only if nobody else would be, and called last."
+            if calls else
+            "The text goes to everyone listed. Right now: people in a "
+            "rotation count only on their shift, and anybody in quiet hours "
+            "is texted only if nobody else would be. " + calls_offer(tenant)["words"]
         ),
         "warnings": roster_gaps(tenant),
     }

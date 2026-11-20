@@ -52,18 +52,6 @@
           "sizes": "192x192"
         }
       ]
-    },
-    {
-      "name": "The book",
-      "short_name": "Book",
-      "description": "Every account that needs a person.",
-      "url": "/book",
-      "icons": [
-        {
-          "src": "/static/icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
     }
   ]
 }
