@@ -31,12 +31,16 @@
    heading and the points ran right to the edge of the screen. */
 .shell { display: grid; grid-template-columns: 1fr 420px; gap: 0 56px;
          grid-template-areas: "intro panel" "why panel";
+         /* The form is taller than the words beside it. The spare height
+            goes under the points, not between the heading and them: it
+            left a 400px hole in the left column on a desktop. */
+         grid-template-rows: auto 1fr;
          padding-top: 56px; padding-bottom: 90px; align-items: start; }
 .shell .intro { grid-area: intro; }
 .shell .why { grid-area: why; }
 .shell #panel { grid-area: panel; }
 @media (max-width: 960px) {
-  .shell { grid-template-columns: minmax(0, 1fr); gap: 0;
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0; grid-template-rows: none;
            grid-template-areas: "intro" "panel" "why"; padding-top: 28px; }
   .shell .why { margin-top: 30px; }
   .lede { margin-bottom: 22px; }

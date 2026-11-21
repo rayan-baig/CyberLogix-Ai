@@ -1923,8 +1923,16 @@ class HubStore:
             self._save_incident(incident)
         return incident
 
-    def resolve_incident(self, incident: Incident, actor: str) -> Incident:
-        """Close an incident, acknowledging it first if nobody had."""
+    def resolve_incident(
+        self, incident: Incident, actor: str, note: Optional[str] = None,
+        out_of_range: bool = False, temperature_f: Optional[float] = None,
+    ) -> Incident:
+        """Close an incident, acknowledging it first if nobody had.
+
+        A person closing it is written down with the one-line note they
+        gave (or the plain one the caller wrote for them), and whether the
+        unit was still out of range when they did, at what temperature.
+        """
         with self._lock:
             if incident.resolved_at is None:
                 now = utc_now()
@@ -1932,11 +1940,67 @@ class HubStore:
                     incident.acknowledged_at = now
                     incident.acknowledged_by = actor
                 incident.resolved_at = now
+                incident.resolved_by = actor
+                incident.close_note = (note or "").strip() or None
+                incident.closed_out_of_range = bool(out_of_range)
+                incident.close_temperature_f = temperature_f
                 self._save_incident(incident)
                 # The recovery is evidence too: an adjuster asks how long
                 # it was out of band and when it came back.
                 self.preserve_evidence(incident)
             return incident
+
+    def report_fixed(self, incident: Incident, actor: str) -> Incident:
+        """"It's fixed", pressed while the unit is still out of range.
+
+        Not closed: it closes by itself once the unit is back to normal
+        (telemetry.close_if_back_to_normal). Whoever said so has it, so it
+        is acknowledged in their name if nobody had, which stops the calls.
+        """
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            if live.resolved_at is not None:
+                return live
+            now = utc_now()
+            if live.acknowledged_at is None:
+                live.acknowledged_at = now
+                live.acknowledged_by = actor
+            if live.fix_reported_at is None:
+                live.fix_reported_at = now
+                live.fix_reported_by = actor
+            self._save_incident(live)
+            if live is not incident:
+                incident.acknowledged_at = live.acknowledged_at
+                incident.acknowledged_by = live.acknowledged_by
+                incident.fix_reported_at = live.fix_reported_at
+                incident.fix_reported_by = live.fix_reported_by
+            return live
+
+    def note_manual_close(self, incident: Incident, actor: Optional[str],
+                          note: str, temperature_f: Optional[float]) -> None:
+        """Who closed it and why, on an alert closed some other way first."""
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            live.resolved_by = actor
+            live.close_note = note
+            live.close_temperature_f = temperature_f
+            self._save_incident(live)
+            if live is not incident:
+                incident.resolved_by = actor
+                incident.close_note = note
+
+    def last_manual_close(self, sensor_id: str, tenant_id: str) -> Optional[datetime]:
+        """When a person last closed an alert on this unit, if one did.
+
+        The wait before alerting starts again from here, so a unit somebody
+        closed while it was still warm ("Close anyway: moved the food") is
+        not alerted on again a few seconds later.
+        """
+        with self._lock:
+            times = [i.resolved_at for i in self._incidents.values()
+                     if i.sensor_id == sensor_id and i.tenant_id == tenant_id
+                     and not i.site_wide and i.resolved_by and i.resolved_at]
+        return max(times) if times else None
 
     def note_out_since(self, incident: Incident, at: Optional[datetime]) -> None:
         """When the unit first went out of range for this alert."""
@@ -1946,7 +2010,8 @@ class HubStore:
             incident.out_since = at
             self._save_incident(incident)
 
-    def resolve_back_to_normal(self, incident: Incident, note: str) -> bool:
+    def resolve_back_to_normal(self, incident: Incident, note: str,
+                               fix_reported: bool = False) -> bool:
         """Close an alert nobody answered because the unit recovered.
 
         Only while nobody has it: an alert somebody acknowledged is theirs
@@ -1957,7 +2022,11 @@ class HubStore:
         """
         with self._lock:
             live = self._incidents.get(incident.incident_id, incident)
-            if not live.open:
+            # Or: somebody said "It's fixed" while it was still warm, and
+            # it has now come back. Closed on their word and the reading.
+            answered_but_reported = (fix_reported and live.unresolved
+                                     and live.fix_reported_at is not None)
+            if not live.open and not answered_but_reported:
                 return False
             live.resolved_at = utc_now()
             live.resolved_note = note

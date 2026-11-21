@@ -199,6 +199,37 @@ def back_to_normal_note(minutes: float, called: bool = False) -> str:
     return note
 
 
+def fixed_and_back_note(minutes: float, who: str, temperature: str) -> str:
+    """The note on an alert somebody said was fixed before it was cold again.
+
+    "Rosa said it was fixed. Back to normal (38°F) after 25 minutes."
+    """
+    from domain import minutes_words
+
+    return (f"{who} said it was fixed. Back to normal ({temperature}) after "
+            f"{minutes_words(minutes)} out of range.")
+
+
+def still_out_words(temperature: str, limit: str, warm: bool) -> str:
+    """What "It's fixed" says when the unit is not fixed yet.
+
+    "It's still 48°F. We'll close it when it's back under 41°F."
+    """
+    side = "under" if warm else "over"
+    return (f"It's still {temperature}. We'll close it when it's back "
+            f"{side} {limit}.")
+
+
+# The common reasons for closing an alert while the unit is still out of
+# range, offered as one tap each. A line of your own is always allowed.
+CLOSE_ANYWAY_REASONS = (
+    "Moved the food to another fridge",
+    "Called for a repair",
+    "Door was left open, now shut",
+    "Sensor is in the wrong place",
+)
+
+
 def back_to_normal_sms(tenant, sensor, temperature_f: float, unit: str,
                        minutes: float) -> str:
     """The all-clear to the people who were texted the alert."""

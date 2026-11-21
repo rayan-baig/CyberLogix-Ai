@@ -363,8 +363,13 @@ def outage_words() -> str:
     )
 
 
-def what_you_need_html(heading_level: int = 2, with_steps: bool = True) -> str:
-    """The "What you need" section as HTML. Everything is escaped."""
+def what_you_need_html(heading_level: int = 2, with_steps: bool = True,
+                       folded: bool = False) -> str:
+    """The "What you need" section as HTML. Everything is escaped.
+
+    `folded` keeps the heading and the first paragraph on screen and folds
+    the rest behind "More" on a phone (the front page; landing.js opens
+    it on a wide screen)."""
     e = html.escape
     h = f"h{heading_level}"
     sub = f"h{heading_level + 1}"
@@ -378,11 +383,14 @@ def what_you_need_html(heading_level: int = 2, with_steps: bool = True) -> str:
         f'<section class="need" id="what-you-need">'
         f'<{h}>{e(WHAT_YOU_NEED["title"])}</{h}>'
         f'<p>{e(WHAT_YOU_NEED["lede"])}</p>'
-        f'<{sub}>Which sensors work</{sub}><ul class="need-kinds">{kinds}</ul>'
+        + ('<details class="more" data-open-wide><summary>Which sensors, '
+           'what they cost</summary>' if folded else "")
+        + f'<{sub}>Which sensors work</{sub}><ul class="need-kinds">{kinds}</ul>'
         f'<{sub}>Roughly what they cost</{sub}><p>{e(WHAT_YOU_NEED["cost"])}</p>'
         f"{steps}"
         f'<{sub}>If the power or internet goes off</{sub}><p>{e(outage_words())}</p>'
-        f"</section>"
+        + ("</details>" if folded else "")
+        + "</section>"
     )
 
 

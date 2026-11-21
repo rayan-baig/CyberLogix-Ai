@@ -250,6 +250,8 @@ $("signin-form").addEventListener("submit", async (event) => {
       }),
     });
     rememberEmail($("si-email").value.trim());
+    // Signing in, not reloading: an open alert sends this to /today.
+    state.fromSignIn = true;
     await enter(body.token, body.user);
   } catch (err) {
     toast(err.message, "err");
@@ -512,7 +514,13 @@ async function loadIndustries() {
   state.industries = body.industries;
   // The knocking card may already be on screen with an empty dropdown.
   fillKnockIndustries();
-  $("add-vertical").innerHTML = body.industries
+  // Food and medicine first, the made-to-order trades last: a café's
+  // add form opened on "Data centers — Custom pricing".
+  const ordered = body.industries.slice().sort((a, b) =>
+    ((ADD_FIRST.indexOf(a.vertical) + 1) || 99) - ((ADD_FIRST.indexOf(b.vertical) + 1) || 99)
+    || Number(a.monthly_usd == null) - Number(b.monthly_usd == null)
+    || a.name.localeCompare(b.name));
+  $("add-vertical").innerHTML = ordered
     .map((i) => `<option value="${esc(i.vertical)}">`
       + `${esc(i.name)} — ${i.monthly_usd == null ? esc(i.price_label)
         : `$${i.monthly_usd} / ${esc(i.billing_unit)}`}</option>`)
@@ -528,6 +536,16 @@ async function loadIndustries() {
   preferSector(state.data);
   calculateBilling();
 }
+
+// The order of the add form's list when nothing is known yet.
+const ADD_FIRST = ["restaurant", "pharmacy", "medical_lab", "country_club"];
+
+$("add-trade-change").addEventListener("click", () => {
+  state.tradeOpened = true;
+  $("add-trade").hidden = true;
+  $("add-vertical-field").hidden = false;
+  $("add-vertical").focus();
+});
 
 $("add-vertical").addEventListener("change", (event) => {
   showSectorExample(event.target.value);
@@ -671,6 +689,14 @@ function preferSector(overview) {
     const select = $(id);
     if (select) select.value = wanted;
   });
+  // Taken from the business's own trade instead of asked: one line
+  // saying which, and "Change" for a unit of another kind.
+  const trade = (state.industries || []).find((i) => i.vertical === wanted);
+  if (trade && !state.tradeOpened) {
+    $("add-trade-words").textContent = `For ${trade.name.toLowerCase()}.`;
+    $("add-trade").hidden = false;
+    $("add-vertical-field").hidden = true;
+  }
 
   showSectorExample(wanted);
   showUnitKinds(wanted);
@@ -1026,10 +1052,13 @@ function render(d, health) {
   const banner = $("delivery-banner");
   if (health.message_delivery !== "twilio") {
     banner.hidden = false;
+    // Plain words for the person reading; the settings for whoever runs
+    // the server are on hover, not in a café owner's first screen.
     banner.textContent =
-      "Texts and calls are switched off on this server, so alerts are written "
-      + "down but not sent. (For whoever runs it: set TWILIO_ACCOUNT_SID, "
-      + "TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER.)";
+      "Texts and calls are not switched on for this server yet, so alerts "
+      + "show here but nobody is texted.";
+    banner.title = "For whoever runs it: set TWILIO_ACCOUNT_SID, "
+      + "TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER.";
   } else {
     banner.hidden = true;
   }
@@ -1106,6 +1135,7 @@ function render(d, health) {
     d.incidents.length ? `${open} active, ${d.incidents.length} total` : "";
   renderSiteWide(d.site_wide_alerts || []);
   renderIncidents(d.incidents, d.entitlements, d.site_wide_alerts || []);
+  renderNeedsBar(d);
   renderByod(d.sensors);
 }
 
@@ -1130,7 +1160,7 @@ function siteWideReach(a) {
   const parts = [`Raised ${esc(stamp(a.opened_at))}`];
   if (texted) parts.push(`texted ${texted} ${texted === 1 ? "person" : "people"}`);
   if (called) parts.push(`called ${called}`);
-  if (a.acknowledged_by) parts.push(`acknowledged by ${esc(a.acknowledged_by)}`);
+  if (a.acknowledged_by) parts.push(`${esc(CLXWords.person(a.acknowledged_by_name, a.acknowledged_by))} is on it`);
   if (a.group_night) parts.push("at night");
   return parts.join(" · ");
 }
@@ -1138,9 +1168,9 @@ function siteWideReach(a) {
 function siteWideActions(a) {
   return `<div class="incident-actions">${
     a.state === "open"
-      ? `<button class="btn btn-sm" data-ack="${esc(a.incident_id)}">Acknowledge</button>` : ""}${
+      ? `<button class="btn btn-sm btn-primary" data-ack="${esc(a.incident_id)}">I'm on it</button>` : ""}${
     a.state !== "resolved"
-      ? `<button class="btn btn-sm" data-resolve="${esc(a.incident_id)}">Resolve</button>` : ""}</div>`;
+      ? `<button class="btn btn-sm" data-resolve="${esc(a.incident_id)}">It's fixed</button>` : ""}</div>`;
 }
 
 const SITE_WIDE_WHY = "This can mean a power cut, a door left open, or someone "
@@ -1167,7 +1197,7 @@ function siteWideCard(a) {
         <span class="badge s-critical"><span class="dot" aria-hidden="true"></span>Site-wide</span>
         ${badge(a.state === "open" ? "critical" : a.state === "acknowledged" ? "elevated" : "low", a.state)}
         <span class="incident-title grow">${esc(a.catastrophe_type)}</span>
-        <span class="card-note">${esc((a.group_units || []).length)} units · ${esc(minutesWords(a.minutes_open))}</span>
+        <span class="card-note">${esc((a.group_units || []).length)} units · ${esc(CLXWords.outFor(a.out_since, a.out_until))}</span>
       </div>
       <div class="card-note">${esc(a.breach_details)}</div>
       ${siteWideUnits(a)}
@@ -1282,7 +1312,18 @@ function visibleSensors(sensors) {
   });
 }
 
+/* The unit with an alert first, then one being watched, then one gone
+   quiet; the calm ones after, in their usual order. */
+const URGENCY = { alert: 0, paused: 1, watching: 2, offline: 3 };
+function byUrgency(sensors) {
+  const rank = (x) => URGENCY[(x.condition || {}).state] ?? 9;
+  return sensors.map((x, i) => [x, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
+    .map(([x]) => x);
+}
+
 function renderFleet(sensors) {
+  if (state.editing && document.querySelector(
+    `.wait-edit[data-wait-for="${CSS.escape(state.editing.id)}"]:not([hidden])`)) return;
   if (!sensors.length) {
     const filtered = state.search || state.filter !== "all" || state.site !== "all";
     $("fleet").innerHTML = `<div class="empty">${
@@ -1318,13 +1359,13 @@ function renderFleet(sensors) {
             bad ? ` · ${bad} breaching` : ""
           }</span>
         </div>
-        <div class="fleet">${rows.map(sensorCard).join("")}</div>`;
+        <div class="fleet">${byUrgency(rows).map(sensorCard).join("")}</div>`;
     }).join("");
     return;
   }
 
   $("fleet").style.display = "";
-  $("fleet").innerHTML = sensors.map(sensorCard).join("");
+  $("fleet").innerHTML = byUrgency(sensors).map(sensorCard).join("");
 }
 
 function healthPills(s) {
@@ -1347,68 +1388,147 @@ function healthPills(s) {
   return bits.length ? `<div class="health">${bits.join("")}</div>` : "";
 }
 
-function sensorCard(s) {
-  {
-    const risk = s.risk_level || "unknown";
-    // "unknown" is the forecaster saying it has not got enough history to
-    // fit a trend yet — a freshly installed sensor, or one that has just
-    // come back. Printed as the word UNKNOWN next to a green ONLINE it
-    // reads as "something is wrong with this asset", which is the first
-    // thing a new customer sees across a whole healthy fleet on their
-    // first morning. Say what is actually true instead.
-    const label = !s.risk_level
-      ? "no forecast"
-      : risk === "unknown"
-        ? "trend pending"
-        : (s.hours_until_breach !== null && s.hours_until_breach > 0
-            ? `${risk} · ${s.hours_until_breach}h`
-            : risk);
-    const unit = s.temperature_unit || state.unit;
-    const reading = s.last_temperature_display;
-    const temp = (reading === null || reading === undefined)
-      ? "—" : reading.toFixed(1);
-    const above = s.danger_above_display, below = s.danger_below_display;
-    const bound = s.external_device_sn
-      ? `Device ${esc(s.external_device_sn)}` : "Sends to us directly";
+/* A unit's limit or alert wait, changed on its own card. The card stays
+   put while it is open: the twenty-second refresh would otherwise redraw
+   it under somebody's thumb. */
+function closeUnitEditor() {
+  state.editing = null;
+  document.querySelectorAll(".wait-edit").forEach((box) => {
+    box.hidden = true;
+    box.innerHTML = "";
+  });
+}
 
-    return `<article class="sensor ${s.breaching ? "is-breaching" : ""}">
-      <div class="sensor-top">
-        <span class="sensor-id grow clickable" data-detail="${esc(s.sensor_id)}"
-              role="button" tabindex="0">${esc(s.sensor_id)}</span>
-        ${badge(s.breaching ? "critical" : risk, s.breaching ? "breaching" : label)}
+function openUnitEditor(sensorId, which) {
+  const sensor = state.data.sensors.find((x) => x.sensor_id === sensorId);
+  const box = document.querySelector(`.wait-edit[data-wait-for="${CSS.escape(sensorId)}"]`);
+  if (!sensor || !box) return;
+  closeUnitEditor();
+  state.editing = { id: sensorId, which };
+  box.dataset.which = which;
+  const name = esc((sensor.location_name || "").trim() || sensor.sensor_id);
+  if (which === "wait") {
+    const usual = sensor.alert_after_minutes_default;
+    const now = sensor.alert_after_minutes_own == null ? usual : sensor.alert_after_minutes_own;
+    const picks = [0, 5, 10, 20, 30, 60].map((m) => `<button class="f-tab" type="button"
+        data-wait-pick="${m}" aria-pressed="${m === Number(now)}">${
+        m === 0 ? "At once" : `${m} min`}${m === Number(usual) ? " (usual)" : ""}</button>`).join("");
+    box.innerHTML = `<label for="wait-in-${esc(sensorId)}">How long may ${name} stay out of
+        range before we text anybody?</label>
+      <div class="wait-chips">${picks}</div>
+      <div class="wait-row">
+        <input id="wait-in-${esc(sensorId)}" type="number" inputmode="numeric" min="0" max="1440"
+               step="1" value="${esc(now)}"> <span>minutes</span>
       </div>
-      <div class="sensor-loc">${esc(s.location_name)} · ${esc(s.industry_name)}</div>
+      <p class="wait-help">A door open for a minute or a delivery wakes nobody. A reading far
+        past the limit (${esc(sensor.alert_at_once_degrees)}°F over) is always sent at once.</p>
+      <p class="wait-help wait-out" role="status"></p>
+      <div class="wait-acts">
+        <button class="btn btn-sm btn-go" type="button" data-edit-save="${esc(sensorId)}">Save</button>
+        <button class="btn btn-sm" type="button" data-edit-default="${esc(sensorId)}">Use the usual ${
+          esc(usual)} minutes</button>
+        <button class="btn btn-sm" type="button" data-edit-cancel="1">Cancel</button>
+      </div>`;
+  } else {
+    const unit = sensor.temperature_unit || state.unit || "F";
+    const shown = sensor.danger_above_display;
+    box.innerHTML = `<label for="limit-in-${esc(sensorId)}">Text us if ${name} goes over</label>
+      <div class="wait-row">
+        <input id="limit-in-${esc(sensorId)}" type="number" inputmode="decimal" step="0.5"
+               value="${esc(shown == null ? "" : shown)}"> <span>°${esc(unit)}</span>
+      </div>
+      <p class="wait-help">The usual limit is right for most ${
+        esc(sensor.unit_kind || "unit")}s. Change it only if your inspector or the food needs another.</p>
+      <p class="wait-help wait-out" role="status"></p>
+      <div class="wait-acts">
+        <button class="btn btn-sm btn-go" type="button" data-edit-save="${esc(sensorId)}">Save</button>
+        <button class="btn btn-sm" type="button" data-edit-default="${esc(sensorId)}">Use the usual limit</button>
+        <button class="btn btn-sm" type="button" data-edit-cancel="1">Cancel</button>
+      </div>`;
+  }
+  box.hidden = false;
+  const input = box.querySelector("input");
+  if (input) input.focus({ preventScroll: true });
+}
+
+/* The calm word for what a unit is doing, from the server's one
+   `condition` (CLXWords.condition). A brand-new sensor said BREACHING, NO
+   FORECAST, an orange "tuned" and a red OFFLINE before its first reading
+   arrived: four alarms about nothing. Now it says "Waiting for its first
+   reading". A unit out of range inside its wait says "Watching" and when
+   we text, as /today and Problems do. */
+const STATE_PILL = { quiet: "s-muted", ok: "s-good", watch: "s-warning", warm: "s-critical" };
+
+function statePill(c) {
+  return `<span class="badge plain ${STATE_PILL[c.kind] || "s-muted"}">`
+       + `<span class="dot" aria-hidden="true"></span>${esc(c.word)}</span>`;
+}
+
+/* The forecast, only where the plan has one and only when it says
+   something: "trend pending" and "no forecast" told a new customer
+   nothing they could act on. */
+function forecastNote(s) {
+  if (!s.risk_level || s.risk_level === "unknown") return "";
+  if (s.hours_until_breach !== null && s.hours_until_breach > 0
+      && ["critical", "high", "elevated"].includes(s.risk_level)) {
+    return `<span class="sensor-fore">Could be too warm in about ${esc(s.hours_until_breach)}h</span>`;
+  }
+  return "";
+}
+
+function sensorCard(s) {
+  const c = CLXWords.condition(s);
+  const unit = s.temperature_unit || state.unit;
+  const reading = s.last_temperature_display;
+  const temp = (reading === null || reading === undefined)
+    ? "—" : reading.toFixed(1);
+  const above = s.danger_above_display, below = s.danger_below_display;
+  const bound = s.external_device_sn
+    ? `Device ${esc(s.external_device_sn)}` : "Sends to us directly";
+  const name = (s.location_name || "").trim() || s.sensor_id;
+  const loud = c.state === "alert" || c.state === "paused";
+  const wait = s.alert_after_minutes
+    ? `We text if it stays out ${esc(minutesWords(s.alert_after_minutes))}`
+    : "We text at the first reading out";
+
+  return `<article class="sensor ${loud ? "is-breaching" : c.state === "watching" ? "is-watching" : ""}">
+      <div class="sensor-top">
+        <span class="sensor-name grow clickable" data-detail="${esc(s.sensor_id)}"
+              role="button" tabindex="0">${esc(name)}</span>
+        ${statePill(c)}
+      </div>
+      <div class="sensor-loc"><span class="sensor-id">${esc(s.sensor_id)}</span>${
+        s.site_name ? ` · ${esc(s.site_name)}` : ""}</div>
       <div class="sensor-read">
         <span class="sensor-temp">${esc(temp)}</span>
         <span class="sensor-unit">°${esc(unit)}</span>
         <span class="nav-spacer"></span>
-        ${badge(s.online ? "low" : "unknown", s.online ? "online" : "offline")}
+        ${forecastNote(s)}
       </div>
-      <div class="spark-wrap">${sparkline(s)}</div>
+      ${c.line ? `<p class="sensor-state st-${esc(c.kind)}">${esc(c.line)}</p>` : ""}
+      ${c.state === "waiting_first" ? "" : `<div class="spark-wrap">${sparkline(s)}</div>`}
       ${healthPills(s)}
       ${repairBlock(s)}
-      ${s.online ? "" : `<a class="offline-help" href="/help#sensor-offline"
-          >Offline: what to check</a>`}
+      ${c.state === "offline" ? `<a class="offline-help" href="/help#sensor-offline"
+          >No signal: what to check</a>` : ""}
       <div class="sensor-meta">
         <span>${esc(bound)}</span>
-        <span>limit ${below !== null && below !== undefined
-            ? esc(below) + "–" : "&lt; "}${esc(above)}°${esc(unit)}${
-          s.uses_override ? ' <span class="u-c-warning">tuned</span>' : ""
+        <span>Limit ${below !== null && below !== undefined
+            ? esc(below) + "–" : "under "}${esc(above)}°${esc(unit)}${
+          s.limit_own ? ' <span class="u-c-muted">(your own)</span>' : ""
         }</span>
-        <span>${s.alert_after_minutes
-            ? `alerts after ${esc(s.alert_after_minutes)} min out`
-            : "alerts at the first reading out"}${
-          s.alert_after_minutes_own != null ? ' <span class="u-c-warning">set</span>' : ""}</span>
+        <span>${wait}${
+          s.alert_after_minutes_own != null ? ' <span class="u-c-muted">(your own)</span>' : ""}</span>
       </div>
       <div class="sensor-actions">
         <button class="btn btn-sm" data-detail="${esc(s.sensor_id)}">History</button>
-        <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Retune</button>
+        <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Change limit</button>
         <button class="btn btn-sm" data-wait="${esc(s.sensor_id)}">Alert wait</button>
         <button class="btn btn-sm" data-rekey="${esc(s.sensor_id)}">New key</button>
         <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
       </div>
+      <div class="wait-edit" data-wait-for="${esc(s.sensor_id)}" hidden></div>
     </article>`;
-  }
 }
 
 /* "Get a repair quote", on a unit the forecaster or the pattern check
@@ -1759,20 +1879,24 @@ function textsFailedNote(i) {
 function incidentTimeline(i) {
   const when = (iso) => iso
     ? new Date(iso).toLocaleString([], { month: "short", day: "numeric",
-        hour: "2-digit", minute: "2-digit" })
+        hour: "numeric", minute: "2-digit" })
     : "";
   const steps = [];
+  const deg = `${i.temperature_display ?? i.temperature_fahrenheit}°${i.temperature_unit || state.unit}`;
 
-  steps.push({ cls: "hit", when: i.opened_at,
-    text: `Out of range: ${i.temperature_display ?? i.temperature_fahrenheit}°`
-        + `${i.temperature_unit || state.unit}` });
+  // When it went out of range, which with the wait is before the alert
+  // opened: the same "out since" as the unit card and /today.
+  steps.push({ cls: "hit", when: i.out_since || i.opened_at,
+    text: `Went out of range: ${deg}` });
 
   const texted = (i.sms_fanout || []).length || (i.sms_delivery ? 1 : 0);
   if (texted) {
     const landed = (i.sms_fanout || []).filter((f) => f.delivered).length
       || (i.sms_delivery && i.sms_delivery.delivered ? 1 : 0);
     steps.push({ cls: "hit", when: i.opened_at,
-      text: `Texted ${texted} on the roster · ${landed} delivered` });
+      text: `Alert sent: texted ${texted} ${texted === 1 ? "person" : "people"} · ${landed} delivered` });
+  } else {
+    steps.push({ cls: "hit", when: i.opened_at, text: "Alert opened" });
   }
   for (const r of (i.sms_retries || [])) {
     const sent = (r.deliveries || []).length;
@@ -1786,31 +1910,63 @@ function incidentTimeline(i) {
     steps.push({ cls: "call", when: i.voice_escalated_at,
       text: reached
         ? `Called ${reached.contact_name || reached.to}`
-        : "Called the ladder — nobody answered" });
+        : "Called the list — nobody answered" });
   }
   if (i.acknowledged_at) {
     steps.push({ cls: "ack", when: i.acknowledged_at,
-      text: `Acknowledged by ${i.acknowledged_by || "someone"}` });
+      text: CLXWords.person(i.acknowledged_by_name, i.acknowledged_by) + " said they were on it" });
+  }
+  if (i.fix_reported_at && !i.resolved_at) {
+    steps.push({ cls: "ack", when: i.fix_reported_at,
+      text: CLXWords.person(i.fix_reported_by_name, i.fix_reported_by)
+        + " said it was fixed. It closes by itself once it is back in range." });
   }
   if (i.resolved_at) {
-    steps.push({ cls: "done", when: i.resolved_at,
-      text: i.resolved_note || "Resolved" });
+    const by = i.resolved_by ? CLXWords.person(i.resolved_by_name, i.resolved_by) : "";
+    const text = i.back_to_normal_on_its_own || !by
+      ? (i.resolved_note || "Closed")
+      : `Closed by ${by}${i.closed_out_of_range ? " while still out of range" : ""}`
+        + (i.close_note ? `: ${i.close_note}` : "");
+    steps.push({ cls: "done", when: i.resolved_at, text });
   }
-  if (!i.acknowledged_at && !i.resolved_at) {
+  if (!i.resolved_at) {
     steps.push({ cls: "", when: null,
-      text: `Still open after ${minutesWords(i.minutes_open)}` });
+      text: `Out of range for ${CLXWords.outFor(i.out_since || i.opened_at)} so far` });
   }
 
-  return `<ul class="timeline">${steps.map((s) =>
-    `<li class="${s.cls}">${esc(s.text)}`
-    + (s.when ? ` <span class="when">${esc(when(s.when))}</span>` : "")
+  return `<ul class="timeline">${steps.map((st) =>
+    `<li class="${st.cls}">${esc(st.text)}`
+    + (st.when ? ` <span class="when">${esc(when(st.when))}</span>` : "")
     + `</li>`).join("")}</ul>`;
+}
+
+/* A unit's name as the kitchen says it, for an alert about it. */
+function unitNameFor(sensorId) {
+  const s = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === sensorId);
+  return s ? ((s.location_name || "").trim() || s.sensor_id) : sensorId;
+}
+
+/* Units out of range inside their wait: nobody texted yet, and Problems
+   says so in the same words as the card, not "within its limits". */
+function watchingRows(sensors) {
+  return (sensors || []).filter((x) => x.condition && x.condition.state === "watching")
+    .map((x) => {
+      const c = CLXWords.condition(x);
+      return `<article class="incident st-watching">
+        <div class="incident-top">${statePill(c)}
+          <span class="incident-title grow">${esc(unitNameFor(x.sensor_id))}</span>
+          <span class="card-note">${esc(x.last_temperature_display)}°${esc(x.temperature_unit || state.unit)}</span>
+        </div>
+        <div class="card-note">${esc(c.line)}</div>
+      </article>`;
+    }).join("");
 }
 
 function renderIncidents(incidents, entitlements, siteWide) {
   const groups = (siteWide || []).map(siteWideCard).join("");
-  if (!incidents.length && groups) {
-    $("incidents").innerHTML = groups;
+  const watching = watchingRows(state.data && state.data.sensors);
+  if (!incidents.length && (groups || watching)) {
+    $("incidents").innerHTML = groups + watching;
     return;
   }
   if (!incidents.length) {
@@ -1826,42 +1982,48 @@ function renderIncidents(incidents, entitlements, siteWide) {
     return;
   }
 
-  $("incidents").innerHTML = groups + incidents.map((i) => {
-    const stateKind = i.state === "open" ? "critical"
-                    : i.state === "acknowledged" ? "elevated" : "low";
+  $("incidents").innerHTML = groups + watching + incidents.map((i) => {
     const canEscalate = i.state === "open" && !i.voice_escalated_at
                         && entitlements.voice_escalation;
+    const who = CLXWords.person(i.acknowledged_by_name, i.acknowledged_by);
+    const pill = i.state === "open"
+      ? { kind: "warm", word: "Nobody has answered" }
+      : i.state === "acknowledged" ? { kind: "watch", word: `${who} is on it` }
+        : { kind: "ok", word: "Closed" };
+    const outWords = CLXWords.outFor(i.out_since || i.opened_at, i.out_until);
 
     return `<article class="incident st-${esc(i.state)}">
       <div class="incident-top">
-        ${badge(stateKind, i.state)}
-        <span class="incident-title grow">${esc(i.catastrophe_type)}</span>
-        <span class="card-note">${esc(i.sensor_id)} · ${esc(minutesWords(i.minutes_open))}</span>
+        ${statePill(pill)}
+        <span class="incident-title grow">${esc(unitNameFor(i.sensor_id))}</span>
+        <span class="card-note">${i.state === "resolved" ? "was out" : "out"} for ${esc(outWords)}</span>
       </div>
       <div class="card-note">${esc(i.breach_details)}</div>
       ${textsFailedNote(i)}
       ${incidentTimeline(i)}
 
-      <div class="quote">
-        <div class="quote-label">The text we sent</div>
-        ${esc(i.dispatched_sms_text)}
-      </div>
-      ${i.voice_script ? `<div class="quote">
-        <div class="quote-label">What the phone call said</div>${esc(i.voice_script)}</div>` : ""}
-
-      <div class="row u-gap-6">
-        ${deliveryLine(i.texts_landed && !(i.sms_delivery && i.sms_delivery.delivered)
-          ? { delivered: true, provider_sid: "on a re-send" } : i.sms_delivery, "SMS")}
-        ${i.voice_escalated_at ? deliveryLine(i.voice_delivery, "Call") : ""}
-      </div>
+      <details class="incident-more">
+        <summary>The text we sent${i.voice_script ? " and the call" : ""}</summary>
+        <div class="quote">
+          <div class="quote-label">The text we sent</div>
+          ${esc(i.dispatched_sms_text)}
+        </div>
+        ${i.voice_script ? `<div class="quote">
+          <div class="quote-label">What the phone call said</div>${esc(i.voice_script)}</div>` : ""}
+        <div class="row u-gap-6">
+          ${deliveryLine(i.texts_landed && !(i.sms_delivery && i.sms_delivery.delivered)
+            ? { delivered: true, provider_sid: "on a re-send" } : i.sms_delivery, "SMS")}
+          ${i.voice_escalated_at ? deliveryLine(i.voice_delivery, "Call") : ""}
+        </div>
+      </details>
 
       <div class="incident-actions">
         ${i.state === "open"
-          ? `<button class="btn btn-sm" data-ack="${esc(i.incident_id)}">Acknowledge</button>` : ""}
+          ? `<button class="btn btn-sm btn-primary" data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
         ${i.state !== "resolved"
-          ? `<button class="btn btn-sm" data-resolve="${esc(i.incident_id)}">Resolve</button>` : ""}
+          ? `<button class="btn btn-sm" data-resolve="${esc(i.incident_id)}">It's fixed</button>` : ""}
         ${canEscalate
-          ? `<button class="btn btn-sm" data-escalate="${esc(i.incident_id)}">Escalate to call</button>` : ""}
+          ? `<button class="btn btn-sm" data-escalate="${esc(i.incident_id)}">Call now</button>` : ""}
         <button class="btn btn-sm" data-packet="${esc(i.incident_id)}">Claim packet</button>
         <!-- The question actually being asked in the kitchen. Everything
              else on this row is about the incident; this one is about
@@ -1872,6 +2034,56 @@ function renderIncidents(incidents, entitlements, siteWide) {
       <div class="food-out" data-food-for="${esc(i.sensor_id)}"></div>
     </article>`;
   }).join("");
+}
+
+/* An alert nobody has dealt with, pinned at the top of every view of the
+   console until it is. Signing in with an alert open put Acknowledge
+   about 3,100px down a phone, under Getting started, the tiles and the
+   fleet. Now the two buttons are the first thing on the screen, on every
+   tab, with the unit, how warm and for how long. */
+function renderNeedsBar(d) {
+  const bar = $("needs-bar");
+  if (!bar) return;
+  const live = (d.incidents || []).filter((i) => i.state !== "resolved" && !i.site_wide);
+  const wide = (d.site_wide_alerts || []).filter((i) => i.state !== "resolved");
+  const all = wide.concat(live).sort((a, b) =>
+    (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1)
+    || String(a.opened_at).localeCompare(String(b.opened_at)));
+  if (!all.length) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    measureNav();
+    return;
+  }
+  const i = all[0];
+  const unit = (d.sensors || []).find((x) => x.sensor_id === i.sensor_id);
+  const deg = unit && unit.last_temperature_display != null
+    ? `${unit.last_temperature_display}°${unit.temperature_unit || state.unit}`
+    : `${i.temperature_display ?? i.temperature_fahrenheit}°${i.temperature_unit || state.unit}`;
+  const warm = !(unit && unit.condition && unit.condition.too === "cold");
+  const what = i.site_wide
+    ? `<b>Several fridges are warming at once.</b> ${esc(i.breach_details || "")}`
+    : `<b>${esc(unitNameFor(i.sensor_id))}</b> is ${esc(deg)}, too ${warm ? "warm" : "cold"} for ${
+        esc(CLXWords.outFor(i.out_since || i.opened_at))}.`;
+  const who = i.state === "acknowledged"
+    ? (i.fix_reported_at
+        ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed; it closes once it is back in range.`
+        : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
+    : (i.voice_escalated_at ? "Nobody has answered, and we have phoned." : "Nobody has answered yet.");
+  const more = all.length - 1;
+  bar.innerHTML = `<div class="needs-bar-in">
+      <span class="needs-bar-kicker">Needs you now</span>
+      <p class="needs-bar-what">${what} <span class="needs-bar-who">${who}</span></p>
+      <span class="needs-bar-acts">
+        ${i.state === "open" ? `<button class="btn btn-sm btn-primary" type="button"
+            data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
+        <button class="btn btn-sm" type="button" data-resolve="${esc(i.incident_id)}">It's fixed</button>
+        ${more ? `<button class="btn btn-sm linkish" type="button" data-needs-more="1">${
+          more} more</button>` : ""}
+      </span>
+    </div>`;
+  bar.hidden = false;
+  measureNav();
 }
 
 /* Spend controls: what was spent, and what the controls kept off the bill. */
@@ -1941,7 +2153,7 @@ function renderAudit(trail) {
         <span class="u-fs-11-5 u-c-muted u-ws-nowrap">${esc(when)}</span>
       </div>
       <div class="u-fs-12 u-c-ink-2 u-mt-2">${esc(e.detail)}</div>
-      <div class="u-fs-11-5 u-c-muted">${esc(e.actor)}</div>
+      <div class="u-fs-11-5 u-c-muted" title="${esc(e.actor)}">${esc(CLXWords.person(null, e.actor))}</div>
     </div>`;
   }).join("");
 }
@@ -4391,7 +4603,7 @@ async function openInspectorLog(from, to, print) {
             <th>Acknowledged by</th><th>What was done</th><th>Reviewed</th>
             <th>Closed</th></tr></thead>
           <tbody>${unit.breaches.map((b) => `<tr>
-            <td>${esc(stamp(b.opened_at))}</td>
+            <td>${esc(stamp(b.out_since || b.opened_at))}</td>
             <td class="num">${deg(b.worst)}</td>
             <td>${b.acknowledged_by
               ? `${esc(b.acknowledged_by)}<span class="log-sub">${
@@ -4403,7 +4615,11 @@ async function openInspectorLog(from, to, print) {
                   ? `<span class="log-sub">Product: ${esc(b.product_disposition)}</span>` : ""}`
               : `<strong>Not recorded</strong>`}</td>
             <td>${esc(b.reviewed_by || "—")}</td>
-            <td>${b.closed_at ? esc(stamp(b.closed_at)) : "still open"}</td>
+            <td>${b.closed_at ? `${esc(stamp(b.closed_at))}${b.closed_by
+                ? `<span class="log-sub">by ${esc(b.closed_by)}${b.closed_out_of_range
+                    ? ", still out of range" : ""}</span>` : ""}${b.close_note
+                ? `<span class="log-sub">${esc(b.close_note)}</span>` : ""}`
+              : "still open"}</td>
           </tr>`).join("")}</tbody>
         </table></div>`
       : `<div class="card-note">${unit.out_of_range_readings
@@ -4729,7 +4945,7 @@ async function openDrawer(sensorId, options = {}) {
           ? esc(s.danger_below_display) + " to " : "under "}${
         esc(s.danger_above_display)}°${esc(unit)}</span></div>
       <div><span class="k">Link</span><span class="v">${
-        esc(s.online ? "online" : "offline")}</span></div>
+        esc(!s.last_seen ? "waiting for its first reading" : s.online ? "online" : "no signal")}</span></div>
       <div><span class="k">Battery</span><span class="v">${
         s.battery_percent === null || s.battery_percent === undefined
           ? "not reported" : esc(s.battery_percent) + "%"
@@ -4743,8 +4959,8 @@ async function openDrawer(sensorId, options = {}) {
         esc(f.risk_level)}${f.hours_until_breach ? ` · ${esc(f.hours_until_breach)}h`
         : ""}</span></div>` : ""}
     </div>
-    ${s.online ? "" : `<details class="offline-box" id="offline-box" open>
-      <summary>It is offline. What to check</summary>
+    ${s.online || !s.last_seen ? "" : `<details class="offline-box" id="offline-box" open>
+      <summary>No signal. What to check</summary>
       <div id="offline-box-body"><p class="card-plain">Loading the steps…</p></div>
     </details>`}
 
@@ -5241,6 +5457,7 @@ const GO = {
   oncall: { card: "find-on-call-roster", field: "ct-name" },
   test:   { card: "find-on-call-roster", field: "test-alert" },
   plans:  { card: "find-subscription", field: "" },
+  alerts: { card: "find-incidents", field: "" },
 };
 const GO_LABEL = {
   site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",
@@ -5262,7 +5479,7 @@ function nextSteps(steps) {
    tucked underneath them. */
 function stickyHeight() {
   let height = 0;
-  document.querySelectorAll(".nav, .finder").forEach((bar) => {
+  document.querySelectorAll(".nav, .needs-bar, .finder").forEach((bar) => {
     if (getComputedStyle(bar).position === "sticky") {
       height += bar.getBoundingClientRect().height;
     }
@@ -5725,16 +5942,18 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  // "I'm on it" and "It's fixed", the same here, in the pinned bar and
+  // on /today (static/answer.js): a unit still out of range is not closed.
   if (btn.dataset.ack) {
-    act(() => api(`/api/voice/acknowledge/${encodeURIComponent(btn.dataset.ack)}`, {
-      method: "POST", body: JSON.stringify({}),
-    }), "Acknowledged. Escalation halted.");
+    CLXAnswer.onIt(btn.dataset.ack, btn);
   }
 
   if (btn.dataset.resolve) {
-    act(() => api(`/api/voice/resolve/${encodeURIComponent(btn.dataset.resolve)}`, {
-      method: "POST", body: JSON.stringify({}),
-    }), "Incident resolved.");
+    CLXAnswer.fixed(btn.dataset.resolve, btn);
+  }
+
+  if (btn.dataset.needsMore) {
+    goTo("alerts");
   }
 
   if (btn.dataset.escalate) {
@@ -5813,58 +6032,67 @@ document.addEventListener("click", (event) => {
     }, `New key issued for ${id}.`);
   }
 
+  // The limit and the alert wait are changed on the card itself, not in
+  // a browser pop-up (openUnitEditor).
   if (btn.dataset.tune) {
-    const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.tune);
-    if (!sensor) return;
-    // Asked in the account's own unit, the one the card shows. Asking in
-    // Fahrenheit on a Celsius account meant somebody reading "5°C" on the
-    // card typed 5 and set the limit to 5°F, so every reading alarmed.
-    const unit = sensor.temperature_unit || state.unit || "F";
-    const shown = sensor.danger_above_display;
-    const current = shown === null || shown === undefined ? "" : String(shown);
-    const answer = prompt(
-      `Upper limit for ${sensor.sensor_id} in °${unit}.\n`
-      + `Blank restores the ${sensor.industry_name} default.`,
-      current
-    );
-    if (answer === null) return;
-    const value = answer.trim() === "" ? null : Number(answer);
-    if (value !== null && !Number.isFinite(value)) {
-      toast("That is not a number.", "err");
-      return;
-    }
-    // The API holds limits in Fahrenheit, whatever the account reads in.
-    const fahrenheit = value === null || unit !== "C"
-      ? value : Math.round((value * 9 / 5 + 32) * 100) / 100;
-    act(() => api(
-      `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/thresholds`,
-      { method: "POST", body: JSON.stringify({
-          danger_above: fahrenheit, danger_below: sensor.override_below ?? null }) }
-    ), value === null ? "Restored the industry default." : `Limit set to ${value}°${unit}.`);
+    openUnitEditor(btn.dataset.tune, "limit");
+    return;
   }
 
   if (btn.dataset.wait) {
-    const sensor = state.data.sensors.find((s) => s.sensor_id === btn.dataset.wait);
-    if (!sensor) return;
-    const answer = prompt(
-      `How many minutes may ${sensor.location_name || sensor.sensor_id} stay out `
-      + "of range before we text anybody?\n"
-      + "0 texts on the first reading. A reading far past the limit is always "
-      + `sent at once.\nBlank restores the default (${sensor.alert_after_minutes_default} minutes).`,
-      sensor.alert_after_minutes_own == null ? "" : String(sensor.alert_after_minutes_own)
-    );
-    if (answer === null) return;
-    const minutes = answer.trim() === "" ? null : Number(answer);
-    if (minutes !== null && !(Number.isFinite(minutes) && minutes >= 0)) {
-      toast("That is not a number of minutes.", "err");
+    openUnitEditor(btn.dataset.wait, "wait");
+    return;
+  }
+
+  if (btn.dataset.editCancel) {
+    closeUnitEditor();
+    return;
+  }
+
+  if (btn.dataset.waitPick !== undefined) {
+    const box = btn.closest(".wait-edit");
+    box.querySelector("input").value = btn.dataset.waitPick;
+    box.querySelectorAll("[data-wait-pick]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b === btn)));
+    return;
+  }
+
+  if (btn.dataset.editSave || btn.dataset.editDefault) {
+    const id = btn.dataset.editSave || btn.dataset.editDefault;
+    const sensor = state.data.sensors.find((x) => x.sensor_id === id);
+    const box = btn.closest(".wait-edit");
+    if (!sensor || !box) return;
+    const which = box.dataset.which;
+    const raw = btn.dataset.editDefault ? "" : box.querySelector("input").value.trim();
+    const value = raw === "" ? null : Number(raw);
+    const out = box.querySelector(".wait-out");
+    if (value !== null && !(Number.isFinite(value) && (which === "limit" || value >= 0))) {
+      out.textContent = which === "wait" ? "Type a number of minutes, 0 or more." : "Type a temperature.";
       return;
     }
-    act(() => api(
-      `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/alert-rule`,
-      { method: "POST", body: JSON.stringify({
-          alert_after_minutes: minutes,
-          alert_after_readings: sensor.alert_after_readings ?? null }) }
-    ), minutes === null ? "Back to the default wait." : `Alerts after ${minutes} minutes out of range.`);
+    if (which === "wait") {
+      act(() => api(
+        `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/alert-rule`,
+        { method: "POST", body: JSON.stringify({
+            alert_after_minutes: value,
+            alert_after_readings: sensor.alert_after_readings ?? null }) }
+      ), value === null ? "Back to the usual wait."
+        : value === 0 ? "We text at the first reading out of range."
+          : `We text once it has been out of range ${minutesWords(value)}.`);
+    } else {
+      // Asked in the account's own unit, the one the card shows; the API
+      // holds limits in Fahrenheit, whatever the account reads in.
+      const unit = sensor.temperature_unit || state.unit || "F";
+      const fahrenheit = value === null || unit !== "C"
+        ? value : Math.round((value * 9 / 5 + 32) * 100) / 100;
+      act(() => api(
+        `/api/licenses/me/sensors/${encodeURIComponent(sensor.sensor_id)}/thresholds`,
+        { method: "POST", body: JSON.stringify({
+            danger_above: fahrenheit, danger_below: sensor.override_below ?? null }) }
+      ), value === null ? "Back to the usual limit." : `Limit set to ${value}°${unit}.`);
+    }
+    closeUnitEditor();
+    return;
   }
 
   if (btn.dataset.shortcut) {
@@ -6353,18 +6581,33 @@ function primeTheGate() {
    account still on Getting started stays. "All the detail" on the Simple
    view comes back with ?view=full, which holds for the rest of the
    session; a link to a card (#...) is always followed here. */
+function liveAlert(d) {
+  return (d.incidents || []).some((i) => i.state !== "resolved")
+    || (d.site_wide_alerts || []).some((i) => i.state !== "resolved");
+}
+
 function maybeLandOnSimple(d) {
   if (state.landingDecided) return;
   state.landingDecided = true;
   if (state.wall || location.hash) return;
   let chosen = null;
+  let asked = false;
   try {
-    if (new URLSearchParams(location.search).get("view") === "full") {
-      sessionStorage.setItem("cyberlogix.view", "full");
-    }
+    asked = new URLSearchParams(location.search).get("view") === "full";
+    if (asked) sessionStorage.setItem("cyberlogix.view", "full");
     chosen = sessionStorage.getItem("cyberlogix.view")
       || localStorage.getItem("cyberlogix.view");
   } catch (_) { /* storage blocked: decide from the account alone */ }
+  if (asked) return;
+  // An alert open or unanswered, on any account: whoever is signing in
+  // may be the person we just texted, and /today puts "I'm on it" first.
+  // Signing in goes there; a reload, or a console opened from a saved
+  // session, keeps the console, with the alert pinned at the top.
+  if (liveAlert(d) && state.fromSignIn) {
+    state.leaving = true;
+    location.replace("/today");
+    return;
+  }
   if (chosen === "full") return;
   if (!smallAccount(d) || !d.first_day || !d.first_day.complete) return;
   state.leaving = true;
@@ -6550,12 +6793,27 @@ function measureNav() {
   if (!nav) return;
   document.documentElement.style.setProperty(
     "--nav-h", `${Math.round(nav.getBoundingClientRect().height)}px`);
+  // The pinned "Needs you now" bar sits under the nav, and the finder's
+  // tabs under it, so neither covers the other.
+  const bar = document.getElementById("needs-bar");
+  const barH = bar && !bar.hidden ? Math.round(bar.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--needs-h", `${barH}px`);
 }
 if (typeof ResizeObserver === "function") {
   const nav = document.querySelector(".nav");
   if (nav) new ResizeObserver(measureNav).observe(nav);
+  const bar = document.getElementById("needs-bar");
+  if (bar) new ResizeObserver(measureNav).observe(bar);
 }
 window.addEventListener("resize", measureNav);
+
+/* "I'm on it" and "It's fixed" (static/answer.js), with this page's
+   session, its toasts, and a fresh look once something changed. */
+CLXAnswer.setup({
+  token: () => state.token,
+  say: (message, kind) => toast(message, kind || ""),
+  done: () => refresh().catch(() => { /* the next poll tries again */ }),
+});
 
 /* ---------------- Pilot ----------------
    What Pilot, the assistant (static/pilot-cyberlogix-pack.js, docs/PILOT.md),

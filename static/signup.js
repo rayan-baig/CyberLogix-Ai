@@ -59,39 +59,59 @@ async function boot() {
     $("password").minLength = info.min_password_length;
 
     const select = $("industry_vertical");
-    // The common kinds first, in plain words; every sector after them.
-    // Each trade once: a common kind is not listed again under its formal
-    // name ("Restaurant or café" and "Restaurants & Cafés" were both there).
+    // The four plain choices most people run, and "Something else" for the
+    // rest. Superyachts, hangars, cannabis and country clubs were listed
+    // under a restaurant's choice, which read as a product for somebody
+    // else; they wait behind "Something else" now, in a second list.
     const common = info.common || [];
     const listed = new Set(common.map((kind) => kind.sector || kind.key));
-    const groups = [["Most businesses", common],
-                    ["Other kinds of business",
-                     info.sectors.filter((sector) => !listed.has(sector.key))]];
-    for (const [label, rows] of groups) {
-      if (!rows.length) continue;
-      const group = document.createElement("optgroup");
-      group.label = label;
-      for (const sector of rows) {
+    for (const kind of common) {
+      const option = document.createElement("option");
+      // textContent, not innerHTML: an <option> is still a place a tag
+      // would be parsed.
+      option.value = kind.key;
+      option.textContent = kind.name;
+      select.appendChild(option);
+    }
+    const rest = info.sectors.filter((sector) => !listed.has(sector.key));
+    const other = $("industry_other");
+    if (rest.length) {
+      const more = document.createElement("option");
+      more.value = OTHER;
+      more.textContent = "Something else";
+      select.appendChild(more);
+      for (const sector of rest) {
         const option = document.createElement("option");
-        // textContent, not innerHTML: an <option> is still a place a tag
-        // would be parsed.
         option.value = sector.key;
         option.textContent = sector.name;
-        group.appendChild(option);
+        other.appendChild(option);
       }
-      select.appendChild(group);
     }
+    select.addEventListener("change", showOther);
     // Arriving from the demo or a trade page, the kind of business is
     // already known: chosen for them, and still changeable.
     const wanted = new URLSearchParams(location.search).get("sector") || "";
-    if (wanted && info.sectors.some((sector) => sector.key === wanted)) {
+    if (wanted && common.some((kind) => kind.key === wanted)) {
       select.value = wanted;
+    } else if (wanted && rest.some((sector) => sector.key === wanted)) {
+      select.value = OTHER;
+      other.value = wanted;
     }
+    showOther();
   } catch (err) {
     $("sub").textContent = "";
     fail(`The sector list could not be loaded (${err.message}). The form `
        + "still works — leave the sector blank and set it later.");
   }
+}
+
+const OTHER = "__other";
+
+/* "Something else" opens the second list; anything else folds it. */
+function showOther() {
+  const open = $("industry_vertical").value === OTHER;
+  $("other-field").hidden = !open;
+  $("industry_other").required = open;
 }
 
 function stepsHtml(next) {
@@ -191,6 +211,8 @@ $("form").addEventListener("submit", async (event) => {
 
   const form = new FormData(event.target);
   const payload = Object.fromEntries(form.entries());
+  if (payload.industry_vertical === OTHER) payload.industry_vertical = payload.industry_other || "";
+  delete payload.industry_other;
   if (!payload.industry_vertical) delete payload.industry_vertical;
   if (!String(payload.referral_code || "").trim()) delete payload.referral_code;
 

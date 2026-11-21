@@ -1,4 +1,4 @@
-/* Pilot core 1.1.0 · pilot.css
+/* Pilot core 1.1.1 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -18,6 +18,7 @@
   --pilot-nokey: #fbbf24;
   --pilot-size: 88px;
   --pilot-gap: 16px;
+  --pilot-peek-show: 36px; /* how much of the robot shows while it's tucked away */
   position: fixed;
   z-index: 2147483000;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -91,14 +92,22 @@
 .pilot-launcher .pa-stage { position: absolute; left: 44.7%; top: 100%; width: 0; height: 0; }
 
 /* Out of the way. While a pop-up of the page is open the robot steps back
-   (hidden, and clicks go through). With nowhere free to sit it tucks half
-   away at the edge until tapped. */
+   (hidden, and clicks go through). With nowhere free to sit (the page's
+   words or buttons, or a box being typed in, are in every corner) it tucks
+   away at the edge until tapped: only a slice --pilot-peek-show wide still
+   shows (pilot-mascot.js peekBox counts with the same number). */
 .pilot-root { transition: opacity 0.2s ease, visibility 0s linear 0s; }
 .pilot-root.pilot-yield { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s ease, visibility 0s linear 0.2s; }
-.pilot-peek .pilot-launcher { opacity: 0.8; transform: translateX(58%); transition: transform 0.3s ease, opacity 0.3s ease; }
-.pilot-peek.pilot-at-bl .pilot-launcher, .pilot-peek.pilot-at-tl .pilot-launcher { transform: translateX(-58%); }
-.pilot-peek .pilot-launcher:hover, .pilot-peek .pilot-launcher:focus-visible { opacity: 1; transform: translateX(36%); }
-.pilot-peek.pilot-at-bl .pilot-launcher:hover, .pilot-peek.pilot-at-tl .pilot-launcher:hover { transform: translateX(-36%); }
+.pilot-root { --pilot-tuck: calc(var(--pilot-size) + var(--pilot-gap) - var(--pilot-peek-show)); }
+.pilot-peek .pilot-launcher { opacity: 0.8; transform: translateX(var(--pilot-tuck)); transition: transform 0.3s ease, opacity 0.3s ease; }
+.pilot-peek.pilot-at-bl .pilot-launcher, .pilot-peek.pilot-at-tl .pilot-launcher { transform: translateX(calc(-1 * var(--pilot-tuck))); }
+.pilot-peek:not(.pilot-typing) .pilot-launcher:hover, .pilot-peek:not(.pilot-typing) .pilot-launcher:focus-visible {
+  opacity: 1; transform: translateX(calc(var(--pilot-tuck) - 20px)); }
+.pilot-peek.pilot-at-bl:not(.pilot-typing) .pilot-launcher:hover, .pilot-peek.pilot-at-tl:not(.pilot-typing) .pilot-launcher:hover {
+  transform: translateX(calc(20px - var(--pilot-tuck))); }
+/* While a box of the page is being typed in, the tucked-away robot is
+   quieter still. */
+.pilot-typing.pilot-peek .pilot-launcher { opacity: 0.55; }
 
 /* Room for the robot: a page (or an app's own stylesheet) can keep its last
    lines and buttons clear with padding-bottom: var(--pilot-gutter), or the
@@ -106,9 +115,18 @@
 :root.pilot-on { --pilot-gutter: calc(88px * 0.97 + 32px); }
 .pilot-gutter { padding-bottom: var(--pilot-gutter, 0px); }
 
+/* On phones, room at the sides for the tucked-away robot (it can tuck at
+   either edge): line ends stop before the slice of it that still shows,
+   and the page stays even. An app can put .pilot-gutter-side
+   on anything; pilot.js also puts it on the app's gutter elements (`main`
+   unless the config says otherwise) where their own padding is narrower. */
 @media (max-width: 720px) {
-  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; }
-  :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); }
+  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; }
+  :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); --pilot-side: 24px; }
+  :root.pilot-on .pilot-gutter-side {
+    padding-right: max(var(--pilot-side), env(safe-area-inset-right, 0px));
+    padding-left: max(var(--pilot-side), env(safe-area-inset-left, 0px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

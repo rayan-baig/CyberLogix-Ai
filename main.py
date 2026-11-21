@@ -1113,7 +1113,8 @@ def landing_page(request: Request):
     return _serve_page(LANDING_HTML, request, _landing_facts(),
                        # The steps are on /help/sensors; the front page
                        # says what to buy and links there.
-                       markup={"%%WHAT_YOU_NEED%%": what_you_need_html(2, with_steps=False)})
+                       markup={"%%WHAT_YOU_NEED%%": what_you_need_html(2, with_steps=False,
+                                                                       folded=True)})
 
 
 @app.get("/console", include_in_schema=False)

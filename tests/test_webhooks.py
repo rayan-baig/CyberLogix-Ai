@@ -126,7 +126,8 @@ def test_pagerduty_resolves_the_alert_it_opened(
     body = breach(api, headers, sensor_factory)
     incident_id = body["incident_id"]
 
-    api.post(f"/api/voice/resolve/{incident_id}", headers=headers, json={})
+    api.post(f"/api/voice/resolve/{incident_id}", headers=headers,
+             json={"close_anyway": True, "note": "Called for a repair"})
 
     assert posted[0]["url"] == webhooks.PAGERDUTY_ENQUEUE_URL
     assert posted[0]["body"]["event_action"] == "trigger"

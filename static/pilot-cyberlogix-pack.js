@@ -325,11 +325,21 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
     },
     {
       name: "mark_alert_fixed", kind: "change", available: signedIn,
-      description: "Mark an alert fixed (Resolve) once the fault is sorted. Needs the alert_id.",
+      description: "Mark an alert fixed once the fault is sorted. Needs the alert_id. If the unit is still out of range it is not closed: CyberLogix says so and closes it by itself once the unit is back in range; closing it anyway needs a one-line note, which the person gives on the alert's own It's fixed button.",
       parameters: { type: "object", properties: { alert_id: { type: "string", maxLength: 40, description: "The alert_id." } }, required: ["alert_id"] },
       describe: (args) => `mark the alert on “${known.get(args.alert_id) || args.alert_id}” as fixed (it closes)`,
       run: async (args) => {
-        const r = await call(`/api/voice/resolve/${encodeURIComponent(args.alert_id)}`, { method: "POST", body: {} });
+        let r;
+        try {
+          r = await call(`/api/voice/resolve/${encodeURIComponent(args.alert_id)}`, { method: "POST", body: {} });
+        } catch (err) {
+          // Still out of range: not closed, and it closes by itself once cold.
+          if (/^It's still /.test(String(err && err.message))) {
+            if (bridge()) bridge().refresh();
+            return { status: "STILL_OUT_OF_RANGE", message: `${err.message} To close it anyway, press It's fixed on the alert and add a one-line note.` };
+          }
+          throw err;
+        }
         if (bridge()) bridge().refresh();
         return { status: r.status, message: r.message || "Marked fixed. Record what was done and what happened to the food on the alert's card." };
       },

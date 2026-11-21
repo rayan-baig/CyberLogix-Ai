@@ -50,6 +50,7 @@ from store import (
     to_fahrenheit,
     utc_now,
 )
+from records import person_name
 
 logger = logging.getLogger("cyberlogix.telemetry")
 
@@ -303,21 +304,68 @@ def out_of_range_spell(sensor) -> "tuple[Optional[datetime], int]":
     return began, over
 
 
+def alert_clock(sensor, now=None) -> Dict[str, Any]:
+    """The one clock every page and the alarm itself read for a unit.
+
+    `out_since` is when the current out-of-range spell began: the start
+    time every view shows, and the one a new alert records. `alert_at` is
+    when we text if it stays out. Normally that is `out_since` plus the
+    unit's wait. After a person closed an alert on this unit, the wait
+    starts again from when they closed it (`held_after_close`), so "Close
+    anyway" while it is still warm is not followed by a new alert and a
+    text to everybody a few seconds later.
+    """
+    from domain import default_alert_after_minutes
+
+    now = now or utc_now()
+    began, over = out_of_range_spell(sensor)
+    out_since = began or now
+    wait = alert_after_minutes(sensor)
+    clock_from = out_since
+    closed = STORE.last_manual_close(sensor.sensor_id, sensor.tenant_id)
+    held = closed is not None and closed > out_since
+    if held:
+        clock_from = closed
+        # "Alert on the first reading" still waits after somebody closed it
+        # by hand: the wait its kind of unit would have had.
+        wait = wait if wait > 0 else default_alert_after_minutes(sensor)
+    minutes = max(0.0, (now - out_since).total_seconds() / 60.0)
+    held_for = max(0.0, (now - clock_from).total_seconds() / 60.0)
+    return {
+        "out_since": out_since,
+        "minutes_out": round(minutes, 2),
+        "readings_over": over,
+        "wait_minutes": wait,
+        "clock_from": clock_from,
+        "minutes_on_clock": round(held_for, 2),
+        "alert_at": clock_from + timedelta(minutes=wait),
+        "held_after_close": held,
+    }
+
+
 def alert_due(sensor, temperature: float, now=None) -> Optional[Dict[str, Any]]:
     """Why this out-of-range unit should be alerted on now, or None to wait.
 
     In order: the owner set it to alert at once; the reading is far past
     the limit (ALERT_AT_ONCE_DEGREES_F), which is never a door; it has been
     out of range continuously for its wait; or, where the owner set one,
-    that many readings in a row have been over.
+    that many readings in a row have been over. Within the wait after a
+    person closed an alert on this unit by hand, none of these alert: they
+    have just looked at it (alert_clock).
     """
     now = now or utc_now()
-    wait = alert_after_minutes(sensor)
-    began, over = out_of_range_spell(sensor)
-    began = began or now
-    minutes = max(0.0, (now - began).total_seconds() / 60.0)
-    base = {"out_since": began, "minutes_out": round(minutes, 2),
+    clock = alert_clock(sensor, now)
+    wait = clock["wait_minutes"]
+    minutes = clock["minutes_out"]
+    over = clock["readings_over"]
+    base = {"out_since": clock["out_since"], "minutes_out": minutes,
             "readings_over": over, "wait_minutes": wait}
+    if clock["held_after_close"]:
+        if clock["minutes_on_clock"] >= wait:
+            return dict(base, because=(
+                f"still out of range {minutes_words(clock['minutes_on_clock'])} "
+                "after it was closed by hand"))
+        return None
     if wait <= 0:
         return dict(base, because="set to alert on the first reading over")
     if far_out_of_range(sensor, temperature):
@@ -334,9 +382,9 @@ def _waiting(sensor, temperature: float, unit: str) -> Dict[str, Any]:
     """What a held, out-of-range unit is waiting for, in plain words."""
     from domain import ALERT_AT_ONCE_DEGREES_F
 
-    wait = alert_after_minutes(sensor)
-    began, over = out_of_range_spell(sensor)
-    minutes = max(0.0, (utc_now() - (began or utc_now())).total_seconds() / 60.0)
+    clock = alert_clock(sensor)
+    wait = clock["wait_minutes"]
+    minutes = clock["minutes_out"]
     above, below = sensor.bounds()
     if above is not None and temperature > above:
         far = plain_temperature(above + ALERT_AT_ONCE_DEGREES_F, unit)
@@ -344,15 +392,74 @@ def _waiting(sensor, temperature: float, unit: str) -> Dict[str, Any]:
     else:
         far = plain_temperature((below or 0.0) - ALERT_AT_ONCE_DEGREES_F, unit)
         past = f"drops under {far}"
+    if clock["held_after_close"]:
+        words = (f"Out of range for {minutes_words(minutes)}. It was closed by "
+                 f"hand, so we alert again if it is still out "
+                 f"{minutes_words(wait)} after that.")
+    else:
+        words = (f"Out of range for {minutes_words(minutes)}. We alert if it "
+                 f"stays out for {minutes_words(wait)}, or at once if it "
+                 f"{past}, so a door open for a moment wakes nobody.")
     return {
-        "minutes_out": round(minutes, 2),
-        "readings_over": over,
+        "minutes_out": minutes,
+        "readings_over": clock["readings_over"],
         "wait_minutes": wait,
-        "alert_at": iso((began or utc_now()) + timedelta(minutes=wait)),
-        "words": (f"Out of range for {minutes_words(minutes)}. We alert if it "
-                  f"stays out for {minutes_words(wait)}, or at once if it "
-                  f"{past}, so a door open for a moment wakes nobody."),
+        "out_since": iso(clock["out_since"]),
+        "alert_at": iso(clock["alert_at"]),
+        "held_after_close": clock["held_after_close"],
+        "words": words,
     }
+
+
+_LOOK_UP = object()
+
+
+def unit_condition(tenant: Tenant, sensor, now=None,
+                   incident: Any = _LOOK_UP) -> Dict[str, Any]:
+    """What every page says about one unit right now, worked out once.
+
+    The unit card, the Problems list, /today and the "Needs you now" bar
+    all read this, so they cannot disagree: one `state`, one `out_since`
+    and, while we are waiting to see if it stays out, one `alert_at`.
+
+    States, calmest first: "waiting_first" (no reading has arrived yet),
+    "ok", "watching" (out of range, inside its wait: nobody texted yet),
+    "paused" (out of range while the owner paused alerts), "alert" (an
+    alert is open on it), and "offline" (it has gone quiet).
+    """
+    from retention import current_pause
+
+    now = now or utc_now()
+    above, _ = sensor.bounds()
+    temp = sensor.last_temperature
+    too = None
+    if temp is not None and evaluate_sensor_breach(
+            sensor, temp, tenant.temperature_unit) is not None:
+        too = "warm" if above is not None and temp > above else "cold"
+    if incident is _LOOK_UP:
+        incident = STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id)
+    out: Dict[str, Any] = {"state": "ok", "too": too, "out_since": None,
+                           "alert_at": None, "incident_id": None}
+    if sensor.last_seen is None:
+        out["state"] = "waiting_first"
+        return out
+    if incident is not None:
+        out.update(state="alert", incident_id=incident.incident_id,
+                   out_since=iso(incident.started_at))
+        return out
+    if sensor.offline(now):
+        out["state"] = "offline"
+        return out
+    if too is None:
+        return out
+    clock = alert_clock(sensor, now)
+    out["out_since"] = iso(clock["out_since"])
+    if current_pause(tenant.tenant_id, now) is not None:
+        out["state"] = "paused"
+        return out
+    out.update(state="watching", alert_at=iso(clock["alert_at"]),
+               held_after_close=clock["held_after_close"])
+    return out
 
 
 def process_reading(
@@ -598,14 +705,36 @@ def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
     from voice_dispatch import _notify_hooks
 
     incident = STORE.latest_unresolved_incident(sensor.sensor_id, tenant.tenant_id)
-    if incident is None or not incident.open:
+    if incident is None:
         return None
-    began = incident.out_since or incident.opened_at
-    minutes = max(0.0, (utc_now() - began).total_seconds() / 60.0)
+    reported = incident.fix_reported_at is not None and not incident.open
+    if not incident.open and not reported:
+        return None
+    minutes = incident.out_minutes()
     called = incident.voice_escalated_at is not None
-    note = wording.back_to_normal_note(minutes, called=called)
-    if not STORE.resolve_back_to_normal(incident, note):
+    if reported:
+        note = wording.fixed_and_back_note(
+            minutes, person_name(incident.fix_reported_by) or "Somebody",
+            plain_temperature(temperature, tenant.temperature_unit))
+    else:
+        note = wording.back_to_normal_note(minutes, called=called)
+    if not STORE.resolve_back_to_normal(incident, note, fix_reported=reported):
         return None
+    if reported:
+        # Whoever said it was fixed is the one who closed it, on the
+        # reading that proved it: theirs, for the inspector's log.
+        STORE.note_manual_close(incident, incident.fix_reported_by, note, temperature)
+        try:
+            from auth import write_audit
+
+            write_audit(tenant, None, "incident.resolved",
+                        f"{incident.incident_id} on {incident.sensor_id}: {note}",
+                        fallback_actor=incident.fix_reported_by or "CyberLogix")
+        except Exception:  # noqa: BLE001 - the record of it must not stop the close
+            logger.exception("Audit entry for %s failed.", incident.incident_id)
+        _notify_hooks(tenant, incident, "resolved", note, background=True)
+        return {"incident_id": incident.incident_id, "note": note,
+                "minutes_out": round(minutes, 2), "all_clear_texts": []}
     logger.info("Back to normal, alert %s closed on its own: sensor=%s",
                 incident.incident_id, sensor.sensor_id)
     told = []

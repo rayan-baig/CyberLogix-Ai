@@ -1,4 +1,4 @@
-// Pilot core 1.1.0 · pilot-actor.js
+// Pilot core 1.1.1 · pilot-actor.js
 // Plays the robot's moves on a page (pilot-motion.js makes the plans).
 //
 // The resting robot is the owner's design picture in three layers that stack
@@ -18,7 +18,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const M = () => root.PilotMotion;
 
   function node(doc, tag, cls, attrs) {

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
 from repairs import unit_state
+from telemetry import unit_condition
 from licenses import require_tenant
 from store import (
     PLAN_TIERS,
@@ -201,6 +202,12 @@ def console_overview(
     unit = tenant.temperature_unit
     sites = {s.site_id: s for s in STORE.sites_for(tenant.tenant_id)}
 
+    # The live alert on each unit, found once rather than once a unit.
+    live_by_unit: Dict[str, Any] = {}
+    for incident in STORE.incidents_for(tenant.tenant_id):
+        if incident.unresolved and incident.sensor_id not in live_by_unit:
+            live_by_unit[incident.sensor_id] = incident
+
     sensors: List[Dict[str, Any]] = []
     for sensor in sorted(STORE.sensors_for(tenant.tenant_id), key=lambda s: s.sensor_id):
         history = STORE.readings_for(sensor.sensor_id)[-SPARKLINE_POINTS:]
@@ -233,6 +240,12 @@ def console_overview(
         # says this unit is failing or drifting warm (repairs.py), or the
         # request already sent for it. On every plan: it costs nothing.
         row["repair"] = unit_state(tenant, sensor, projection)
+        # What every page says about this unit now: waiting for its first
+        # reading, fine, watching (out of range, inside its wait), alert,
+        # or offline, with the one "out since" and "we text at" they all
+        # show (telemetry.unit_condition).
+        row["condition"] = unit_condition(
+            tenant, sensor, now, incident=live_by_unit.get(sensor.sensor_id))
 
         sensors.append(row)
 
@@ -335,6 +348,8 @@ def console_overview(
             "sensors_total": len(sensors),
             "sensors_online": sum(1 for s in sensors if s["online"]),
             "sensors_breaching": sum(1 for s in sensors if s["breaching"]),
+            "sensors_watching": sum(1 for s in sensors
+                                    if s["condition"]["state"] == "watching"),
             "low_battery": sum(1 for s in sensors if s["battery_low"]),
             "unplaced_sensors": sum(1 for s in sensors if not s["site_id"]),
             "open_incidents": len(open_incidents),

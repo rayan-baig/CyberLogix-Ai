@@ -251,8 +251,8 @@ def test_the_docs_carry_the_same_offline_steps():
 
 def test_an_offline_sensor_links_to_the_steps_in_the_console():
     console = page_source(ROOT / "static" / "console.html")
-    # On the card, only when it is offline.
-    assert '${s.online ? "" : `<a class="offline-help" href="/help#sensor-offline"' in console
+    # On the card, only when it is offline (not before its first reading).
+    assert '${c.state === "offline" ? `<a class="offline-help" href="/help#sensor-offline"' in console
     # In the drawer, expandable, filled from the served list.
     assert '<details class="offline-box"' in console
     assert 'api("/api/help/sensor-offline")' in console

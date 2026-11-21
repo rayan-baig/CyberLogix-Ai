@@ -154,6 +154,11 @@
     <button class="btn btn-sm" id="sign-out">Sign out</button>
   </nav>
 
+  <!-- An alert nobody has dealt with, pinned under the nav on every tab
+       until it is: the unit, how warm, for how long, and the two buttons
+       that deal with it (console.js, renderNeedsBar). -->
+  <div id="needs-bar" class="needs-bar" role="alert" hidden></div>
+
   <main>
     <div id="stale-banner" class="banner stale" role="status" hidden></div>
     <!-- Many units warming at once: a possible attack on the fridge
@@ -713,8 +718,14 @@
               <label for="add-loc">Where is it?</label>
               <input id="add-loc" required placeholder="e.g. Walk-in cooler">
             </div>
-            <div class="field">
-              <label for="add-vertical">Industry</label>
+            <!-- The business's own trade, from sign-up: not asked again.
+                 "Change" opens the list for a unit of another kind. -->
+            <p class="field-hint add-trade" id="add-trade" hidden>
+              <span id="add-trade-words"></span>
+              <button class="linkish" type="button" id="add-trade-change">Change</button>
+            </p>
+            <div class="field" id="add-vertical-field">
+              <label for="add-vertical">Kind of business</label>
               <select id="add-vertical"></select>
             </div>
             <!-- The one question that sets the alarm limit. A fridge
@@ -729,14 +740,17 @@
                  left blank. Asking a restaurant to invent an identifier
                  before it can watch a freezer was the slowest field on
                  the way to a first reading. -->
-            <div class="field">
-              <label for="add-id">Sensor ID <span class="u-c-muted u-fw-400">(optional)</span></label>
-              <input id="add-id" placeholder="Made from the location if left blank">
-            </div>
-            <div class="field">
-              <label for="add-sn">Third-party device serial <span class="u-c-muted u-fw-400">(optional)</span></label>
-              <input id="add-sn" placeholder="e.g. 00:1B:44:11:3A:B7">
-            </div>
+            <details class="add-adv" id="add-adv">
+              <summary>Advanced: sensor ID and device serial</summary>
+              <div class="field">
+                <label for="add-id">Sensor ID <span class="u-c-muted u-fw-400">(optional)</span></label>
+                <input id="add-id" placeholder="Made from the location if left blank">
+              </div>
+              <div class="field">
+                <label for="add-sn">Serial of a sensor from another company <span class="u-c-muted u-fw-400">(optional)</span></label>
+                <input id="add-sn" placeholder="e.g. 00:1B:44:11:3A:B7">
+              </div>
+            </details>
             <button class="btn btn-primary" type="submit">Add it</button>
           </form>
         </section>
@@ -1115,6 +1129,8 @@
 <div id="tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
 
+<script src="/static/words.js"></script>
+<script src="/static/answer.js"></script>
 <script src="/static/console.js"></script>
 <!--pilot-->
 </body>

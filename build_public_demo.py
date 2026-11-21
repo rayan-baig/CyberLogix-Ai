@@ -592,9 +592,21 @@ def build(data: dict, page_name: str = "console.html",
     # written in below instead.
     markup = markup.replace(
         '<script src="/static/circuit.js"></script>', "")
-    app_js = ("<script>\n"
-              + (ROOT / "static" / own_script.group(1)).read_text().replace(
-                  "</script", "<\\/script")
+    # The shared words (how long, when, who) every page says them with:
+    # one more file, written in ahead of the page's own script.
+    shared = ""
+    for name in ("words.js", "answer.js"):
+        tag = f'<script src="/static/{name}"></script>'
+        if tag in markup:
+            markup = markup.replace(tag, "")
+            shared += ("<script>\n" + (ROOT / "static" / name).read_text().replace(
+                "</script", "<\\/script") + "</script>\n")
+    own_js = (ROOT / "static" / own_script.group(1)).read_text()
+    # The demo is a tour of the console: signing in to it stays there, even
+    # with its broken walk-in alerting (the real app goes to /today first).
+    own_js = own_js.replace("state.fromSignIn = true;", "state.fromSignIn = false;")
+    app_js = shared + ("<script>\n"
+              + own_js.replace("</script", "<\\/script")
               + "</script>\n")
 
     page = (

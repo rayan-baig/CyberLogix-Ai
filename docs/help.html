@@ -1708,6 +1708,95 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .more-cards { display: flex; justify-content: center; padding: 8px 14px 28px; }
 .more-cards .btn { min-height: 44px; width: 100%; max-width: 420px; }
 
+/* ---------- "Needs you now", pinned (console.js, renderNeedsBar) ----------
+   An alert nobody has dealt with sits under the nav on every tab until it
+   is, with the two buttons that deal with it. The finder's tabs are pinned
+   below it (--needs-h), so neither covers the other. */
+.needs-bar {
+  position: sticky; top: var(--nav-h, 62px); z-index: 19;
+  background: color-mix(in srgb, var(--critical) 16%, var(--bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--critical) 55%, transparent);
+}
+.needs-bar-in {
+  max-width: 1520px; margin: 0 auto; padding: 10px 30px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+}
+.needs-bar-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--critical); font-weight: 600;
+}
+.needs-bar-what { margin: 0; flex: 1 1 320px; font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+.needs-bar-who { color: var(--ink-2); }
+.needs-bar-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.needs-bar .btn-primary, .incident-actions .btn-primary,
+.fix-dialog .btn-primary { width: auto; }
+.needs-bar .btn { min-height: 38px; }
+.finder { top: calc(var(--nav-h, 62px) + var(--needs-h, 0px)); }
+@media (max-width: 720px) {
+  .needs-bar { top: 0; }
+  .needs-bar-in { padding: 8px 16px; gap: 4px 10px; }
+  .needs-bar-what { font-size: 14px; flex-basis: 100%; }
+  .needs-bar .btn { min-height: 40px; flex: 1 1 auto; }
+  .needs-bar-acts { width: 100%; }
+  .finder { top: var(--needs-h, 0px); }
+}
+
+/* Calm states in sentence case: "Waiting for its first reading",
+   "Watching", "Too warm". The capitals are for nothing now. */
+.badge.plain { text-transform: none; letter-spacing: 0; font-size: 12.5px; white-space: normal; text-align: left; }
+.sensor-name { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+.sensor-name.clickable { cursor: pointer; }
+.sensor-name.clickable:hover { color: var(--accent); }
+.sensor-loc .sensor-id { font-size: 12px; }
+.sensor-state { margin: 0 0 10px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.sensor-state.st-watch { color: var(--warning); }
+.sensor-state.st-warm { color: var(--critical); }
+.sensor-fore { font-size: 12.5px; color: var(--warning); }
+.sensor.is-watching { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.incident.st-watching { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.incident-more { margin: 10px 0; }
+.incident-more > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+/* The in-page editors for a unit's limit and alert wait (no pop-ups). */
+.wait-edit {
+  margin-top: 12px; padding: 12px; border: 1px solid var(--border-lit);
+  border-radius: 10px; background: var(--surface);
+}
+.wait-edit label { display: block; font-size: 13.5px; color: var(--ink); margin-bottom: 8px; }
+.wait-edit .wait-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wait-edit input {
+  width: 92px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-sunken, var(--bg)); color: var(--ink); font: inherit;
+}
+.wait-edit .wait-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.wait-edit .wait-help { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.wait-edit .wait-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* "It's fixed" on a unit still out of range (static/answer.js). */
+.fix-msg { margin: 0 0 8px; font-size: 16px; line-height: 1.5; color: var(--ink); font-weight: 600; }
+.fix-sub { margin: 0 0 10px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+.fix-anyway { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fix-anyway > summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-bottom: 10px; }
+.fix-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.fix-reasons .f-tab[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); }
+#fix-note {
+  width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--ink); font: inherit;
+}
+.btn-danger-soft { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 55%, transparent); }
+.btn-danger-soft:disabled { opacity: .5; }
+.fix-reasons .f-tab { white-space: normal; text-align: left; }
+
+/* The add form: the trade said in a line, the rare fields folded. */
+.add-trade { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin: 0 0 14px; }
+.add-adv { margin: 4px 0 14px; }
+.add-adv > summary { cursor: pointer; color: var(--muted); font-size: 13.5px; padding: 6px 0; }
+.add-adv[open] > summary { margin-bottom: 10px; }
+
+/* A wall display has nothing to press: the bar says what is wrong, and the
+   buttons are on a phone. */
+body.wall .needs-bar-acts { display: none; }
+
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.

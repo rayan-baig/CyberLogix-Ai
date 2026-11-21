@@ -105,14 +105,19 @@
     // own computer.
     compatibleHosts: (d.hosts || "").split(/\s+/).filter(Boolean),
     privacyUrl: "/legal#privacy",
-    keyNote: "Pilot uses your own AI key, and your AI provider bills you for it. AI keys are for grown-ups (the AI companies require 18+).",
+    keyNote: "An AI key is a private code you make on an AI company's website (OpenAI, Anthropic, Google AI Studio), usually under API keys. Your provider bills you for what Pilot uses. AI keys are for grown-ups (the AI companies require 18+).",
     audienceNote: "The people using this run businesses with fridges and freezers to keep cold: restaurants, pharmacies, labs and more. Many read on a phone in a busy kitchen, so keep answers short and practical. If a unit is warm right now, say to check it first. Pilot never makes a food safety decision: when asked if food is OK, give what was measured and the rule of thumb with its note that it is not a ruling, and say their own written food safety plan and local code decide.",
     kidView: () => false,
-    // Never sit on top of an alert, a banner or the buttons that answer
-    // one: the robot moves to a free corner instead (core 1.1.0).
+    // Never sit on top of an alert, a banner, the buttons that answer one,
+    // the console's tabs or the front page's first-screen facts: the robot
+    // moves to a free corner instead, and looks again as the page scrolls
+    // (core 1.1.1). On a phone it sat on "Everything" and on "5 alert
+    // calls"; on a desktop on "Advanced".
     avoid: ["#site-wide-banner", "#stale-banner", "#account-banner", "#delivery-banner",
       "#offline-banner", "#terms-banner", "#role-banner", "#needs-wrap", ".need-acts",
-      ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#add-form button[type=submit]"],
+      "#needs-bar", ".needs-bar-acts", ".finder", ".f-tab",
+      ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#facts", ".facts",
+      ".kicker", "#add-form button[type=submit]", ".fix-dialog"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

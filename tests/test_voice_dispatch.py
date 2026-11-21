@@ -89,7 +89,8 @@ def test_resolution_closes_the_incident(api, tenant_factory, sensor_factory):
     body = api.post(
         f"/api/voice/resolve/{incident_id}",
         headers=headers,
-        json={"resolved_by": "Facilities"},
+        json={"resolved_by": "Facilities", "close_anyway": True,
+              "note": "Moved the stock to the spare fridge"},
     ).json()
     assert body["incident"]["state"] == "resolved"
     assert body["incident"]["acknowledged_by"] == "Facilities"
@@ -152,9 +153,11 @@ def test_resolving_twice_tells_the_channels_once(
     incident_id = open_incident(api, headers, sensor_factory)
 
     first = api.post(f"/api/voice/resolve/{incident_id}", headers=headers,
-                     json={"resolved_by": "Facilities"}).json()
+                     json={"resolved_by": "Facilities", "close_anyway": True,
+                           "note": "Called for a repair"}).json()
     second = api.post(f"/api/voice/resolve/{incident_id}", headers=headers,
-                      json={"resolved_by": "Someone Else"}).json()
+                      json={"resolved_by": "Someone Else", "close_anyway": True,
+                            "note": "Called for a repair"}).json()
 
     assert first["status"] == "RESOLVED"
     assert second["status"] == "ALREADY_RESOLVED"

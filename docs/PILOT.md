@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.1.0**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.1.1**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -31,6 +31,12 @@ for a food fridge, 30 for a freezer, 10 for a vaccine fridge) and the 15°F that
 the 30 minutes before a sensor counts as offline, the 10 minutes before calls, and the 60-second
 text promise.
 
+Core 1.1.1 looks again for a free corner as the page scrolls, never covers a box being typed
+in, and, once a chat has started, puts the page's suggestions above the conversation. This
+app's `avoid` list adds the console's tabs (`.finder`, `.f-tab`), the pinned "Needs you now"
+bar and its buttons, the "It's fixed" dialog and the front page's first-screen facts, and its
+`keyNote` says in one sentence what an AI key is and where to get one.
+
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
 `static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its
@@ -42,14 +48,14 @@ answer an alert; on a phone every page keeps its last lines clear of the robot w
 
 The window's first buttons ("Ask anything…", "Get things done…", "Help with code…",
 "Analyze & explain…") are the core's own and the same in every app. What CyberLogix sets is
-what "Get things done…" fills in and the suggestions under the conversation, written for a café
+what "Get things done…" fills in and the suggestions above the conversation, written for a café
 or small restaurant first.
 
 ## The files
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.1.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.1.1, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |

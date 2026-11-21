@@ -40,8 +40,10 @@ def failed_freezer(api, tenant_factory, sensor_factory):
     for temp in (38.0, 39.0, 45.0):
         _pulse(api, headers, temp)
     incident = _pulse(api, headers, 78.0).json()["incident_id"]
-    api.post(f"/api/voice/resolve/{incident}", headers=headers,
-             json={"resolved_by": "Ops"})
+    closed = api.post(f"/api/voice/resolve/{incident}", headers=headers,
+                      json={"resolved_by": "Ops", "close_anyway": True,
+                            "note": "Moved the stock to the spare fridge"})
+    assert closed.status_code == 200, closed.text
     return headers, tenant, incident
 
 
