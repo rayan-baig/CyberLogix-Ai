@@ -61,6 +61,10 @@ function alertAt() {
   return S.drift_starts_seconds + S.alert_index * S.tick_seconds;
 }
 
+function overAt() {
+  return S.drift_starts_seconds + (S.over_index ?? S.alert_index) * S.tick_seconds;
+}
+
 /* ---------------- what happens when ---------------- */
 
 function timeline(key, cls, text) {
@@ -105,11 +109,20 @@ function advance() {
     setStep("warming");
   }
 
-  // The alert: the first reading over the limit.
-  if (!run.alertOpen && !run.fixed && now > walkIn.limit_f) {
+  // Over the limit: watched, not yet alerted. A door left open for a
+  // minute goes over and comes back; a fridge that stays over is a fault.
+  if (!run.alertOpen && !run.fixed && now > walkIn.limit_f && t >= overAt()) {
+    timeline("over", "", `${walkIn.name} is over its ${fmt(walkIn.limit_f)}°F limit `
+      + `(${fmt(now)}°F). We wait to see if it stays over: ${S.real_stay_minutes} `
+      + `minutes in real life, ${S.stay_ticks * S.tick_seconds} seconds here, so a `
+      + `door open for a minute wakes nobody.`);
+  }
+
+  // The alert: it has stayed over its limit for the wait.
+  if (!run.alertOpen && !run.fixed && now > walkIn.limit_f && t >= alertAt()) {
     run.alertOpen = true;
     setStep("alert");
-    timeline("breach", "hit", `${walkIn.name} is too warm: ${fmt(now)}°F, `
+    timeline("breach", "hit", `${walkIn.name} has stayed too warm: ${fmt(now)}°F, `
       + `over its ${fmt(walkIn.limit_f)}°F limit.`);
     timeline("texted", "hit", `Texted ${people()}.`);
     bubble("them", S.messages.alert_text);
@@ -245,6 +258,11 @@ function draw() {
     box.innerHTML = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
       <p>Marked fixed and written down. It will show as fine once it is back
          under ${esc(fmt(warm.limit_f))}°F.</p>`;
+  } else if (warm && !run.alertOpen) {
+    box.className = "demo-verdict watch";
+    box.innerHTML = `<h2>${esc(warm.name)} is over its limit</h2>
+      <p>Nobody is texted yet: we wait to see if it stays over, so a door
+         open for a minute wakes nobody.</p>`;
   } else if (warm && !run.acked) {
     box.className = "demo-verdict bad";
     box.innerHTML = `<h2>${esc(warm.name)} is too warm</h2>
@@ -258,7 +276,7 @@ function draw() {
   } else if (soon) {
     box.className = "demo-verdict watch";
     box.innerHTML = `<h2>${esc(soon.name)} is warming up</h2>
-      <p>Still safe, but rising. If it goes over ${esc(fmt(soon.limit_f))}°F, an alert goes out.</p>`;
+      <p>Still safe, but rising. If it goes over ${esc(fmt(soon.limit_f))}°F and stays there, an alert goes out.</p>`;
   } else if (run.fixed) {
     box.className = "demo-verdict ok";
     box.innerHTML = `<h2>Everything is fine again</h2>
@@ -369,9 +387,10 @@ loadStory().then((story) => {
     $("end-cta").href = S.signup_href;
   }
   $("time-note").textContent = `Time is sped up. Here a reading comes every `
-    + `${S.tick_seconds} seconds and the ${S.real_wait_minutes}-minute wait before `
-    + `a call takes ${S.demo_wait_seconds} seconds. A real sensor sends a reading `
-    + `every few minutes.`;
+    + `${S.tick_seconds} seconds, the ${S.real_stay_minutes}-minute wait to see if a `
+    + `fridge stays too warm takes ${S.stay_ticks * S.tick_seconds} seconds, and the `
+    + `${S.real_wait_minutes}-minute wait before a call takes ${S.demo_wait_seconds} `
+    + `seconds. A real sensor sends a reading every few minutes.`;
   start();
 }).catch((err) => {
   $("verdict").className = "demo-verdict watch";

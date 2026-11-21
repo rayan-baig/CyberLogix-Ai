@@ -12,8 +12,12 @@ In production it runs on its own subdomain of MTRX Horizyn's domain,
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
 
 Wireless thermal sensors report to the hub. Each reading is scored against
-the threshold profile for its industry. A breach opens an incident and texts
-the on-call roster which unit, where and how far out of range; a reply of
+the threshold profile for its industry. A unit that **stays** out of range
+(20 minutes for a food fridge, 30 for a freezer, 10 for a vaccine fridge, or
+the owner's own setting), or goes 15°F past its limit, opens an incident and
+texts the on-call roster which unit, where and how far out of range; a door
+opened for a minute alerts nobody, and an alert nobody answered closes itself
+when the unit is back to normal. A reply of
 "1" acknowledges it. If nobody does, the hub escalates to a spoken phone
 call, where pressing 1 does the same. In the background the forecaster projects which sensors
 will fail next, and the compliance clerk assembles the paperwork inspectors
@@ -194,8 +198,9 @@ curl -X POST localhost:8080/api/sensor-pulse \
   -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 28.0}'
 
-# 4. Now break it. 61F is past the 41F country-club limit, so this opens
-#    an incident and texts the roster.
+# 4. Now break it. 61F is 20F past the 41F country-club limit, far enough
+#    to alert at once (a smaller rise waits to see if it stays: 20 minutes
+#    for a fridge), so this opens an incident and texts the roster.
 curl -X POST localhost:8080/api/sensor-pulse \
   -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 61.0}'

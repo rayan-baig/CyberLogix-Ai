@@ -48,7 +48,7 @@ def _evidence(tenant: Tenant, vertical: str, days: int) -> Dict[str, Any]:
     total_breached = 0
 
     for sensor in sensors:
-        readings = STORE.readings_for(sensor.sensor_id, since=since)
+        readings = STORE.readings_for(sensor.sensor_id, since=since, complete=True)
         temps = [r.temperature_fahrenheit for r in readings]
         breached = sum(1 for r in readings if r.breached)
         total_readings += len(readings)

@@ -893,7 +893,7 @@ body.wall #delivery-banner, body.wall .card-head .btn { display: none !important
    incident, and none of what an incident carries about people -- who
    was called and on what number, who acknowledged it, the text that
    went out. What is warm, since when, and whether the texts landed. */
-body.wall .finder, body.wall #find-none, body.wall #find-knocking,
+body.wall .finder, body.wall #find-none, body.wall #find-knocking, body.wall .more-cards,
 body.wall .incident-actions, body.wall .food-out,
 body.wall .incident .quote, body.wall .incident .timeline,
 body.wall .incident .row { display: none !important; }
@@ -1090,8 +1090,13 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
    it can by dropping the chips in order of how little they change. The
    plan and the seat count are the same all month; the spend and the
    delivery state are not. */
+@media (max-width: 1600px) {
+  .nav .status-line { display: none; }
+}
 @media (max-width: 1460px) {
-  #chip-plan, #chip-seats { display: none; }
+  /* The delivery state also has its own banner across the page. */
+  #chip-plan, #chip-seats, #chip-delivery { display: none; }
+  .nav { gap: 8px; }
 }
 @media (max-width: 1250px) {
   .nav .status-line, #chip-spend { display: none; }
@@ -1693,6 +1698,17 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .confirm-out:empty { display: none; }
 .confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
+/* Pilot's robot sits in a bottom corner. On a phone the page's last lines
+   and buttons keep clear of it: --pilot-gutter is set by the shared core
+   (static/pilot/pilot.css) only while Pilot is on the page. */
+@media (max-width: 720px) {
+  :root.pilot-on body { padding-bottom: var(--pilot-gutter, 0px); }
+}
+
+/* The console's "More" on a phone (console.js, shortList). */
+.more-cards { display: flex; justify-content: center; padding: 8px 14px 28px; }
+.more-cards .btn { min-height: 44px; width: 100%; max-width: 420px; }
+
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.
@@ -1728,8 +1744,13 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
   .top nav a { font-size: 13px; }
 }
 
-.page { padding: 56px 0 88px; }
-@media (max-width: 720px) { .page { padding: 32px 0 64px; } }
+/* Top and bottom only: the side gutter is .wrap's (a "padding: 56px 0"
+   here took it away, and the text ran to the edge of a phone). */
+.page { padding-top: 56px; padding-bottom: 88px; }
+@media (max-width: 720px) {
+  .wrap { padding: 0 16px; }
+  .page { padding-top: 32px; padding-bottom: 64px; }
+}
 
 .kicker {
   font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
@@ -1903,6 +1924,13 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 .plan-gets { margin: 0; padding-left: 16px; display: grid; gap: 3px; min-width: 220px; }
 .plan-gets li { font-size: 13px; color: var(--ink-2); }
 
+/* /help/sensors: the no-coding way first, then the detail. */
+.easiest { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.easiest ul { margin: 8px 0 0; padding-left: 18px; }
+.easiest code { word-break: break-all; }
+.easiest-help { margin-top: 14px; }
+.tech-h { margin-top: 40px; }
+
 </style>
 </head>
 <body>
@@ -1925,11 +1953,13 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 <main class="wrap page">
   <p class="kicker"><a href="help.html">Help</a></p>
   <h1>Setting up sensors.</h1>
-  <p class="lede">Every way a sensor can report to CyberLogix, step by step,
-    in words. Each step names the exact address, header and field the
-    product reads, and a test checks them against the code, so what is
-    written here is what works.</p>
-  <div class="panel"><section class="need" id="what-you-need"><h2>What you need</h2><p>CyberLogix does not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at us. We watch the readings and alert your team.</p><h3>Which sensors work</h3><ul class="need-kinds"><li><b>A sensor that can send to a web address.</b> Many Wi-Fi and gateway sensors can send each reading to a web address you give them (often called a webhook). Brands such as Elitech and Dickson, and most devices that can be set up with a URL, work this way.</li><li><b>A sensor whose maker&#x27;s cloud we can read.</b> Some sensors only send to their maker&#x27;s own app. If that cloud lets you read readings with a web address and a key (an API), we fetch them every few minutes. Monnit (through iMonnit) and SensorPush are set up this way.</li></ul><h3>Roughly what they cost</h3><p>Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commercial one with a probe for a walk-in or freezer about $100 to $250. Some kinds also need a small gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Prices vary by brand and change; check with the seller before you buy. Our price does not include sensors.</p><h3>Setting it up, step by step</h3><ol class="steps"><li>Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker&#x27;s cloud has an API.</li><li>Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.</li><li>In CyberLogix, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.</li><li>In the sensor&#x27;s app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker&#x27;s cloud, add it under Fetch from a sensor cloud in the console.</li><li>Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.</li><li>Add the people who should get alerts, and send a test alert to check the texts arrive.</li></ol><h3>If the power or internet goes off</h3><p>Your sensors send readings over your internet. If the power or the internet at your site goes off, readings stop arriving, and after 30 minutes with nothing from a sensor we text everyone on call to say it has gone quiet, so you hear about the outage too. Our alerts are sent from our servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but your Wi-Fi router or gateway may not unless it is on a backup battery; some sensors store readings and send them when the connection comes back.</p></section></div>
+  <p class="lede">The easiest way first: most sensors need no coding, just
+    one key pasted into their app. The detail for gateways and scripts is
+    further down, and every step there names the exact address, header and
+    field the product reads.</p>
+  <section class="panel easiest" id="easiest"><h2>Easiest way: no coding</h2><p>If your sensor already sends its readings to its maker's app or cloud, you do not need to write anything. You copy one key from us and paste it in one place.</p><ol class="steps"><li>In the console, press <b>Add a fridge or freezer</b>, say where it is, and copy the sensor key it shows you.</li><li>Then, whichever your sensor's app offers:<ul><li><b>A webhook or “HTTP push” setting.</b> Paste this address: <code>https://cyberlogix.example.com/api/sensor-pulse</code>, and the key as the header <code>X-CyberLogix-Sensor-Key</code>.</li><li><b>An API key in the maker's cloud.</b> In the console, open <b>Fetch from a sensor cloud</b>, choose the kind of cloud and paste that key. We fetch the readings every few minutes.</li></ul></li><li>Wait a few minutes for the first reading. The console ticks <b>First reading received</b> when it arrives.</li></ol><p class="easiest-help">Not sure which kind yours is? <a href="help.html">Ask us from the help page</a> and we will help you set it up.</p></section>
+<div class="panel"><section class="need" id="what-you-need"><h2>What you need</h2><p>CyberLogix does not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at us. We watch the readings and alert your team.</p><h3>Which sensors work</h3><ul class="need-kinds"><li><b>A sensor that can send to a web address.</b> Many Wi-Fi and gateway sensors can send each reading to a web address you give them (often called a webhook or HTTP push). Most devices that can be set up with a URL work this way.</li><li><b>A sensor whose maker&#x27;s cloud we can read.</b> Some sensors only send to their maker&#x27;s own app. If that cloud lets you read readings with a web address and a key (an API), we fetch them every few minutes: you paste the key, we do the rest.</li></ul><h3>Roughly what they cost</h3><p>Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commercial one with a probe for a walk-in or freezer about $100 to $250. Some kinds also need a small gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Prices vary by brand and change; check with the seller before you buy. Our price does not include sensors.</p><h3>Setting it up, step by step</h3><ol class="steps"><li>Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker&#x27;s cloud has an API.</li><li>Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.</li><li>In CyberLogix, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.</li><li>In the sensor&#x27;s app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker&#x27;s cloud, add it under Fetch from a sensor cloud in the console.</li><li>Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.</li><li>Add the people who should get alerts, and send a test alert to check the texts arrive.</li></ol><h3>If the power or internet goes off</h3><p>Your sensors send readings over your internet. If the power or the internet at your site goes off, readings stop arriving, and after 30 minutes with nothing from a sensor we text everyone on call to say it has gone quiet, so you hear about the outage too. Our alerts are sent from our servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but your Wi-Fi router or gateway may not unless it is on a backup battery; some sensors store readings and send them when the connection comes back.</p></section></div>
+<h2 class="tech-h" id="tech">For tech-savvy setups</h2><p>Every way a sensor can report, with the exact address, header and field the product reads.</p>
 <div class="help-links"><a class="btn btn-sm" href="#native">Any device or script that can send a web request</a><a class="btn btn-sm" href="#webhook">Devices that can only put the key in the body</a><a class="btn btn-sm" href="#monnit">Monnit sensors, through iMonnit</a><a class="btn btn-sm" href="#sensorpush">SensorPush</a><a class="btn btn-sm" href="#vendor-cloud">Any vendor cloud you can read with a web address</a><a class="btn btn-sm" href="#anything">Anything else that sends its own JSON</a></div>
 <h2 id="native">Any device or script that can send a web request</h2><div class="panel"><p>Gateways and hubs that let you set the address, headers and body of what they send; a Raspberry Pi; your own script.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits. Give it a Sensor ID you will recognise, such as WALKIN-1, or leave it blank and one is made from the location. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>Set the device to send an HTTPS POST to https://cyberlogix.example.com/api/sensor-pulse every few minutes.</li><li>Add two headers: X-CyberLogix-Sensor-Key with the sensor key, and Content-Type: application/json.</li><li>Send a JSON body with sensor_id (the Sensor ID from step 1) and the temperature as temperature_fahrenheit or temperature_celsius. You may add humidity_percent, battery_percent and signal_percent; a battery level lets us warn you before it goes flat.</li><li>Check the answer. 200 means the reading was taken and the unit shows it in the console. 401 means the key was not recognised; 403 means the key belongs to a different unit; 404 means no unit has that Sensor ID.</li></ol><p>What one message looks like:</p><pre>{
   &quot;sensor_id&quot;: &quot;WALKIN-1&quot;,

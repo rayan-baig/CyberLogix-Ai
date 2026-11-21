@@ -247,3 +247,15 @@ footer nav { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-left: auto; 
 }
 footer a { color: var(--muted); text-decoration: none; }
 footer a:hover, footer a:focus-visible { color: var(--ink); }
+
+/* "More": a long section folded on a phone (landing.js opens it on a wide
+   screen). The summary is a real button-sized target. */
+details.more > summary {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 16px; margin-top: 4px;
+  border: 1px solid var(--border-lit); border-radius: 999px;
+  color: var(--accent); font-size: 14px; list-style: none;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: "+"; font-size: 16px; }
+details.more[open] > summary { display: none; }

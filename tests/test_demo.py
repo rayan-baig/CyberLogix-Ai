@@ -78,10 +78,14 @@ def test_one_unit_drifts_warm_about_a_minute_in():
 
     assert story["drift_starts_seconds"] == 60
     assert 60 < alert_at <= 90
-    # Before the alert reading it is under its limit; at it, over.
+    # Under its limit until it goes over; then it STAYS over for the
+    # demo's stand-in for the real wait before the alert.
     drift = story["drift_f"]
-    assert all(f <= walk_in["limit_f"] for f in drift[:story["alert_index"]])
-    assert drift[story["alert_index"]] > walk_in["limit_f"]
+    over = story["over_index"]
+    assert all(f <= walk_in["limit_f"] for f in drift[:over])
+    assert all(f > walk_in["limit_f"] for f in drift[over:story["alert_index"] + 1])
+    assert story["alert_index"] == over + story["stay_ticks"]
+    assert story["real_stay_minutes"] == 20
     # And it comes back down once somebody has dealt with it.
     assert story["recover_f"][-1] < walk_in["limit_f"]
     # Every other unit starts comfortably inside its own limit.

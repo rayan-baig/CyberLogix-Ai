@@ -153,7 +153,7 @@ def test_a_metric_only_one_operator_reports_is_withheld(
     # Exactly one of them acknowledges anything.
     body = api.post("/api/sensor-pulse", headers=heads[0],
                     json={"sensor_id": "FRZ-0",
-                          "temperature_fahrenheit": 55.0}).json()
+                          "temperature_fahrenheit": 60.0}).json()
     api.post(f"/api/voice/acknowledge/{body['incident_id']}",
              headers=heads[0], json={"acknowledged_by": "Someone"})
 

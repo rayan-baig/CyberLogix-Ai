@@ -32,6 +32,10 @@ from domain import (
     INDUSTRY_PROFILES,
     LEGACY_DANGER_ABOVE,
     PLAN_TIERS,
+    ALERT_AT_ONCE_DEGREES_F,
+    alert_after_minutes,
+    default_alert_after_minutes,
+    unit_kind_of,
 )
 
 # Written on every sensor row from 3.19.0. A row without it was saved
@@ -170,6 +174,15 @@ class Sensor:
     # silence is one text. A new reading moves `last_seen` on, which is what
     # lets the next silence be told about too.
     quiet_alert_for: Optional[str] = None
+    # "fridge" or "freezer", as answered on the add form (None for a sector
+    # that does not ask, or a unit added before the answer was kept).
+    unit_kind: Optional[str] = None
+    # The owner's own "stays out of range" setting for this unit: minutes
+    # over the limit before anybody is alerted (None: its kind's default,
+    # domain.default_alert_after_minutes), and optionally a number of
+    # readings in a row over the limit that alerts sooner.
+    alert_after_minutes: Optional[float] = None
+    alert_after_readings: Optional[int] = None
 
     def bounds(self) -> tuple:
         """The thresholds actually applied to this sensor.
@@ -240,6 +253,9 @@ class Sensor:
             "last_temperature": self.last_temperature,
             "last_humidity": self.last_humidity,
             "quiet_alert_for": self.quiet_alert_for,
+            "unit_kind": self.unit_kind,
+            "alert_after_minutes": self.alert_after_minutes,
+            "alert_after_readings": self.alert_after_readings,
             "defaults_version": SENSOR_DEFAULTS_VERSION,
         }
 
@@ -273,6 +289,9 @@ class Sensor:
             last_temperature=row.get("last_temperature"),
             last_humidity=row.get("last_humidity"),
             quiet_alert_for=row.get("quiet_alert_for"),
+            unit_kind=row.get("unit_kind"),
+            alert_after_minutes=row.get("alert_after_minutes"),
+            alert_after_readings=row.get("alert_after_readings"),
         )
 
     # How far ahead of us a device's last contact may sit before we treat
@@ -316,6 +335,13 @@ class Sensor:
             "override_below": self.override_below,
             "uses_override": self.override_above is not None
             or self.override_below is not None,
+            # The "stays out of range" rule this unit is on (domain.py).
+            "unit_kind": unit_kind_of(self),
+            "alert_after_minutes": alert_after_minutes(self),
+            "alert_after_minutes_default": default_alert_after_minutes(self),
+            "alert_after_minutes_own": self.alert_after_minutes,
+            "alert_after_readings": self.alert_after_readings,
+            "alert_at_once_degrees": ALERT_AT_ONCE_DEGREES_F,
             "industry_vertical": self.industry_vertical,
             "industry_name": profile["name"],
             # What this sector calls the thing being watched. A superyacht
@@ -407,6 +433,13 @@ class Incident:
     voice_dispatch_source: Optional[str] = None
     resolved_at: Optional[datetime] = None
     ack_token: Optional[str] = None
+    # When the unit first went out of range for this alert, which with the
+    # "stays out of range" rule is earlier than when it opened.
+    out_since: Optional[datetime] = None
+    # Set when the unit came back to normal on its own before anybody
+    # answered: the plain note saying so ("Back to normal after 3 minutes,
+    # probably the door"). Nobody is recorded as having acknowledged it.
+    resolved_note: Optional[str] = None
     # What was DONE about it, and who says so. An inspector reading a
     # temperature log is not checking that the fridge got cold again --
     # they are checking that somebody recorded what they did with the
@@ -610,6 +643,8 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "ack_token": self.ack_token,
+            "out_since": iso(self.out_since),
+            "resolved_note": self.resolved_note,
             "corrective_action": self.corrective_action,
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),
@@ -653,6 +688,8 @@ class Incident:
             voice_dispatch_source=row.get("voice_dispatch_source"),
             resolved_at=_parse(row.get("resolved_at")),
             ack_token=row.get("ack_token"),
+            out_since=_parse(row.get("out_since")),
+            resolved_note=row.get("resolved_note"),
             # Defaulted: incidents written before corrective actions
             # existed simply have none recorded, which is the truth.
             corrective_action=row.get("corrective_action"),
@@ -709,6 +746,9 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "minutes_open": self.minutes_open(),
+            "out_since": iso(self.out_since or self.opened_at),
+            "resolved_note": self.resolved_note,
+            "back_to_normal_on_its_own": bool(self.resolved_note),
             "corrective_action": self.corrective_action,
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),

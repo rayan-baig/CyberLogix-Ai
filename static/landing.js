@@ -86,3 +86,13 @@ async function paintPlans() {
 
 paintSectors();
 paintPlans();
+
+
+// The long sections fold behind "More" on a phone and start open on a wide
+// screen, where there is room for them.
+(function openWide() {
+  let wide = false;
+  try { wide = window.matchMedia("(min-width: 900px)").matches; } catch (_) { wide = false; }
+  if (!wide) return;
+  document.querySelectorAll("details.more[data-open-wide]").forEach((d) => { d.open = true; });
+}());

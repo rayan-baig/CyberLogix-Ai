@@ -1,0 +1,97 @@
+/* Pilot core 1.1.0 · pilot-actor.css
+   The moving robot (pilot-actor.js): the owner's design robot in three
+   layers (body, head, eyes) that stack exactly into the picture, the pose
+   pictures shown while it moves, the effects (dust, glow trail, sparkles, the
+   👋 bubble) and the sports props. Its spot is the point between its feet;
+   everything moves by transform. Sizes follow --pa-u, the resting robot's
+   width, which the page sets (the web robot: its corner size; the Mac: 110px).
+   Shared by the web robot and the Mac app. */
+
+.pa { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+/* A page's own "img { max-width: 100% }" mustn't shrink the robot: its
+   anchor is a zero-size box. */
+.pa img, .pa svg, .pa-prop svg { max-width: none; max-height: none; min-width: 0; }
+.pa-body { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.pa-rest {
+  position: absolute; left: calc(var(--pa-u) * -0.447); bottom: 0;
+  width: var(--pa-u); height: calc(var(--pa-u) * 0.966); transform-origin: 44.7% 100%;
+}
+.pa-rest.pa-off { opacity: 0; }
+.pa-rest img, .pa-head { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.pa-head { transform-origin: 52.8% 53.9%; }
+.pa-head .pa-eyes { transform-origin: 50% 33%; }
+.pa-pose {
+  position: absolute; left: calc(var(--pa-u) * -0.682); bottom: calc(var(--pa-u) * -0.018);
+  width: calc(var(--pa-u) * 1.364); height: calc(var(--pa-u) * 1.545);
+  opacity: 0; pointer-events: none; user-select: none; -webkit-user-drag: none;
+}
+.pa-pose.pa-on { opacity: 1; pointer-events: auto; }
+.pa-fx { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.pa-fx-in { position: absolute; display: block; }
+.pa-fx-dust .pa-fx-in {
+  left: calc(var(--pa-u) * -0.18); top: calc(var(--pa-u) * -0.1); width: calc(var(--pa-u) * 0.36); height: calc(var(--pa-u) * 0.13);
+  border-radius: 50%; background: radial-gradient(closest-side, rgba(180, 196, 255, 0.6), rgba(120, 140, 255, 0.2) 60%, transparent);
+  animation: pa-dust 0.6s ease-out forwards;
+}
+.pa-fx-left .pa-fx-in { animation-name: pa-dust-left; }
+.pa-fx-trail .pa-fx-in {
+  left: calc(var(--pa-u) * -0.2); top: calc(var(--pa-u) * -0.2); width: calc(var(--pa-u) * 0.4); height: calc(var(--pa-u) * 0.4);
+  border-radius: 50%; background: radial-gradient(closest-side, rgba(96, 165, 250, 0.65), rgba(139, 92, 246, 0.25) 55%, transparent);
+  animation: pa-trail 0.9s ease-out forwards;
+}
+.pa-fx-sparkle .pa-fx-in {
+  left: calc(var(--pa-u) * -0.12); top: calc(var(--pa-u) * -0.12); width: calc(var(--pa-u) * 0.24); height: calc(var(--pa-u) * 0.24);
+  background: radial-gradient(closest-side, #fff, #a5f3fc 40%, #60a5fa 70%);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  animation: pa-sparkle 0.9s ease-out forwards;
+}
+.pa-fx-bubble .pa-fx-in {
+  left: 0; top: 0; font: 700 calc(var(--pa-u) * 0.2)/1 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.02em; padding: 0.32em 0.5em; white-space: nowrap;
+  border-radius: 1em; background: rgba(13, 18, 48, 0.92); border: 1px solid rgba(96, 130, 255, 0.6);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.45); color: #fff;
+  animation: pa-bubble 1.9s ease-out forwards;
+}
+.pa-prop { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; opacity: 0; }
+.pa-prop svg { position: absolute; display: block; overflow: visible; filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.55)); }
+/* The balls match the ones drawn into the throw, kick and tennis pictures. */
+.pa-prop-football svg { left: calc(var(--pa-u) * -0.12); top: calc(var(--pa-u) * -0.075); width: calc(var(--pa-u) * 0.24); height: calc(var(--pa-u) * 0.15); }
+.pa-prop-soccer svg { left: calc(var(--pa-u) * -0.06); top: calc(var(--pa-u) * -0.06); width: calc(var(--pa-u) * 0.12); height: calc(var(--pa-u) * 0.12); }
+.pa-prop-tennisball svg { left: calc(var(--pa-u) * -0.06); top: calc(var(--pa-u) * -0.06); width: calc(var(--pa-u) * 0.12); height: calc(var(--pa-u) * 0.12); }
+.pa-prop-goal svg, .pa-prop-net svg { left: calc(var(--pa-u) * -0.475); bottom: 0; width: calc(var(--pa-u) * 0.95); height: calc(var(--pa-u) * 1.27); }
+.pa-prop-net svg { filter: none; }
+.pa-prop-tennisnet svg { left: calc(var(--pa-u) * -0.06); bottom: 0; width: calc(var(--pa-u) * 0.12); height: calc(var(--pa-u) * 0.5); }
+.pa-prop-court svg { left: 0; bottom: -2px; width: var(--pa-u); height: 4px; filter: none; }
+.pa-prop-racket svg { left: calc(var(--pa-u) * -0.1); top: calc(var(--pa-u) * -0.44); width: calc(var(--pa-u) * 0.2); height: calc(var(--pa-u) * 0.5); }
+.pa-fx-orb .pa-fx-in {
+  left: calc(var(--pa-u) * -0.16); top: calc(var(--pa-u) * -0.16); width: calc(var(--pa-u) * 0.32); height: calc(var(--pa-u) * 0.32);
+  border-radius: 50%; background: radial-gradient(closest-side, #fff, #7dd3fc 35%, rgba(59, 130, 246, 0.55) 65%, transparent);
+  animation: pa-orb 1.6s ease-in-out forwards;
+}
+@keyframes pa-orb {
+  0% { transform: scale(0.3); opacity: 0; }
+  20% { transform: scale(0.9); opacity: 1; }
+  45% { transform: scale(0.75); opacity: 0.9; }
+  70% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes pa-dust { from { transform: scale(0.4); opacity: 0.9; } to { transform: translateX(-10px) scale(1.5, 1.2); opacity: 0; } }
+@keyframes pa-dust-left { from { transform: scale(0.4); opacity: 0.9; } to { transform: translateX(10px) scale(1.5, 1.2); opacity: 0; } }
+@keyframes pa-trail { from { transform: scale(0.9); opacity: 0.85; } to { transform: translateY(8px) scale(0.3); opacity: 0; } }
+@keyframes pa-sparkle { 0% { transform: scale(0) rotate(0deg); opacity: 1; } 45% { transform: scale(1.15) rotate(40deg); opacity: 1; } 100% { transform: scale(0) rotate(90deg); opacity: 0; } }
+@keyframes pa-bubble {
+  0% { transform: translate(-50%, -70%) scale(0.4); opacity: 0; }
+  12% { transform: translate(-50%, -100%) scale(1.06); opacity: 1; }
+  20% { transform: translate(-50%, -100%) scale(1); }
+  80% { transform: translate(-50%, -100%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -116%) scale(0.96); opacity: 0; }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .pa-fx-bubble .pa-fx-in { animation-name: pa-bubble-still; }
+}
+@keyframes pa-bubble-still {
+  0% { transform: translate(-50%, -100%); opacity: 0; }
+  12%, 80% { transform: translate(-50%, -100%); opacity: 1; }
+  100% { transform: translate(-50%, -100%); opacity: 0; }
+}

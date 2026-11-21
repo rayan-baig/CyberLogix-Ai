@@ -31,7 +31,7 @@ def test_override_tightens_a_limit(api, tenant_factory, sensor_factory):
 
     body = pulse(api, headers, "FRZ-1", 28.0)
     assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
-    assert "28.0°F > 25.0°F" in body["breach_details"]
+    assert "Too warm: 28°F (limit 25°F)" in body["breach_details"]
 
 
 def test_override_loosens_a_limit(api, tenant_factory, sensor_factory):

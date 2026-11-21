@@ -40,7 +40,7 @@ def test_a_healthy_tank_is_not_scored_as_a_breach():
 def test_a_warming_tank_is():
     verdict = evaluate_breach("cryostorage", -200.0)
     assert verdict is not None
-    assert "high" in verdict.lower()
+    assert "too warm" in verdict.lower()
 
 
 def test_a_probe_reading_colder_than_liquid_nitrogen_is_a_fault():

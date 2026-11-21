@@ -82,8 +82,97 @@ function stateOf(unit) {
   return { word: "Fine", cls: "w-ok", why: "" };
 }
 
+/* How long a thing has been going on, in words: "for 25 minutes". */
+function howLong(iso) {
+  const then = new Date(iso);
+  if (isNaN(then)) return "";
+  const mins = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+  if (mins < 1) return "for under a minute";
+  if (mins < 60) return `for ${mins} minute${mins === 1 ? "" : "s"}`;
+  const hours = Math.round(mins / 60);
+  return `for about ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+/* The alerts still live: nobody has answered (open), or somebody has it
+   and it is not fixed yet (acknowledged). Each one is a "Needs you now". */
+function liveAlerts(data) {
+  return (data.incidents || []).filter((i) => i.state !== "resolved" && !i.site_wide);
+}
+
+function renderNeeds(data, units) {
+  const live = liveAlerts(data);
+  const sitewide = (data.site_wide_alerts || []).filter((i) => i.state !== "resolved");
+  $("needs-wrap").hidden = !live.length && !sitewide.length;
+  const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
+  const cards = sitewide.map((i) => `
+    <div class="need">
+      <p class="need-what"><strong>Several fridges are warming at once.</strong>
+        ${esc(i.breach_details || "")}</p>
+      <p class="need-when">Started ${esc(howLongAgo(i.opened_at))}.</p>
+      ${needButtons(i)}
+    </div>`).concat(live.map((i) => {
+    const unit = byId[i.sensor_id] || { sensor_id: i.sensor_id };
+    const now = unit.last_temperature_display != null
+      ? `${unit.last_temperature_display}°` : `${i.temperature_display}°`;
+    const who = i.state === "acknowledged"
+      ? `${esc(i.acknowledged_by || "Somebody")} is on it.`
+      : (i.voice_escalated_at ? "Nobody has answered yet, and we have phoned."
+        : "Nobody has answered yet.");
+    return `
+    <div class="need ${i.state === "open" ? "need-open" : ""}">
+      <p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
+        ${esc(now)} and has been out of range ${esc(howLong(i.out_since || i.opened_at))}.</p>
+      <p class="need-when">${who}</p>
+      ${needButtons(i)}
+    </div>`;
+  })).join("");
+  $("needs").innerHTML = cards;
+}
+
+function needButtons(i) {
+  return `<div class="need-acts">
+      ${i.state === "open" ? `<button class="btn btn-primary" type="button"
+          data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
+      <button class="btn" type="button" data-fixed="${esc(i.incident_id)}">It's fixed</button>
+    </div>`;
+}
+
+async function answer(path, body, button) {
+  button.disabled = true;
+  try {
+    const got = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json",
+                 Authorization: "Bearer " + token() },
+      body: JSON.stringify(body),
+    });
+    if (!got.ok) {
+      let why = "That did not go through. Try again, or use the full console.";
+      try { why = (await got.json()).detail || why; } catch (_) { /* keep */ }
+      button.disabled = false;
+      button.textContent = typeof why === "string" ? why : "Not allowed";
+      return;
+    }
+    load();
+  } catch (_) {
+    button.disabled = false;
+  }
+}
+
+$("needs").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.dataset.ack) {
+    answer(`/api/voice/acknowledge/${encodeURIComponent(button.dataset.ack)}`,
+           { acknowledged_by: null }, button);
+  } else if (button.dataset.fixed) {
+    answer(`/api/voice/resolve/${encodeURIComponent(button.dataset.fixed)}`,
+           { resolved_by: null }, button);
+  }
+});
+
 /* The headline. One sentence, chosen by how bad the worst thing is. */
-function verdict(units, jobs, paused) {
+function verdict(units, jobs, paused, live) {
   const box = $("verdict");
   // Paused by the owner (retention.py): no "everything is fine" while
   // nobody is being texted or called.
@@ -92,6 +181,19 @@ function verdict(units, jobs, paused) {
     box.innerHTML =
       `<h1>Alerts are paused until ${esc(paused.resume_on)}</h1>
        <p>${esc(paused.words)}</p>`;
+    return;
+  }
+  // An alert that is still live outranks everything else on the page:
+  // the person reading this may be the one we texted.
+  const unanswered = live.filter((i) => i.state === "open").length;
+  if (live.length) {
+    box.className = "verdict bad";
+    box.innerHTML = unanswered
+      ? `<h1>${unanswered === 1 ? "An alert needs" : `${unanswered} alerts need`} you now</h1>
+         <p>Nobody has said they are on it yet. Press <b>I'm on it</b> so everyone
+            knows somebody has it, then <b>It's fixed</b> once it is cold again.</p>`
+      : `<h1>Being dealt with</h1>
+         <p>Somebody is on it. Press <b>It's fixed</b> once it is cold again.</p>`;
     return;
   }
   const urgent = jobs.filter((j) => j.now).length;
@@ -125,10 +227,13 @@ function verdict(units, jobs, paused) {
     return;
   }
   box.className = "verdict ok";
-  box.innerHTML =
-    `<h1>Everything is fine</h1>
-     <p>All ${n} of your fridges and freezers are the right temperature and
-        all ${n} are reporting in. There is nothing for you to do.</p>`;
+  box.innerHTML = n === 1
+    ? `<h1>Everything is fine</h1>
+       <p>Your fridge is the right temperature and reporting in. There is
+          nothing for you to do.</p>`
+    : `<h1>Everything is fine</h1>
+       <p>All ${n} of your fridges and freezers are the right temperature and
+          reporting in. There is nothing for you to do.</p>`;
 }
 
 /* What happens when nobody answers, in the words of this account's plan.
@@ -138,32 +243,58 @@ function alertWords(calls) {
   if (!calls) return;
   if (calls.mode === "plan") {
     $("how-alert-head").textContent = "We phone a human until one answers.";
-    $("how-alert-body").textContent = "Text first, then an actual phone call, "
-      + "then the next person on the list. An alert nobody picks up is the "
-      + "same as no alert, so we keep going until somebody does.";
+    $("how-alert-body").textContent = "When a fridge stays too warm: a text "
+      + "first, then an actual phone call, then the next person on the list. "
+      + "An alert nobody picks up is the same as no alert, so we keep going "
+      + "until somebody does. If it comes back to normal first, nobody is phoned.";
   } else {
     $("how-alert-head").textContent = "We text the people on your list.";
-    $("how-alert-body").textContent = "Everyone on call gets a text the moment "
-      + "something is wrong, saying which fridge and how warm. " + calls.words;
+    $("how-alert-body").textContent = "Everyone on call gets a text when a "
+      + "fridge stays too warm, saying which fridge and how warm. " + calls.words;
   }
 }
+
+/* The forecast is promised only on a plan that has it. */
+function watchWords(entitlements) {
+  if (!entitlements || !entitlements.predictive_forecasting) return;
+  $("how-watch").textContent = "Every reading is checked against the range "
+    + "that food has to stay in. Not just too warm now, but also warming up "
+    + "faster than it should be, which is the hour before it is a disaster. "
+    + "A door opened for a minute is not an alarm.";
+}
+
+/* Open the explanation for somebody new; folded for everyone else. */
+function introFor(units) {
+  let seen = false;
+  try { seen = localStorage.getItem("cyberlogix.today.seen") === "1"; } catch (_) { /* private */ }
+  if (!seen || !units.length) $("intro").open = true;
+  try { localStorage.setItem("cyberlogix.today.seen", "1"); } catch (_) { /* private */ }
+}
+
+let introDone = false;
 
 function render(data) {
   const units = data.sensors || [];
   const jobs = [];
+  const live = liveAlerts(data);
+  const alerted = new Set(live.map((i) => i.sensor_id));
   alertWords((data.entitlements || {}).calls);
+  watchWords(data.entitlements);
+  if (!introDone) { introFor(units); introDone = true; }
+  renderNeeds(data, units);
 
   units.forEach((unit) => {
     const state = stateOf(unit);
     const name = whichOne(unit, units);
-    if (state.cls === "w-warm") {
+    // A unit with a live alert is already at the top with its own buttons.
+    if (state.cls === "w-warm" && !alerted.has(unit.sensor_id)) {
       jobs.push({ now: true, mark: "!",
         what: `<strong>${esc(name)}</strong> is too warm. ${
           esc(state.why)}`,
-        todo: "Check the door is shut and the unit is running. If it is "
-            + "broken, move the food somewhere cold now and write down "
-            + "what you did — that record is what an inspector or an "
-            + "insurer asks for." });
+        todo: "Check the door is shut and the unit is running. If it stays "
+            + "too warm we text everyone on call. If it is broken, move the "
+            + "food somewhere cold now and write down what you did — that "
+            + "record is what an inspector or an insurer asks for." });
     } else if (state.cls === "w-quiet") {
       jobs.push({ now: true, mark: "?",
         what: `<strong>${esc(name)}</strong> has gone quiet. ${
@@ -187,7 +318,7 @@ function render(data) {
     }
   });
 
-  verdict(units, jobs, (data.account || {}).paused);
+  verdict(units, jobs, (data.account || {}).paused, live);
 
   $("todo-wrap").hidden = jobs.length === 0;
   // Urgent first: somebody reading on a phone in a kitchen sees two
@@ -244,6 +375,7 @@ async function load() {
           page is up to date. It will keep trying.</p>`;
     $("things").innerHTML = "";
     $("todo-wrap").hidden = true;
+    $("needs-wrap").hidden = true;
   }
 }
 

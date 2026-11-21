@@ -46,7 +46,8 @@ def test_every_route_a_guide_names_exists(guide):
 
 def test_the_numbers_in_your_data_are_the_defaults():
     text = GUIDES[0].read_text()
-    assert f"newest {store.MAX_READINGS_PER_SENSOR} readings" in text
+    assert f"every reading for **{store.KEEP_DETAIL_DAYS} days**" in text
+    assert f"**{store.KEEP_READINGS_MONTHS} months**" in text
     assert f"last\n**{backup.BACKUP_KEEP}**" in text
     assert f"Within **{backup.BACKUP_KEEP} days**" in text
 

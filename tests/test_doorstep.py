@@ -90,7 +90,7 @@ def test_a_replayed_breach_still_opens_an_incident(api, account):
     numbers without the alarms would give the shape of the history
     without its meaning."""
     headers, tenant = account
-    report(api, headers, value=55.0)          # a restaurant freezer at 55F
+    report(api, headers, value=60.0)          # a restaurant fridge at 60F
 
     added = api.post("/api/doorstep/adopt", headers=headers, json={
         "serial": "NEW-BOX-1", "industry_vertical": "restaurant",

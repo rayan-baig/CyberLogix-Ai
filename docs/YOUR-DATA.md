@@ -23,7 +23,9 @@ You get one file. It holds every record we keep for your business:
 
 - the business and its settings
 - sensors and sites
-- readings and alerts
+- readings: every one from the last 30 days, and the hourly lows, highs
+  and averages kept for older ones
+- alerts
 - the people on your team, and who gets alerted
 - the mail we sent you
 - your bills and payments
@@ -42,15 +44,22 @@ Some things are left out on purpose:
 The file is in JSON. That is a plain text format that spreadsheets and
 most software can read.
 
-### One thing to know about readings
+### How long readings are kept
 
-We keep only the **newest 500 readings** for each sensor. At one reading
-every five minutes, that is under two days. Older ones are deleted.
+We keep every reading for **30 days**.
 
-Readings around an alert are saved with the alert, so those last longer.
+After that, for each sensor and each hour, we keep the lowest, highest
+and average reading, how many readings there were and how many were out
+of range. Those are kept until they are **13 months** old, then deleted.
+So "what was the walk-in doing last March?" always has an answer: the
+inspector's log prints it hour by hour.
 
-If you need a longer history, download it often. Every report says how
-far back it can see.
+The readings around an alert are saved with the alert, in full, for as
+long as the alert is kept.
+
+Every report says how far back it can see. (Whoever runs your server can
+change both numbers: `CYBERLOGIX_KEEP_DETAIL_DAYS` and
+`CYBERLOGIX_KEEP_READINGS_MONTHS`.)
 
 ### With the API
 
@@ -77,7 +86,9 @@ everything**. Fill in the form and press **Delete everything**.
 It deletes, straight away:
 
 - the business and its settings
-- sensors, sites and readings
+- sensors and sites
+- every reading, the hourly lows, highs and averages kept for older ones,
+  and the readings saved with alerts
 - alerts and the "who did what" record
 - the people on your team, and who gets alerted
 - mail, and everything else stored for the business

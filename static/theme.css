@@ -731,7 +731,7 @@ body.wall #delivery-banner, body.wall .card-head .btn { display: none !important
    incident, and none of what an incident carries about people -- who
    was called and on what number, who acknowledged it, the text that
    went out. What is warm, since when, and whether the texts landed. */
-body.wall .finder, body.wall #find-none, body.wall #find-knocking,
+body.wall .finder, body.wall #find-none, body.wall #find-knocking, body.wall .more-cards,
 body.wall .incident-actions, body.wall .food-out,
 body.wall .incident .quote, body.wall .incident .timeline,
 body.wall .incident .row { display: none !important; }
@@ -928,8 +928,13 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
    it can by dropping the chips in order of how little they change. The
    plan and the seat count are the same all month; the spend and the
    delivery state are not. */
+@media (max-width: 1600px) {
+  .nav .status-line { display: none; }
+}
 @media (max-width: 1460px) {
-  #chip-plan, #chip-seats { display: none; }
+  /* The delivery state also has its own banner across the page. */
+  #chip-plan, #chip-seats, #chip-delivery { display: none; }
+  .nav { gap: 8px; }
 }
 @media (max-width: 1250px) {
   .nav .status-line, #chip-spend { display: none; }
@@ -1530,3 +1535,14 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .confirm-out { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .confirm-out:empty { display: none; }
 .confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+/* Pilot's robot sits in a bottom corner. On a phone the page's last lines
+   and buttons keep clear of it: --pilot-gutter is set by the shared core
+   (static/pilot/pilot.css) only while Pilot is on the page. */
+@media (max-width: 720px) {
+  :root.pilot-on body { padding-bottom: var(--pilot-gutter, 0px); }
+}
+
+/* The console's "More" on a phone (console.js, shortList). */
+.more-cards { display: flex; justify-content: center; padding: 8px 14px 28px; }
+.more-cards .btn { min-height: 44px; width: 100%; max-width: 420px; }

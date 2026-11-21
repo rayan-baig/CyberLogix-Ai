@@ -74,7 +74,7 @@ def _evidence_window(incident, start, end):
     # this customer's claim, under an attestation.
     live = STORE.get_sensor(incident.sensor_id)
     if live is not None and live.tenant_id == incident.tenant_id:
-        for reading in STORE.readings_for(incident.sensor_id, since=start):
+        for reading in STORE.readings_for(incident.sensor_id, since=start, complete=True, until=end):
             if reading.recorded_at <= end:
                 found[reading.reading_id] = reading
     return sorted(

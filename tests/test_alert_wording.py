@@ -51,6 +51,9 @@ def estate(api, operator_factory, sensor_factory, break_gemini):
             "sensor_id": sensor_id, "industry_vertical": vertical,
             "location_name": location})
         assert made.status_code == 201, made.text
+        # Alert on the first reading over: this file is about the wording.
+        assert api.post(f"/api/licenses/me/sensors/{sensor_id}/alert-rule",
+                        headers=headers, json={"alert_after_minutes": 0}).status_code == 200
         placed = api.post(f"/api/sites/{site['site_id']}/sensors", headers=headers,
                           json={"sensor_id": sensor_id})
         assert placed.status_code == 200, placed.text

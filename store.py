@@ -99,31 +99,58 @@ from records import (
     MailSuppression,
 )
 
-from db import Database
+from db import HOUR_KIND, Database
 
 logger = logging.getLogger("cyberlogix.store")
 
-# Readings retained per sensor, newest first; older ones are dropped from
-# memory and deleted from the database.
+# Readings held IN MEMORY per sensor, newest first: the working set the
+# alarm path, the forecast and the console cards read. Older ones leave
+# memory but stay in the database (below), so this costs memory and
+# nothing else: a thousand sensors at 500 each is half a million objects.
 #
-# The default covers the forecaster's trend window and little else. At a
-# five-minute pulse 500 readings is about 41 hours — so a compliance
-# report asked for "the last 30 days" is answered from under two days of
-# data, and used to say so nowhere. That is the dangerous part, not the
-# cap itself: a bounded ring buffer is a reasonable thing to have, and a
-# document that presents a truncated record as a complete one is not.
-#
-# Every artifact that counts readings now states the retained window and
-# flags a period it cannot actually cover. Raise this to keep more, at
-# the cost of memory — every retained reading is held in a deque as well
-# as on disk, so a thousand sensors at 50,000 each is fifty million
-# objects in RAM, not merely a larger file.
+# Until 3.21.0 this was also all that was kept on disk, under two days at
+# a five-minute pulse, while the product promised the inspector "what the
+# walk-in was doing last March". Now the database keeps every reading for
+# KEEP_DETAIL_DAYS and an hourly low, high and average for each sensor
+# for KEEP_READINGS_MONTHS, and the reports read both.
 try:
     MAX_READINGS_PER_SENSOR = max(
         1, int(os.environ.get("CYBERLOGIX_READINGS_PER_SENSOR", "500"))
     )
 except ValueError:
     MAX_READINGS_PER_SENSOR = 500
+
+
+def _setting(name: str, default: int, floor: int = 1) -> int:
+    try:
+        return max(floor, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
+
+
+# Every reading, in full, for this many days (CYBERLOGIX_KEEP_DETAIL_DAYS).
+KEEP_DETAIL_DAYS = _setting("CYBERLOGIX_KEEP_DETAIL_DAYS", 30)
+# Then, up to this many months old, one row per sensor per hour: the
+# lowest, highest and average reading in it, how many readings and how
+# many were out of range (CYBERLOGIX_KEEP_READINGS_MONTHS). Thirteen, so
+# "this month last year" is always there.
+KEEP_READINGS_MONTHS = _setting("CYBERLOGIX_KEEP_READINGS_MONTHS", 13)
+KEEP_MONTHS_WORDS = f"{KEEP_READINGS_MONTHS} months"
+# Readings folded into hourly rows per sensor in one pass of the job, so a
+# pass after a long outage is spread over several hours rather than one
+# long hold of the lock.
+ROLL_UP_BATCH = 20000
+FLOOR_KIND = "reading_floor"
+
+
+def detail_cutoff(now: Optional[datetime] = None) -> datetime:
+    """Readings older than this are kept as hourly rows, not one by one."""
+    return (now or utc_now()) - timedelta(days=KEEP_DETAIL_DAYS)
+
+
+def history_cutoff(now: Optional[datetime] = None) -> datetime:
+    """Nothing older than this is kept at all."""
+    return (now or utc_now()) - timedelta(days=round(KEEP_READINGS_MONTHS * 30.44))
 
 # A silence this long between two readings from one sensor is written down
 # as a gap in its data ("data_gap" rows). Readings themselves are a ring
@@ -330,23 +357,17 @@ class HubStore:
             # touched it. Reading ids are monotonic, so they settle it --
             # as numbers, which the database compares (db.py).
             #
-            # Streamed into the buckets rather than built as a list first,
-            # and each reading shares its sensor's id string rather than
-            # holding its own copy: see docs/LOAD-TEST.md for what the
-            # old way cost at start-up.
-            buckets = self._readings
-
-            def _take(row: Dict[str, Any]) -> None:
-                bucket = buckets.get(row["sensor_id"])
-                if bucket is None:
-                    return
-                reading = Reading.from_row(row)
-                sensor = self._sensors.get(reading.sensor_id)
-                if sensor is not None:
-                    reading.sensor_id = sensor.sensor_id
-                bucket.append(reading)
-
-            self._db.each_reading_in_order(_take)
+            # Only each sensor's newest MAX_READINGS_PER_SENSOR come into
+            # memory, fetched through the reading index: the database now
+            # holds a month of every reading, and streaming all of it
+            # through the buffers would make start-up a month of work.
+            # Each reading shares its sensor's id string rather than
+            # holding its own copy (docs/LOAD-TEST.md).
+            for sensor_id, bucket in self._readings.items():
+                for row in self._db.readings_of(sensor_id, newest=MAX_READINGS_PER_SENSOR):
+                    reading = Reading.from_row(row)
+                    reading.sensor_id = sensor_id
+                    bucket.append(reading)
 
             for row in self._db.all("incident"):
                 incident = Incident.from_row(row)
@@ -700,8 +721,14 @@ class HubStore:
         sites = {s.site_id for s in self._sites.values() if s.tenant_id == tenant_id}
         incidents = {i.incident_id for i in self._incidents.values() if i.tenant_id == tenant_id}
         found: List[Tuple[str, str, Dict[str, Any]]] = []
+        # Readings are by far the most numerous rows (a month of every one
+        # for every sensor), so they are fetched per sensor through the
+        # reading index rather than by reading every business's.
+        for sensor_id in sorted(sensors):
+            for data in self._db.readings_of(sensor_id):
+                found.append(("reading", data.get("reading_id", ""), data))
         for kind in self._db.kinds():
-            if kind in self._NOT_A_BUSINESS_KIND:
+            if kind in self._NOT_A_BUSINESS_KIND or kind == "reading":
                 continue
             for rec_id, data in self._db.rows(kind):
                 owner = data.get("tenant_id")
@@ -1156,10 +1183,13 @@ class HubStore:
             if doomed.ingest_key_hash:
                 self._ingest_keys.pop(doomed.ingest_key_hash, None)
             del self._sensors[sensor_id]
-            evicted = self._readings.pop(sensor_id, None)
+            self._readings.pop(sensor_id, None)
             self._db.delete("sensor", sensor_id)
-            if evicted:
-                self._db.delete_many("reading", [r.reading_id for r in evicted])
+            # Every reading it ever sent, in full and hourly, not only the
+            # ones still in memory.
+            self._db.delete_readings_of(sensor_id)
+            self._db.delete_hours_of(sensor_id)
+            self._db.delete(FLOOR_KIND, sensor_id)
             return closed
 
     def all_sensors(self) -> List[Sensor]:
@@ -1214,14 +1244,11 @@ class HubStore:
                 sensor.sensor_id, deque(maxlen=MAX_READINGS_PER_SENSOR)
             )
             self._note_gap_locked(sensor, bucket, now)
-            # The ring buffer silently drops its oldest entry once full, so
-            # take that entry out of the database too rather than letting the
-            # table grow without bound.
-            evicted = bucket[0] if len(bucket) == MAX_READINGS_PER_SENSOR else None
+            # The buffer drops its oldest entry from memory once full. The
+            # row stays on disk: the database keeps every reading for
+            # KEEP_DETAIL_DAYS and folds older ones into hourly rows
+            # (roll_up_old_readings), so the record outlives the buffer.
             bucket.append(reading)
-            if evicted is not None:
-                self._keep_as_evidence_locked(evicted, sensor.tenant_id)
-                self._db.delete("reading", evicted.reading_id)
 
             sensor.last_seen = now
             sensor.last_temperature = temperature_fahrenheit
@@ -1316,13 +1343,154 @@ class HubStore:
             return sensor
 
     def readings_for(
-        self, sensor_id: str, since: Optional[datetime] = None
+        self, sensor_id: str, since: Optional[datetime] = None,
+        complete: bool = False, until: Optional[datetime] = None,
     ) -> List[Reading]:
+        """A sensor's readings, oldest first.
+
+        From memory by default: the newest MAX_READINGS_PER_SENSOR, which
+        is what the alarm path, the forecast and the cards need, and costs
+        no disk read. `complete=True` is for the record (reports, the
+        vault, claim packets): every reading still held in full detail
+        (KEEP_DETAIL_DAYS), read from the database when memory does not
+        reach back far enough. Older than that, see hourly_for. `until`
+        stops a read from disk early (it is a bound, not a filter, on
+        memory reads, which callers already clip).
+        """
         with self._lock:
-            history = list(self._readings.get(sensor_id, ()))
+            bucket = self._readings.get(sensor_id)
+            history = list(bucket or ())
+            full = bucket is not None and bucket.maxlen is not None \
+                and len(bucket) >= bucket.maxlen
+        if complete and full and (since is None or not history
+                                  or since < history[0].recorded_at):
+            end = iso(until + timedelta(seconds=1)) if until else None
+            rows = self._db.readings_of(sensor_id, start=iso(since) if since else None,
+                                        end=end)
+            stored = [Reading.from_row(row) for row in rows]
+            if since is not None:
+                stored = [r for r in stored if r.recorded_at >= since]
+            return stored
         if since is None:
             return history
         return [r for r in history if r.recorded_at >= since]
+
+    def hourly_for(self, sensor_id: str, since: Optional[datetime] = None,
+                   until: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """The hourly rows kept for readings past the full-detail window.
+
+        Each: hour (ISO), count, breached, min_f, max_f, avg_f. An hour can
+        also still have readings in full detail (the job folds them in as
+        they age), so a caller adds both; no reading is in both.
+        """
+        start = iso(since.replace(minute=0, second=0, microsecond=0)) if since else None
+        out = []
+        for _rec_id, row in self._db.hours_of(sensor_id, start=start, end=iso(until)):
+            count = int(row.get("count") or 0)
+            if not count:
+                continue
+            out.append({
+                "hour": row["hour"], "count": count,
+                "breached": int(row.get("breached") or 0),
+                "min_f": row.get("min_f"), "max_f": row.get("max_f"),
+                "avg_f": round(float(row.get("sum_f") or 0.0) / count, 2),
+            })
+        return out
+
+    def reading_stats(self, sensor_id: str, since: Optional[datetime] = None,
+                      until: Optional[datetime] = None) -> Dict[str, Any]:
+        """How many readings, how many out of range, the lowest, highest and
+        average, over a window, from full detail and hourly rows together.
+
+        Added up by SQLite and over the hourly rows, so a year costs a few
+        hundred rows, not a year of readings.
+        """
+        detail = self._db.reading_summary(
+            sensor_id, start=iso(since) if since else None,
+            end=iso(until) if until else None)
+        count, breached = detail["count"], detail["breached"]
+        lows = [detail["min_f"]] if detail["min_f"] is not None else []
+        highs = [detail["max_f"]] if detail["max_f"] is not None else []
+        total = detail["sum_f"]
+        oldest = detail["oldest"]
+        for hour in self.hourly_for(sensor_id, since, until):
+            count += hour["count"]
+            breached += hour["breached"]
+            lows.append(hour["min_f"])
+            highs.append(hour["max_f"])
+            total += hour["avg_f"] * hour["count"]
+            if oldest is None or hour["hour"] < oldest:
+                oldest = hour["hour"]
+        return {
+            "count": count, "breached": breached,
+            "min_f": min(lows) if lows else None,
+            "max_f": max(highs) if highs else None,
+            "mean_f": round(total / count, 2) if count else None,
+            "oldest": oldest,
+        }
+
+    def detail_floor(self, sensor_id: str) -> Optional[datetime]:
+        """Readings before this were folded into hourly rows (or None)."""
+        row = self._db.get(FLOOR_KIND, sensor_id)
+        return _parse(row.get("at")) if row else None
+
+    def roll_up_old_readings(self, now: Optional[datetime] = None) -> Dict[str, int]:
+        """Fold readings past the full-detail window into hourly rows, and
+        drop hourly rows past the months kept.
+
+        Cheap by construction: each sensor's old readings are found through
+        the reading index, and between passes only the readings that crossed
+        the line since the last one are there to fold, an hour's worth on
+        an hourly timetable. Before a reading goes, it is copied onto any
+        alert it is evidence for, as the old ring buffer did at eviction.
+        """
+        now = now or utc_now()
+        cutoff = iso(detail_cutoff(now))
+        oldest_kept = iso(history_cutoff(now))
+        folded = hours_dropped = 0
+        for sensor in self.all_sensors():
+            rows = self._db.readings_of(sensor.sensor_id, end=cutoff)[:ROLL_UP_BATCH]
+            if rows:
+                with self._lock:
+                    readings = [Reading.from_row(r) for r in rows]
+                    self._keep_rows_as_evidence_locked(sensor, readings)
+                    by_hour: Dict[str, List[Reading]] = {}
+                    for reading in readings:
+                        hour = iso(reading.recorded_at.replace(minute=0, second=0, microsecond=0))
+                        by_hour.setdefault(hour, []).append(reading)
+                    puts = []
+                    for hour, group in by_hour.items():
+                        rec_id = f"{sensor.sensor_id}|{hour}"
+                        row = self._db.get(HOUR_KIND, rec_id) or {
+                            "sensor_id": sensor.sensor_id, "tenant_id": sensor.tenant_id,
+                            "hour": hour, "count": 0, "breached": 0,
+                            "min_f": None, "max_f": None, "sum_f": 0.0}
+                        temps = [r.temperature_fahrenheit for r in group]
+                        row["count"] = int(row["count"]) + len(group)
+                        row["breached"] = int(row["breached"]) + sum(1 for r in group if r.breached)
+                        row["min_f"] = min([t for t in [row["min_f"]] if t is not None] + temps)
+                        row["max_f"] = max([t for t in [row["max_f"]] if t is not None] + temps)
+                        row["sum_f"] = round(float(row["sum_f"]) + sum(temps), 4)
+                        puts.append((rec_id, row))
+                    self._db.put_many(HOUR_KIND, puts)
+                    last = rows[-1]["recorded_at"]
+                    # Exactly what was folded, by id: a batch that stops
+                    # part-way leaves the rest for the next pass.
+                    self._db.delete_many("reading", [r["reading_id"] for r in rows])
+                    self._db.put(FLOOR_KIND, sensor.sensor_id, {
+                        "sensor_id": sensor.sensor_id, "tenant_id": sensor.tenant_id,
+                        "at": max(last, (self._db.get(FLOOR_KIND, sensor.sensor_id)
+                                         or {}).get("at") or last)})
+                    bucket = self._readings.get(sensor.sensor_id)
+                    if bucket is not None:
+                        gone = {r["reading_id"] for r in rows}
+                        kept = [r for r in bucket if r.reading_id not in gone]
+                        if len(kept) != len(bucket):
+                            bucket.clear()
+                            bucket.extend(kept)
+                folded += len(rows)
+            hours_dropped += self._db.delete_hours_of(sensor.sensor_id, before=oldest_kept)
+        return {"readings_folded": folded, "hours_dropped": hours_dropped}
 
     # ---- incidents -----------------------------------------------------
 
@@ -1518,6 +1686,10 @@ class HubStore:
         exactly one call.
         """
         with self._lock:
+            # Back to normal on its own, or closed by somebody, since the
+            # caller looked: nobody is phoned about a fridge that is fine.
+            if incident.resolved_at is not None:
+                return False
             stamped = incident.voice_escalated_at
             if stamped is not None:
                 if redial_after_minutes <= 0:
@@ -1638,6 +1810,42 @@ class HubStore:
             )
             self._save_incident(incident)
 
+    def _keep_rows_as_evidence_locked(self, sensor: Sensor,
+                                      readings: List[Reading]) -> None:
+        """The same as _keep_as_evidence_locked, for a batch about to be
+        folded into hourly rows: each alert of the sensor is read once and
+        saved once, not once per reading."""
+        if not readings:
+            return
+        margin = timedelta(hours=self.EVIDENCE_HOURS_EACH_SIDE)
+        first = min(r.recorded_at for r in readings)
+        last = max(r.recorded_at for r in readings)
+        for incident in self._incidents.values():
+            if (incident.sensor_id != sensor.sensor_id
+                    or incident.tenant_id != sensor.tenant_id or incident.site_wide):
+                continue
+            closed = incident.resolved_at or incident.acknowledged_at
+            if incident.opened_at - margin > last:
+                continue
+            if closed is not None and closed + margin < first:
+                continue
+            have = {r.get("reading_id") for r in incident.evidence_readings}
+            add = []
+            for reading in readings:
+                at = reading.recorded_at
+                during = incident.opened_at <= at <= (closed or utc_now())
+                near_open = abs(at - incident.opened_at) <= margin
+                near_close = closed is not None and closed <= at <= closed + margin
+                if ((near_open or near_close or (during and reading.breached))
+                        and reading.reading_id not in have):
+                    add.append(self._evidence_row(reading))
+            if add:
+                incident.evidence_readings = sorted(
+                    incident.evidence_readings + add,
+                    key=lambda r: (r["recorded_at"], r["reading_id"]),
+                )
+                self._save_incident(incident)
+
     def preserve_evidence(
         self, incident: Incident, before_hours: float = 12.0,
         after_hours: float = 12.0,
@@ -1663,7 +1871,7 @@ class HubStore:
             ) + timedelta(hours=after_hours)
 
             kept = {r.get("reading_id"): r for r in live.evidence_readings}
-            for reading in self._readings.get(live.sensor_id, ()):
+            for reading in self.readings_for(live.sensor_id, since=start, complete=True):
                 if reading.recorded_at is None:
                     continue
                 if start <= reading.recorded_at <= end:
@@ -1729,6 +1937,36 @@ class HubStore:
                 # it was out of band and when it came back.
                 self.preserve_evidence(incident)
             return incident
+
+    def note_out_since(self, incident: Incident, at: Optional[datetime]) -> None:
+        """When the unit first went out of range for this alert."""
+        if at is None:
+            return
+        with self._lock:
+            incident.out_since = at
+            self._save_incident(incident)
+
+    def resolve_back_to_normal(self, incident: Incident, note: str) -> bool:
+        """Close an alert nobody answered because the unit recovered.
+
+        Only while nobody has it: an alert somebody acknowledged is theirs
+        to close, with what they did. Nobody is written down as having
+        acknowledged it, because nobody did. Claimed under the lock, so
+        the sweep's phone call and this can never both happen. Returns
+        whether this call closed it.
+        """
+        with self._lock:
+            live = self._incidents.get(incident.incident_id, incident)
+            if not live.open:
+                return False
+            live.resolved_at = utc_now()
+            live.resolved_note = note
+            self._save_incident(live)
+            self.preserve_evidence(live)
+            if live is not incident:
+                incident.resolved_at = live.resolved_at
+                incident.resolved_note = note
+            return True
 
     def get_incident(self, incident_id: str) -> Optional[Incident]:
         with self._lock:
@@ -2981,6 +3219,28 @@ class HubStore:
             self._db.put("sensor", candidate.sensor_id, candidate.to_row())
             sensor.override_above = above
             sensor.override_below = below
+            return sensor
+
+    def set_alert_rule(
+        self,
+        sensor: Sensor,
+        minutes: Optional[float],
+        readings: Optional[int],
+        unit_kind: Optional[str] = None,
+    ) -> Sensor:
+        """The unit's own "stays out of range" setting (None: the default).
+
+        Written to disk before the live object, like the limits above.
+        `unit_kind` is kept alongside when given (the add form's answer).
+        """
+        with self._lock:
+            kind = unit_kind if unit_kind is not None else sensor.unit_kind
+            candidate = replace(sensor, alert_after_minutes=minutes,
+                                alert_after_readings=readings, unit_kind=kind)
+            self._db.put("sensor", candidate.sensor_id, candidate.to_row())
+            sensor.alert_after_minutes = minutes
+            sensor.alert_after_readings = readings
+            sensor.unit_kind = kind
             return sensor
 
     # ---- password resets -------------------------------------------------

@@ -176,6 +176,44 @@ def alert_sms(tenant, sensor, temperature_f: float, unit: str,
     return _cut(text, SMS_LIMIT, mark="")
 
 
+# A spell this short that comes back on its own is almost always a door
+# held open or a delivery going in (patterns.DOOR_MAX_MINUTES).
+DOOR_LIKE_MINUTES = 25.0
+
+
+def back_to_normal_note(minutes: float, called: bool = False) -> str:
+    """The plain note on an alert the unit answered itself.
+
+    "Back to normal after 3 minutes, probably the door."
+    """
+    from domain import minutes_words
+
+    spell = minutes_words(minutes)
+    if minutes <= DOOR_LIKE_MINUTES:
+        note = f"Back to normal after {spell}, probably the door or a delivery."
+    else:
+        note = (f"Back to normal after {spell}, on its own. Worth a look at "
+                "the door seal and what went in.")
+    if not called:
+        note += " Nobody was phoned."
+    return note
+
+
+def back_to_normal_sms(tenant, sensor, temperature_f: float, unit: str,
+                       minutes: float) -> str:
+    """The all-clear to the people who were texted the alert."""
+    from domain import minutes_words, plain_temperature
+    from notifications import to_gsm7
+
+    name, place = unit_name(sensor), place_of(sensor, tenant)
+    reading = plain_temperature(temperature_f, unit)
+    tail = f"back to {reading} after {minutes_words(minutes)}. Alert closed, no call."
+    text = to_gsm7(f"OK {name} at {place}: {tail}")
+    if _septets(text) <= SMS_LIMIT:
+        return text
+    return _cut(to_gsm7(f"OK {name}: {tail}"), SMS_LIMIT, mark="")
+
+
 def _septets(text: str) -> int:
     """Length as GSM-7 sends it: the extension characters count twice."""
     from notifications import _GSM7_EXT

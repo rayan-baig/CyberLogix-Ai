@@ -67,8 +67,10 @@ def _pulse(api, headers, temp):
 @pytest.fixture()
 def freezer(tenant_factory, sensor_factory):
     headers, _ = tenant_factory()
+    # The real "stays out of range" rule (30 minutes for a freezer), so
+    # the defrost hold and the wait are checked together.
     sensor_factory(headers, sensor_id="FRZ-1", vertical="restaurant",
-                   location="Walk-in freezer", kind="freezer")
+                   location="Walk-in freezer", kind="freezer", alert_after=None)
     return headers
 
 
@@ -166,4 +168,24 @@ def test_a_normal_length_defrost_still_pages_nobody(api, freezer, texts):
     _history(spell_started_ago=25)
 
     assert _pulse(api, freezer, 40.0)["status"] == "DEFROST_CYCLE"
+    assert texts == []
+
+
+# --- the defrost hold and the "stays out of range" wait, together -----------
+
+
+def test_a_defrost_that_overruns_its_hold_alerts_at_once_not_after_another_wait(
+        api, freezer, texts):
+    """The stretched-defrost guard must not be undone by the wait: a cycle
+    already 41 minutes long has been out for longer than a freezer's 30."""
+    _history(spell_started_ago=41, current_hot=15.0)
+    body = _pulse(api, freezer, 15.0)
+    assert body["status"] == "CRITICAL_CATASTROPHE_TRIGGERED"
+    assert len(texts) == 1
+
+
+def test_a_mild_warm_spell_with_no_rhythm_waits_rather_than_pages(api, freezer, texts):
+    """15°F in a freezer (5 over its line) with no defrost pattern: a door,
+    probably. It waits its 30 minutes."""
+    assert _pulse(api, freezer, 15.0)["status"] == "WATCHING"
     assert texts == []

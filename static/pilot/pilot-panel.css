@@ -1,4 +1,4 @@
-/* Pilot core 1.0.1 · pilot-panel.css
+/* Pilot core 1.1.0 · pilot-panel.css
    The chat window that opens from the robot: dark navy-to-indigo glass with
    a blue and violet glow edge, the Pilot header, the greeting, the five
    pills, the "Type a message…" box and the round buttons at the bottom.
@@ -7,10 +7,12 @@
 
 .pilot-panel {
   position: fixed;
-  right: 16px;
-  bottom: calc(var(--pilot-size) * 0.97 + 28px);
-  width: min(420px, calc(100vw - 32px));
-  height: min(680px, calc(100vh - var(--pilot-size) * 0.97 - 48px));
+  /* Beside the robot, so the window can be as tall as the screen allows
+     and everything in it (the key card too) fits. */
+  right: calc(var(--pilot-size) + 28px);
+  bottom: 16px;
+  width: min(420px, calc(100vw - var(--pilot-size) - 44px));
+  height: min(720px, calc(100vh - 32px));
   display: flex;
   flex-direction: column;
   border-radius: 26px;
@@ -31,9 +33,9 @@
   font-size: 15px;
 }
 .pilot-panel[hidden] { display: none; }
-.pilot-at-bl .pilot-panel { right: auto; left: 16px; }
-.pilot-at-tr .pilot-panel { bottom: auto; top: calc(var(--pilot-size) * 0.97 + 28px); }
-.pilot-at-tl .pilot-panel { bottom: auto; right: auto; left: 16px; top: calc(var(--pilot-size) * 0.97 + 28px); }
+.pilot-at-bl .pilot-panel { right: auto; left: calc(var(--pilot-size) + 28px); }
+.pilot-at-tr .pilot-panel { bottom: auto; top: 16px; }
+.pilot-at-tl .pilot-panel { bottom: auto; right: auto; left: calc(var(--pilot-size) + 28px); top: 16px; }
 
 .pilot-panel button { font: inherit; color: inherit; }
 .pilot-icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
@@ -279,6 +281,15 @@
   box-shadow: none; background: #161b3d; }
 
 /* ---------------------------------------------------------------- phones: a full-width sheet */
+
+/* Short screens: a little tighter, the same look. */
+@media (min-width: 721px) and (max-height: 760px) {
+  .pilot-head { padding: 12px 20px 6px; }
+  .pilot-hello { margin: 2px 0 12px; padding: 13px 18px; }
+  .pilot-pills { gap: 6px; }
+  .pilot-pill { padding: 8px 18px; }
+  .pilot-keycard { margin: 10px 0 4px; padding: 11px 14px; }
+}
 
 @media (max-width: 720px) {
   .pilot-panel,

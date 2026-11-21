@@ -165,9 +165,10 @@ def test_the_console_has_the_buttons_the_answers_name():
 
 
 def test_the_data_answers_match_the_export_and_erase_rules():
-    from store import MAX_READINGS_PER_SENSOR
+    from store import KEEP_DETAIL_DAYS, KEEP_READINGS_MONTHS
 
-    assert f"newest {MAX_READINGS_PER_SENSOR} readings" in _answer("export")
+    assert f"every reading for {KEEP_DETAIL_DAYS} days" in _answer("export")
+    assert f"{KEEP_READINGS_MONTHS} months old" in _answer("export")
     text = _answer("delete")
     assert "name" in text and "password" in text and "cannot be undone" in text
 

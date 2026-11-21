@@ -127,10 +127,12 @@ fourteen daily snapshots fill it at about 450 sensors.
 
 ## Disk
 
-On disk a reading takes about **256 bytes** (a 170-byte row and its share
-of the index), so a sensor at full history is about 0.13 MB. The readings
-stop growing at 500 per sensor (`CYBERLOGIX_READINGS_PER_SENSOR`); what
-keeps growing is everything kept for years:
+The figures in this section were measured before 3.21.0, when only the
+newest 500 readings a sensor were kept on disk. Readings now take far more
+room: about 12.6 MB a sensor for 30 days in full at one reading a minute,
+plus about 2 MB of hourly rows for 13 months (see [How readings are kept
+and pruned](#how-readings-are-kept-and-pruned)). Everything else kept for
+years is as measured then:
 
 | Kept | Size, measured | Estimate per 1,000 sensors (100 businesses) a month |
 |---|---:|---:|
@@ -168,21 +170,46 @@ Nothing was sent twice in the sweeps after it. The steps are in
 
 ## How readings are kept and pruned
 
-* **Readings:** the newest `CYBERLOGIX_READINGS_PER_SENSOR` (500) per
-  sensor, in memory and on disk; each new one deletes the oldest. That is
-  about 8 hours at one a minute, 41 hours at one every five. Every
-  document that counts readings says what window it covers.
-* **Evidence:** before a reading is deleted it is copied onto any
-  incident whose 12-hours-either-side window it falls in, so the readings
-  around an excursion are kept as long as the incident.
+Since 3.21.0:
+
+* **In memory:** the newest `CYBERLOGIX_READINGS_PER_SENSOR` (500) per
+  sensor, for the alarm path, the forecast and the console cards. A
+  restart loads only those, through the reading index, so start-up no
+  longer grows with the history kept.
+* **On disk, in full:** every reading for `CYBERLOGIX_KEEP_DETAIL_DAYS`
+  (30). Indexed by sensor and time (`records_reading_time` in `db.py`), so
+  a report, a claim packet or the vault reads one sensor's window without
+  touching anybody else's rows.
+* **On disk, hourly:** after that, one row per sensor per hour (lowest,
+  highest, average, how many, how many out of range) until
+  `CYBERLOGIX_KEEP_READINGS_MONTHS` (13) old, then deleted. The hourly
+  money pass folds the readings that crossed the line since the last pass,
+  so a pass is about an hour's readings: measured 41 ms for five sensors at
+  one reading a minute.
+* **Evidence:** before a reading is folded it is copied onto any incident
+  whose 12-hours-either-side window it falls in, so the readings around an
+  excursion are kept in full as long as the incident.
 * **Incidents, audit trail, invoices and the vault's anchors:** kept.
 * **Mail:** the record is kept, so nothing is sent twice; bodies are
   blanked after 400 days, and sign-in links as soon as they are used.
 * **Snapshots:** fourteen, oldest deleted first, never written if they
   would leave the disk without room.
 
-Raising the reading limit costs memory first: about 0.26 KB per reading in
-memory and on disk.
+Measured on one machine, one sensor holding 31 days at one reading a minute
+(44,640 readings): **12.6 MB on disk** including the index; one write
+0.8 ms; its newest 500 in 2 ms; a 7-day count 16 ms and a 30-day count
+58 ms (added up by SQLite, not loaded). Thirteen months of hourly rows
+add about 2 MB a sensor. At one reading every five minutes the full-detail
+part is a fifth of that. The console reuses its week's counts for a
+minute, so a 50-sensor account's page does not count half a million
+readings every poll.
+
+**This is the disk cost that grows.** At one reading a minute, about
+15 MB a sensor all told, so 100 sensors is about 1.5 GB before snapshots
+and 1,000 sensors about 15 GB. Size the disk for it (fourteen snapshots
+multiply it again), or lower `CYBERLOGIX_KEEP_DETAIL_DAYS`: the hourly
+rows are what an inspector reads, and the readings around every alert are
+kept in full regardless.
 
 ## When to move to Postgres
 

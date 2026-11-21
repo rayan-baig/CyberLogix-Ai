@@ -4,6 +4,56 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.21.0 — 2026-11-20
+
+What a strict review found, fixed. No price or plan term has changed.
+
+- **A door opened for a minute no longer wakes anybody.** A fridge has to
+  STAY out of range before anyone is texted: 20 minutes for a food fridge,
+  30 for a freezer, 10 for a vaccine or lab fridge (15 for a vaccine
+  freezer). Each unit can have its own wait (**Alert wait** on its card;
+  0 texts on the first reading). A reading 15°F or more past the limit
+  still alerts at once, and so does a sensor going quiet. The defrost
+  rule and the guard against stretched defrosts work with it: a defrost
+  that overruns is alerted on at once, not after another wait.
+- **Back to normal before anybody answered: no call.** The alert closes on
+  its own with a plain note ("Back to normal after 3 minutes, probably the
+  door or a delivery"), the people texted get a short all-clear, and the
+  call that was due is cancelled. An alert somebody took is still theirs
+  to close.
+- **The Simple view puts live alerts first.** "Needs you now" at the top,
+  with the fridge, the temperature, how long, and **I'm on it** and
+  **It's fixed** buttons. It can no longer say "Everything is fine" while
+  an alert is open. The explanation is folded underneath.
+- **Readings are kept for 13 months.** Every reading for 30 days, then each
+  hour's lowest, highest and average reading until it is 13 months old.
+  The inspector's log, the compliance report, the proof report and each
+  fridge's daily history read all of it, and **Delete everything** deletes
+  all of it. (It was the newest 500 readings, under two days.) Two new
+  settings for whoever runs the server: `CYBERLOGIX_KEEP_DETAIL_DAYS` and
+  `CYBERLOGIX_KEEP_READINGS_MONTHS`. The database is bigger: see
+  docs/LOAD-TEST.md.
+- **Easier setup.** Sign-up lists each trade once. "Fridge or freezer?" is
+  a choice you make, guessed from the name where it says ("walk-in
+  freezer", "milk fridge"). The sensor guide starts with the no-coding way
+  and a "We'll help you set it up" email link; the technical detail is
+  further down.
+- **Plainer words.** "Too warm: 43°F (limit 41°F)", "about 1 minute",
+  "Your fridge", "Fridges and freezers online"; the in-range percentage
+  waits for a day of readings; sign-in says what it is for. Calls are
+  promised only on the plans that make them, and the forecast only where
+  the plan has it. The plan box says plainly that a 12-month plan, billed
+  monthly, can still be cancelled any time. The front page's food and
+  medicine list no longer lists wine storage or trucks (they are on /for),
+  and the October 2026 attack links to the report.
+- **Shorter on a phone.** Long sections of the front page, and most cards
+  of a new account's console, wait behind **More**.
+- **Pilot core 1.1.0**, copied unchanged from the MTRX Horizyn site: a
+  smaller robot on phones, the moving robot, and it keeps clear of alert
+  banners and the buttons that answer an alert. Its first suggestions are
+  written for a café.
+
+
 ## 3.20.0 — 2026-11-20
 
 Pilot, the MTRX Horizyn assistant, comes to CyberLogix. No price has

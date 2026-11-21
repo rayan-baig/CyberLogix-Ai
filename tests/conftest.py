@@ -98,9 +98,11 @@ def pytest_collection_modifyitems(session, config, items):
 
 @pytest.fixture(autouse=True)
 def clean_store():
+    import console_api
     import watchdog
 
     STORE.reset()
+    console_api.forget_counts()
     # What the alarm-path watch counted is kept in memory, not the store.
     watchdog.forget_deliveries()
     watchdog.forget_readiness()
@@ -272,6 +274,7 @@ def sensor_factory(api):
         location="Austin DC / Hall B",
         kind=None,
         above=None,
+        alert_after=0,
     ):
         body = {
             "sensor_id": sensor_id,
@@ -283,6 +286,15 @@ def sensor_factory(api):
             body["unit_kind"] = kind
         resp = api.post("/api/licenses/me/sensors", headers=headers, json=body)
         assert resp.status_code == 201, resp.text
+        # Most tests are about what happens once an alert is raised, so a
+        # sensor made here alerts on its first reading out of range: the
+        # owner's own "alert at once" setting (0 minutes). Pass
+        # alert_after=None for the real default, the "stays out of range"
+        # wait for its kind (tests/test_stays_out_of_range.py).
+        if alert_after is not None:
+            from store import STORE as _S
+
+            _S.set_alert_rule(_S.get_sensor(sensor_id), float(alert_after), None)
         # A limit of the unit's own, as an owner would set it. Tests written
         # when a restaurant's default was a freezer's 32°F pass above=32.0.
         if above is not None:

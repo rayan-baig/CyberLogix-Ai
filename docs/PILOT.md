@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.0.1**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.1.0**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -26,14 +26,30 @@ script tag (`main.pilot_tag`), with every address fingerprinted like the page's 
 
 The tag also carries the figures Pilot may quote, read from the code that charges and alarms
 (`main.pilot_facts`): "From $59", the trial's days, units and 5 calls, the 41°F fridge and 10°F
-freezer limits, the 30 minutes before a sensor counts as offline, the 10 minutes before calls,
-and the 60-second text promise.
+freezer limits, how long a unit must stay out of range before anybody is texted (20 minutes
+for a food fridge, 30 for a freezer, 10 for a vaccine fridge) and the 15°F that alerts at once,
+the 30 minutes before a sensor counts as offline, the 10 minutes before calls, and the 60-second
+text promise.
+
+Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
+`data-actor-css`, the three `data-rest-*` layers) and every pose picture in
+`static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its
+picture there). They are fetched once the page is idle, never under reduce motion, and a pose
+picture only when a move first needs it. The config's `avoid` list keeps the robot off the
+console's alert banners, the Simple view's "Needs you now" and its buttons, and the buttons that
+answer an alert; on a phone every page keeps its last lines clear of the robot with
+`padding-bottom: var(--pilot-gutter)` (`static/theme.css`).
+
+The window's first buttons ("Ask anything…", "Get things done…", "Help with code…",
+"Analyze & explain…") are the core's own and the same in every app. What CyberLogix sets is
+what "Get things done…" fills in and the suggestions under the conversation, written for a café
+or small restaurant first.
 
 ## The files
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.0.1, unchanged (ten files and the two robot pictures) |
+| `static/pilot/*` | Pilot core 1.1.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |

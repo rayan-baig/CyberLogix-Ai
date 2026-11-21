@@ -51,15 +51,17 @@ function renderIndustry(d) {
         <li><b>We watch every ${esc(d.asset_noun)}, all night.</b>
           A small sensor reads the temperature every few minutes and sends
           it to us. Your ${esc(d.asset_plural)} should stay
-          ${esc(d.band)}, and we know the moment one does not.</li>
-        <li><b>We phone a person until one answers.</b>
-          Text first, then a real phone call, then the next name on the
-          list. An alert nobody picks up is the same as no alert.</li>
+          ${esc(d.band)}, and we know when one stays out of it.</li>
+        <li><b>We text, then phone a person until one answers.</b>
+          Everyone on call gets a text. On Growth and up, if nobody answers,
+          a real phone call follows, then the next name on the list. An
+          alert nobody picks up is the same as no alert.</li>
         <li><b>We tell a real fault from a normal one.</b>
           Equipment warms up on purpose sometimes, and a door gets left
-          open. We learn what normal looks like for each
-          ${esc(d.asset_noun)} so you are not woken for it &mdash; and so
-          the call you do get means something.</li>
+          open. A unit has to stay out of range for a while before anybody
+          is texted, we learn each ${esc(d.asset_noun)}'s defrost, and an
+          alert closes itself if the unit comes back before anybody
+          answers &mdash; so the call you do get means something.</li>
         <li><b>We keep the proof.</b>
           Every reading is saved and sealed. When ${esc(d.asks_after)}
           asks what happened, the answer is a record you can print rather

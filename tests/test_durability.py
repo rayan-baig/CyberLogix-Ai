@@ -136,8 +136,10 @@ def test_a_field_edited_through_the_api_is_written_through(tmp_path, api,
     assert row["escalation_order"] == 9 and row["active"] is False
 
 
-def test_eviction_is_mirrored_into_the_database(tmp_path):
-    """The ring buffer drops its oldest entry; the table must not keep it."""
+def test_memory_is_capped_and_the_record_is_kept(tmp_path):
+    """The buffer drops its oldest entry from memory; the database keeps
+    every reading (for KEEP_DETAIL_DAYS), and a restart brings only the
+    newest back into memory."""
     from store import MAX_READINGS_PER_SENSOR
 
     path = str(tmp_path / "evict.db")
@@ -149,10 +151,11 @@ def test_eviction_is_mirrored_into_the_database(tmp_path):
                              humidity_percent=None, breached=False)
 
     assert len(store.readings_for("S")) == MAX_READINGS_PER_SENSOR
-    assert store._db.count("reading") == MAX_READINGS_PER_SENSOR, (
-        "evicted rows were left behind and the table grows without bound"
-    )
-    assert len(rebuilt(path).readings_for("S")) == MAX_READINGS_PER_SENSOR
+    assert store._db.count("reading") == MAX_READINGS_PER_SENSOR + 25
+    assert len(store.readings_for("S", complete=True)) == MAX_READINGS_PER_SENSOR + 25
+    again = rebuilt(path)
+    assert len(again.readings_for("S")) == MAX_READINGS_PER_SENSOR
+    assert again.readings_for("S")[-1].reading_id == store.readings_for("S")[-1].reading_id
 
 
 

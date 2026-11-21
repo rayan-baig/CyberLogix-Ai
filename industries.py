@@ -27,7 +27,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, status
 
-from store import INDUSTRY_PROFILES
+from store import INDUSTRY_PROFILES, KEEP_MONTHS_WORDS
 
 # Per vertical: what is being protected, what is lost, who asks for the
 # records afterwards, and what the people on shift need to hold.
@@ -243,9 +243,10 @@ def page(vertical: str) -> Dict[str, Any]:
     # actually alarms on.
     fix = (
         f"A sensor in each {profile['asset_noun']} reports every few minutes. "
-        f"The moment one {trips}, everyone on call gets a text, and the "
-        "phone keeps ringing until somebody answers. Every reading is kept, "
-        f"ready for {extra['asks_after']}."
+        f"When one {trips} and stays there, everyone on call gets a text "
+        "(a door opened for a minute does not count), and on Growth and up "
+        "the phone keeps ringing until somebody answers. Every reading is "
+        f"kept for {KEEP_MONTHS_WORDS}, ready for {extra['asks_after']}."
     )
 
     return {

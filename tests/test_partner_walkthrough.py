@@ -103,7 +103,7 @@ def test_a_partner_from_first_day_to_last(api):
     api.post("/api/contacts", headers=owner,
              json={"full_name": "Sam Ortiz", "phone": "+15550199"})
     warm = api.post("/api/sensor-pulse", headers=owner,
-                    json={"sensor_id": "WALKIN-1", "temperature_fahrenheit": 51.0})
+                    json={"sensor_id": "WALKIN-1", "temperature_fahrenheit": 60.0})
     assert warm.status_code == 200, warm.text
 
     # 7. The partner sees it needs a visit, and enough to send somebody.

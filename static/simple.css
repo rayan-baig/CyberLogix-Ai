@@ -141,3 +141,23 @@ h2.plain {
   .thing { flex-wrap: wrap; gap: 8px 12px; }
   .thing-temp { min-width: 68px; font-size: 24px; }
 }
+
+/* "Needs you now": a live alert, with the two buttons that deal with it.
+   First on the page after the verdict, for everybody. */
+.needs { margin-top: 18px; }
+.needs-h { margin-top: 0; color: var(--critical); }
+.need {
+  padding: 18px; margin-bottom: 12px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background: var(--surface-2);
+}
+.need.need-open { border-color: color-mix(in srgb, var(--critical) 55%, transparent); }
+.need-what { font-size: 16.5px; line-height: 1.5; margin: 0 0 6px; }
+.need-when { font-size: 14px; color: var(--muted); margin: 0 0 12px; }
+.need-acts { display: flex; gap: 10px; flex-wrap: wrap; }
+.need-acts .btn { min-height: 44px; padding: 0 18px; font-size: 15px; }
+
+/* The explanation, folded under the answer. */
+.intro { margin-top: 34px; }
+.intro summary { cursor: pointer; list-style: revert; }
+.intro[open] summary { margin-bottom: 12px; }

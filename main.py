@@ -792,7 +792,9 @@ def pilot_facts() -> Dict[str, str]:
     """What Pilot's knowledge pack may quote, read from the code that charges
     and alarms, so Pilot can never say a figure the product does not use."""
     from costs import TRIAL_CALLS_TOTAL
-    from domain import (DISPATCH_SLA_SECONDS, SENSOR_OFFLINE_AFTER_MINUTES,
+    from domain import (ALERT_AFTER_MINUTES_CLINICAL_FRIDGE, ALERT_AFTER_MINUTES_FOOD_FREEZER,
+                        ALERT_AFTER_MINUTES_FOOD_FRIDGE, ALERT_AT_ONCE_DEGREES_F,
+                        DISPATCH_SLA_SECONDS, SENSOR_OFFLINE_AFTER_MINUTES,
                         VOICE_ESCALATION_GRACE_MINUTES, unit_kind_limits)
     from pricing import PRICE_BOOK, headline
 
@@ -826,7 +828,44 @@ def pilot_facts() -> Dict[str, str]:
         "offline-minutes": str(SENSOR_OFFLINE_AFTER_MINUTES),
         "call-after-minutes": str(VOICE_ESCALATION_GRACE_MINUTES),
         "text-within-seconds": str(DISPATCH_SLA_SECONDS),
+        "alert-after-fridge": number(ALERT_AFTER_MINUTES_FOOD_FRIDGE),
+        "alert-after-freezer": number(ALERT_AFTER_MINUTES_FOOD_FREEZER),
+        "alert-after-vaccine": number(ALERT_AFTER_MINUTES_CLINICAL_FRIDGE),
+        "alert-at-once-degrees": number(ALERT_AT_ONCE_DEGREES_F),
     }
+
+
+# Pilot's pose pictures (core 1.1.0, docs/PILOT.md): every <pose>.webp or
+# .png in static/pilot/poses/ whose name is one of these is used by the
+# moving robot, so a new pose is added just by putting its picture there.
+# The same names as the shared core's pilot-motion.js.
+PILOT_POSES = ("standing", "sitting", "wave", "walk1", "walk2", "run1", "run2", "fly", "climb1", "climb2", "flip",
+               "throw", "kick", "tennis", "celebrate", "slide", "point", "power", "dash", "love", "land", "arms-crossed")
+
+
+def pilot_pose_files(folder: Optional[Path] = None) -> Dict[str, str]:
+    """{pose: file name} for the pose pictures there are (WebP wins over PNG)."""
+    found: Dict[str, str] = {}
+    try:
+        files = sorted(p.name for p in (folder or STATIC_DIR / "pilot" / "poses").iterdir())
+    except OSError:
+        return found
+    for name in files:
+        stem, _, ext = name.partition(".")
+        if stem in PILOT_POSES and ext in ("webp", "png") and (stem not in found or ext == "webp"):
+            found[stem] = name
+    return found
+
+
+def pilot_poses() -> str:
+    """The pose pictures, as "name=address name=address" for data-poses.
+    Fetched only when a move first needs one; versioned like the rest."""
+    out = []
+    for pose, name in pilot_pose_files().items():
+        url = f"/static/pilot/poses/{name}"
+        tag = _asset_tag(url)
+        out.append(f"{pose}={url}?v={tag}" if tag else f"{pose}={url}")
+    return " ".join(out)
 
 
 def pilot_tag() -> str:
@@ -840,8 +879,15 @@ def pilot_tag() -> str:
             "render": "pilot/pilot-render.js", "providers": "pilot/pilot-providers.js",
             "engine": "pilot/pilot-engine.js", "media": "pilot/pilot-media.js",
             "panel": "pilot/pilot-panel.js",
+            # The moving robot (core 1.1.0): fetched once the page is idle,
+            # never under reduce motion; pose pictures only when needed.
+            "motion": "pilot/pilot-motion.js", "actor": "pilot/pilot-actor.js",
+            "actor-css": "pilot/pilot-actor.css",
+            "rest-body": "pilot/pilot-rest-body.webp", "rest-head": "pilot/pilot-rest-head.webp",
+            "rest-eyes": "pilot/pilot-rest-eyes.webp",
         }
         attrs = " ".join(f'data-{k}="/static/{v}"' for k, v in core.items())
+        attrs += f' data-poses="{html.escape(pilot_poses())}"'
         facts = " ".join(f'data-{k}="{html.escape(v)}"' for k, v in pilot_facts().items())
         _pilot_tag["tag"] = (f'<script src="/static/pilot/pilot.js" defer id="pilot-core" '
                              f"{attrs} {facts}></script>")
@@ -1065,7 +1111,9 @@ def landing_page(request: Request):
     from sensor_guides import what_you_need_html
 
     return _serve_page(LANDING_HTML, request, _landing_facts(),
-                       markup={"%%WHAT_YOU_NEED%%": what_you_need_html(2)})
+                       # The steps are on /help/sensors; the front page
+                       # says what to buy and links there.
+                       markup={"%%WHAT_YOU_NEED%%": what_you_need_html(2, with_steps=False)})
 
 
 @app.get("/console", include_in_schema=False)
@@ -1111,7 +1159,7 @@ def industry_page(request: Request, vertical: str = ""):
         name = INDUSTRY_PROFILES[vertical]["name"]
         title = f"CyberLogix AI for {name}"
         description = (f"Temperature alarms for {name}: a text to everyone "
-                       "on call the moment something goes out of range, and "
+                       "on call when something stays out of range, and "
                        "the record afterwards.")
     else:
         title = "CyberLogix AI for your industry"

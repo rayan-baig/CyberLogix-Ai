@@ -37,7 +37,26 @@ CREATE TABLE IF NOT EXISTS records (
     PRIMARY KEY (kind, rec_id)
 );
 CREATE INDEX IF NOT EXISTS records_kind ON records (kind);
+CREATE INDEX IF NOT EXISTS records_reading_time ON records (
+    json_extract(data, '$.sensor_id'), json_extract(data, '$.recorded_at')
+) WHERE kind = 'reading';
 """
+
+# The expressions the reading index is built on. A query has to spell them
+# exactly so, with `kind = 'reading'` written out (not bound), for SQLite
+# to use the index rather than scan every row.
+_R_SENSOR = "json_extract(data, '$.sensor_id')"
+_R_AT = "json_extract(data, '$.recorded_at')"
+# Hourly lows, highs and averages for readings older than the full-detail
+# window (store.KEEP_DETAIL_DAYS). Keyed "<sensor_id>|<hour>", so the
+# primary key orders one sensor's hours by time and a range of them is a
+# range of the key: no index of its own needed.
+HOUR_KIND = "reading_hour"
+
+
+def _id_number(rec_id: str) -> int:
+    tail = (rec_id or "").rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
 
 
 def _encode(data: Dict[str, Any]) -> str:
@@ -218,6 +237,94 @@ class Database:
                     take(json.loads(blob))
                     count += 1
         return count
+
+    # ---- one sensor's readings, through the reading index ----------------
+
+    def readings_of(self, sensor_id: str, start: Optional[str] = None,
+                    end: Optional[str] = None,
+                    newest: Optional[int] = None) -> List[Dict[str, Any]]:
+        """One sensor's stored readings, oldest first.
+
+        `start` and `end` are ISO instants (end exclusive). `newest` keeps
+        only the latest that many. Ties in time are put in id order, as
+        numbers, the same order start-up always used.
+        """
+        sql = f"SELECT data FROM records WHERE kind = 'reading' AND {_R_SENSOR} = ?"
+        args: List[Any] = [sensor_id]
+        if start is not None:
+            sql += f" AND {_R_AT} >= ?"
+            args.append(start)
+        if end is not None:
+            sql += f" AND {_R_AT} < ?"
+            args.append(end)
+        if newest is not None:
+            sql += f" ORDER BY {_R_AT} DESC LIMIT ?"
+            args.append(int(newest))
+        with self._lock:
+            found = [json.loads(blob) for (blob,) in self._conn.execute(sql, args)]
+        found.sort(key=lambda r: (r.get("recorded_at") or "",
+                                  _id_number(r.get("reading_id", ""))))
+        return found
+
+    def reading_summary(self, sensor_id: str, start: Optional[str] = None,
+                        end: Optional[str] = None) -> Dict[str, Any]:
+        """Count, out-of-range count, low, high and total of one sensor's
+        readings in a window, added up by SQLite rather than in Python."""
+        sql = (f"SELECT COUNT(*), "
+               "SUM(CASE WHEN json_extract(data, '$.breached') THEN 1 ELSE 0 END), "
+               "MIN(json_extract(data, '$.temperature_fahrenheit')), "
+               "MAX(json_extract(data, '$.temperature_fahrenheit')), "
+               "SUM(json_extract(data, '$.temperature_fahrenheit')), "
+               f"MIN({_R_AT}) "
+               f"FROM records WHERE kind = 'reading' AND {_R_SENSOR} = ?")
+        args: List[Any] = [sensor_id]
+        if start is not None:
+            sql += f" AND {_R_AT} >= ?"
+            args.append(start)
+        if end is not None:
+            sql += f" AND {_R_AT} < ?"
+            args.append(end)
+        with self._lock:
+            count, breached, low, high, total, oldest = self._conn.execute(sql, args).fetchone()
+        return {"count": int(count or 0), "breached": int(breached or 0),
+                "min_f": low, "max_f": high, "sum_f": float(total or 0.0),
+                "oldest": oldest}
+
+    def delete_readings_of(self, sensor_id: str, before: Optional[str] = None) -> int:
+        """Delete one sensor's readings, all of them or those before `before`."""
+        sql = f"DELETE FROM records WHERE kind = 'reading' AND {_R_SENSOR} = ?"
+        args: List[Any] = [sensor_id]
+        if before is not None:
+            sql += f" AND {_R_AT} < ?"
+            args.append(before)
+        with self._lock:
+            gone = self._conn.execute(sql, args).rowcount
+            self._conn.commit()
+        return int(gone or 0)
+
+    def hours_of(self, sensor_id: str, start: Optional[str] = None,
+                 end: Optional[str] = None) -> List[Tuple[str, Dict[str, Any]]]:
+        """One sensor's hourly rows in a window, oldest first."""
+        low = f"{sensor_id}|{start or ''}"
+        high = f"{sensor_id}|{end or '~'}"
+        with self._lock:
+            found = self._conn.execute(
+                "SELECT rec_id, data FROM records WHERE kind = ? "
+                "AND rec_id >= ? AND rec_id < ? ORDER BY rec_id",
+                (HOUR_KIND, low, high),
+            ).fetchall()
+        out = []
+        for rec_id, blob in found:
+            data = json.loads(blob)
+            if data.get("sensor_id") == sensor_id:
+                out.append((rec_id, data))
+        return out
+
+    def delete_hours_of(self, sensor_id: str, before: Optional[str] = None) -> int:
+        """Delete one sensor's hourly rows, all of them or those before `before`."""
+        ids = [rec_id for rec_id, _ in self.hours_of(sensor_id, end=before)]
+        self.delete_many(HOUR_KIND, ids)
+        return len(ids)
 
     def rows(self, kind: str) -> List[Tuple[str, Dict[str, Any]]]:
         """Every record of one kind, with its id. all() drops the id."""

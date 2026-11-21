@@ -60,8 +60,13 @@ async function boot() {
 
     const select = $("industry_vertical");
     // The common kinds first, in plain words; every sector after them.
-    const groups = [["Most businesses", info.common || []],
-                    ["Other kinds of business", info.sectors]];
+    // Each trade once: a common kind is not listed again under its formal
+    // name ("Restaurant or café" and "Restaurants & Cafés" were both there).
+    const common = info.common || [];
+    const listed = new Set(common.map((kind) => kind.sector || kind.key));
+    const groups = [["Most businesses", common],
+                    ["Other kinds of business",
+                     info.sectors.filter((sector) => !listed.has(sector.key))]];
     for (const [label, rows] of groups) {
       if (!rows.length) continue;
       const group = document.createElement("optgroup");

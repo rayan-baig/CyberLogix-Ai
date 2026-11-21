@@ -299,14 +299,15 @@ def test_no_agreement_quotes_a_setup_fee_or_a_price():
     yearly and cancelling work, which are terms, not prices; 2.6 for who
     sees what with insurance partners and proof reports; 2.7 for what a
     repair company gets from a repair quote; 2.8 for Pilot and a business's
-    own AI key.)"""
+    own AI key; 2.9 for when an alert is sent and how long readings are
+    kept.)"""
     for slug in legal.DOCUMENTS:
         body = legal.document(slug)["body_markdown"]
         assert "setup" not in body.lower() and "commissioning" not in body.lower()
         for entry in pricing.PRICE_BOOK.values():
             assert _money(entry["monthly_usd"]) not in body
         assert "$1,500" not in body and "$79" not in body and "$59" not in body
-    assert legal.TERMS_VERSION == "2.8"
+    assert legal.TERMS_VERSION == "2.9"
 
 
 def test_the_docs_say_there_is_no_setup_fee():

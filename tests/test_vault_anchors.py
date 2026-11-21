@@ -109,12 +109,15 @@ def test_retention_turnover_is_not_called_tampering(api, operator_factory, senso
     headers = _spaced_estate(api, operator_factory, sensor_factory, 10)
     att = api.get("/api/vault/attestation/FRZ-1", headers=headers).json()
     assert att["readings"] == 10
-    # Normal operation: 11 more readings arrive; the ring buffer (20) evicts
-    # the oldest attested reading. Nobody edits anything.
-    for i in range(11):
+    # Normal operation: the attested readings age past the full-detail
+    # window and are folded into hourly rows, and new ones arrive. Nobody
+    # edits anything.
+    monkeypatch.setattr(store, "KEEP_DETAIL_DAYS", -1)
+    assert STORE.roll_up_old_readings()["readings_folded"] == 10
+    monkeypatch.setattr(store, "KEEP_DETAIL_DAYS", 30)
+    for i in range(2):
         api.post("/api/sensor-pulse", headers=headers,
                  json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 30.0})
-    assert len(STORE.readings_for("FRZ-1")) == 20
     body = api.get("/api/vault/verify/FRZ-1", headers=headers).json()
     assert body["attestations_broken"] == 0, "eviction reported as tampering"
 

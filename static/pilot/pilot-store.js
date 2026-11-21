@@ -1,4 +1,4 @@
-// Pilot core 1.0.1 · pilot-store.js
+// Pilot core 1.1.0 · pilot-store.js
 // What Pilot keeps, and where: only in this browser, never on a server.
 //
 // - Keys (one or more chat keys, an image key, a video key, each with its
@@ -16,7 +16,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const LIMITS = { messages: 60, text: 20000, notes: 20, note: 200, key: 400, model: 200, baseUrl: 300, keys: 8 };
   const PROVIDERS = ["anthropic", "openai", "gemini", "compatible"];
   // Anthropic makes no pictures or videos, so it isn't offered for those.
@@ -305,19 +305,24 @@
     }
 
     // Whether the chat bubble is open follows the user from page to page in
-    // this tab; the corner the robot was dragged to is kept on this device.
+    // this tab; the corner the robot was dragged to, and how lively it is
+    // (calm, low, normal or playful), are kept on this device.
     const CORNERS = ["br", "bl", "tr", "tl"];
+    const ENERGIES = ["calm", "low", "normal", "playful"];
     function ui() {
       const u = read(session, K.ui) || {};
       const place = read(local, `${prefix}-corner`);
       const theme = read(local, `${prefix}-theme`);
-      return { open: u.open === true, corner: CORNERS.includes(place) ? place : "br", theme: theme === "calm" ? "calm" : "glow" };
+      const energy = read(local, `${prefix}-energy`);
+      return { open: u.open === true, corner: CORNERS.includes(place) ? place : "br", theme: theme === "calm" ? "calm" : "glow",
+        energy: ENERGIES.includes(energy) ? energy : "normal" };
     }
 
     function setUi(next) {
       const n = next || {};
       if (CORNERS.includes(n.corner)) write(local, `${prefix}-corner`, n.corner);
       if (n.theme === "calm" || n.theme === "glow") write(local, `${prefix}-theme`, n.theme);
+      if (ENERGIES.includes(n.energy)) write(local, `${prefix}-energy`, n.energy);
       if ("open" in n) return write(session, K.ui, { open: Boolean(n.open) });
       return true;
     }

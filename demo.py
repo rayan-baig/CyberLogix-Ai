@@ -86,12 +86,18 @@ TICK_SECONDS = 2
 # The walk-in starts to warm a minute in.
 DRIFT_STARTS_SECONDS = 60
 # Its readings from then on, one per tick: a door left open, then the
-# compressor losing the fight. The alert opens on the first one over the
-# limit; the call is placed when the real wait has passed.
+# compressor losing the fight. Over the limit, it is watched to see if it
+# STAYS over (the product's "stays out of range" wait, STAY_TICKS here);
+# then the alert opens, and the call is placed when the real wait has passed.
 DRIFT_F = [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5,
            45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1]
 # What it does once somebody has dealt with it: back down to normal.
 RECOVER_F = [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3]
+
+# Readings over the limit before the alert: the demo's stand-in for the
+# real wait (domain.ALERT_AFTER_MINUTES_FOOD_FRIDGE) a fridge must stay
+# out of range before anybody is texted.
+STAY_TICKS = 3
 
 # How long the demo stands in for the real wait before a call. The real
 # wait is wording's grace window (VOICE_ESCALATION_GRACE_MINUTES).
@@ -126,7 +132,10 @@ def story() -> Dict[str, Any]:
 
     business = SimpleNamespace(company_name=BUSINESS)
     walk_in = _unit(next(u for u in UNITS if u["id"] == DRIFTING))
-    alert_at = next(i for i, f in enumerate(DRIFT_F) if f > walk_in.limit_f)
+    from domain import ALERT_AFTER_MINUTES_FOOD_FRIDGE
+
+    over_at = next(i for i, f in enumerate(DRIFT_F) if f > walk_in.limit_f)
+    alert_at = over_at + STAY_TICKS
     alert_f = DRIFT_F[alert_at]
     # Where it has got to by the time the call goes out.
     call_at = min(alert_at + DEMO_WAIT_SECONDS // TICK_SECONDS, len(DRIFT_F) - 1)
@@ -145,7 +154,10 @@ def story() -> Dict[str, Any]:
         "drift_starts_seconds": DRIFT_STARTS_SECONDS,
         "drift_f": DRIFT_F,
         "recover_f": RECOVER_F,
+        "over_index": over_at,
         "alert_index": alert_at,
+        "stay_ticks": STAY_TICKS,
+        "real_stay_minutes": ALERT_AFTER_MINUTES_FOOD_FRIDGE,
         "demo_wait_seconds": DEMO_WAIT_SECONDS,
         "ring_seconds": RING_SECONDS,
         "real_wait_minutes": VOICE_ESCALATION_GRACE_MINUTES,
