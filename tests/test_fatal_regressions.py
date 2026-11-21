@@ -1125,6 +1125,8 @@ def test_acknowledging_an_alert_does_not_restart_it(
 
     # And the other half: once it is closed out, a genuinely new failure
     # on the same sensor is a new incident and does alert.
+    api.post("/api/sensor-pulse", headers=headers,
+             json={"sensor_id": sid, "temperature_fahrenheit": 40.0})
     api.post(f"/api/voice/resolve/{first}", headers=headers,
              json={"resolved_by": "Dana Reyes"})
     again = pulse()

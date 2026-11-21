@@ -20,28 +20,42 @@ from pages import page_source
 PAGE = Path(__file__).resolve().parent.parent / "static" / "console.html"
 
 
-def _tune_handler() -> str:
-    src = page_source(PAGE)
-    start = src.index("  if (btn.dataset.tune) {")
-    end = src.index("  if (btn.dataset.shortcut) {", start)
-    return src[start:end]
+def _between(src, first, last):
+    start = src.index(first)
+    return src[start:src.index(last, start)]
 
 
 def _run(sensor, answer):
+    """Open the card's own limit editor, type the answer, press Save."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
+    src = page_source(PAGE)
+    editor = _between(src, "function closeUnitEditor() {", "/* The calm word for what a unit is doing")
+    save = _between(src, "  if (btn.dataset.editSave || btn.dataset.editDefault) {",
+                    "  if (btn.dataset.shortcut) {")
     harness = f"""
     const sensor = {json.dumps(sensor)};
     const out = {{}};
+    const esc = (s) => String(s ?? "");
+    const CSS = {{ escape: (s) => s }};
+    const input = {{ value: "", focus() {{}} }};
+    const box = {{ dataset: {{}}, hidden: true, set innerHTML(h) {{ out.asked = h;
+        const m = /value="([^"]*)"/.exec(h); input.value = m ? m[1] : ""; out.prefilled = input.value; }},
+      querySelector: (sel) => (sel === "input" ? input : {{}}) }};
+    const document = {{ querySelector: () => box, querySelectorAll: () => [] }};
     const state = {{ unit: sensor.temperature_unit, data: {{ sensors: [sensor] }} }};
-    const btn = {{ dataset: {{ tune: sensor.sensor_id }} }};
-    const prompt = (text, current) => {{ out.asked = text; out.prefilled = current; return {json.dumps(answer)}; }};
     const toast = (text) => {{ out.toast = text; }};
+    const minutesWords = (m) => m + " minutes";
     const api = (url, opts) => {{ out.body = JSON.parse(opts.body); return Promise.resolve({{}}); }};
     const act = (fn, message) => {{ fn(); out.message = message; }};
+    {editor}
+    openUnitEditor(sensor.sensor_id, "limit");
+    input.value = {json.dumps(answer)};
+    const btn = {{ dataset: {{ editSave: sensor.sensor_id }}, closest: () => box }};
     (function () {{
-    {_tune_handler()}
+      const closeUnitEditor = () => {{}};
+    {save}
     }})();
     console.log(JSON.stringify(out));
     """
@@ -61,6 +75,7 @@ def test_a_celsius_account_is_asked_in_celsius_and_the_api_gets_fahrenheit():
     out = _run({**SENSOR, "temperature_unit": "C"}, "4")
 
     assert "°C" in out["asked"] and "°F" not in out["asked"]
+    assert "prompt(" not in out["asked"]
     assert out["prefilled"] == "5"
     assert out["body"]["danger_above"] == pytest.approx(39.2)
     assert "4°C" in out["message"]

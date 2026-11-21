@@ -23,7 +23,8 @@ def test_identical_prompt_is_served_from_cache(
     assert first["sms_dispatch_source"] == "gemini"
     assert len(stub_gemini.prompts) == 1
 
-    # Resolve, then reproduce the identical breach.
+    # Back to normal, resolve, then reproduce the identical breach.
+    breach(api, headers, sensor_factory, temp=70.0)
     api.post(
         f"/api/voice/resolve/{first['incident_id']}",
         headers=headers,

@@ -33,9 +33,12 @@ def test_a_live_alert_outranks_everything_is_fine():
     assert live_check < fine, "a live alert must be checked before 'Everything is fine'"
     # The two buttons, through the real routes.
     assert "I'm on it" in SIMPLE_JS and "It's fixed" in SIMPLE_JS
-    assert "/api/voice/acknowledge/" in SIMPLE_JS and "/api/voice/resolve/" in SIMPLE_JS
-    # Unit, temperature and how long.
-    assert "has been out of range" in SIMPLE_JS and "howLong(i.out_since" in SIMPLE_JS
+    # Through the shared flow the console uses too (static/answer.js).
+    answer = (STATIC / "answer.js").read_text(encoding="utf-8")
+    assert "/api/voice/acknowledge/" in answer and "/api/voice/resolve/" in answer
+    assert "CLXAnswer.onIt(" in SIMPLE_JS and "CLXAnswer.fixed(" in SIMPLE_JS
+    # Unit, temperature and how long, by the one formatter.
+    assert "has been out of range" in SIMPLE_JS and "CLXWords.outFor(i.out_since" in SIMPLE_JS
 
 
 def test_the_overview_carries_what_the_card_needs(api, tenant_factory, sensor_factory):

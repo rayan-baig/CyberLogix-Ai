@@ -1,10 +1,12 @@
-// Pilot core 1.1.0 · pilot-mascot.js
+// Pilot core 1.1.1 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
 // own pop-up is open, keeps clear of things an app asks it to avoid (and of
-// another helper character), picking a free corner, or tucks half away at
-// the edge until tapped.
+// another helper character), and of the page's own words and buttons
+// wherever it is scrolled to (contentIn), picking a free corner, or tucks
+// half away at the edge until tapped. A box being typed in always comes
+// first: the robot never sits on it (hard blocks).
 //
 // The robot is the owner's own picture (pilot-robot-128.webp and
 // pilot-robot-256.webp, transparent), shown as an <img> at the size the
@@ -16,7 +18,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -115,17 +117,125 @@
     return a.left - p < b.right && a.right + p > b.left && a.top - p < b.bottom && a.bottom + p > b.top;
   };
 
-  // Where to sit: {corner, peek}. blocks: the boxes to keep clear of (things
-  // to avoid, another helper). The chosen corner if it's free, else the first
-  // free one; if none is free, the chosen corner, tucked half away (peek).
+  // The part of the robot still showing while it's tucked away in a corner:
+  // a slice `show` pixels wide at the screen's edge (pilot.css moves it by
+  // the same amount: --pilot-peek-show).
+  function peekBox(corner, view, size, gap, show) {
+    const box = cornerBox(corner, view, size, gap);
+    const w = Math.max(1, Math.min(size.width, show || size.width / 2));
+    return corner[1] === "l" ? { ...box, left: 0, right: w } : { ...box, left: view.width - w, right: view.width };
+  }
+
+  // Where to sit: {corner, peek}.
+  //   blocks: boxes to keep clear of (things to avoid, another helper);
+  //   busy(box): true when the page's words or buttons are under that box
+  //     (contentIn), asked only for the corners it needs;
+  //   hard: boxes never to cover, not even tucked away (the box being typed in).
+  // The chosen corner if it's free, else the first free one. If none is
+  // free it tucks half away (peek), in the first corner where the slice that
+  // still shows covers nothing; failing that, the first corner clear of the
+  // hard boxes; failing that, the chosen corner.
   function choosePlace(opts) {
     const o = opts || {};
     const blocks = (o.blocks || []).filter(Boolean);
-    for (const c of cornerOrder(o.corner)) {
+    const hard = (o.hard || []).filter(Boolean);
+    const busy = typeof o.busy === "function" ? o.busy : () => false;
+    const order = cornerOrder(o.corner);
+    const clear = (box, list, pad) => !list.some((b) => overlaps(box, b, pad));
+    for (const c of order) {
       const box = cornerBox(c, o.view, o.size, o.gap);
-      if (!blocks.some((b) => overlaps(box, b, 6))) return { corner: c, peek: false };
+      if (clear(box, hard, 8) && clear(box, blocks, 6) && !busy(box, c)) return { corner: c, peek: false };
+    }
+    for (const c of order) {
+      const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow);
+      if (clear(slice, hard, 8) && clear(slice, blocks, 2) && !busy(slice, c)) return { corner: c, peek: true };
+    }
+    if (hard.length) {
+      for (const c of order) {
+        if (clear(peekBox(c, o.view, o.size, o.gap, o.peekShow), hard, 8)) return { corner: c, peek: true };
+      }
     }
     return { corner: CORNERS.includes(o.corner) ? o.corner : "br", peek: true };
+  }
+
+  // ---------------------------------------------------------------- the page's own words and buttons
+
+  // Things a visitor reads or presses. The robot keeps off them.
+  const INTERACTIVE = 'a[href], button, input:not([type="hidden"]), textarea, select, summary, label, [role="button"], '
+    + '[role="link"], [role="checkbox"], [role="tab"], [role="switch"], [contenteditable=""], [contenteditable="true"]';
+  // Small pictures count too (icons, logos); big ones are scenery.
+  const MEDIA = /^(IMG|SVG|VIDEO|CANVAS|PICTURE)$/i;
+  const ICON_MOST = 160;
+  const NOT_TYPED = /^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/i;
+
+  // Is this a box someone types into: a text input, a textarea or an
+  // editable element?
+  function isEditable(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const tag = String(el.tagName || "").toUpperCase();
+    if (tag === "TEXTAREA") return !el.disabled && !el.readOnly;
+    if (tag === "INPUT") return !el.disabled && !el.readOnly && !NOT_TYPED.test(el.type || el.getAttribute("type") || "text");
+    return Boolean(el.isContentEditable);
+  }
+
+  const toBox = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+
+  // The part of one element (the top one at a point) that is something to
+  // read or press inside `area`, or null.
+  function contentBox(el, area, own, doc) {
+    if (!el || el.nodeType !== 1) return null;
+    const tag = String(el.tagName || "").toUpperCase();
+    if (tag === "HTML" || tag === "BODY") return null;
+    const control = el.closest ? el.closest(INTERACTIVE) : null;
+    if (control && !(own && own.contains(control))) {
+      const r = control.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r);
+    }
+    if (MEDIA.test(tag)) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= ICON_MOST && r.height <= ICON_MOST && overlaps(r, area, 0)) return toBox(r);
+      return null;
+    }
+    // Words written straight into this element: only the lines that are
+    // really there count, not the empty end of a short line.
+    const range = doc && doc.createRange ? doc.createRange() : null;
+    if (!range) return null;
+    for (const node of el.childNodes || []) {
+      if (node.nodeType !== 3 || !/\S/.test(node.nodeValue)) continue;
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r);
+      }
+    }
+    return null;
+  }
+
+  // What the page shows to read or press under `area` (the robot's box in a
+  // corner, in screen pixels): the boxes of those things, [] when it's free.
+  // Looks at a grid of points (the top element at each one, never Pilot's
+  // own), so it costs a handful of lookups, not a walk over the page.
+  function contentIn(doc, area, own, grid) {
+    const d = doc || root.document;
+    if (!d || typeof d.elementsFromPoint !== "function" || !area) return [];
+    const n = Math.max(2, grid || 4);
+    const inset = { left: area.left + 3, top: area.top + 3, right: area.right - 3, bottom: area.bottom - 3 };
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < n; i += 1) {
+      for (let j = 0; j < n; j += 1) {
+        // From edge to edge, so a line just inside the box is found too.
+        const x = inset.left + ((inset.right - inset.left) * i) / (n - 1);
+        const y = inset.top + ((inset.bottom - inset.top) * j) / (n - 1);
+        let stack = [];
+        try { stack = d.elementsFromPoint(x, y) || []; } catch (_) { continue; }
+        const top = stack.find((el) => !(own && own.contains(el)));
+        if (!top || seen.has(top)) continue;
+        seen.add(top);
+        const hit = contentBox(top, inset, own, d);
+        if (hit) out.push(hit);
+      }
+    }
+    return out;
   }
 
   // The boxes of the visible elements matching any of the selectors.
@@ -144,7 +254,66 @@
     return out;
   }
 
-  const api = { VERSION, robot, mark, MODALS, modalOpen, cornerOrder, cornerBox, overlaps, choosePlace, boxesOf, shown };
+  // ---------------------------------------------------------------- where to sit now (pilot.js asks)
+
+  // The box being typed in (an input, a textarea or an editable element of
+  // the page, never Pilot's own), or null.
+  function typingIn(doc, own) {
+    const el = doc.activeElement;
+    return el && el !== doc.body && !(own && own.contains(el)) && isEditable(el) ? el : null;
+  }
+
+  // Where the robot should sit now: {corner, peek, typing}. o: {doc, win,
+  // own (Pilot's root), launcher, avoid (selectors), corner (the visitor's
+  // own), shown (where it is now), full, text}. With `full` (not mid-scroll)
+  // it may move to another corner; mid-scroll it only checks its own spot
+  // and tucks away there or comes back out, so it never hops about. A box
+  // being typed in is never covered (hard). `text`: keep off the page's
+  // words and buttons (contentIn).
+  function placeNow(o) {
+    const blocks = boxesOf(o.doc, o.avoid, o.own, o.win);
+    const field = typingIn(o.doc, o.own);
+    const r = o.launcher.getBoundingClientRect();
+    const size = { width: r.width, height: r.height };
+    const view = { width: o.win.innerWidth, height: o.win.innerHeight };
+    const css = o.win.getComputedStyle(o.own);
+    const gap = parseFloat(css.getPropertyValue("--pilot-gap")) || 16;
+    const peekShow = parseFloat(css.getPropertyValue("--pilot-peek-show")) || size.width / 2;
+    const busy = o.text ? (box) => contentIn(o.doc, box, o.own).length > 0 : undefined;
+    let place;
+    if (o.full || field) {
+      place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, peekShow });
+    } else {
+      const spot = cornerBox(o.shown, view, size, gap);
+      place = { corner: o.shown, peek: blocks.some((b) => overlaps(spot, b, 6)) || Boolean(busy && busy(spot)) };
+    }
+    return { ...place, typing: Boolean(field) };
+  }
+
+  // On phones, room at the side for the tucked-away robot: these elements
+  // get .pilot-gutter-side (pilot.css: --pilot-side, 24 px), but only where
+  // their own right padding is narrower. An app's own use of the class is
+  // left alone.
+  function sideGutter(doc, win, selectors) {
+    const want = parseFloat(win.getComputedStyle(doc.documentElement).getPropertyValue("--pilot-side")) || 0;
+    for (const sel of selectors || []) {
+      let found = [];
+      try { found = doc.querySelectorAll(sel); } catch (_) { continue; }
+      for (const el of found) {
+        const auto = el.hasAttribute("data-pilot-gutter-auto");
+        if (el.classList.contains("pilot-gutter-side") && !auto) continue;
+        el.classList.remove("pilot-gutter-side");
+        el.removeAttribute("data-pilot-gutter-auto");
+        if (want > 0 && (parseFloat(win.getComputedStyle(el).paddingRight) || 0) < want) {
+          el.classList.add("pilot-gutter-side");
+          el.setAttribute("data-pilot-gutter-auto", "");
+        }
+      }
+    }
+  }
+
+  const api = { VERSION, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, cornerOrder, cornerBox, peekBox, overlaps, choosePlace, boxesOf, shown,
+    INTERACTIVE, isEditable, contentBox, contentIn };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;
 })(typeof window !== "undefined" ? window : globalThis);

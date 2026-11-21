@@ -993,11 +993,24 @@ async function checkSwitcher(browser, base) {
   await page.fill("#si-email", dana.email);
   await page.fill("#si-password", password);
   await page.click('#signin-form button[type="submit"]');
+  // Her units are warm and nobody has answered: signing in goes to the
+  // Simple view, where "I'm on it" is first (3.22.0). The console is one
+  // tap away, in the business she had open.
+  await page.waitForURL(/\/today$/, { timeout: 15000 }).catch(() => {});
+  if (!/\/today$/.test(page.url())) {
+    fail(label, `signing in with an alert open stayed on ${page.url()}, not /today`);
+  }
+  await page.waitForSelector("#needs-wrap:not([hidden]) [data-ack]", { timeout: 15000 })
+    .catch(() => fail(label, "/today does not put I'm on it first after sign-in"));
+  await page.goto(`${base}/console?view=full`);
   await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
   await page.waitForTimeout(900);
+  if (!(await page.isVisible("#needs-bar [data-ack]"))) {
+    fail(label, "the console does not pin Needs you now with I'm on it");
+  }
   if (!(await page.textContent("#chip-company")).includes(florist.name)) {
     fail(label, "signing in again did not open the business she had open");
-  } else ok("switcher: a reload and a new sign-in both stay where she left off");
+  } else ok("switcher: a reload and a new sign-in both stay where she left off; an open alert goes to /today first");
 
   // The monthly email's link to another business's log.
   await page.goto(`${base}/console#inspector-log?business=${grill.id}&from=2026-10-01&to=2026-10-31`);

@@ -236,10 +236,10 @@ class Business:
         acked = self.api.post(f"/api/voice/acknowledge/{incident.incident_id}",
                               headers=self.owner, json={})
         assert acked.status_code == 200, acked.text
+        assert self.pulse(-2.0).status_code == 200
         resolved = self.api.post(f"/api/voice/resolve/{incident.incident_id}",
                                  headers=self.owner, json={})
         assert resolved.status_code == 200, resolved.text
-        assert self.pulse(-2.0).status_code == 200
         assert not STORE.open_incidents(self.tenant_id)
 
 

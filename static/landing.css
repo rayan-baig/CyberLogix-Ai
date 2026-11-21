@@ -259,3 +259,11 @@ details.more > summary {
 details.more > summary::-webkit-details-marker { display: none; }
 details.more > summary::after { content: "+"; font-size: 16px; }
 details.more[open] > summary { display: none; }
+
+/* On a phone each section is a heading, a paragraph and a "More": less
+   air between them, so the whole page is a few thumbs long. */
+@media (max-width: 720px) {
+  section.band { padding: 40px 0; }
+  .band-head { margin-bottom: 20px; }
+  .closer { padding: 44px 0 56px; }
+}

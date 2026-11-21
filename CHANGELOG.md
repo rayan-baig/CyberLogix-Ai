@@ -4,6 +4,57 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.22.0 — 2026-11-21
+
+What the latest strict review found, fixed. No price or plan term has
+changed, and the alarm itself works as before.
+
+- **An open alert comes first.** Signing in while an alert is open, or
+  nobody has answered it, goes straight to the Simple view (/today), where
+  **I'm on it** and **It's fixed** are the first thing on the screen. The
+  console pins a red **Needs you now** bar under the top bar on every tab,
+  with the fridge, how warm, for how long and the two buttons, until it is
+  dealt with.
+- **"It's fixed" only closes what is fixed.** If the fridge is still out of
+  range it says so ("It's still 48°F. We'll close it when it's back under
+  41°F."), keeps the alert open, stops the calls because you have it, and
+  closes it by itself once the fridge is cold. **Close it anyway** is still
+  there, with one line saying why: pick moved the food, called for a
+  repair or door was open, or write your own. Every alert closed by hand
+  records who closed it and that line, and the inspector's log shows both.
+  After a close by hand, nobody is alerted about that fridge again until
+  its usual wait has passed again, so nobody is texted 17 seconds later.
+- **Every page tells the same story.** The fridge's card, Problems, /today
+  and the new bar all use one "out since" (when it went out of range, not
+  when the alert opened) and one way of saying how long. While we wait to
+  see if a fridge stays warm, all of them say **Watching** and when we will
+  text ("We'll text at 3:53 PM if it stays warm") instead of "BREACHING" on
+  one and "within its limits" on another.
+- **Easier setup.** Sign-up shows four plain choices (restaurant or café;
+  shop; pharmacy; clinic) and **Something else** for every other trade. The
+  add-a-fridge form takes the kind of business from your sign-up instead of
+  asking (with a **Change** link), keeps Sensor ID and serial under
+  **Advanced**, and no longer opens on data centres. The alert wait and the
+  limit are changed on the fridge's own card, not in a browser pop-up.
+  Sign-up, the front page and the console all say four steps.
+- **Calmer words.** A new sensor says "Waiting for its first reading", not
+  BREACHING, NO FORECAST, an orange "tuned" and a red OFFLINE. States are
+  in plain sentence case: Fine, Watching, Too warm, No signal. Screens say
+  "Rosa is on it", not her email address. The fridge with a problem comes
+  first in the list. The texts-off notice is one plain sentence.
+- **Shorter on a phone.** The front page is under half its old length on a
+  phone: how it works, what you need, the trades and the plans wait behind
+  a tap, and the insurer's report is said once, with the rest of the
+  record. The empty gap in the sign-up page's left column on a desktop is
+  gone.
+- **Pilot core 1.1.1**, copied unchanged from the MTRX Horizyn site: it
+  looks again for a free corner as the page scrolls and moves out of the
+  way of a box being typed in. It keeps clear of the console's tabs, the
+  Needs you now bar and the front page's first-screen facts; once a chat
+  has started, the café suggestions come first; and the key settings say
+  in one sentence what an AI key is and where to get one.
+
+
 ## 3.21.0 — 2026-11-20
 
 What a strict review found, fixed. No price or plan term has changed.

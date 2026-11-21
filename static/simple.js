@@ -59,20 +59,24 @@ function howLongUntil(hours) {
   return `in about ${whole} hour${whole === 1 ? "" : "s"}`;
 }
 
+/* What a unit is doing, from the server's one `condition`, in the same
+   words as the console's card and Problems list (static/words.js). */
+const WORD_CLASS = { quiet: "w-quiet", ok: "w-ok", watch: "w-soon", warm: "w-warm" };
+
 function stateOf(unit) {
-  if (!unit.online) {
+  const c = CLXWords.condition(unit);
+  if (c.state === "offline") {
     return { word: "No signal", cls: "w-quiet",
              why: `We have not heard from this one since ${
                howLongAgo(unit.last_seen)}. It might be unplugged, out of
                range, or its battery might be flat. Until it starts
                talking again, nobody is watching that food.` };
   }
-  if (unit.breaching) {
-    const limit = unit.last_temperature_display > unit.danger_above_display
-      ? `should stay under ${unit.danger_above_display}°`
-      : `should stay above ${unit.danger_below_display}°`;
-    return { word: "Too warm", cls: "w-warm",
-             why: `It is ${unit.last_temperature_display}° and it ${limit}.` };
+  if (c.state === "waiting_first") {
+    return { word: "Waiting for its first reading", cls: "w-quiet", why: c.line, first: true };
+  }
+  if (c.state === "watching" || c.state === "alert" || c.state === "paused") {
+    return { word: c.word, cls: WORD_CLASS[c.kind], why: c.line, state: c.state };
   }
   if (unit.hours_until_breach != null && unit.hours_until_breach <= 6) {
     return { word: "Heading the wrong way", cls: "w-soon",
@@ -80,17 +84,6 @@ function stateOf(unit) {
                being one ${howLongUntil(unit.hours_until_breach)}.` };
   }
   return { word: "Fine", cls: "w-ok", why: "" };
-}
-
-/* How long a thing has been going on, in words: "for 25 minutes". */
-function howLong(iso) {
-  const then = new Date(iso);
-  if (isNaN(then)) return "";
-  const mins = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
-  if (mins < 1) return "for under a minute";
-  if (mins < 60) return `for ${mins} minute${mins === 1 ? "" : "s"}`;
-  const hours = Math.round(mins / 60);
-  return `for about ${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
 /* The alerts still live: nobody has answered (open), or somebody has it
@@ -108,20 +101,23 @@ function renderNeeds(data, units) {
     <div class="need">
       <p class="need-what"><strong>Several fridges are warming at once.</strong>
         ${esc(i.breach_details || "")}</p>
-      <p class="need-when">Started ${esc(howLongAgo(i.opened_at))}.</p>
+      <p class="need-when">Started ${esc(howLongAgo(i.out_since || i.opened_at))}.</p>
       ${needButtons(i)}
     </div>`).concat(live.map((i) => {
     const unit = byId[i.sensor_id] || { sensor_id: i.sensor_id };
     const now = unit.last_temperature_display != null
       ? `${unit.last_temperature_display}°` : `${i.temperature_display}°`;
     const who = i.state === "acknowledged"
-      ? `${esc(i.acknowledged_by || "Somebody")} is on it.`
+      ? (i.fix_reported_at
+          ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed. It closes by itself once it is back in range.`
+          : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
       : (i.voice_escalated_at ? "Nobody has answered yet, and we have phoned."
         : "Nobody has answered yet.");
     return `
     <div class="need ${i.state === "open" ? "need-open" : ""}">
       <p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
-        ${esc(now)} and has been out of range ${esc(howLong(i.out_since || i.opened_at))}.</p>
+        ${esc(now)} and has been out of range for ${esc(CLXWords.outFor(i.out_since || i.opened_at))},
+        since ${esc(CLXWords.clock(i.out_since || i.opened_at))}.</p>
       <p class="need-when">${who}</p>
       ${needButtons(i)}
     </div>`;
@@ -137,38 +133,20 @@ function needButtons(i) {
     </div>`;
 }
 
-async function answer(path, body, button) {
-  button.disabled = true;
-  try {
-    const got = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json",
-                 Authorization: "Bearer " + token() },
-      body: JSON.stringify(body),
-    });
-    if (!got.ok) {
-      let why = "That did not go through. Try again, or use the full console.";
-      try { why = (await got.json()).detail || why; } catch (_) { /* keep */ }
-      button.disabled = false;
-      button.textContent = typeof why === "string" ? why : "Not allowed";
-      return;
-    }
-    load();
-  } catch (_) {
-    button.disabled = false;
-  }
-}
+/* "I'm on it" and "It's fixed": the same flow as the console
+   (static/answer.js). A unit still out of range is not closed; it says
+   so, and closing it anyway takes a line saying why. */
+CLXAnswer.setup({
+  token,
+  say: (message) => { $("when").textContent = message; },
+  done: () => load(),
+});
 
 $("needs").addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  if (button.dataset.ack) {
-    answer(`/api/voice/acknowledge/${encodeURIComponent(button.dataset.ack)}`,
-           { acknowledged_by: null }, button);
-  } else if (button.dataset.fixed) {
-    answer(`/api/voice/resolve/${encodeURIComponent(button.dataset.fixed)}`,
-           { resolved_by: null }, button);
-  }
+  if (button.dataset.ack) CLXAnswer.onIt(button.dataset.ack, button);
+  else if (button.dataset.fixed) CLXAnswer.fixed(button.dataset.fixed, button);
 });
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
@@ -286,8 +264,15 @@ function render(data) {
   units.forEach((unit) => {
     const state = stateOf(unit);
     const name = whichOne(unit, units);
-    // A unit with a live alert is already at the top with its own buttons.
-    if (state.cls === "w-warm" && !alerted.has(unit.sensor_id)) {
+    // Out of range inside its wait: nobody has been texted yet, and this
+    // says exactly when we will, as the console's card does.
+    if (state.state === "watching") {
+      jobs.push({ now: false, mark: "!",
+        what: `<strong>${esc(name)}</strong>: watching. ${esc(state.why)}`,
+        todo: "Check the door is shut and nothing warm went in. If it comes "
+            + "back in range first, nobody is texted." });
+    } else if (state.cls === "w-warm" && !alerted.has(unit.sensor_id)
+               && state.state !== "alert") {
       jobs.push({ now: true, mark: "!",
         what: `<strong>${esc(name)}</strong> is too warm. ${
           esc(state.why)}`,
@@ -295,6 +280,12 @@ function render(data) {
             + "too warm we text everyone on call. If it is broken, move the "
             + "food somewhere cold now and write down what you did — that "
             + "record is what an inspector or an insurer asks for." });
+    } else if (state.first) {
+      jobs.push({ now: false, mark: "…",
+        what: `<strong>${esc(name)}</strong> is waiting for its first reading.`,
+        todo: "Once its sensor is switched on and connected, its temperature "
+            + "shows here. Nothing is wrong.",
+        help: "/help/sensors" });
     } else if (state.cls === "w-quiet") {
       jobs.push({ now: true, mark: "?",
         what: `<strong>${esc(name)}</strong> has gone quiet. ${
@@ -323,7 +314,9 @@ function render(data) {
   $("todo-wrap").hidden = jobs.length === 0;
   // Urgent first: somebody reading on a phone in a kitchen sees two
   // items, not eight, and the two they see are the two that matter.
-  jobs.sort((a, b) => Number(b.now) - Number(a.now));
+  // Then a unit being watched (we may text soon) before the calm ones.
+  jobs.sort((a, b) => Number(b.now) - Number(a.now)
+    || Number(b.mark === "!") - Number(a.mark === "!"));
   $("todo").innerHTML = jobs.map((job) => `
     <div class="todo ${job.now ? "now" : ""}">
       <span class="todo-mark" aria-hidden="true">${job.mark}</span>
@@ -331,7 +324,8 @@ function render(data) {
         <p class="todo-what">${job.what}</p>
         <p class="todo-do">${esc(job.todo)}</p>
         ${job.help ? `<a class="offline-help" href="${esc(job.help)}"
-            >What to check, step by step</a>` : ""}
+            >${job.help === "/help/sensors" ? "How to connect a sensor"
+              : "What to check, step by step"}</a>` : ""}
       </span>
     </div>`).join("");
 
@@ -343,8 +337,8 @@ function render(data) {
           : esc(unit.last_temperature_display) + "°"}</span>
       <span class="grow">
         <span class="thing-name">${esc(nameOf(unit))}</span><br>
-        <span class="thing-where">${esc(unit.site_name || "No place set")}
-          · heard from ${esc(howLongAgo(unit.last_seen))}</span>
+        <span class="thing-where">${unit.site_name ? `${esc(unit.site_name)} · ` : ""}${
+          unit.last_seen ? `heard from ${esc(howLongAgo(unit.last_seen))}` : "no reading yet"}</span>
       </span>
       <span class="thing-word ${state.cls}">${esc(state.word)}</span>
     </div>`;

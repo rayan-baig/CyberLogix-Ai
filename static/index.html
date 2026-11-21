@@ -120,6 +120,9 @@
         person has said, out loud, that they have it.
       </p>
     </div>
+    <!-- Folded on a phone, open on a wide screen (landing.js). -->
+    <details class="more" data-open-wide>
+      <summary>How it works, step by step</summary>
     <div class="ladder">
       <div class="rung">
         <p class="rung-when">Every reading</p>
@@ -152,6 +155,7 @@
            are actually buying.</p>
       </div>
     </div>
+    </details>
   </div>
 </section>
 
@@ -225,25 +229,31 @@
     <!-- The sectors most visitors run: food and medicine. Every other one
          (wine storage, cold-chain trucks, data centres, hangars, yachts and
          more) is on /for. -->
+    <details class="more" data-open-wide>
+      <summary>The limits for each trade</summary>
     <div class="sectors" id="sectors-grid" data-talk-href="%%TALK_HREF%%"
          data-talk-address="%%TALK_ADDRESS%%"
          data-show="restaurant country_club pharmacy medical_lab cryostorage">
       <p class="loading">Loading sectors…</p>
     </div>
+    </details>
     <p class="controls-limit">Something else to keep cold or warm?
       <a href="/for">Every business we cover</a>.</p>
   </div>
 </section>
 
-<!-- ============================= PROOF ============================== -->
+<!-- ======================= THE RECORD, AND PROOF ===================== -->
+<!-- Plain words. We are not an insurer and promise no discount: the
+     report is something a business can show, and what an insurer does
+     with it is the insurer's decision. -->
 <section class="band" id="proof">
   <div class="wrap">
     <div class="band-head">
       <h2>The alert is the easy half.</h2>
       <p>
-        What a business is really exposed to is the week afterwards: the
-        insurer, the auditor, the regulator, the customer who wants to know
-        what happened. That is where a monitoring bill justifies itself.
+        Afterwards come the inspector, the insurer and the customer who wants
+        to know what happened. Every reading is kept for 13 months in a record
+        that cannot be quietly edited, and the paperwork is one button.
       </p>
     </div>
     <!-- Folded on a phone, open on a wide screen (landing.js). -->
@@ -253,8 +263,7 @@
       <div class="proof-item">
         <h3>A record that cannot be edited</h3>
         <p>Every entry is chained to the one before it, so a reading cannot be
-           removed or altered after the fact without the chain saying so. The
-           value of a log in a dispute is exactly the difficulty of faking it.</p>
+           removed or altered after the fact without the chain saying so.</p>
       </div>
       <div class="proof-item">
         <h3>The claim packet, already written</h3>
@@ -262,53 +271,12 @@
            readings either side of the failure, when the alert went out, who
            acknowledged it and how long it took them.</p>
       </div>
-      <div class="proof-item">
-        <h3>Proof it was working</h3>
-        <p>A signed attestation that a given sensor was reporting, and was
-           being watched by a named person, over a given window — for the
-           audit that happens when nothing went wrong at all.</p>
-      </div>
-    </div>
-    </details>
-  </div>
-</section>
-
-<!-- ======================= INSURERS AND BROKERS ===================== -->
-<!-- Plain words. We are not an insurer and promise no discount: the
-     report is something a business can show, and what an insurer does
-     with it is the insurer's decision. -->
-<section class="band" id="insurers">
-  <div class="wrap">
-    <div class="band-head">
-      <p class="kicker">For your insurer</p>
-      <h2>Show your insurer proof that your fridges are watched 24/7.</h2>
-      <p>
-        Spoiled stock is one of the most common claims a restaurant, pharmacy
-        or lab makes. Each month you can make a one-page report for each
-        location that shows your fridges and freezers were being watched.
-      </p>
-    </div>
-    <!-- Folded on a phone, open on a wide screen (landing.js). -->
-    <details class="more" data-open-wide>
-      <summary>More</summary>
-    <div class="proof">
-      <div class="proof-item">
-        <h3>What the report says</h3>
-        <p>The sensors watched and how much of the time they were online,
-           every temperature alert and how fast somebody answered it, the
-           longest gap in the data, and who gets alerted, by role.</p>
-      </div>
-      <div class="proof-item">
-        <h3>Anyone can check it</h3>
-        <p>Each report has a short code and a link. Your insurer opens the
-           link and sees the same numbers. If the report was changed after
-           it was made, the page says so.</p>
-      </div>
-      <div class="proof-item">
-        <h3>You decide who sees it</h3>
-        <p>Only you can make and share a report, and you can switch its link
-           off at any time. It names no people, phone numbers or emails,
-           and the check page shows only the headline numbers.</p>
+      <div class="proof-item" id="insurers">
+        <h3>Proof for your insurer, every month</h3>
+        <p>A one-page report for each location showing your fridges were
+           watched 24/7: how much of the time each sensor was online and how
+           fast every alert was answered. Your insurer checks it with a short
+           code and a link, and you can switch the link off at any time.</p>
       </div>
     </div>
     </details>
@@ -330,10 +298,14 @@
          can run and what happens when one of them fails. Sensors are bought
          separately, from a sensor maker.</p>
     </div>
+    <details class="more" data-open-wide>
+      <summary>Compare the plans</summary>
     <div class="plans" id="plans-grid">
       <p class="loading">Loading plans…</p>
     </div>
     <p class="addons-note" id="plans-addons"></p>
+    </details>
+    <p class="controls-limit"><a href="/pricing">Every price, in full</a></p>
   </div>
 </section>
 
@@ -342,8 +314,9 @@
   <div class="wrap">
     <h2>Start with one freezer.</h2>
     <p>
-      Add one sensor, add who gets the alerts, and send a test text.
-      Everything after that happens on its own.
+      Four short steps: add a sensor, add who gets the alerts, see its first
+      reading arrive, and send a test text. Everything after that happens on
+      its own.
     </p>
     <div class="cta-row cta-center">
       <a class="btn btn-primary" href="/signup">Start a free trial</a>

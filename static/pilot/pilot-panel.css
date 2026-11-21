@@ -1,4 +1,4 @@
-/* Pilot core 1.1.0 · pilot-panel.css
+/* Pilot core 1.1.1 · pilot-panel.css
    The chat window that opens from the robot: dark navy-to-indigo glass with
    a blue and violet glow edge, the Pilot header, the greeting, the five
    pills, the "Type a message…" box and the round buttons at the bottom.
@@ -108,6 +108,8 @@
 .pilot-keycard-words small { font-size: 13.5px; color: #c7d2fe; }
 .pilot-keycard-head { cursor: default; margin-top: 4px; }
 .pilot-grownup { margin: 8px 2px 0; font-size: 12.5px; color: var(--pilot-muted); }
+.pilot-foot-note { margin: 0 4px 8px; line-height: 1.35; }
+.pilot-foot-note[hidden], .pilot-welcome[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- messages */
 
@@ -162,8 +164,9 @@
 .pilot-small { font-size: 12.5px; color: var(--pilot-muted); }
 .pilot-panel .pilot-small a { color: #7dd3fc; }
 
-.pilot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pilot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
 .pilot-chips[hidden] { display: none; }
+.pilot-chips-wait .pilot-chip { opacity: 0.55; cursor: default; }
 .pilot-chip { padding: 7px 13px; border-radius: 999px; border: 1px solid rgba(99, 130, 255, 0.4); background: rgba(24, 32, 84, 0.6);
   font-size: 13.5px; cursor: pointer; color: #e0e7ff; }
 .pilot-chip:hover, .pilot-chip:focus-visible { border-color: rgba(96, 165, 250, 0.9); outline: none; }
@@ -309,6 +312,12 @@
   .pilot-tagline { font-size: 13px; margin-top: 4px; }
   .pilot-scroll { padding: 4px 14px 10px; }
   .pilot-pills { margin-left: 6%; }
+  /* Tighter, so the greeting, the five pills and the key card fit above the
+     grown-ups note and the message box. */
+  .pilot-hello { margin: 2px 0 12px; padding: 13px 18px; }
+  .pilot-pills { gap: 6px; }
+  .pilot-pill { padding: 8px 18px; }
+  .pilot-keycard { margin: 10px 0 4px; padding: 11px 14px; }
   .pilot-foot { padding: 8px 14px calc(12px + env(safe-area-inset-bottom)); }
   .pilot-input { font-size: 16px; } /* no zoom-in on iPhone */
 }

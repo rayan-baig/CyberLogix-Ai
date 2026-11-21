@@ -1,4 +1,4 @@
-// Pilot core 1.1.0 · pilot-panel.js
+// Pilot core 1.1.1 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its five pill buttons, the messages, the "Type a message…"
 // box, and the gear, palette and ? buttons at the bottom. Settings (keys,
@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -200,7 +200,9 @@
     const log = el("ol", { class: "pilot-log", "aria-live": "polite", "aria-label": "Chat with Pilot" });
     const cardBox = el("div", { class: "pilot-cards" });
     const chips = el("div", { class: "pilot-chips", role: "group", "aria-label": "Suggestions" });
-    const chatView = el("div", { class: "pilot-view pilot-chat-view" }, welcome, log, cardBox, chips);
+    // Once a chat has started, this page's suggestions come first, then the
+    // conversation; the greeting and its five pills are for starting.
+    const chatView = el("div", { class: "pilot-view pilot-chat-view" }, welcome, chips, log, cardBox);
     const settingsView = el("div", { class: "pilot-view pilot-settings-view", hidden: true });
     const helpView = el("div", { class: "pilot-view pilot-help-view", hidden: true });
     const scroller = el("div", { class: "pilot-scroll" }, chatView, settingsView, helpView);
@@ -218,7 +220,10 @@
     const palette = el("button", { type: "button", class: "pilot-round", "aria-label": "Change Pilot's look", title: "Theme" }, icon("palette"));
     const helpBtn = el("button", { type: "button", class: "pilot-round", "aria-label": "Help", title: "Help" }, icon("help"));
     const bottom = el("div", { class: "pilot-bottom" }, statusLine, el("span", { class: "pilot-rounds" }, gear, palette, helpBtn));
-    const foot = el("footer", { class: "pilot-foot" }, form, bottom);
+    // The grown-ups note sits just above the message box, so it is always
+    // in full view (on a phone it was under the box, half cut off).
+    const footNote = el("p", { class: "pilot-grownup pilot-foot-note", hidden: true });
+    const foot = el("footer", { class: "pilot-foot" }, footNote, form, bottom);
 
     const panel = el("section", { class: "pilot-panel", role: "dialog", "aria-label": `${config.name || "Pilot"} chat`, hidden: true },
       head, scroller, foot);
@@ -256,8 +261,14 @@
           pill("code", "Help with code…", () => fill("Help me with this code: ")),
           pill("bars", "Analyze & explain…", () => shareScreen("Explain this screen: what is it for, and what can I do here?", "Analyze & explain this screen")),
           pill("gear", "Customize with your API key", () => show("settings"))),
-        store.ready() ? null : keyCard(),
-        !store.ready() && config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null);
+        store.ready() ? null : keyCard());
+      welcome.hidden = state.messages.length > 0;
+    }
+
+    function drawFootNote() {
+      const want = Boolean(config.keyNote) && !store.ready() && view === "chat";
+      footNote.hidden = !want;
+      if (want && footNote.textContent !== config.keyNote) footNote.textContent = config.keyNote;
     }
 
     function fill(text) {
@@ -356,6 +367,7 @@
 
     function draw() {
       drawStatus();
+      drawFootNote();
       panel.classList.toggle("pilot-busy", state.busy || otherBusy);
       drawWelcome();
       const nodes = [];
@@ -389,11 +401,18 @@
       if (view === "chat") scroller.scrollTop = state.messages.length || cards.size ? scroller.scrollHeight : 0;
     }
 
-    // Suggestions for this page, under the conversation once it has started.
+    // Suggestions for this page, first once a conversation has started
+    // (above it, so they never move while an answer streams in; they wait
+    // while Pilot is busy or asking about a change).
     function drawChips() {
       const busy = state.busy || otherBusy;
-      chips.hidden = busy || cards.size > 0 || state.messages.length === 0;
+      chips.hidden = state.messages.length === 0;
+      chips.classList.toggle("pilot-chips-wait", busy || cards.size > 0);
       if (chips.hidden) return;
+      if (busy || cards.size > 0) {
+        chips.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        return;
+      }
       const s = screen();
       let list = [];
       try { list = (typeof config.chips === "function" ? config.chips(s) : config.chips) || []; } catch (_) { list = []; }
@@ -610,6 +629,7 @@
       helpView.hidden = which !== "help";
       gear.classList.toggle("on", which === "settings");
       helpBtn.classList.toggle("on", which === "help");
+      drawFootNote();
       if (which === "settings") drawSettings();
       if (which === "help") drawHelp();
       scroller.scrollTop = which === "chat" && state.messages.length ? scroller.scrollHeight : 0;

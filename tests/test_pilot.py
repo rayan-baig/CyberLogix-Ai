@@ -34,27 +34,27 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.1.0 as it ships on the MTRX Horizyn site (commit 710d52d).
+# Pilot core 1.1.1 as it ships on the MTRX Horizyn site (commit 8b0ecd7).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "cfd0be07b6ed78ca",
-    "pilot-actor.js": "c4039a641be98121",
-    "pilot-engine.js": "752e8e719f6f1d98",
-    "pilot-mascot.js": "a9dd3f81fc0a7bce",
-    "pilot-media.js": "c8869cfd44eb7253",
-    "pilot-motion.js": "dbe85b9b30ba06c0",
-    "pilot-panel.css": "84a3e2695b7f8b0c",
-    "pilot-panel.js": "ab3f101f7235e2c5",
-    "pilot-providers.js": "14a0e0c8aca95578",
-    "pilot-render.js": "f085e611e73a0cff",
+    "pilot-actor.css": "f8cd10a058138d5c",
+    "pilot-actor.js": "ba210dfb444d86df",
+    "pilot-engine.js": "a57ffece42dcf1a3",
+    "pilot-mascot.js": "526c0bcb4bdeee8d",
+    "pilot-media.js": "d94af02b571c4531",
+    "pilot-motion.js": "d8097cf57a82b706",
+    "pilot-panel.css": "04aac3d9f703259a",
+    "pilot-panel.js": "d81c9ce70ae55dc6",
+    "pilot-providers.js": "aaa2286a833b8ec9",
+    "pilot-render.js": "9c1a1057b3fa8dac",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
     "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
     "pilot-rest-head.webp": "5eb064f177cffcb3",
     "pilot-robot-128.webp": "05a92f32d99b8076",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "434ebe2e635ac6b6",
-    "pilot.css": "6309a2ce5a7a6df4",
-    "pilot.js": "5a3583516e67bcb1",
+    "pilot-store.js": "4a4c8a34d8ed9a59",
+    "pilot.css": "6c817bdc1a3af9fb",
+    "pilot.js": "651e86c8964cfb88",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -202,11 +202,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.1.0"}
+    assert versions == {"1.1.1"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.1.0";' in (PILOT / name).read_text(), name
-    assert "core 1.1.0" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.1.1";' in (PILOT / name).read_text(), name
+    assert "core 1.1.1" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -361,3 +361,25 @@ def test_the_robot_keeps_clear_of_alerts_and_the_page_keeps_clear_of_it():
         assert f'"{selector}"' in config, selector
     theme = (ROOT / "static/theme.css").read_text()
     assert ":root.pilot-on body { padding-bottom: var(--pilot-gutter, 0px); }" in theme
+
+
+def test_the_loader_stays_small_with_the_placement_work_fetched_later():
+    """Core 1.1.1's placement (the page's words, a box being typed in, the
+    side gutter) lives in pilot-mascot.js, fetched after the page has
+    loaded; the one script every page loads stays under its budget."""
+    loader = (PILOT / "pilot.js").read_text()
+    mascot = (PILOT / "pilot-mascot.js").read_text()
+    for name in ("function contentIn", "function placeNow", "function sideGutter", "function isEditable"):
+        assert name in mascot and name not in loader, name
+    assert len(gzip.compress(loader.encode())) < 6_000
+
+
+def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
+    """On a phone it sat on "Everything" and on "5 alert calls"; on a desktop
+    on "Advanced". And the key settings say what an AI key is."""
+    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    avoid = config[config.index("avoid: ["):config.index("],", config.index("avoid: ["))]
+    for sel in (".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog"):
+        assert f'"{sel}"' in avoid, sel
+    assert "An AI key is a private code you make on" in config
+    assert "usually under API keys" in config

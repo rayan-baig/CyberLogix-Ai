@@ -639,3 +639,145 @@ test("placement: smaller on phones, a gutter pages can reserve, and this app's b
   const app = fs.readFileSync(path.join(__dirname, "..", "..", "static", "pilot-cyberlogix.js"), "utf8");
   assert.ok(app.includes("avoid: ["));
 });
+
+// ---------------------------------------------------------------- core 1.1.1: clear of the page wherever it scrolls
+
+test("placement 1.1.1: words and buttons under a corner make it busy; a free corner is found, else it tucks where nothing shows", () => {
+  const view = { width: 375, height: 800 };
+  const size = { width: 56, height: 54 };
+  // Words in the bottom right only (busy() is what contentIn answers): the bottom left.
+  const wordsAt = (corners) => (b, c) => corners.includes(c);
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, busy: wordsAt(["br"]) }), { corner: "bl", peek: false });
+  // Words everywhere: tucked away; the slice that still shows is asked about too.
+  const everywhere = (b) => b.right - b.left > 30; // full boxes are busy, the thin slices are not
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, busy: everywhere, peekShow: 24 }), { corner: "br", peek: true });
+  // The slice is exactly as wide as pilot.css shows it, at the screen's edge.
+  assert.deepEqual(Mascot.peekBox("br", view, size, 12, 24), { left: 351, top: 734, right: 375, bottom: 788 });
+  assert.deepEqual(Mascot.peekBox("tl", view, size, 12, 24), { left: 0, top: 12, right: 24, bottom: 66 });
+});
+
+test("placement 1.1.1: a box being typed in is never covered, not even by the tucked-away robot", () => {
+  const view = { width: 375, height: 800 };
+  const size = { width: 56, height: 54 };
+  // The field runs across the bottom of the screen: a top corner.
+  const field = box(16, 730, 343, 56);
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, hard: [field] }), { corner: "tr", peek: false });
+  // Words in every corner too: tucked away, but in a corner clear of the field.
+  const busy = () => true;
+  const place = Mascot.choosePlace({ corner: "br", view, size, gap: 12, hard: [field], busy, peekShow: 24 });
+  assert.equal(place.peek, true);
+  assert.ok(place.corner[0] === "t", place.corner);
+  // Only typing boxes count.
+  const input = (type, extra = {}) => ({ nodeType: 1, tagName: "INPUT", type, getAttribute: () => type, ...extra });
+  assert.equal(Mascot.isEditable(input("text")), true);
+  assert.equal(Mascot.isEditable(input("email")), true);
+  assert.equal(Mascot.isEditable(input("checkbox")), false);
+  assert.equal(Mascot.isEditable(input("submit")), false);
+  assert.equal(Mascot.isEditable(input("text", { disabled: true })), false);
+  assert.equal(Mascot.isEditable({ nodeType: 1, tagName: "TEXTAREA" }), true);
+  assert.equal(Mascot.isEditable({ nodeType: 1, tagName: "DIV", isContentEditable: true }), true);
+  assert.equal(Mascot.isEditable({ nodeType: 1, tagName: "DIV" }), false);
+  assert.equal(Mascot.isEditable(null), false);
+});
+
+test("placement 1.1.1: contentIn finds words and buttons under the robot's box, never Pilot's own, never scenery", () => {
+  const area = { left: 300, top: 700, right: 360, bottom: 760 };
+  const rect = (l, t, w, h) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h });
+  // A paragraph whose second line ends under the robot, a button in the corner, a big picture and Pilot itself.
+  const text = (rects) => ({ nodeType: 3, nodeValue: "Some words", rects });
+  const para = { nodeType: 1, tagName: "P", closest: () => null, childNodes: [text([rect(16, 640, 330, 20), rect(16, 712, 300, 20)])],
+    getBoundingClientRect: () => rect(16, 640, 330, 100) };
+  const shortPara = { nodeType: 1, tagName: "P", closest: () => null, childNodes: [text([rect(16, 712, 120, 20)])],
+    getBoundingClientRect: () => rect(16, 700, 340, 60) };
+  const button = { nodeType: 1, tagName: "BUTTON", getBoundingClientRect: () => rect(320, 720, 40, 30) };
+  button.closest = () => button;
+  const span = { nodeType: 1, tagName: "SPAN", closest: () => button, childNodes: [] };
+  const picture = { nodeType: 1, tagName: "IMG", closest: () => null, childNodes: [], getBoundingClientRect: () => rect(0, 500, 375, 300) };
+  const icon = { nodeType: 1, tagName: "IMG", closest: () => null, childNodes: [], getBoundingClientRect: () => rect(310, 710, 40, 40) };
+  const pilot = { nodeType: 1, tagName: "IMG", own: true };
+  const own = { contains: (el) => el && el.own === true };
+  const docWith = (stack) => ({
+    elementsFromPoint: () => stack,
+    createRange: () => { let node = null; return { selectNodeContents: (n) => { node = n; }, getClientRects: () => node.rects }; },
+  });
+  assert.equal(Mascot.contentIn(docWith([pilot, para]), area, own).length, 1, "a line ending under the robot");
+  assert.equal(Mascot.contentIn(docWith([pilot, shortPara]), area, own).length, 0, "a short line that ends before it");
+  assert.equal(Mascot.contentIn(docWith([pilot, span]), area, own).length, 1, "a button (through its label)");
+  assert.equal(Mascot.contentIn(docWith([pilot, picture]), area, own).length, 0, "a big picture is scenery");
+  assert.equal(Mascot.contentIn(docWith([icon]), area, own).length, 1, "an icon counts");
+  assert.equal(Mascot.contentIn(docWith([pilot]), area, own).length, 0, "Pilot's own robot never counts");
+  assert.deepEqual(Mascot.contentIn({}, area, own), [], "a browser without elementsFromPoint: nothing found, nothing breaks");
+  // It looks at a small grid of points, edge to edge (16 by default), not the whole page.
+  let calls = 0;
+  Mascot.contentIn({ elementsFromPoint: () => { calls += 1; return []; } }, area, own);
+  assert.equal(calls, 16);
+});
+
+test("placement 1.1.1: the loader looks again on scroll and resize (once a frame), on focus, and keeps line ends clear on phones", () => {
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.match(loader, /requestAnimationFrame\(fit\)/);
+  assert.match(loader, /addEventListener\("scroll", \(\) => \{[\s\S]*?queueFit\(false\);/);
+  assert.match(loader, /addEventListener\("resize"/);
+  assert.match(loader, /addEventListener\("focusin", \(\) => queueFit\(true\)\)/);
+  assert.match(loader, /addEventListener\("focusout"/);
+  assert.match(loader, /M\(\)\.placeNow\(\{/);
+  // While typing, a tap never brings it back out onto the box.
+  assert.match(loader, /place\.peek && \(Date\.now\(\) > peekOff \|\| place\.typing\)/);
+  // The side gutter: the app's elements (main by default).
+  assert.match(loader, /list\(config\.gutter\)\.length \? list\(config\.gutter\) : \["main"\]/);
+  const mascot = fs.readFileSync(core("pilot-mascot.js"), "utf8");
+  assert.match(mascot, /contentIn\(o\.doc, box, o\.own\)\.length > 0/);
+  assert.match(mascot, /hard: field \? \[field\.getBoundingClientRect\(\)\] : \[\]/);
+  // Mid-scroll it only checks its own spot.
+  assert.match(mascot, /const spot = cornerBox\(o\.shown, view, size, gap\);/);
+  assert.match(mascot, /paddingRight\) \|\| 0\) < want/);
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.match(css, /--pilot-peek-show: 20px;/);
+  assert.match(css, /:root\.pilot-on \.pilot-gutter-side \{\s*padding-right: max\(var\(--pilot-side\)[^}]*padding-left: max\(var\(--pilot-side\)/);
+  assert.match(css, /--pilot-tuck: calc\(var\(--pilot-size\) \+ var\(--pilot-gap\) - var\(--pilot-peek-show\)\)/);
+  // 24px of room is more than the 20px slice that shows.
+  assert.match(css, /--pilot-side: 24px;/);
+});
+
+test("the chat window 1.1.1: suggestions come first once chatting; the grown-ups note sits above the message box", () => {
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes('el("div", { class: "pilot-view pilot-chat-view" }, welcome, chips, log, cardBox)'));
+  assert.ok(panel.includes('el("footer", { class: "pilot-foot" }, footNote, form, bottom)'));
+  assert.ok(panel.includes("welcome.hidden = state.messages.length > 0;"));
+  assert.ok(panel.includes('const want = Boolean(config.keyNote) && !store.ready() && view === "chat";'));
+  // The five pills are still the welcome.
+  for (const pill of ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]) {
+    assert.ok(panel.includes(pill), pill);
+  }
+  // This app's own note says what an AI key is and where to get one (the
+  // MTRX site checks its own note and its Genesis rows here).
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "static", "pilot-cyberlogix.js"), "utf8");
+  assert.ok(app.includes(`keyNote: "An AI key is a private code you make on an AI company's website`));
+  assert.ok(app.includes("AI keys are for grown-ups (the AI companies require 18+)."));
+  // On CyberLogix the console's tabs, the Needs you now bar and the front
+  // page's first-screen facts are kept clear too.
+  for (const sel of [".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts"]) assert.ok(app.includes(`"${sel}"`), sel);
+});
+
+test("placement 1.1.1: placeNow keeps off a focused box, and mid-scroll only tucks in place", () => {
+  const rect = (l, t, w, h) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h });
+  const field = { nodeType: 1, tagName: "TEXTAREA", getBoundingClientRect: () => rect(16, 700, 343, 90) };
+  const body = {};
+  const own = { contains: () => false };
+  const win = { innerWidth: 375, innerHeight: 800,
+    getComputedStyle: () => ({ getPropertyValue: (n) => ({ "--pilot-gap": "12px", "--pilot-peek-show": "24px" })[n] || "" }) };
+  const launcher = { getBoundingClientRect: () => rect(307, 734, 56, 54) };
+  const doc = { body, activeElement: field, querySelectorAll: () => [], elementsFromPoint: () => [] };
+  const typing = Mascot.placeNow({ doc, win, own, launcher, avoid: [], corner: "br", shown: "br", full: false, text: true });
+  assert.deepEqual(typing, { corner: "tr", peek: false, typing: true });
+  // Not typing, mid-scroll, words under its spot: it tucks away where it is.
+  doc.activeElement = body;
+  const words = { nodeType: 1, tagName: "BUTTON", getBoundingClientRect: () => rect(0, 600, 375, 200) };
+  words.closest = () => words;
+  doc.elementsFromPoint = () => [words];
+  const mid = Mascot.placeNow({ doc, win, own, launcher, avoid: [], corner: "br", shown: "bl", full: false, text: true });
+  assert.deepEqual(mid, { corner: "bl", peek: true, typing: false });
+  // Text check off: free.
+  assert.deepEqual(Mascot.placeNow({ doc, win, own, launcher, avoid: [], corner: "br", shown: "br", full: true, text: false }),
+    { corner: "br", peek: false, typing: false });
+});

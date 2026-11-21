@@ -185,8 +185,40 @@ insurer reads.
    incident becomes eligible for a voice call. `GET /api/voice/pending` lists
    them; `POST /api/voice/escalate/{id}` places one. Escalating early returns
    `425` unless `force=true`.
-4. `POST /api/voice/acknowledge/{id}` halts the ladder;
-   `POST /api/voice/resolve/{id}` closes the incident.
+4. `POST /api/voice/acknowledge/{id}` halts the ladder ("I'm on it");
+   `POST /api/voice/resolve/{id}` closes the incident ("It's fixed").
+
+### "It's fixed" closes only what is fixed
+
+- If the unit is still out of range, `resolve` does not close it. It answers
+  `409` with `detail.code` `still_out_of_range` and the words to show ("It's
+  still 48°F. We'll close it when it's back under 41°F."), acknowledges it in
+  that person's name if nobody had (so the calls stop), and closes it by
+  itself once the unit is back to normal, with a note saying who said it was
+  fixed.
+- To close it anyway, send `close_anyway: true` with a `note` of at least
+  three characters (one line, or one of `detail.reasons`: moved the food,
+  called for a repair, door was open). The note becomes the corrective
+  action if none was written yet.
+- Every close by hand records who closed it (`resolved_by`), the note
+  (`close_note`; a plain one such as "Fixed, 38°F when closed." when none
+  was given), whether the unit was still out of range, and its temperature.
+  The inspector's log shows them.
+- After a close by hand, the unit is not alerted on again until its usual
+  wait has passed again from the close (a unit set to alert at once waits
+  its kind's usual wait), even for a reading far past the limit. A new
+  spell that starts after the unit came back is alerted on as normal.
+
+### One clock for every page
+
+The unit card, Problems, /today and the "Needs you now" bar read the same
+`condition` on each unit in `GET /api/console/overview`
+(`telemetry.unit_condition`): `waiting_first`, `ok`, `watching` (out of
+range inside its wait, with `out_since` and `alert_at`, "we'll text at"),
+`paused`, `alert` or `offline`. An alert's `out_since` is when the unit went
+out of range, not when the alert opened, and `out_minutes` runs from there
+to when it closed. One formatter (`static/words.js`) says them, with the
+server's own rounding.
 
 ### What the text, the email and the call say
 

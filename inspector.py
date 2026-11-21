@@ -159,6 +159,12 @@ def _breach(incident, readings, unit: str, above, below) -> Dict[str, Any]:
         "acknowledged_at": iso(incident.acknowledged_at),
         "minutes_to_acknowledge": answered,
         "closed_at": iso(incident.resolved_at),
+        # Who closed it and the line they gave, and whether the unit was
+        # still out of range when they did ("Close anyway").
+        "out_since": iso(incident.started_at),
+        "closed_by": incident.resolved_by or "",
+        "close_note": incident.close_note or incident.resolved_note or "",
+        "closed_out_of_range": incident.closed_out_of_range,
         "corrective_action": incident.corrective_action or "",
         "corrective_action_by": incident.corrective_action_by or "",
         "product_disposition": incident.product_disposition or "",

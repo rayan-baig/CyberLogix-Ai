@@ -35,8 +35,36 @@ from domain import (
     ALERT_AT_ONCE_DEGREES_F,
     alert_after_minutes,
     default_alert_after_minutes,
+    unit_kind_limits,
     unit_kind_of,
 )
+
+
+def person_name(label: Optional[str]) -> Optional[str]:
+    """The name a person goes by, from an audit label.
+
+    Who acknowledged or closed an alert is kept as the audit trail writes
+    it ("Rosa Test <rosa@example.com>"), because that is the record. What
+    a screen says is "Rosa is on it": the first name, or the part of an
+    address before the @ when that is all there is. A machine's label
+    ("API key", "CyberLogix (back to normal)") is left as it is.
+    """
+    if not label:
+        return None
+    text = str(label).strip()
+    if text.startswith("phone keypad"):
+        return "Somebody on the phone"
+    # "Rosa Test, by text reply (+1555...)", "Dana, with site-wide alert ..."
+    text = text.split(",", 1)[0].split("(", 1)[0].strip() or text
+    if "<" in text:
+        text = text.split("<", 1)[0].strip() or text.split("<", 1)[1].split(">", 1)[0]
+    if "@" in text and " " not in text:
+        local = text.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
+        text = local.split(" ")[0].capitalize() if local else text
+        return text
+    if text in ("API key",) or text.startswith("CyberLogix"):
+        return text
+    return text.split(" ")[0] if text else None
 
 # Written on every sensor row from 3.19.0. A row without it was saved
 # under the old sector defaults (domain.LEGACY_DANGER_ABOVE).
@@ -203,6 +231,13 @@ class Sensor:
         )
         return above, below
 
+    def limit_retuned(self) -> bool:
+        """Whether the limit differs from what its kind of unit gets."""
+        if self.override_above is None and self.override_below is None:
+            return False
+        kind = unit_kind_limits(self.industry_vertical, unit_kind_of(self))
+        return kind is None or (self.override_above, self.override_below) != kind
+
     def offline(self, now: Optional[datetime] = None) -> bool:
         """True when this sensor has stopped reporting.
 
@@ -335,6 +370,10 @@ class Sensor:
             "override_below": self.override_below,
             "uses_override": self.override_above is not None
             or self.override_below is not None,
+            # A limit somebody actually changed, not the one "fridge or
+            # freezer?" set when the unit was added (which is saved as its
+            # own too). Only this is worth a word on the card.
+            "limit_own": self.limit_retuned(),
             # The "stays out of range" rule this unit is on (domain.py).
             "unit_kind": unit_kind_of(self),
             "alert_after_minutes": alert_after_minutes(self),
@@ -440,6 +479,19 @@ class Incident:
     # answered: the plain note saying so ("Back to normal after 3 minutes,
     # probably the door"). Nobody is recorded as having acknowledged it.
     resolved_note: Optional[str] = None
+    # A person closed it ("It's fixed", or "Close anyway" while the unit was
+    # still out of range): who, the one-line note they gave (or the one we
+    # wrote for them), and whether the unit was still out of range at the
+    # time and at what temperature. What an inspector asks about a closed
+    # alert is who closed it and why; these are the answer.
+    resolved_by: Optional[str] = None
+    close_note: Optional[str] = None
+    closed_out_of_range: bool = False
+    close_temperature_f: Optional[float] = None
+    # Somebody pressed "It's fixed" while the unit was still out of range:
+    # it closes by itself once the unit is back to normal.
+    fix_reported_by: Optional[str] = None
+    fix_reported_at: Optional[datetime] = None
     # What was DONE about it, and who says so. An inspector reading a
     # temperature log is not checking that the fridge got cold again --
     # they are checking that somebody recorded what they did with the
@@ -620,6 +672,17 @@ class Incident:
         end = self.acknowledged_at or self.resolved_at or now
         return max(0.0, round((end - self.opened_at).total_seconds() / 60.0, 2))
 
+    @property
+    def started_at(self) -> datetime:
+        """When the unit went out of range for this alert."""
+        return self.out_since or self.opened_at
+
+    def out_minutes(self, now: Optional[datetime] = None) -> float:
+        """How long the unit was out of range: from `started_at` to when
+        the alert closed, or to now while it is open. Never negative."""
+        end = self.resolved_at or now or utc_now()
+        return max(0.0, round((end - self.started_at).total_seconds() / 60.0, 2))
+
     def to_row(self) -> Dict[str, Any]:
         return {
             "incident_id": self.incident_id,
@@ -645,6 +708,12 @@ class Incident:
             "ack_token": self.ack_token,
             "out_since": iso(self.out_since),
             "resolved_note": self.resolved_note,
+            "resolved_by": self.resolved_by,
+            "close_note": self.close_note,
+            "closed_out_of_range": self.closed_out_of_range,
+            "close_temperature_f": self.close_temperature_f,
+            "fix_reported_by": self.fix_reported_by,
+            "fix_reported_at": iso(self.fix_reported_at),
             "corrective_action": self.corrective_action,
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),
@@ -690,6 +759,12 @@ class Incident:
             ack_token=row.get("ack_token"),
             out_since=_parse(row.get("out_since")),
             resolved_note=row.get("resolved_note"),
+            resolved_by=row.get("resolved_by"),
+            close_note=row.get("close_note"),
+            closed_out_of_range=bool(row.get("closed_out_of_range")),
+            close_temperature_f=row.get("close_temperature_f"),
+            fix_reported_by=row.get("fix_reported_by"),
+            fix_reported_at=_parse(row.get("fix_reported_at")),
             # Defaulted: incidents written before corrective actions
             # existed simply have none recorded, which is the truth.
             corrective_action=row.get("corrective_action"),
@@ -746,9 +821,23 @@ class Incident:
             "voice_dispatch_source": self.voice_dispatch_source,
             "resolved_at": iso(self.resolved_at),
             "minutes_open": self.minutes_open(),
-            "out_since": iso(self.out_since or self.opened_at),
+            # The one "out since" every page uses: when the unit first went
+            # out of range for this alert, which with the wait is earlier
+            # than when the alert opened. How long it was (or has been)
+            # out runs from here to when it closed, or to now.
+            "out_since": iso(self.started_at),
+            "out_until": iso(self.resolved_at),
+            "out_minutes": self.out_minutes(),
+            "acknowledged_by_name": person_name(self.acknowledged_by),
             "resolved_note": self.resolved_note,
-            "back_to_normal_on_its_own": bool(self.resolved_note),
+            "back_to_normal_on_its_own": bool(self.resolved_note) and not self.resolved_by,
+            "resolved_by": self.resolved_by,
+            "resolved_by_name": person_name(self.resolved_by),
+            "close_note": self.close_note,
+            "closed_out_of_range": self.closed_out_of_range,
+            "fix_reported_by": self.fix_reported_by,
+            "fix_reported_by_name": person_name(self.fix_reported_by),
+            "fix_reported_at": iso(self.fix_reported_at),
             "corrective_action": self.corrective_action,
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),

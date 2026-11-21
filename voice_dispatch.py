@@ -36,6 +36,8 @@ from notifications import (
     sms_segments,
     verify_twilio_signature,
 )
+import wording
+from domain import minutes_words, plain_temperature
 from store import (
     STORE,
     VOICE_ESCALATION_GRACE_MINUTES,
@@ -65,6 +67,21 @@ class Acknowledgement(BaseModel):
 
 class ResolutionNote(BaseModel):
     resolved_by: Optional[str] = Field(None, max_length=120)
+    note: Optional[str] = Field(
+        None, max_length=200,
+        description=(
+            "One line on what was done. Required with close_anyway; kept "
+            "with who closed it, for the inspector's log."
+        ),
+    )
+    close_anyway: bool = Field(
+        False,
+        description=(
+            "Close it although the unit is still out of range. Needs a note. "
+            "Without it, an alert on a unit still out of range is not "
+            "closed: it closes by itself once the unit is back to normal."
+        ),
+    )
 
 
 def _load_incident(incident_id: str, tenant: Tenant) -> Incident:
@@ -709,21 +726,103 @@ def resolve_incident(
         }
 
     actor = actor_label(operator, payload.resolved_by or "API key")
-    STORE.resolve_incident(incident, actor)
+    note = (payload.note or "").strip()
+    out = _still_out_of_range(incident, tenant)
+    if out is not None and not payload.close_anyway:
+        # "It's fixed" while the fridge is still 48°F is not fixed. Say so,
+        # and keep the promise: it closes by itself once it is back to
+        # normal. Whoever pressed it has it, so the calls stop.
+        STORE.report_fixed(incident, actor)
+        write_audit(tenant, operator, "incident.fix_reported",
+                    f"{incident.incident_id} on {incident.sensor_id}: said fixed "
+                    f"at {out['temperature']}, still out of range.",
+                    fallback_actor=actor)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "still_out_of_range",
+                "message": out["words"],
+                "temperature": out["temperature"],
+                "limit": out["limit"],
+                "close_anyway_needs_note": True,
+                "reasons": list(wording.CLOSE_ANYWAY_REASONS),
+            },
+        )
+    if out is not None and len(note) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=("Closing it while it is still out of range needs a short "
+                    "note: what was done, in a line."),
+        )
+    if out is None and not note:
+        now_at = out_temperature(incident, tenant)
+        note = f"Fixed, {now_at} when closed." if now_at else "Fixed."
+    sensor = STORE.get_sensor(incident.sensor_id)
+    STORE.resolve_incident(
+        incident, actor, note=note, out_of_range=out is not None,
+        temperature_f=sensor.last_temperature if sensor is not None else None)
+    if out is not None and not incident.corrective_action:
+        # What was done is the corrective action an inspector reads, when
+        # nobody has written one yet.
+        STORE.record_corrective_action(incident, actor, note)
     _notify_hooks(tenant, incident, "resolved", f"Closed out by {actor}.")
     write_audit(
         tenant,
         operator,
         "incident.resolved",
-        f"{incident.incident_id} on {incident.sensor_id}.",
+        f"{incident.incident_id} on {incident.sensor_id}"
+        + (f", closed while still out of range: {note}" if out is not None
+           else f": {note}"),
         fallback_actor=actor,
     )
 
+    message = "Closed."
+    if out is not None and sensor is not None:
+        from telemetry import alert_clock
+
+        wait = alert_clock(sensor)["wait_minutes"]
+        message = (f"Closed with your note. If it is still out of range in "
+                   f"{minutes_words(wait)}, we alert again.")
     return {
         "status": "RESOLVED",
         "resolved_by": actor,
+        "message": message,
         "incident": incident.public(),
     }
+
+
+def out_temperature(incident: Incident, tenant: Tenant) -> Optional[str]:
+    """The unit's latest temperature in words, or None if it has none."""
+    sensor = STORE.get_sensor(incident.sensor_id)
+    if sensor is None or sensor.tenant_id != tenant.tenant_id or sensor.last_temperature is None:
+        return None
+    return plain_temperature(sensor.last_temperature, tenant.temperature_unit)
+
+
+def _still_out_of_range(incident: Incident, tenant: Tenant) -> Optional[dict]:
+    """The unit's latest reading, if the alert's unit is still out of range.
+
+    None when it is in range, when nothing is known (no reading, the unit
+    has gone quiet, it was retired), or for a site-wide alert, which is
+    many units and is closed on the word of the person who has it.
+    """
+    from domain import evaluate_sensor_breach
+
+    if incident.site_wide:
+        return None
+    sensor = STORE.get_sensor(incident.sensor_id)
+    if (sensor is None or sensor.tenant_id != tenant.tenant_id
+            or sensor.last_temperature is None or sensor.offline()):
+        return None
+    unit = tenant.temperature_unit
+    if evaluate_sensor_breach(sensor, sensor.last_temperature, unit) is None:
+        return None
+    above, below = sensor.bounds()
+    warm = above is not None and sensor.last_temperature > above
+    temperature = plain_temperature(sensor.last_temperature, unit)
+    limit = plain_temperature(above if warm else below, unit)
+    return {"temperature": temperature, "limit": limit,
+            "words": wording.still_out_words(temperature, limit, warm)}
 
 
 @router.get("/incidents")

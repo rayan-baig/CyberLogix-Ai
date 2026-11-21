@@ -68,6 +68,8 @@ def test_prior_incidents_are_disclosed_not_hidden(
     """An adjuster will find earlier warnings; better we surface them."""
     headers, first = breached_estate(
         api, operator_factory, sensor_factory, age_incident)
+    api.post("/api/sensor-pulse", headers=headers,
+             json={"sensor_id": "FRZ-1", "temperature_fahrenheit": 30.0})
     api.post(f"/api/voice/resolve/{first}", headers=headers, json={})
     second = api.post("/api/sensor-pulse", headers=headers,
                       json={"sensor_id": "FRZ-1",

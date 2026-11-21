@@ -68,8 +68,9 @@
     <ul class="points">
       <li><b>No card.</b> The trial takes no payment details, because a
         trial that asks for a card is not a trial.</li>
-      <li><b>Three steps after this form.</b> Add a sensor, add who gets
-        alerts, and send a test text. The console ticks each one off.
+      <li><b>Four short steps after this form.</b> Add a sensor, add who
+        gets alerts, see its first reading arrive, and send a test text.
+        The console ticks each one off.
         Want to look first? <a href="/demo">See it live</a> with pretend
         data.</li>
       <li><b>Alerting never stops for money.</b> Even a badly overdue
@@ -116,6 +117,12 @@
         <label for="industry_vertical">What kind of business?</label>
         <select id="industry_vertical" name="industry_vertical">
           <option value="">Choose one (you can change it later)</option>
+        </select>
+      </div>
+      <div class="field" id="other-field" hidden>
+        <label for="industry_other">Which kind?</label>
+        <select id="industry_other" name="industry_other">
+          <option value="">Choose one</option>
         </select>
       </div>
       <!-- Most people have no code, so the box stays folded until asked

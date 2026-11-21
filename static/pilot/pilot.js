@@ -1,4 +1,4 @@
-// Pilot core 1.1.0 · pilot.js
+// Pilot core 1.1.1 · pilot.js
 // The one Pilot file a page loads. Once the page has finished loading, it
 // fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
 // owner's picture, pilot-robot-128/256.webp) and the app's config, which
@@ -12,12 +12,9 @@
 // data-actor-css, data-rest-*; the pose pictures in data-poses load when a
 // move first needs them).
 //
-// It keeps the robot out of the way: it steps back (faded, click-through)
-// while a pop-up of the page is open, and keeps clear of whatever the app's
-// config lists in avoid (things it mustn't cover) and yieldTo (another
-// helper character), moving to a free corner or tucking half away at the
-// edge until tapped. Pages can reserve room with var(--pilot-gutter) or the
-// .pilot-gutter class.
+// It keeps the robot out of the way (pilot-mascot.js placeNow), looking
+// again on scroll and resize (once a frame at most), on focus, and when the
+// page changes. Pages can reserve room (docs/PILOT.md).
 //
 // It also keeps Pilot with the user:
 // - from page to page: the chat and whether it's open are in sessionStorage
@@ -35,7 +32,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -51,6 +48,8 @@
   let life = null;
   let shownCorner = "br"; // where the robot sits now (the chosen corner, unless it's in the way)
   let fitQueued = false;
+  let fitFull = false; // the next look may move to another corner (not just tuck in place)
+  let scrolling = 0; // a timer while the page is being scrolled
   let peekOff = 0; // tapped out of its tucked-away spot until then
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
@@ -110,43 +109,63 @@
   const M = () => window.PilotMascot;
   const list = (v) => (Array.isArray(v) ? v : typeof v === "string" && v ? [v] : []).filter((x) => typeof x === "string");
 
-  // Where the robot should be now, given pop-ups and things to keep clear of.
+  // Where the robot should be now (pilot-mascot.js placeNow): clear of
+  // pop-ups, the app's avoid and yieldTo, the page's words and buttons, and
+  // a box being typed in. Mid-scroll it only checks its own spot.
   function fit() {
     fitQueued = false;
+    const full = fitFull;
+    fitFull = false;
     if (!rootEl || !config) return;
     const open = Boolean(panel && panel.isOpen);
     const modal = M().modalOpen(document, rootEl, window);
     rootEl.classList.toggle("pilot-yield", modal && !open);
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
-    const blocks = M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window);
-    const size = launcher.getBoundingClientRect();
-    const gap = parseFloat(getComputedStyle(rootEl).getPropertyValue("--pilot-gap")) || 16;
-    const place = M().choosePlace({ corner: store.ui().corner, view: { width: window.innerWidth, height: window.innerHeight },
-      size: { width: size.width, height: size.height }, gap, blocks });
+    const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
+      corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false });
     if (place.corner !== shownCorner) placeAt(place.corner);
-    rootEl.classList.toggle("pilot-peek", place.peek && Date.now() > peekOff);
+    // A tap brings it out for a while, but never onto a box being typed in.
+    rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
+    rootEl.classList.toggle("pilot-typing", place.typing);
   }
 
-  function queueFit() {
+  function queueFit(full) {
+    if (full !== false) fitFull = true;
     if (fitQueued) return;
     fitQueued = true;
     requestAnimationFrame(fit);
   }
 
   function watchPage() {
-    window.addEventListener("resize", queueFit, { passive: true });
-    window.addEventListener("scroll", queueFit, { passive: true, capture: true });
+    let resized = 0;
+    window.addEventListener("resize", () => {
+      queueFit(true);
+      clearTimeout(resized);
+      resized = setTimeout(gutter, 200);
+    }, { passive: true });
+    window.addEventListener("scroll", () => {
+      clearTimeout(scrolling);
+      scrolling = setTimeout(() => { scrolling = 0; queueFit(true); }, 160);
+      queueFit(false);
+    }, { passive: true, capture: true });
+    // A box gets focus (or loses it): out of its way at once, back after.
+    document.addEventListener("focusin", () => queueFit(true));
+    document.addEventListener("focusout", () => queueFit(true));
     if (typeof MutationObserver === "function") {
       new MutationObserver((records) => {
-        if (records.some((r) => !rootEl.contains(r.target))) queueFit();
+        if (records.some((r) => !rootEl.contains(r.target))) queueFit(true);
       }).observe(document.body, { childList: true, subtree: true, attributes: true,
         attributeFilter: ["open", "aria-modal", "hidden", "class", "role"] });
     }
-    queueFit();
+    gutter();
+    queueFit(true);
   }
 
+  const gutter = () => M().sideGutter(document, window, config.gutter === false ? [] : list(config.gutter).length ? list(config.gutter) : ["main"]);
+
   // Busy elsewhere: no wandering (a pop-up, tucked away, or keeping clear of something).
-  const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-peek"].some((c) => rootEl.classList.contains(c))
+  const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-peek", "pilot-typing"].some((c) => rootEl.classList.contains(c))
+    || scrolling !== 0
     || shownCorner !== store.ui().corner || (list(config.avoid).length + list(config.yieldTo).length > 0
       && M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window).length > 0);
 

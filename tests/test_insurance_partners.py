@@ -497,7 +497,8 @@ def test_the_partner_page_is_plain_and_promises_no_discount(api):
 def test_the_landing_page_section_is_plain(api):
     text = api.get("/").text
     assert 'id="insurers"' in text
-    assert "Show your insurer proof that your fridges are watched 24/7." in text
+    # Said once, inside the front page's record section (3.22.0).
+    assert "Proof for your insurer, every month" in text and "watched 24/7" in text
     assert "not an insurer" in text
     assert "/insurance-partners" in text
     section = text[text.index('id="insurers"'):text.index('id="plans"')].lower()
