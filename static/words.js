@@ -46,11 +46,29 @@
     return m === null ? "" : minutes(m);
   }
 
-  /* A time of day as the person's own clock shows it: "3:53 PM". */
+  /* A time of day as the person's own clock shows it: "3:53 PM", never
+     "03:53 PM". Some browsers and locales pad the hour even when asked
+     for "numeric", so a leading zero before AM/PM is taken off here,
+     once. A 24-hour clock ("09:05") is left as its reader expects. */
+  function unpad(text) {
+    return String(text).replace(/(^|[^\d:])0(\d:\d\d)(?=\s*[AaPp]\.?\s?[Mm])/g, "$1$2");
+  }
+
   function clock(iso) {
     const d = at(iso);
     if (!d) return "";
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return unpad(d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  }
+
+  /* A day and a time: "Nov 21, 5:50 PM" (and the year with `year`). For
+     the logs, the audit trail and the readings table, which each had
+     their own "Nov 21, 05:50 PM". */
+  function dateTime(iso, opts) {
+    const d = at(iso);
+    if (!d) return "";
+    const o = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
+    if (opts && opts.year) o.year = "numeric";
+    return unpad(d.toLocaleString([], o));
   }
 
   /* "Rosa", from the name the server gives, or from a raw label
@@ -81,10 +99,29 @@
       case "waiting_first":
         return { state: c.state, word: "Waiting for its first reading", kind: "quiet",
           line: "Nothing has arrived from its sensor yet. It shows here as soon as it does." };
-      case "watching":
+      case "watching": {
+        // Its wait is over and the alert is on its way (the page asks the
+        // server again at once): never "we'll text at 5:47 PM" at 5:48.
+        const due = at(c.alert_at);
+        if (due && due.getTime() <= now()) {
+          return { state: c.state, word, kind: "warm", overdue: true,
+            line: `${word} since ${clock(c.out_since)}. It stayed out, so we are alerting now.`,
+            short: `${word} — alerting now` };
+        }
+        const temp = c.temperature_display != null ? `${c.temperature_display}°${c.temperature_unit || "F"}` : "";
+        const far = c.far_display != null ? `, or at once if it reaches ${c.far_display}°${c.temperature_unit || "F"}` : "";
+        if (c.held_after_close) {
+          // After "Close anyway": who closed it and when, how warm it is
+          // now, and when we alert again. Not "nothing is spoiling".
+          return { state: c.state, word, kind: "watch", held: true,
+            line: `Closed by hand by ${person(c.closed_by)} at ${clock(c.closed_at)}.${
+              temp ? ` Still ${temp}.` : ""} We'll alert again at ${clock(c.alert_at)}${far}.`,
+            short: `Closed by hand — still ${temp || word.toLowerCase()}; we alert again at ${clock(c.alert_at)}` };
+        }
         return { state: c.state, word: "Watching", kind: "watch",
-          line: `${word} since ${clock(c.out_since)}. We'll text at ${clock(c.alert_at)} if it ${stays}.`,
+          line: `${word} since ${clock(c.out_since)}. We'll text at ${clock(c.alert_at)} if it ${stays}${far}.`,
           short: `Watching — we'll text at ${clock(c.alert_at)} if it ${stays}` };
+      }
       case "paused":
         return { state: c.state, word, kind: "warm",
           line: `${word} since ${clock(c.out_since)}. Alerts are paused, so nobody is texted.` };
@@ -99,7 +136,29 @@
     }
   }
 
-  const api = { minutes, between, outFor, clock, person, condition, roundHalfEven };
+  /* How long a page should wait before asking the server again, at most
+     `base` ms: until just after the soonest "we'll text at" among units
+     being watched, so the screen turns into the alert as it opens rather
+     than up to twenty seconds later. A wait already over is asked about
+     again in a few seconds. */
+  function pollDelay(sensors, base) {
+    let soonest = base;
+    for (const unit of sensors || []) {
+      const c = (unit && unit.condition) || {};
+      const due = c.state === "watching" ? at(c.alert_at) : null;
+      if (!due) continue;
+      const ms = due.getTime() - now();
+      soonest = Math.min(soonest, ms > 0 ? ms + 1500 : 4000);
+    }
+    return Math.max(1000, soonest);
+  }
+
+  let clockNow = () => Date.now();
+  function now() { return clockNow(); }
+  /* For the tests: read the time from here instead of the computer. */
+  function setNow(fn) { clockNow = typeof fn === "function" ? fn : () => Date.now(); }
+
+  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CLXWords = Object.freeze(api);
 })(typeof window !== "undefined" ? window : globalThis);

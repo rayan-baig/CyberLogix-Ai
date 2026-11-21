@@ -17,8 +17,9 @@ cloud, you copy one key from us and paste it in one place:
 2. If the sensor's app has a webhook or "HTTP push" setting, paste
    `https://cyberlogix.mtrxhorizyn.com/api/sensor-pulse` as the address and the key as the
    header `X-CyberLogix-Sensor-Key`. If its maker's cloud gives you an
-   API key instead, open **Fetch from a sensor cloud** in the console,
-   choose the kind of cloud and paste that key.
+   API key instead, press the **Advanced** tab in the console, open
+   **Fetch from a sensor cloud**, choose the kind of cloud and paste
+   that key.
 3. Wait a few minutes for the first reading.
 
 Not sure which kind yours is? Write to us with the make and model and
@@ -42,7 +43,7 @@ Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commerc
 1. Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker's cloud has an API.
 2. Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.
 3. In CyberLogix, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.
-4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker's cloud, add it under Fetch from a sensor cloud in the console.
+4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker's cloud, add it under Fetch from a sensor cloud, in the console's Advanced tab.
 5. Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.
 6. Add the people who should get alerts, and send a test alert to check the texts arrive.
 
@@ -144,7 +145,7 @@ Hardware that only talks to its maker's cloud, when that cloud gives you an HTTP
 
 1. In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device's own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. The serial is whatever the vendor's data calls the device.
 2. Get the address and the credential from the vendor: an HTTPS address that answers a plain GET with JSON, and the header it wants the credential in, such as Authorization.
-3. In the console, open Fetch from a sensor cloud. Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.
+3. In the console, open Fetch from a sensor cloud (under the Advanced tab). Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.
 4. Press Try now. It fetches once and says what came back: readings taken, nothing new, or why nothing could be used.
 5. What comes back is read the same way as the send-anything route below: one reading, a list, or readings under samples, readings, data, results or sensors, and each needs a serial that is on one of your units.
 6. The address must start with https and point at the public internet. Redirects are not followed: save the final address. After 5 failures in a row it stops asking and the owner is emailed; Try now starts it again.

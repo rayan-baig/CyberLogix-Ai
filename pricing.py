@@ -698,6 +698,38 @@ def setup_fee_per_site(tenant: Tenant) -> float:
     return SETUP_FEE_PER_SITE_USD
 
 
+def fits_starter(sensors: List[Any]) -> bool:
+    """Whether these units would go on Starter: a café or shop's fridges
+    and freezers (STARTER_VERTICALS), no more than its units, at no more
+    than its one location."""
+    tier = PLAN_TIERS[STARTER_PLAN]
+    if not sensors or len(sensors) > tier["max_sensors"]:
+        return False
+    if any(s.industry_vertical not in STARTER_VERTICALS for s in sensors):
+        return False
+    sites = {s.site_id for s in sensors if s.site_id}
+    return len(sites) <= (tier["max_locations"] or len(sites))
+
+
+def after_trial_starter(sensors: List[Any]) -> Dict[str, Any]:
+    """What a trial that fits Starter would pay on it, for "What you pay"."""
+    tier = PLAN_TIERS[STARTER_PLAN]
+    return {
+        "plan": STARTER_PLAN,
+        "plan_name": tier["name"],
+        "monthly_total_usd": STARTER_MONTHLY_USD,
+        "annual_total_usd": round(STARTER_MONTHLY_USD * 12, 2),
+        "yearly_total_usd": yearly_price(STARTER_MONTHLY_USD),
+        "yearly_label": yearly_label(),
+        "description": f"1 location, {len(sensors)} of {tier['max_sensors']} units",
+        "words": (f"Free until the trial ends. Your {len(sensors)} "
+                  f"{'unit fits' if len(sensors) == 1 else 'units fit'} Starter: "
+                  f"${STARTER_MONTHLY_USD:,.0f} a month for one location and up "
+                  f"to {tier['max_sensors']} fridges or freezers. More than that, "
+                  f"or a second location, is Growth, at the rate card."),
+    }
+
+
 def starter_terms() -> Dict[str, Any]:
     """Starter as the pages and the console describe it, from the code."""
     tier = PLAN_TIERS[STARTER_PLAN]
@@ -1167,6 +1199,12 @@ def build_subscription(tenant: Tenant) -> Dict[str, Any]:
         "plan_name": tier["name"],
         "billing_model": "starter" if starter_group else "per_unit",
         "billable": billable,
+        # On a trial whose units fit Starter: what "What you pay" shows,
+        # Starter's flat price, not the restaurant location price they
+        # would only pay on Growth. A display of the plan that fits; the
+        # rate card above and every price are unchanged.
+        "after_trial": (after_trial_starter(sensors)
+                        if tenant.plan == "trial" and fits_starter(sensors) else None),
         "units_total": len(sensors),
         "seats_total": tier["max_sensors"],
         "line_items": lines,

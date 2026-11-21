@@ -185,7 +185,13 @@ COMMON_KINDS = [
     {"key": "pharmacy", "name": "Pharmacy", "sector": "pharmacy"},
     {"key": "clinic", "name": "Clinic (doctor, dentist, vet or vaccines)", "sector": "pharmacy"},
 ]
-_KIND_TO_SECTOR = {k["key"]: k["sector"] for k in COMMON_KINDS}
+# At the end of "Something else", for florists, caterers, bakeries with a
+# shop, ice cream parlours and every other business not named: the food
+# fridge and freezer limits (41°F and 10°F, 20 and 30 minutes' wait),
+# which suit any cold room of flowers or food. Changeable per fridge.
+OTHER_KIND = {"key": "other", "name": "Other / not listed (florist, caterer and similar)",
+              "sector": "restaurant"}
+_KIND_TO_SECTOR = {k["key"]: k["sector"] for k in COMMON_KINDS + [OTHER_KIND]}
 
 
 @router.get("/sectors")
@@ -216,6 +222,8 @@ def sectors():
         # Shown first, in plain words; every sector follows under "Other".
         "common": [{"key": k["key"], "name": k["name"], "sector": k["sector"]}
                    for k in COMMON_KINDS],
+        # Last in the "Something else" list.
+        "other": dict(OTHER_KIND),
         "sectors": [
             {
                 "key": key,

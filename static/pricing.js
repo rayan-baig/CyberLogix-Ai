@@ -293,3 +293,23 @@ if (typeof document !== "undefined") {
 
   paint();
 }
+
+/* The folds: open on a wide screen, folded on a phone (the page was ten
+   thousand pixels long there). A link to something inside a fold
+   (/pricing#chains) opens that fold. */
+if (typeof document !== "undefined") {
+  const wide = () => {
+    try { return window.matchMedia("(min-width: 721px)").matches; } catch (_) { return true; }
+  };
+  if (wide()) {
+    document.querySelectorAll("details[data-open-wide]").forEach((d) => { d.open = true; });
+  }
+  const openFor = () => {
+    const id = decodeURIComponent((location.hash || "").slice(1));
+    const target = id && document.getElementById(id);
+    const fold = target && target.closest("details");
+    if (fold) { fold.open = true; target.scrollIntoView(); }
+  };
+  openFor();
+  window.addEventListener("hashchange", openFor);
+}

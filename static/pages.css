@@ -217,3 +217,23 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 .easiest code { word-break: break-all; }
 .easiest-help { margin-top: 14px; }
 .tech-h { margin-top: 40px; }
+
+/* --- pricing folds -----------------------------------------------------
+   Each long section of /pricing is a fold with a heading-sized summary:
+   folded on a phone, opened on a wide screen by pricing.js. */
+details.fold { margin: 14px 0; }
+details.fold > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; min-height: 48px;
+  padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); color: var(--ink);
+  font-family: var(--display); font-size: 17px; font-weight: 600;
+}
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: "+"; color: var(--accent); font-size: 20px; }
+details.fold[open] > summary::after { content: "\2212"; }
+details.fold[open] > summary { margin-bottom: 12px; }
+details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10px 0; min-height: 40px; }
+@media (min-width: 721px) {
+  details.fold > summary { font-size: 22px; }
+}

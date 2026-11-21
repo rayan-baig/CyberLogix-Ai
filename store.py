@@ -1996,11 +1996,18 @@ class HubStore:
         closed while it was still warm ("Close anyway: moved the food") is
         not alerted on again a few seconds later.
         """
+        last = self.last_manual_close_incident(sensor_id, tenant_id)
+        return last.resolved_at if last is not None else None
+
+    def last_manual_close_incident(self, sensor_id: str,
+                                   tenant_id: str) -> Optional[Incident]:
+        """The alert on this unit a person last closed, if one did: who
+        closed it, when, and how warm it was then (close_temperature_f)."""
         with self._lock:
-            times = [i.resolved_at for i in self._incidents.values()
-                     if i.sensor_id == sensor_id and i.tenant_id == tenant_id
-                     and not i.site_wide and i.resolved_by and i.resolved_at]
-        return max(times) if times else None
+            closed = [i for i in self._incidents.values()
+                      if i.sensor_id == sensor_id and i.tenant_id == tenant_id
+                      and not i.site_wide and i.resolved_by and i.resolved_at]
+        return max(closed, key=lambda i: i.resolved_at) if closed else None
 
     def note_out_since(self, incident: Incident, at: Optional[datetime]) -> None:
         """When the unit first went out of range for this alert."""

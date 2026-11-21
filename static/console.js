@@ -293,9 +293,9 @@ $("onboard-form").addEventListener("submit", async (event) => {
     // developer console, with a toast telling the owner to keep a key
     // they had no way to see -- and a key in the console log stays in
     // the log. It goes where every other new key goes.
-    showIssuedKey("this business (master key)", made.api_key);
-    toast("Trial started. Copy your business key from \"Add a fridge or "
-          + "freezer\" now: it is shown once.", "ok");
+    showIssuedKey("this business (master key)", made.api_key, { scroll: false });
+    toast("Trial started. Your business key is in Setup if you ever "
+          + "connect other software.", "ok");
   } catch (err) {
     toast(err.message, "err");
   } finally {
@@ -464,7 +464,10 @@ const POLL_MAX_MS = 5 * 60 * 1000;
 
 function nextPollDelay() {
   const misses = state.pollFailures || 0;
-  return misses ? Math.min(POLL_MS * 2 ** misses, POLL_MAX_MS) : POLL_MS;
+  if (misses) return Math.min(POLL_MS * 2 ** misses, POLL_MAX_MS);
+  // Sooner when a unit's "we'll text at" comes before the next poll, so
+  // the card turns into the alert as it opens (static/words.js).
+  return CLXWords.pollDelay(((state.data || {}).sensors) || [], POLL_MS);
 }
 
 function startPolling() {
@@ -480,7 +483,7 @@ function startPolling() {
       state.timer = setTimeout(tick, nextPollDelay());
     });
   };
-  state.timer = setTimeout(tick, POLL_MS);
+  state.timer = setTimeout(tick, nextPollDelay());
 }
 
 $("pricing-btn").addEventListener("click", async () => {
@@ -880,11 +883,13 @@ async function refresh(opts = {}) {
   // A small account's Advanced cards, and the counts on the tabs, follow
   // the account: a trial that grows past a handful of units sees them all.
   const small = smallAccount(overview);
-  if (state.wasSmall !== small) {
+  const firstDay = dayOne(overview);
+  if (state.wasSmall !== small || state.wasDayOne !== firstDay) {
     state.wasSmall = small;
-    countTheTabs();
+    state.wasDayOne = firstDay;
     applyFinder();
   }
+  countTheTabs();
   maybeLandOnSimple(overview);
   // Never a broken panel: without the list the chip is just the name.
   try { paintBusinessChip(got.businesses || null); } catch (_) { /* the estate is the page */ }
@@ -1070,8 +1075,7 @@ function render(d, health) {
          s.sensors_breaching
            ? `${noun(s.sensors_breaching)} too warm or cold`
            : "all within their limits"),
-    tile("Open alerts", `${s.open_incidents}`,
-         s.escalation_due ? `${s.escalation_due} due for a call` : "none waiting for a call"),
+    tile("Open alerts", `${s.open_incidents}`, openAlertsNote(s)),
     tile("At-risk forecast", d.entitlements.predictive_forecasting ? `${s.at_risk}` : "—",
          d.entitlements.predictive_forecasting ? "projected to breach" : "upgrade to unlock"),
     // Readings in range, as a share: shown only after a day of readings,
@@ -1087,6 +1091,9 @@ function render(d, health) {
          `${s.readings_breached} out of range`),
   ].join("");
   animateFigures($("tiles"));
+  // The first day: seven tiles of zeros say nothing yet. The checklist
+  // and the fridges are the page until it is done.
+  $("tiles").hidden = dayOne(d);
 
   // Rebuilt on every poll because a site can be added from the sidebar.
   const siteSelect = $("fleet-site");
@@ -1107,15 +1114,20 @@ function render(d, health) {
   $("fleet-search").placeholder = `Search ${noun(2)}, location or site`;
   $("fleet-filter").options[0].textContent = `All ${noun(2)}`;
   const shown = visibleSensors(d.sensors);
+  // The title already says how many; the note only when a filter hides some.
   $("fleet-note").textContent = shown.length === d.sensors.length
-    ? `${d.sensors.length} ${noun(d.sensors.length)}`
-    : `${shown.length} of ${d.sensors.length} shown`;
+    ? "" : `${shown.length} of ${d.sensors.length} shown`;
   renderFleet(shown);
   renderTable(shown);
 
   renderFirstDay(d.first_day);
   const owner = Boolean(state.user && state.user.role === "owner");
-  $("sim-start").hidden = !owner;
+  // With no fridge yet, the list's search, filters, table view and the
+  // Simulate button say nothing: the empty list's own two buttons do.
+  const noUnits = !(d.sensors || []).length;
+  $("sim-start").hidden = !owner || noUnits;
+  $("toggle-table").hidden = noUnits;
+  document.querySelector("#fleet-card .toolbar").hidden = noUnits;
   const canTest = Boolean(state.user && state.user.role !== "viewer");
   $("test-alert-box").hidden = !canTest;
   const calls = (d.entitlements && d.entitlements.calls) || { mode: "none", words: "" };
@@ -1248,6 +1260,23 @@ function noun(count) {
 function Noun(count) {
   const word = noun(count);
   return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/* Under the "Open alerts" figure: who has the ones somebody is handling,
+   and how many nobody has answered. Every alert that is not closed is
+   counted; the tile said 0 while Maya was handling one. */
+function openAlertsNote(s) {
+  const handled = s.handled_incidents || 0;
+  const unanswered = s.unanswered_incidents ?? (s.open_incidents - handled);
+  const parts = [];
+  if (unanswered) parts.push(`${unanswered} nobody has answered`);
+  if (handled) {
+    const names = (s.handled_by || []).map((n) => CLXWords.person(n));
+    parts.push(`${handled} being handled by ${names.length === 1 ? names[0]
+      : names.length ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : "your team"}`);
+  }
+  if (s.escalation_due) parts.push(`${s.escalation_due} due for a call`);
+  return parts.length ? parts.join(" · ") : "none right now";
 }
 
 function tile(label, value, foot) {
@@ -1693,7 +1722,7 @@ document.addEventListener("mouseover", (event) => {
   if (!hit) return;
   const tip = $("tip");
   const at = hit.dataset.at
-    ? new Date(hit.dataset.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? CLXWords.clock(hit.dataset.at)
     : "";
   tip.innerHTML = `<div class="tip-v">${esc(hit.dataset.v)} °${esc(state.unit)}</div>`
                 + (at ? `<div class="tip-t">${esc(at)}</div>` : "");
@@ -1742,8 +1771,7 @@ function reapplyFleet() {
   if (!state.data) return;
   const shown = visibleSensors(state.data.sensors);
   $("fleet-note").textContent = shown.length === state.data.sensors.length
-    ? `${state.data.sensors.length} ${noun(state.data.sensors.length)}`
-    : `${shown.length} of ${state.data.sensors.length} shown`;
+    ? "" : `${shown.length} of ${state.data.sensors.length} shown`;
   renderFleet(shown);
   renderTable(shown);
 }
@@ -1865,8 +1893,7 @@ function deliveryLine(record, channel) {
 function textsFailedNote(i) {
   if (!i.alert_texts_failed || i.state === "resolved") return "";
   const next = i.next_sms_retry_at && i.state === "open"
-    ? ` Sending again at ${new Date(i.next_sms_retry_at).toLocaleTimeString([],
-        { hour: "2-digit", minute: "2-digit" })}.`
+    ? ` Sending again at ${CLXWords.clock(i.next_sms_retry_at)}.`
     : " Phone the roster yourself.";
   return `<div class="card-note" role="alert"><span class="badge s-critical">`
        + `<span class="dot"></span>Alert texts failed</span> `
@@ -1877,10 +1904,7 @@ function textsFailedNote(i) {
    answer to "why did nobody pick this up", and that is the question asked
    after every incident that goes wrong. */
 function incidentTimeline(i) {
-  const when = (iso) => iso
-    ? new Date(iso).toLocaleString([], { month: "short", day: "numeric",
-        hour: "numeric", minute: "2-digit" })
-    : "";
+  const when = (iso) => (iso ? CLXWords.dateTime(iso) : "");
   const steps = [];
   const deg = `${i.temperature_display ?? i.temperature_fahrenheit}°${i.temperature_unit || state.unit}`;
 
@@ -2144,9 +2168,7 @@ function renderAudit(trail) {
     return;
   }
   $("audit-body").innerHTML = trail.entries.map((e) => {
-    const when = new Date(e.at).toLocaleString([], {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-    });
+    const when = CLXWords.dateTime(e.at);
     return `<div class="u-p-7-0 u-bb">
       <div class="u-d-flex u-gap-8 u-justify-between">
         <span class="u-fs-12-5 u-fw-500">${esc(auditWords(e.action))}</span>
@@ -2328,6 +2350,27 @@ function renderBilling(subscription, roi, tenant) {
          No units registered, so nothing to bill.
          ${nextSteps([["sensor", `Add a ${noun(1)}`]])}
        </div>` + upgradeBlock(tenant);
+    return;
+  }
+
+  // A trial that fits Starter is shown Starter's flat price: a one-fridge
+  // bakery was shown "$149/mo", the restaurant location price it would
+  // only pay on Growth, while sign-up said Starter is $59.
+  const after = subscription.after_trial;
+  if (after) {
+    $("bill-body").innerHTML = `
+      <div class="u-d-flex u-justify-between u-gap-10 u-p-5-0 u-fs-12-5">
+        <span class="u-c-ink-2">${esc(after.plan_name)}
+          <span class="u-c-muted">· ${esc(after.description)}</span></span>
+        <span class="u-tnum">$${after.monthly_total_usd.toLocaleString()}</span>
+      </div>
+      <div class="u-bt u-mt-8 u-pt-8 u-d-flex u-justify-between u-items-baseline">
+        <span class="u-fs-12-5 u-c-ink-2">After the trial, a month</span>
+        <span class="u-fs-20 u-fw-650 u-ls-n01em">$${after.monthly_total_usd.toLocaleString()}</span>
+      </div>
+      <div class="u-ta-right u-fs-11-5 u-c-muted">or $${after.yearly_total_usd.toLocaleString()}
+        paid yearly (${esc(after.yearly_label || "")})</div>
+      <p class="card-plain u-mt-8">${esc(after.words)}</p>` + upgradeBlock(tenant);
     return;
   }
 
@@ -3383,8 +3426,10 @@ function renderPollers(seen) {
     ? (seen.broken ? `${seen.broken} broken` : `${seen.count} connected`)
     : "none yet";
 
+  // Nothing connected yet: the card's own paragraph already says what
+  // this is for, so the server's note is not printed under it again.
   if (!seen.count) {
-    $("poller-body").innerHTML = `<div class="sub">${esc(seen.note)}</div>`;
+    $("poller-body").innerHTML = "";
     return;
   }
 
@@ -3403,7 +3448,9 @@ function renderPollers(seen) {
       <button class="btn btn-sm" data-poll-test="${esc(row.source_id)}">Try
         now</button>
     </div>`).join("")
-    + `<div class="sub u-mt-8">${esc(seen.note)}</div>`;
+    // Only the broken-source warning: the card's paragraph already says
+    // what this is for.
+    + (seen.broken ? `<div class="sub u-mt-8">${esc(seen.note)}</div>` : "");
 }
 
 document.addEventListener("click", async (event) => {
@@ -4144,9 +4191,7 @@ addEventListener("online", () => {
 function shortDate(value) {
   if (!value) return "unknown";
   const at = new Date(value);
-  return isNaN(at) ? String(value) : at.toLocaleString([], {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+  return isNaN(at) ? String(value) : CLXWords.dateTime(value);
 }
 
 /* ---------------- what breaks next ----------------
@@ -4313,6 +4358,8 @@ function renderClaims(eligible) {
    do with it, which is not always the same thing -- a contact with both
    channels muted is on the roster and reaches nobody. */
 function renderEscalation(preview) {
+  // The trial's few calls are said once, in the card's own first line
+  // (roster-plain), not again under this.
   const texted = preview.sms_recipients || [];
   const ladder = preview.voice_ladder || [];
   const names = (rows) => rows.map((r) => esc(r.name)).join(", ");
@@ -4327,8 +4374,6 @@ function renderEscalation(preview) {
           ? "No phone call: " + esc(preview.calls.words)
           : "No call ladder, so an unanswered text is the end of it.")}
     </div>
-    ${preview.calls && preview.calls.mode === "trial"
-      ? `<div class="card-note u-mt-8">${esc(preview.calls.words)}</div>` : ""}
     ${(preview.warnings || []).map((w) =>
       `<div class="card-note u-mt-8" role="alert">`
       + `<span class="badge s-warning"><span class="dot"></span>Gap</span> `
@@ -4486,10 +4531,7 @@ async function openPacket(incidentId) {
 
 function stamp(iso) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString([], {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return CLXWords.dateTime(iso, { year: true });
 }
 
 /* ---------------- the inspector's log ----------------
@@ -4918,8 +4960,7 @@ async function openDrawer(sensorId, options = {}) {
   const f = detail.forecast;
 
   const rows = detail.readings.slice().reverse().slice(0, 24).map((r) => `<tr>
-      <td>${esc(new Date(r.at).toLocaleString([], { month: "short", day: "numeric",
-              hour: "2-digit", minute: "2-digit" }))}</td>
+      <td>${esc(CLXWords.dateTime(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical u-fw-650" : ""}">
         ${esc(r.temperature)}°${esc(unit)}</td>
       <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
@@ -5391,14 +5432,9 @@ function renderTeam(team) {
         ? ""
         : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>`}
     </div>`).join("")
-    // The business's master key, for scripts and devices without their own
-    // key. Owners can replace it the day it turns up somewhere it should not.
-    + (state.user && state.user.role === "owner" && !smallAccount() ? `
-    <div class="u-d-flex u-items-center u-gap-9 u-p-10-0-2">
-      <span class="grow u-fs-12 u-c-muted">
-        Master key leaked, or someone left who had it?</span>
-      <button class="btn btn-sm" data-rekey-business="1">Replace master key</button>
-    </div>` : "");
+    ;
+  // The business key is replaced from its own card in Setup, by an owner.
+  $("biz-key-act").hidden = !(state.user && state.user.role === "owner");
 }
 
 /* Only the sectors this estate actually has sensors in: a health inspector
@@ -5502,9 +5538,11 @@ function goTo(key) {
   if (!card) return;
   if (card.hidden) {
     // On another tab, or behind a search: bring the whole page back first.
+    // Folded behind "More" on a short list: show that one card as well.
     finder.tab = "all";
     finder.query = "";
     $("find-q").value = "";
+    finder.reveal.add(card.id);
     applyFinder();
   }
   const top = card.getBoundingClientRect().top + window.scrollY - stickyHeight() - 10;
@@ -6005,7 +6043,7 @@ document.addEventListener("click", (event) => {
 
   if (btn.dataset.rekeyBusiness) {
     if (!confirm(
-      "Replace this business's master key?\n\n"
+      "Make a new business key?\n\n"
       + "The current key stops working immediately. Any script or device that "
       + "still uses it will be refused until you give it the new one. Sensors "
       + "with their own keys carry on as before."
@@ -6141,6 +6179,17 @@ const MASTER_KEY_NOTE = "Only for connecting other software to your account. "
 function showIssuedKey(sensorId, key, options = {}) {
   if (!key) return;
   const master = /master key/.test(sensorId);
+  if (master) {
+    // In Setup, in its own card: not in the form for adding a fridge.
+    $("biz-key-value").textContent = key;
+    $("biz-key").hidden = false;
+    if (options.scroll !== false) {
+      finder.reveal.add("find-business-key");
+      applyFinder();
+      $("biz-key-value").focus();
+    }
+    return;
+  }
   $("issued-for").textContent = sensorId;
   $("issued-for").hidden = master;
   $("issued-kind").textContent = master ? "Your business key" : "Sensor key for";
@@ -6168,6 +6217,26 @@ $("issued-copy").addEventListener("click", async () => {
     sel.addRange(range);
     toast("Clipboard blocked — the key is selected, copy it by hand.", "err");
   }
+});
+
+$("biz-key-copy").addEventListener("click", async () => {
+  const key = $("biz-key-value").textContent;
+  try {
+    await navigator.clipboard.writeText(key);
+    toast("Key copied.");
+  } catch (err) {
+    const range = document.createRange();
+    range.selectNodeContents($("biz-key-value"));
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast("Clipboard blocked — the key is selected, copy it by hand.", "err");
+  }
+});
+
+$("biz-key-done").addEventListener("click", () => {
+  $("biz-key").hidden = true;
+  $("biz-key-value").textContent = "";
 });
 
 $("issued-done").addEventListener("click", () => {
@@ -6619,7 +6688,7 @@ function maybeLandOnSimple(d) {
    scrolling: pressing People should leave People on the screen, not put
    it somewhere below the fold with everything else still there. */
 
-const finder = { tab: "all", query: "" };
+const finder = { tab: "all", query: "", reveal: new Set() };
 
 /* A small account: a trial or Starter with a handful of units. A café was
    handed a wall of estate and operator tools (a volume price matrix,
@@ -6640,20 +6709,46 @@ function smallAccount(d = state.data) {
    thousand pixels of cards on the first day. Search and the tabs still
    show everything. */
 const FIRST_CARDS = new Set(["fleet-card", "find-incidents", "find-add-to-the-estate",
-  "find-on-call-roster", "find-vendor-clouds", "find-about"]);
+  "find-on-call-roster", "find-about"]);
+
+/* The first day (the Getting started checklist is not finished yet), on a
+   phone or a desktop: only the checklist and the fridges, everything else
+   behind "More". A checklist button that leads to a card shows that card
+   too (finder.reveal). */
+const DAY_ONE_CARDS = new Set(["fleet-card"]);
+
+function dayOne(d = state.data) {
+  return Boolean(d && d.first_day && !d.first_day.complete && smallAccount(d)
+    && state.user && state.user.role !== "viewer" && !state.wall);
+}
 
 function shortList(searching) {
   if (finder.more || searching || finder.tab !== "all" || !smallAccount()) return false;
+  if (dayOne()) return true;
   try { return window.matchMedia("(max-width: 720px)").matches; } catch (_) { return false; }
+}
+
+function inShortList(card) {
+  if (finder.reveal && finder.reveal.has(card.id)) return true;
+  if (dayOne()) {
+    // Problems joins the first day's list the moment something is warm.
+    const d = state.data || {};
+    const warm = (d.incidents || []).some((i) => i.state !== "resolved")
+      || (d.sensors || []).some((x) => x.condition && x.condition.state === "watching");
+    return DAY_ONE_CARDS.has(card.id) || (warm && card.id === "find-incidents");
+  }
+  return FIRST_CARDS.has(card.id);
 }
 
 /* Whether a card belongs in the tab being shown. */
 function inTab(card, searching) {
   const advanced = card.getAttribute("data-advanced") === "1";
   if (finder.tab === "advanced") return advanced;
+  // A card a button just led to is shown, wherever it is filed.
+  if (finder.tab === "all" && finder.reveal.has(card.id)) return true;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
   if (hiddenAsAdvanced) return false;
-  if (shortList(searching) && !FIRST_CARDS.has(card.id)) return false;
+  if (shortList(searching) && !inShortList(card)) return false;
   return finder.tab === "all" || card.getAttribute("data-group") === finder.tab;
 }
 
@@ -6702,7 +6797,7 @@ function applyFinder() {
   $("more-cards").hidden = !short || folded <= 0;
   $("more-cards-btn").textContent = `More (${folded} other things you can do)`;
   const advNote = $("adv-note");
-  if (advNote) advNote.hidden = !smallAccount() || finder.tab === "advanced" || Boolean(query);
+  if (advNote) advNote.hidden = !smallAccount() || finder.tab === "advanced" || Boolean(query) || dayOne();
   renderTabEmpty();
 
   document.querySelectorAll(".f-tab").forEach((tab) => {
@@ -6711,31 +6806,39 @@ function applyFinder() {
   });
 }
 
-/* How many cards each group holds, printed on its tab. A group with a
-   number on it is a promise about what pressing it will do. */
+/* Which tabs to offer, and the one number worth printing on a tab: how
+   many fridges and freezers are being watched on Fridges, and how many
+   alerts are not closed on Alerts. It used to count the cards in each
+   group, so Fridges said 2 (the list and the add form) for one fridge. */
 function countTheTabs() {
   const counts = {};
-  let all = 0;
-  let advanced = 0;
   const small = smallAccount();
   findableCards().forEach((card) => {
     const isAdvanced = card.getAttribute("data-advanced") === "1";
-    if (isAdvanced) advanced += 1;
     // On a small account an Advanced card is counted under Advanced only.
     if (isAdvanced && small) return;
     const group = card.getAttribute("data-group");
     counts[group] = (counts[group] || 0) + 1;
-    all += 1;
   });
+  const d = state.data || {};
+  const units = (d.sensors || []).length;
+  const live = (d.summary || {}).open_incidents || 0;
+  const figure = { fridges: units, alerts: live };
   document.querySelectorAll(".f-tab").forEach((tab) => {
     const key = tab.getAttribute("data-tab");
-    const n = key === "all" ? all : key === "advanced" ? advanced : (counts[key] || 0);
     // A group with nothing in it but Advanced cards (Licences, for a café)
     // is not offered as a tab of its own; Advanced holds them.
-    tab.hidden = small && key !== "all" && key !== "advanced" && n === 0;
-    const badge = tab.querySelector(".n");
-    if (badge) badge.textContent = String(n);
-    else tab.insertAdjacentHTML("beforeend", ` <span class="n">${n}</span>`);
+    tab.hidden = small && key !== "all" && key !== "advanced" && !(counts[key] || 0);
+    const n = figure[key];
+    const show = n !== undefined && n > 0;
+    let badge = tab.querySelector(".n");
+    if (!show) { if (badge) badge.remove(); return; }
+    if (!badge) {
+      tab.insertAdjacentHTML("beforeend", ' <span class="n"></span>');
+      badge = tab.querySelector(".n");
+    }
+    badge.textContent = String(n);
+    badge.classList.toggle("n-live", key === "alerts");
   });
 }
 

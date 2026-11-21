@@ -29,7 +29,7 @@ function stamp(iso) {
   const at = new Date(iso);
   return isNaN(at) ? String(iso) : at.toLocaleString([], {
     day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+    hour: "numeric", minute: "2-digit", timeZone: "UTC",
   }) + " UTC";
 }
 function day(iso) {

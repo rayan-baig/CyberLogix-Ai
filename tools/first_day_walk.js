@@ -103,6 +103,10 @@ async function main() {
     const idRequired = await page.$eval("#add-id", (el) => el.required).catch(() => false);
     if (idRequired) { await page.fill("#add-id", "WALKIN-1"); step("type", "add-id"); }
     await page.fill("#add-loc", "Kitchen walk-in"); step("type", "add-loc");
+    // "Fridge or freezer?" (3.22.0) when the name does not say which.
+    if (await page.$eval("#add-kind", (el) => el.required && !el.value).catch(() => false)) {
+      await page.selectOption("#add-kind", "fridge"); step("type", "add-kind");
+    }
     await snap("add-filled");
     await page.click("#add-form button[type=submit]"); step("click", "Claim a seat");
     await page.waitForFunction(() => {

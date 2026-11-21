@@ -343,15 +343,17 @@ async function signUp(browser, base, viewport, who) {
   // The business key is shown once, so it has to be somewhere the owner
   // can actually see it -- not in the developer console.
   const key = await page.evaluate(() => {
-    const box = document.getElementById("issued-key");
-    return box && !box.hidden ? document.getElementById("issued-value").textContent : "";
+    // In its own card in Setup since 3.23.0, not in the add-a-fridge form.
+    const box = document.getElementById("biz-key");
+    return box && !box.hidden ? document.getElementById("biz-key-value").textContent : "";
   });
   if (key && logged.some((line) => line.includes(key))) {
     fail(`${who} sign-up`, "the business key was written to the browser console");
   }
   if (!key) fail(`${who} sign-up`, "the business key is not shown anywhere on the page");
   else {
-    await page.click("#issued-done");
+    // Its card waits behind "More" on the first day; Done clears it.
+    await page.evaluate(() => document.getElementById("biz-key-done").click());
     ok(`${who}: the new business key is shown once, on the page`);
   }
   flush();
@@ -627,7 +629,7 @@ async function checkFirstDay(browser, base) {
   ok(`${label}: sign-up lands in the console, signed in`);
   await page.waitForTimeout(600);
   if (!(await page.isVisible("#first-day"))) fail(label, "no checklist on a new account");
-  const key = await page.textContent("#issued-value");
+  const key = await page.textContent("#biz-key-value");
   if (!/^clx_/.test(key || "")) fail(label, "the business key from sign-up is not shown");
 
   // Every empty card that a new business meets offers the next step.

@@ -304,6 +304,36 @@ def out_of_range_spell(sensor) -> "tuple[Optional[datetime], int]":
     return began, over
 
 
+def _hold_broken(sensor, closed: Any) -> bool:
+    """Whether a reading since a close by hand ended the hold at once.
+
+    A unit somebody closed while it was still warm ("Close anyway: moved
+    the food") waits its usual time again before anybody is alerted. Not
+    if it then reads far past its limit (ALERT_AT_ONCE_DEGREES_F, 15°F):
+    that is never a door, so the hold ends and we alert straight away.
+    The one exception is a unit that was already that far out when the
+    person closed it and has stayed that far out since: they saw that
+    temperature and closed it anyway, so the same reading again is not
+    news. Once it has come back under that line, going far out again is.
+    """
+    at = closed.resolved_at
+    then = closed.close_temperature_f
+    came_down = then is None or not far_out_of_range(sensor, then)
+    since = []
+    for reading in reversed(STORE.readings_for(sensor.sensor_id)):
+        # Strictly before: a reading in the same second as the close (times
+        # read back from disk are to the second) counts as after it.
+        if reading.recorded_at < at:
+            break
+        since.append(reading)
+    for reading in reversed(since):             # oldest first
+        if not far_out_of_range(sensor, reading.temperature_fahrenheit):
+            came_down = True
+        elif came_down:
+            return True
+    return False
+
+
 def alert_clock(sensor, now=None) -> Dict[str, Any]:
     """The one clock every page and the alarm itself read for a unit.
 
@@ -313,7 +343,8 @@ def alert_clock(sensor, now=None) -> Dict[str, Any]:
     unit's wait. After a person closed an alert on this unit, the wait
     starts again from when they closed it (`held_after_close`), so "Close
     anyway" while it is still warm is not followed by a new alert and a
-    text to everybody a few seconds later.
+    text to everybody a few seconds later. A reading far past the limit
+    after that ends the hold at once (_hold_broken).
     """
     from domain import default_alert_after_minutes
 
@@ -322,8 +353,9 @@ def alert_clock(sensor, now=None) -> Dict[str, Any]:
     out_since = began or now
     wait = alert_after_minutes(sensor)
     clock_from = out_since
-    closed = STORE.last_manual_close(sensor.sensor_id, sensor.tenant_id)
-    held = closed is not None and closed > out_since
+    last = STORE.last_manual_close_incident(sensor.sensor_id, sensor.tenant_id)
+    closed = last.resolved_at if last is not None else None
+    held = closed is not None and closed > out_since and not _hold_broken(sensor, last)
     if held:
         clock_from = closed
         # "Alert on the first reading" still waits after somebody closed it
@@ -340,6 +372,8 @@ def alert_clock(sensor, now=None) -> Dict[str, Any]:
         "minutes_on_clock": round(held_for, 2),
         "alert_at": clock_from + timedelta(minutes=wait),
         "held_after_close": held,
+        "closed_at": closed if held else None,
+        "closed_by": person_name(last.resolved_by) if held and last is not None else None,
     }
 
 
@@ -392,16 +426,26 @@ def _waiting(sensor, temperature: float, unit: str) -> Dict[str, Any]:
     else:
         far = plain_temperature((below or 0.0) - ALERT_AT_ONCE_DEGREES_F, unit)
         past = f"drops under {far}"
+    left = max(0.0, (clock["alert_at"] - utc_now()).total_seconds() / 60.0)
+    # Counted down, not rounded: "out for 1 minute" next to "we alert if it
+    # stays out for 1 minute" read as if the alert was already late.
+    minutes = math.floor(minutes)
     if clock["held_after_close"]:
         words = (f"Out of range for {minutes_words(minutes)}. It was closed by "
                  f"hand, so we alert again if it is still out "
-                 f"{minutes_words(wait)} after that.")
+                 f"{minutes_words(wait)} after that, or at once if it {past}.")
+    elif left < 1:
+        secs = math.ceil(left * 60)
+        more = "a few more seconds" if secs <= 15 else f"{secs} more seconds"
+        words = (f"Out of range for {minutes_words(minutes)}. Watching for "
+                 f"{more}: we alert if it is still out then, or at once if it "
+                 f"{past}.")
     else:
         words = (f"Out of range for {minutes_words(minutes)}. We alert if it "
                  f"stays out for {minutes_words(wait)}, or at once if it "
                  f"{past}, so a door open for a moment wakes nobody.")
     return {
-        "minutes_out": minutes,
+        "minutes_out": clock["minutes_out"],
         "readings_over": clock["readings_over"],
         "wait_minutes": wait,
         "out_since": iso(clock["out_since"]),
@@ -457,8 +501,22 @@ def unit_condition(tenant: Tenant, sensor, now=None,
     if current_pause(tenant.tenant_id, now) is not None:
         out["state"] = "paused"
         return out
+    from domain import ALERT_AT_ONCE_DEGREES_F
+
+    _, below = sensor.bounds()
+    # Where it stops waiting and alerts at once, 15°F past the limit.
+    far_f = (above + ALERT_AT_ONCE_DEGREES_F if too == "warm" and above is not None
+             else (below - ALERT_AT_ONCE_DEGREES_F if below is not None else None))
     out.update(state="watching", alert_at=iso(clock["alert_at"]),
-               held_after_close=clock["held_after_close"])
+               held_after_close=clock["held_after_close"],
+               temperature_display=display_temperature(temp, tenant.temperature_unit),
+               temperature_unit=tenant.temperature_unit,
+               far_display=(round(display_temperature(far_f, tenant.temperature_unit), 1)
+                            if far_f is not None else None))
+    if clock["held_after_close"]:
+        # "Closed by hand by Maya at 5:48. Still 47.6°F. We'll alert again
+        # at 6:08." The pages say it in those words (static/words.js).
+        out.update(closed_at=iso(clock["closed_at"]), closed_by=clock["closed_by"])
     return out
 
 

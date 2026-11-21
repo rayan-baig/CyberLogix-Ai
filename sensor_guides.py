@@ -224,7 +224,8 @@ GUIDES: List[Dict[str, Any]] = [
             "Get the address and the credential from the vendor: an HTTPS "
             "address that answers a plain GET with JSON, and the header it "
             "wants the credential in, such as Authorization.",
-            "In the console, open Fetch from a sensor cloud. Give it a name, "
+            "In the console, open Fetch from a sensor cloud (under the "
+            "Advanced tab). Give it a name, "
             "the address, and the header name and value. Choose how often to "
             f"fetch: every {MIN_INTERVAL_MINUTES} to {MAX_INTERVAL_MINUTES} "
             f"minutes, {DEFAULT_INTERVAL_MINUTES} if you leave it.",
@@ -335,8 +336,8 @@ WHAT_YOU_NEED: Dict[str, Any] = {
         "shows you.",
         "In the sensor's app or cloud, set it to send readings to the "
         "address in the guide for your brand below, with that key. Or, for "
-        "a maker's cloud, add it under Fetch from a sensor cloud in the "
-        "console.",
+        "a maker's cloud, add it under Fetch from a sensor cloud, in the "
+        "console's Advanced tab.",
         "Wait for the first reading. Getting started ticks First reading "
         "received when it arrives, usually within a few minutes.",
         "Add the people who should get alerts, and send a test alert to "
@@ -442,9 +443,10 @@ def easiest_html(base: str) -> str:
         "<li><b>A webhook or \u201cHTTP push\u201d setting.</b> Paste this "
         f"address: <code>{e(base)}/api/sensor-pulse</code>, and the key as "
         "the header <code>X-CyberLogix-Sensor-Key</code>.</li>"
-        "<li><b>An API key in the maker's cloud.</b> In the console, open "
-        "<b>Fetch from a sensor cloud</b>, choose the kind of cloud and paste "
-        "that key. We fetch the readings every few minutes.</li>"
+        "<li><b>An API key in the maker's cloud.</b> In the console, press "
+        "the <b>Advanced</b> tab, open <b>Fetch from a sensor cloud</b>, "
+        "choose the kind of cloud and paste that key. We fetch the readings "
+        "every few minutes.</li>"
         "</ul></li>"
         "<li>Wait a few minutes for the first reading. The console ticks "
         "<b>First reading received</b> when it arrives.</li>"
@@ -502,8 +504,9 @@ def render_markdown() -> str:
         "2. If the sensor's app has a webhook or \"HTTP push\" setting, paste",
         f"   `{DOC_BASE}/api/sensor-pulse` as the address and the key as the",
         "   header `X-CyberLogix-Sensor-Key`. If its maker's cloud gives you an",
-        "   API key instead, open **Fetch from a sensor cloud** in the console,",
-        "   choose the kind of cloud and paste that key.",
+        "   API key instead, press the **Advanced** tab in the console, open",
+        "   **Fetch from a sensor cloud**, choose the kind of cloud and paste",
+        "   that key.",
         "3. Wait a few minutes for the first reading.",
         "",
         "Not sure which kind yours is? Write to us with the make and model and",

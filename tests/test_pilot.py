@@ -379,7 +379,23 @@ def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
     on "Advanced". And the key settings say what an AI key is."""
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
     avoid = config[config.index("avoid: ["):config.index("],", config.index("avoid: ["))]
-    for sel in (".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog"):
+    for sel in (".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog",
+                "#first-day"):
         assert f'"{sel}"' in avoid, sel
     assert "An AI key is a private code you make on" in config
     assert "usually under API keys" in config
+
+
+def test_the_robot_is_never_tucked_past_the_screen_edge():
+    """Round 5: tucked away, it hung off the screen (355-411px on a 375px
+    phone, 1330-1418px on a 1366px desktop). The app's own stylesheet keeps
+    it inside a 16px margin, shrinking in its corner; no core file changes."""
+    theme = (ROOT / "static/theme.css").read_text()
+    tail = theme[theme.index("Pilot's robot stays wholly on the screen"):]
+    assert ":root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 71px; }" in tail
+    assert "--pilot-gap: 16px; --pilot-peek-show: 51px;" in tail
+    assert "transform: scale(.62) !important" in tail
+    assert "translateX" not in tail
+    # The core still slides it out; the app's rule wins on specificity.
+    core = (PILOT / "pilot.css").read_text()
+    assert "translateX(var(--pilot-tuck))" in core

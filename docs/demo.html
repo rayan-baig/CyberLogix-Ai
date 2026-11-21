@@ -1245,8 +1245,8 @@ tr[tabindex]:focus-visible {
 /* ---------- an issued credential ----------
    Shown once, so it gets a container that stays until it is dismissed
    rather than a toast that takes it away again. */
-#issued-key { display: grid; gap: 10px; margin-bottom: 16px; }
-#issued-key .digest {
+#issued-key, #biz-key { display: grid; gap: 10px; margin-bottom: 16px; }
+#issued-key .digest, #biz-key .digest {
   user-select: all; word-break: break-all; cursor: text;
 }
 .issued-actions { display: flex; gap: 8px; }
@@ -1417,6 +1417,9 @@ body[data-stale] #offline-banner {
   margin-left: 6px;
 }
 .f-tab[aria-pressed="true"] .n { color: var(--accent); }
+/* The number of alerts not closed, on the Alerts tab: shown on a phone
+   too, in the alert colour. */
+.f-tab .n.n-live { color: var(--critical, #f87171); font-weight: 650; }
 .finder-none {
   padding: 34px 20px; text-align: center; color: var(--muted);
   font-family: var(--display); font-size: 17.5px;
@@ -1447,7 +1450,7 @@ body[data-stale] #offline-banner {
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
-  .f-tab .n { display: none; }
+  .f-tab .n:not(.n-live) { display: none; }
   /* On a phone the account bar scrolls away and only the finder stays:
      both together were sticky and held a third of an 844px screen. */
   .nav { position: relative; }
@@ -1795,6 +1798,37 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 /* A wall display has nothing to press: the bar says what is wrong, and the
    buttons are on a phone. */
 body.wall .needs-bar-acts { display: none; }
+
+/* Pilot's robot stays wholly on the screen, 16px from each edge, on a
+   phone and on a desktop. The shared core (static/pilot/pilot.css, not
+   edited here) tucks it away when every corner is busy by sliding it
+   past the screen's edge, so only a slice shows: on a 375px phone it sat
+   at 355-411px, on a 1366px desktop at 1330-1418px. Here it shrinks into
+   its corner instead, fully inside the 16px margin. --pilot-peek-show is
+   the width the core's placement counts for that shrunken robot (its
+   margin plus 62% of its size), so it still looks for a free corner the
+   same way. Core 1.1.1 has no setting for this; see docs/PILOT.md. */
+:root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 71px; }
+@media (max-width: 720px) {
+  :root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 51px; }
+}
+:root .pilot-root.pilot-peek .pilot-launcher {
+  transform: scale(.62) !important; transform-origin: 100% 100%;
+}
+:root .pilot-root.pilot-peek.pilot-at-bl .pilot-launcher { transform-origin: 0 100%; }
+:root .pilot-root.pilot-peek.pilot-at-tr .pilot-launcher { transform-origin: 100% 0; }
+:root .pilot-root.pilot-peek.pilot-at-tl .pilot-launcher { transform-origin: 0 0; }
+:root .pilot-root.pilot-peek:not(.pilot-typing) .pilot-launcher:hover,
+:root .pilot-root.pilot-peek:not(.pilot-typing) .pilot-launcher:focus-visible {
+  transform: scale(1) !important;
+}
+/* On a phone the Getting started card is as wide as the screen, so no
+   corner is free of it and the robot shrinks into the bottom corner: the
+   card's words and buttons stop short of that corner, so it sits on the
+   card's empty edge, never on a step or a button. */
+@media (max-width: 720px) {
+  :root.pilot-on #first-day { padding-right: 46px; }
+}
 
 /* See it live (demo.html). Layout only: every colour is a token from
    theme.css, so the demo looks like the console it stands for. */
