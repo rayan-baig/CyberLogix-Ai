@@ -52,16 +52,15 @@
 <main class="wrap page">
   <p class="kicker">Pricing</p>
   <h1>From %%STARTER_PRICE%% a month. One flat price for each location.</h1>
+  <!-- Said once each: the chain discount, paying yearly, the plans and
+       the extras are in the folds below, not repeated up here. On a phone
+       the page was over ten thousand pixels long. -->
   <p class="lede">Restaurants pay %%RESTAURANT_PRICE%% a month per location
-    and pharmacies %%PHARMACY_PRICE%% a month per pharmacy, each for up to
+    and pharmacies %%PHARMACY_PRICE%%, each for up to
     %%UNITS_PER_LOCATION%% fridges and freezers there, and
-    %%EXTRA_UNIT_PRICE%% a month for each one past that. Chains pay less for
-    each location, and paying yearly is %%MONTHS_COVERED%% months for the
-    price of %%MONTHS_CHARGED%%. Every other trade is priced by quote. No
-    setup fee, and never a share of what the monitoring saved. Start with a
-    free %%TRIAL_DAYS%%-day trial on up to %%TRIAL_UNITS%% sensors, no card
-    needed.</p>
-
+    %%EXTRA_UNIT_PRICE%% a month for each one past that. Every other trade is
+    priced by quote. No setup fee. Start with a free %%TRIAL_DAYS%%-day
+    trial on up to %%TRIAL_UNITS%% sensors, no card needed.</p>
   <section class="panel starter-panel" id="starter" aria-labelledby="starter-title">
     <h2 id="starter-title">Starter: %%STARTER_PRICE%% a month for a small caf&eacute; or shop</h2>
     <p>One location and up to %%STARTER_UNITS%% fridges or freezers, at one
@@ -72,14 +71,15 @@
       asks you to move up first; nothing is charged until you do. A friend's
       referral code makes the free trial %%REFERRAL_DAYS%% days.</p>
   </section>
-
   <!-- We sell no hardware: the sensors are bought from a sensor maker.
        Words from sensor_guides.WHAT_YOU_NEED, as on the front page. -->
-  <div class="panel need-panel">
-    %%WHAT_YOU_NEED%%
-    <p class="muted small"><a href="/help/sensors">Step-by-step set-up for each kind of sensor</a></p>
-  </div>
-
+  <details class="fold" data-open-wide>
+    <summary>What you need besides us</summary>
+    <div class="panel need-panel">
+      %%WHAT_YOU_NEED%%
+      <p class="muted small"><a href="/help/sensors">Step-by-step set-up for each kind of sensor</a></p>
+    </div>
+  </details>
   <section class="panel" aria-labelledby="calc-title">
     <h2 id="calc-title" class="calc-heading">Work out your price</h2>
     <form class="calc" id="calc" data-months-charged="%%MONTHS_CHARGED%%"
@@ -122,14 +122,17 @@
           </div>
         </div>
         <button class="btn btn-sm" type="button" id="calc-add">Add another trade</button>
-        <fieldset class="calc-addons">
-          <legend>Optional extras</legend>
-          %%ADDON_CHECKBOXES%%
-          <div class="field" id="calc-locations-field">
-            <label>Locations, for an extra priced per location
-              <input id="calc-locations" type="number" min="1" max="10000" step="1" value="1" inputmode="numeric"></label>
-          </div>
-        </fieldset>
+        <details class="calc-fold" data-open-wide>
+          <summary>Add optional extras</summary>
+          <fieldset class="calc-addons">
+            <legend>Optional extras</legend>
+            %%ADDON_CHECKBOXES%%
+            <div class="field" id="calc-locations-field">
+              <label>Locations, for an extra priced per location
+                <input id="calc-locations" type="number" min="1" max="10000" step="1" value="1" inputmode="numeric"></label>
+            </div>
+          </fieldset>
+        </details>
       </div>
       <div class="calc-out" aria-live="polite">
         <p class="calc-sub" id="calc-period">Each month</p>
@@ -146,8 +149,8 @@
       </div>
     </form>
   </section>
-
-  <h2>Every rate</h2>
+  <details class="fold" data-open-wide>
+  <summary>Every rate</summary>
   <p class="muted">Restaurants and pharmacies are priced per location. Every
     other trade is priced by quote, sized to what you run:
     %%TALK_LINK%%</p>
@@ -157,9 +160,10 @@
       <tbody>%%RATE_ROWS%%</tbody>
     </table>
   </div>
-
-  <section class="panel chain-panel" id="chains" aria-labelledby="chain-title">
-    <h2 id="chain-title">Chains pay less for each location</h2>
+  </details>
+  <details class="fold" data-open-wide>
+  <summary>Chains pay less for each location</summary>
+  <section class="panel chain-panel" id="chains" aria-label="Chains pay less for each location">
     <p>Run %%CHAIN_FIRST%% or more restaurants or pharmacies and each one
       costs %%CHAIN_FIRST_OFF%%% less; at %%CHAIN_TOP%% or more, %%CHAIN_TOP_OFF%%%
       less. It comes off automatically, from the locations on your account,
@@ -179,9 +183,10 @@
       below %%CHAIN_TOP%% locations you pay the %%CHAIN_TOP%%-location price.
       Not on Starter, which is one location.</p>
   </section>
-
-  <section class="panel yearly-panel" id="yearly" aria-labelledby="yearly-title">
-    <h2 id="yearly-title">Pay yearly: %%MONTHS_COVERED%% months for the price of %%MONTHS_CHARGED%%</h2>
+  </details>
+  <details class="fold" data-open-wide>
+  <summary>Pay yearly: %%MONTHS_COVERED%% months for the price of %%MONTHS_CHARGED%%</summary>
+  <section class="panel yearly-panel" id="yearly" aria-label="Paying yearly">
     <p>Paying a year up front costs %%MONTHS_CHARGED%% times the monthly
       price: %%YEARLY_LABEL%%. It covers everything on the bill, after any
       chain discount. One restaurant is %%RESTAURANT_YEARLY%% a year;
@@ -195,8 +200,9 @@
     </ul>
     <p class="muted small" id="cancellation"><b>If you cancel:</b> %%CANCELLATION%%</p>
   </section>
-
-  <h2>Plans</h2>
+  </details>
+  <details class="fold" data-open-wide>
+  <summary>Plans: sensors, phone calls and terms</summary>
   <p class="muted">The plan sets how many sensors you can run and whether
     we phone people when a text goes unanswered. Starter is one flat price;
     Growth and Enterprise are priced by the rate card above.</p>
@@ -207,8 +213,9 @@
     </table>
   </div>
   <p class="muted small">%%ADDONS_WORDS%%</p>
-
-  <h2>Optional extras</h2>
+  </details>
+  <details class="fold" data-open-wide>
+  <summary>Optional extras</summary>
   <p class="muted">The Kitchen Safety Bundle (%%BUNDLE_PRICE%%) sends each
     day&rsquo;s fridge and freezer record to OmniArmor, which fills in its
     temperature-log checks. %%BUNDLE_INCLUDES%%. It is free during the
@@ -219,7 +226,8 @@
       <tbody>%%ADDON_ROWS%%</tbody>
     </table>
   </div>
-  <p class="muted small">Paying yearly: %%YEARLY_LABEL%%. There is no setup fee on any plan. A term longer than a year
+  </details>
+  <p class="muted small">There is no setup fee on any plan. A term longer than a year
     rises %%ESCALATOR%%% a year. Questions? <a href="/help">Read the help page</a>.</p>
 </main>
 

@@ -424,7 +424,7 @@
             </div>
           </form>
         </section>
-        <section class="card" id="find-vendor-clouds" data-group="setup" data-find="fetch from a sensor cloud vendor api poll sensorpush monnit gateway pull integration credentials" data-label="Fetch from a sensor cloud">
+        <section class="card" id="find-vendor-clouds" data-advanced="1" data-group="setup" data-find="fetch from a sensor cloud vendor api poll sensorpush monnit gateway pull integration credentials" data-label="Fetch from a sensor cloud">
           <div class="card-head">
             <span class="card-title">Fetch from a sensor cloud</span>
             <span class="card-note" id="poller-note"></span>
@@ -753,6 +753,30 @@
             </details>
             <button class="btn btn-primary" type="submit">Add it</button>
           </form>
+        </section>
+
+        <!-- The business key: only for connecting other software, so it
+             lives in Setup, not in the form a café uses to add its first
+             fridge. Shown once, here, when it is made. -->
+        <section class="card" id="find-business-key" data-group="setup" data-find="your business key master key api key connect other software scripts integration replace rotate" data-label="Your business key" data-pilot-private>
+          <div class="card-head"><span class="card-title">Your business key</span></div>
+          <p class="card-plain">Only for connecting other software to your
+             account. Most kitchens never need it. Sensors get keys of their
+             own when you add them.</p>
+          <div id="biz-key" class="banner warn" data-pilot-private hidden
+               role="status" aria-live="polite">
+            <div><b>Your business key</b></div>
+            <div class="digest" id="biz-key-value" tabindex="0"></div>
+            <div class="issued-actions">
+              <button class="btn btn-sm" type="button" id="biz-key-copy">Copy</button>
+              <button class="btn btn-sm" type="button" id="biz-key-done">Done</button>
+            </div>
+            <div class="issued-note">It is shown once. If it is lost, make a
+              new one below; the old one then stops working.</div>
+          </div>
+          <div class="row u-mt-8" id="biz-key-act" hidden>
+            <button class="btn btn-sm" type="button" data-rekey-business="1">Make a new business key</button>
+          </div>
         </section>
 
 

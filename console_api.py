@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
+from records import person_name
 from repairs import unit_state
 from telemetry import unit_condition
 from licenses import require_tenant
@@ -275,6 +276,12 @@ def console_overview(
         row["sites"] = sorted({u.get("site_name") or "" for u in incident.group_units} - {""})
         site_wide.append(row)
     open_incidents = STORE.open_incidents(tenant.tenant_id)
+    # Every alert that is not closed: nobody has answered it yet, or
+    # somebody has it and it is not fixed. The "Open alerts" tile said 0
+    # while Maya was handling one, because it counted only the first kind.
+    live_alerts = [i for i in STORE.incidents_for(tenant.tenant_id) if i.unresolved]
+    handled_by = sorted({person_name(i.acknowledged_by) or "somebody"
+                         for i in live_alerts if not i.open})
     escalation_due = sum(
         1
         for i in open_incidents
@@ -352,7 +359,10 @@ def console_overview(
                                     if s["condition"]["state"] == "watching"),
             "low_battery": sum(1 for s in sensors if s["battery_low"]),
             "unplaced_sensors": sum(1 for s in sensors if not s["site_id"]),
-            "open_incidents": len(open_incidents),
+            "open_incidents": len(live_alerts),
+            "unanswered_incidents": len(open_incidents),
+            "handled_incidents": len(live_alerts) - len(open_incidents),
+            "handled_by": handled_by,
             "escalation_due": escalation_due,
             "at_risk": at_risk,
             "readings_logged": logged,
@@ -510,6 +520,7 @@ def sensor_detail(
         "daily": _daily(sensor, unit),
         "breached_count": sum(1 for r in history if r.breached),
         "incidents": incidents,
-        "open_incidents": sum(1 for i in incidents if i["state"] == "open"),
+        # Not closed: unanswered, or somebody has it and it is not fixed.
+        "open_incidents": sum(1 for i in incidents if i["state"] != "resolved"),
         "forecast": forecast,
     }

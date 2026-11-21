@@ -74,6 +74,8 @@ async function boot() {
       select.appendChild(option);
     }
     const rest = info.sectors.filter((sector) => !listed.has(sector.key));
+    // "Other / not listed", last, for florists, caterers and the like.
+    if (info.other) rest.push(info.other);
     const other = $("industry_other");
     if (rest.length) {
       const more = document.createElement("option");

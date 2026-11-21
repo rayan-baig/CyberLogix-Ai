@@ -76,7 +76,8 @@ function stateOf(unit) {
     return { word: "Waiting for its first reading", cls: "w-quiet", why: c.line, first: true };
   }
   if (c.state === "watching" || c.state === "alert" || c.state === "paused") {
-    return { word: c.word, cls: WORD_CLASS[c.kind], why: c.line, state: c.state };
+    return { word: c.word, cls: WORD_CLASS[c.kind], why: c.line, state: c.state,
+             held: Boolean(c.held), overdue: Boolean(c.overdue) };
   }
   if (unit.hours_until_breach != null && unit.hours_until_breach <= 6) {
     return { word: "Heading the wrong way", cls: "w-soon",
@@ -186,6 +187,30 @@ function verdict(units, jobs, paused, live) {
           What to do is written under each one.</p>`;
     return;
   }
+  // Out of range and not alerted yet (inside its wait, or held after
+  // somebody closed it by hand): never "Nothing is spoiling" while a
+  // fridge is warm. It says which one, how warm, and when we alert.
+  const out = units.filter((u) => (u.condition || {}).state === "watching");
+  if (out.length) {
+    const c = CLXWords.condition(out[0]);
+    const name = whichOne(out[0], units);
+    box.className = c.overdue ? "verdict bad" : "verdict watch";
+    if (out.length > 1) {
+      box.innerHTML =
+        `<h1>${out.length} fridges and freezers are out of range</h1>
+         <p>Nobody has been texted about them yet. Each one says below when
+            we will. Check the doors are shut and nothing warm went in.</p>`;
+    } else if (c.held) {
+      box.innerHTML =
+        `<h1>${esc(name)} is still ${c.word === "Too cold" ? "too cold" : "too warm"}</h1>
+         <p>${esc(c.line)}</p>`;
+    } else {
+      box.innerHTML =
+        `<h1>${esc(name)} is ${c.word === "Too cold" ? "too cold" : "too warm"}</h1>
+         <p>${esc(c.line)}${c.overdue ? "" : " Nobody has been texted yet: if it comes back in range first, nobody is."}</p>`;
+    }
+    return;
+  }
   if (jobs.length) {
     box.className = "verdict watch";
     box.innerHTML =
@@ -266,9 +291,15 @@ function render(data) {
     const name = whichOne(unit, units);
     // Out of range inside its wait: nobody has been texted yet, and this
     // says exactly when we will, as the console's card does.
-    if (state.state === "watching") {
+    if (state.state === "watching" && state.held) {
       jobs.push({ now: false, mark: "!",
-        what: `<strong>${esc(name)}</strong>: watching. ${esc(state.why)}`,
+        what: `<strong>${esc(name)}</strong>: ${esc(state.why)}`,
+        todo: "Keep the food somewhere cold until it is back in range. It "
+            + "closes by itself once it is cold, and a reading far past its "
+            + "limit alerts everyone at once." });
+    } else if (state.state === "watching") {
+      jobs.push({ now: Boolean(state.overdue), mark: "!",
+        what: `<strong>${esc(name)}</strong>: ${state.overdue ? "" : "watching. "}${esc(state.why)}`,
         todo: "Check the door is shut and nothing warm went in. If it comes "
             + "back in range first, nobody is texted." });
     } else if (state.cls === "w-warm" && !alerted.has(unit.sensor_id)
@@ -357,7 +388,8 @@ async function load() {
                             { headers: { Authorization: "Bearer " + key } });
     if (got.status === 401) { location.href = "/console"; return; }
     if (!got.ok) throw new Error("could not read your fridges");
-    render(await got.json());
+    lastData = await got.json();
+    render(lastData);
   } catch (err) {
     // Never a blank page and never a stale one presented as current: the
     // dangerous failure here is a screen that looks fine because it is
@@ -373,5 +405,14 @@ async function load() {
   }
 }
 
-load();
-setInterval(load, 30000);
+/* Asked again every 30 seconds, and just after any "we'll text at" time,
+   so the page turns into the alert as it opens, not half a minute later. */
+const POLL_MS = 30000;
+let pollTimer = null;
+let lastData = null;
+async function tick() {
+  clearTimeout(pollTimer);
+  await load();
+  pollTimer = setTimeout(tick, CLXWords.pollDelay((lastData || {}).sensors, POLL_MS));
+}
+tick();

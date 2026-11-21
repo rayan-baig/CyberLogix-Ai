@@ -225,13 +225,15 @@ def test_no_new_alert_or_text_seconds_after_close_anyway(api, cafe, phone):
         "close_anyway": True, "note": "Called for a repair"})
 
     still = pulse(api, headers, 48.4)
-    far = pulse(api, headers, 60.0)      # far past the limit: still held
+    again = pulse(api, headers, 49.0)
 
     assert still["status"] == "WATCHING", still
-    assert far["status"] == "WATCHING", far
+    assert again["status"] == "WATCHING", again
     assert len(phone["sms"]) == texts_before, "everyone was texted again"
     assert STORE.latest_unresolved_incident("WALK-IN") is None
     assert "closed by hand" in still["message"]
+    # A reading far past the limit after the close is a different matter:
+    # tests/test_held_close_and_live_counts.py.
 
 
 def test_it_alerts_again_once_its_wait_has_passed_after_the_close(api, cafe, phone):

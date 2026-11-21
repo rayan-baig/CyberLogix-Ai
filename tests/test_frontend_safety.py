@@ -187,7 +187,10 @@ def test_the_business_key_from_sign_up_is_shown_on_the_page(api):
     log stays in that log."""
     page = served_page(api, "/console")
 
-    assert 'showIssuedKey("this business (master key)", made.api_key)' in page
+    assert 'showIssuedKey("this business (master key)", made.api_key' in page
+    # In Setup, in its own card, not in the form for adding a fridge.
+    assert 'id="find-business-key" data-group="setup"' in page
+    assert 'id="biz-key-value"' in page
     assert "console.info" not in page and "console.log" not in page
 
 

@@ -112,12 +112,15 @@
     // the console's tabs or the front page's first-screen facts: the robot
     // moves to a free corner instead, and looks again as the page scrolls
     // (core 1.1.1). On a phone it sat on "Everything" and on "5 alert
-    // calls"; on a desktop on "Advanced".
+    // calls"; on a desktop on "Advanced"; and on the Getting started card.
     avoid: ["#site-wide-banner", "#stale-banner", "#account-banner", "#delivery-banner",
       "#offline-banner", "#terms-banner", "#role-banner", "#needs-wrap", ".need-acts",
       "#needs-bar", ".needs-bar-acts", ".finder", ".f-tab",
       ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#facts", ".facts",
-      ".kicker", "#add-form button[type=submit]", ".fix-dialog"],
+      ".kicker", "#add-form button[type=submit]", ".fix-dialog",
+      // The Getting started checklist and its buttons (Add a sensor, Add
+      // me, Send a test): a new business's first screen.
+      "#first-day", ".checklist-acts", ".btn-go"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

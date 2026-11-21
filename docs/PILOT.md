@@ -37,6 +37,25 @@ app's `avoid` list adds the console's tabs (`.finder`, `.f-tab`), the pinned "Ne
 bar and its buttons, the "It's fixed" dialog and the front page's first-screen facts, and its
 `keyNote` says in one sentence what an AI key is and where to get one.
 
+**Always wholly on the screen (3.23.0).** When every corner is busy, core 1.1.1 "tucks" the
+robot away by sliding it past the screen's edge (`.pilot-peek .pilot-launcher { transform:
+translateX(var(--pilot-tuck)) }` in `static/pilot/pilot.css`), so only a slice shows: on a 375px
+phone it sat at 355–411px, on a 1366px desktop at 1330–1418px. The core has no setting to turn
+that off, so this app's own stylesheet (`static/theme.css`, end) does it without editing a core
+file: a 16px margin on every screen (`--pilot-gap: 16px`), and, tucked away, the robot shrinks
+into its corner (`transform: scale(.62)`, from that corner) instead of sliding out.
+`--pilot-peek-show` is set to the width of the shrunken robot plus its margin (71px on a
+desktop, 51px on a phone), which is what the core's `peekBox` counts when it looks for a corner
+where the tucked robot covers nothing. The config's `avoid` list also keeps it off the Getting
+started card (`#first-day`) and its buttons.
+
+*The core change that would make this a setting:* a `peek: "edge" | "shrink"` option (or a
+`keepInside: true`) read by `pilot.js`, which sets a class such as `.pilot-peek-shrink` on the
+root; `pilot.css` would then scale the launcher from its corner under that class instead of
+translating it, and `pilot-mascot.js` `peekBox` would return the shrunken box inside the margin
+(`left = view.width - gap - size.width * scale`) rather than a slice at the edge. Until a core
+release has it, the app stylesheet above is the whole change.
+
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
 `static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its

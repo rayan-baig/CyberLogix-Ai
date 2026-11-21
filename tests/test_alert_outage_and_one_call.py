@@ -94,8 +94,10 @@ def _render_note(row):
     esc_end = src.index("\n\n", esc_start)
     fn_start = src.index("function textsFailedNote(i)")
     fn_end = src.index("\n}\n", fn_start) + 3
+    # The shared formatter (static/words.js) says the time: "5:50 PM".
+    words = (Path(__file__).resolve().parent.parent / "static" / "words.js").read_text()
     harness = (
-        src[esc_start:esc_end] + "\n" + src[fn_start:fn_end]
+        words + "\n" + src[esc_start:esc_end] + "\n" + src[fn_start:fn_end]
         + f"\nconsole.log(JSON.stringify(textsFailedNote({json.dumps(row)})));\n"
     )
     done = subprocess.run([node, "-e", harness], capture_output=True, text=True,

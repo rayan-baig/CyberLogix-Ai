@@ -34,6 +34,7 @@ test("a person's name, not an address", () => {
 });
 
 test("a unit's condition, in calm words", () => {
+  W.setNow(() => Date.parse("2026-11-21T15:40:00Z"));   // inside the wait
   assert.equal(W.condition({ condition: { state: "waiting_first" } }).word, "Waiting for its first reading");
   assert.equal(W.condition({ condition: { state: "ok" } }).word, "Fine");
   const watching = W.condition({ condition: { state: "watching", too: "warm",
@@ -50,9 +51,58 @@ test("a unit's condition, in calm words", () => {
     assert.notEqual(c.word, c.word.toUpperCase(), state);
     assert.ok(!/BREACHING|OFFLINE|NO FORECAST|tuned/.test(c.word + c.line), state);
   }
+  W.setNow(null);
 });
 
 test("a table for the server to compare", () => {
   const values = [0, 0.4, 0.5, 0.6, 1.5, 2.5, 6, 6.49, 6.5, 7.5, 20, 59.4, 59.5, 60, 89, 90, 150, 1440];
   console.log("MINUTES " + JSON.stringify(values.map((v) => [v, W.minutes(v)])));
+});
+
+// --- round 5: the clock, the hold after a close by hand, and padding ---
+
+test("a time never has a leading zero", () => {
+  const pm = W.clock("2026-11-21T17:50:00Z");
+  assert.ok(!/^0\d:/.test(pm), pm);
+  assert.ok(!/(^|\s)0\d:\d\d/.test(W.dateTime("2026-11-21T17:50:00Z")), W.dateTime("2026-11-21T17:50:00Z"));
+  assert.ok(!/(^|\s)0\d:\d\d/.test(W.dateTime("2026-11-21T09:05:00Z", { year: true })));
+});
+
+test("once the 'we'll text at' time has passed, it says we are alerting now", () => {
+  const unit = { condition: { state: "watching", too: "warm",
+    out_since: "2026-11-21T17:26:00Z", alert_at: "2026-11-21T17:47:00Z" } };
+  W.setNow(() => Date.parse("2026-11-21T17:46:00Z"));
+  assert.match(W.condition(unit).line, /We'll text at/);
+  W.setNow(() => Date.parse("2026-11-21T17:47:30Z"));
+  const late = W.condition(unit);
+  assert.ok(!/We'll text at/.test(late.line), late.line);
+  assert.match(late.line, /alerting now/);
+  assert.equal(late.word, "Too warm");
+  W.setNow(null);
+});
+
+test("pages ask again just after the alert time, not 20 seconds later", () => {
+  const sensors = [{ condition: { state: "watching", alert_at: "2026-11-21T17:47:00Z" } },
+                   { condition: { state: "ok" } }];
+  W.setNow(() => Date.parse("2026-11-21T17:46:55Z"));
+  const ms = W.pollDelay(sensors, 20000);
+  assert.ok(ms > 5000 && ms < 8000, String(ms));
+  W.setNow(() => Date.parse("2026-11-21T17:47:10Z"));
+  assert.ok(W.pollDelay(sensors, 20000) <= 5000);
+  W.setNow(() => Date.parse("2026-11-21T17:40:00Z"));
+  assert.equal(W.pollDelay(sensors, 20000), 20000);
+  assert.equal(W.pollDelay([], 20000), 20000);
+  W.setNow(null);
+});
+
+test("held after a close by hand: who, when, how warm, and when we alert again", () => {
+  W.setNow(() => Date.parse("2026-11-21T17:50:00Z"));
+  const c = W.condition({ condition: { state: "watching", too: "warm", held_after_close: true,
+    closed_by: "Maya", closed_at: "2026-11-21T17:48:00Z", out_since: "2026-11-21T17:20:00Z",
+    alert_at: "2026-11-21T18:08:00Z", temperature_display: 47.6, temperature_unit: "F",
+    far_display: 56 } });
+  assert.match(c.line, /^Closed by hand by Maya at .+\. Still 47\.6°F\. We'll alert again at .+\.$/);
+  assert.ok(!/spoil|emergency/i.test(c.line));
+  assert.equal(c.held, true);
+  W.setNow(null);
 });

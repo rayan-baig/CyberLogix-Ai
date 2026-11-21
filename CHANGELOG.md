@@ -4,6 +4,59 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.23.0 — 2026-11-21
+
+What the latest strict review found, fixed. No price or plan term has
+changed.
+
+- **No "Nothing is spoiling" while a fridge is warm.** After **Close it
+  anyway**, /today, the fridge's card and Problems say who closed it, when,
+  how warm it is now and when we alert again: "Closed by hand by Maya at
+  5:48 PM. Still 47.6°F. We'll alert again at 6:08 PM, or at once if it
+  reaches 56°F." While any fridge is out of range, /today's headline names
+  it instead of saying nothing is spoiling.
+- **A reading far past the limit ends the wait after a close by hand.** 15°F
+  or more over the limit is never a door: it alerts everyone at once, even
+  just after somebody closed the alert by hand. (If it was already that far
+  out when they closed it, it alerts once it has come back under that line
+  and gone far out again, or when the usual wait runs out.)
+- **The "Open alerts" tile counts every alert that is not closed**, with who
+  has it: "1 being handled by Maya". It said 0 while Maya was handling one.
+  A fridge's own page counts the same way.
+- **The screen turns into the alert as it opens.** The console and /today ask
+  again just after a "we'll text at" time instead of up to 20 or 30 seconds
+  later, and if that time has passed they say "It stayed out, so we are
+  alerting now", never "we'll text at 5:47 PM" at 5:48. With a one-minute
+  wait the words count down ("Watching for 40 more seconds") instead of
+  "out for 1 minute, we alert if it stays out for 1 minute".
+- **Times read "5:50 PM", not "05:50 PM"**, everywhere: the logs, the
+  readings table, the audit trail and the proof report use the one shared
+  formatter.
+- **A lighter first day.** Until Getting started is done, the console is the
+  checklist and your fridges, with everything else behind **More**; the
+  summary tiles wait until then too. The business key has its own card in
+  Setup instead of sitting in the form for adding a fridge. "Fetch from a
+  sensor cloud" and the trial's "5 phone calls" are each said once. The
+  sensor-cloud card is under **Advanced** for a small business. With no
+  fridge yet, the list's search, filters and table view are not shown.
+  Sign-up's **Something else** list ends with **Other / not listed**, for
+  florists, caterers and the like, on the food fridge and freezer limits.
+- **The Fridges tab counts fridges** (it said 2 for one: it counted the
+  cards). The Alerts tab shows how many alerts are open, on a phone too.
+- **What you pay on a trial shows the plan that fits.** A one-fridge bakery
+  sees Starter at $59 a month after the trial, not the $149 restaurant
+  location price it would only pay on Growth. A display fix: every price is
+  as it was.
+- **Pricing fits a phone.** The rates, chain discounts, paying yearly, the
+  plans and the extras are folds (open on a desktop), and the opening lines
+  no longer repeat them: about 2,900px on a phone, from about 10,200.
+- **Pilot stays on the screen.** When every corner is busy, the robot now
+  shrinks into its corner, 16px from each edge, instead of hanging half off
+  the screen. Done in CyberLogix's own stylesheet; the shared core is
+  unchanged (docs/PILOT.md says what a core setting for it would look like).
+  It also keeps off the Getting started card.
+
+
 ## 3.22.0 — 2026-11-21
 
 What the latest strict review found, fixed. No price or plan term has
