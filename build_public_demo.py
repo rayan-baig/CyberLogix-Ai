@@ -756,6 +756,13 @@ def build_help(served: str) -> str:
     circuit = (ROOT / "static" / "circuit.js").read_text().replace("</script", "<\\/script")
     page = page.replace('<script src="/static/circuit.js" defer></script>\n', "")
     page = page.replace("</body>", f"<script>\n{circuit}\n</script>\n</body>", 1)
+    # The sensor guides' folds: the script that opens the one a link names,
+    # written in like circuit.js (/help/sensors only).
+    folds = '<script src="/static/help-sensors.js" defer></script>\n'
+    if folds in page:
+        script = (ROOT / "static" / "help-sensors.js").read_text().replace("</script", "<\\/script")
+        page = page.replace(folds, "")
+        page = page.replace("</body>", f"<script>\n{script}\n</script>\n</body>", 1)
     logo = (ROOT / "static" / "logo.svg").read_text()
     page = page.replace("/static/logo.svg", "data:image/svg+xml;base64,"
                         + base64.b64encode(logo.encode()).decode())

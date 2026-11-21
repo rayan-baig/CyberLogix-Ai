@@ -457,28 +457,34 @@ def easiest_html(base: str) -> str:
 
 
 def render_html(base: str) -> str:
-    """The guides as the page's body. Everything is escaped."""
+    """The guides as the page's body. Everything is escaped.
+
+    Each guide is a fold (a <details> carrying the guide's id), so a phone
+    shows the six as a short list instead of thirteen thousand pixels of
+    steps. A link to one (/help/sensors#monnit) opens it: help-sensors.js
+    opens the fold the address names, on arrival and on every change. "What
+    you need" keeps its heading and first lines on screen and folds the
+    rest on a phone (opened on a wide screen by the same script)."""
     e = html.escape
-    contents = "".join(
-        f'<a class="btn btn-sm" href="#{e(g["id"])}">{e(g["title"].split(" (")[0])}</a>'
-        for g in GUIDES)
     out = [easiest_html(base),
-           f'<div class="panel">{what_you_need_html(2)}</div>',
+           f'<div class="panel">{what_you_need_html(2, folded=True)}</div>',
            # The developer detail, lower down, for whoever sets up a
-           # gateway or writes a script. Not folded: links elsewhere point
-           # straight at the guides below.
+           # gateway or writes a script: one fold per guide, each with
+           # the id links elsewhere point at.
            '<h2 class="tech-h" id="tech">For tech-savvy setups</h2>'
            "<p>Every way a sensor can report, with the exact address, "
-           "header and field the product reads.</p>",
-           f'<div class="help-links">{contents}</div>']
+           "header and field the product reads. Open the one for your "
+           "sensor.</p>"]
     for guide in GUIDES:
         steps = "".join(f"<li>{e(step)}</li>" for step in _steps(guide, base))
         example = e(json.dumps(guide["example"], indent=2))
         out.append(
-            f'<h2 id="{e(guide["id"])}">{e(guide["title"])}</h2>'
+            f'<details class="fold guide" id="{e(guide["id"])}">'
+            f'<summary><h2>{e(guide["title"])}</h2></summary>'
             f'<div class="panel"><p>{e(guide["for"])}</p>'
             f'<ol class="steps">{steps}</ol>'
-            f'<p>What one message looks like:</p><pre>{example}</pre></div>')
+            f'<p>What one message looks like:</p><pre>{example}</pre></div>'
+            "</details>")
     return "\n".join(out)
 
 

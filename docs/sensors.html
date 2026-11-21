@@ -1125,10 +1125,18 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .brand-name { font-size: 18px; }
   #term-toggle { display: none; }
   .card { padding: 14px; }
-  .tiles { gap: 8px; }
-  .tiles > .tile { flex: 1 1 132px; }
-  .tile { padding: 11px 12px; }
-  .tile-value { font-size: 22px; }
+  /* The seven summary tiles as a compact two-column grid: about a third
+     of a phone's screen, not most of it. The odd one out spans the row. */
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px; }
+  .tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .tile {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 7px;
+    align-content: start; padding: 8px 10px 9px; border-radius: 10px; box-shadow: none;
+  }
+  /* The figure and its few words on one line: "1 of 1 under watch". */
+  .tile-label { grid-column: 1 / -1; font-size: 9.5px; letter-spacing: .08em; margin-bottom: 3px; }
+  .tile-value { font-size: 20px; }
+  .tile-foot { font-size: 12px; line-height: 1.3; margin-top: 0; }
   .fleet { grid-template-columns: minmax(0, 1fr); }
   #drawer { width: 100%; border-left: none; }
   /* A phone-sized table has to scroll sideways rather than squash. */
@@ -1801,37 +1809,6 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
    buttons are on a phone. */
 body.wall .needs-bar-acts { display: none; }
 
-/* Pilot's robot stays wholly on the screen, 16px from each edge, on a
-   phone and on a desktop. The shared core (static/pilot/pilot.css, not
-   edited here) tucks it away when every corner is busy by sliding it
-   past the screen's edge, so only a slice shows: on a 375px phone it sat
-   at 355-411px, on a 1366px desktop at 1330-1418px. Here it shrinks into
-   its corner instead, fully inside the 16px margin. --pilot-peek-show is
-   the width the core's placement counts for that shrunken robot (its
-   margin plus 62% of its size), so it still looks for a free corner the
-   same way. Core 1.1.1 has no setting for this; see docs/PILOT.md. */
-:root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 71px; }
-@media (max-width: 720px) {
-  :root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 51px; }
-}
-:root .pilot-root.pilot-peek .pilot-launcher {
-  transform: scale(.62) !important; transform-origin: 100% 100%;
-}
-:root .pilot-root.pilot-peek.pilot-at-bl .pilot-launcher { transform-origin: 0 100%; }
-:root .pilot-root.pilot-peek.pilot-at-tr .pilot-launcher { transform-origin: 100% 0; }
-:root .pilot-root.pilot-peek.pilot-at-tl .pilot-launcher { transform-origin: 0 0; }
-:root .pilot-root.pilot-peek:not(.pilot-typing) .pilot-launcher:hover,
-:root .pilot-root.pilot-peek:not(.pilot-typing) .pilot-launcher:focus-visible {
-  transform: scale(1) !important;
-}
-/* On a phone the Getting started card is as wide as the screen, so no
-   corner is free of it and the robot shrinks into the bottom corner: the
-   card's words and buttons stop short of that corner, so it sits on the
-   card's empty edge, never on a step or a button. */
-@media (max-width: 720px) {
-  :root.pilot-on #first-day { padding-right: 46px; }
-}
-
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.
@@ -2053,6 +2030,24 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 .easiest code { word-break: break-all; }
 .easiest-help { margin-top: 14px; }
 .tech-h { margin-top: 40px; }
+/* Each guide is a fold (help-sensors.js opens the one a link names). Its
+   summary is the guide's heading, the same look as /pricing's folds. */
+details.guide > summary h2 { margin: 0; font: inherit; color: inherit; }
+details.guide > .panel { margin-top: 0; }
+details.guide:target > summary { border-color: var(--accent); }
+/* A link to a guide lands it below the sticky top bar, not under it. */
+details.guide, #what-you-need, #tech { scroll-margin-top: 84px; }
+/* "What you need" here keeps its heading and first lines, and folds the
+   rest behind "More" on a phone (opened on a wide screen). */
+.need details.more > summary {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 16px; margin-top: 4px;
+  border: 1px solid var(--border-lit); border-radius: 999px;
+  color: var(--accent); font-size: 14px; list-style: none;
+}
+.need details.more > summary::-webkit-details-marker { display: none; }
+.need details.more > summary::after { content: "+"; font-size: 16px; }
+.need details.more[open] > summary { display: none; }
 
 /* --- pricing folds -----------------------------------------------------
    Each long section of /pricing is a fold with a heading-sized summary:
@@ -2101,34 +2096,33 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
     further down, and every step there names the exact address, header and
     field the product reads.</p>
   <section class="panel easiest" id="easiest"><h2>Easiest way: no coding</h2><p>If your sensor already sends its readings to its maker's app or cloud, you do not need to write anything. You copy one key from us and paste it in one place.</p><ol class="steps"><li>In the console, press <b>Add a fridge or freezer</b>, say where it is, and copy the sensor key it shows you.</li><li>Then, whichever your sensor's app offers:<ul><li><b>A webhook or “HTTP push” setting.</b> Paste this address: <code>https://cyberlogix.example.com/api/sensor-pulse</code>, and the key as the header <code>X-CyberLogix-Sensor-Key</code>.</li><li><b>An API key in the maker's cloud.</b> In the console, press the <b>Advanced</b> tab, open <b>Fetch from a sensor cloud</b>, choose the kind of cloud and paste that key. We fetch the readings every few minutes.</li></ul></li><li>Wait a few minutes for the first reading. The console ticks <b>First reading received</b> when it arrives.</li></ol><p class="easiest-help">Not sure which kind yours is? <a href="help.html">Ask us from the help page</a> and we will help you set it up.</p></section>
-<div class="panel"><section class="need" id="what-you-need"><h2>What you need</h2><p>CyberLogix does not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at us. We watch the readings and alert your team.</p><h3>Which sensors work</h3><ul class="need-kinds"><li><b>A sensor that can send to a web address.</b> Many Wi-Fi and gateway sensors can send each reading to a web address you give them (often called a webhook or HTTP push). Most devices that can be set up with a URL work this way.</li><li><b>A sensor whose maker&#x27;s cloud we can read.</b> Some sensors only send to their maker&#x27;s own app. If that cloud lets you read readings with a web address and a key (an API), we fetch them every few minutes: you paste the key, we do the rest.</li></ul><h3>Roughly what they cost</h3><p>Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commercial one with a probe for a walk-in or freezer about $100 to $250. Some kinds also need a small gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Prices vary by brand and change; check with the seller before you buy. Our price does not include sensors.</p><h3>Setting it up, step by step</h3><ol class="steps"><li>Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker&#x27;s cloud has an API.</li><li>Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.</li><li>In CyberLogix, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.</li><li>In the sensor&#x27;s app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker&#x27;s cloud, add it under Fetch from a sensor cloud, in the console&#x27;s Advanced tab.</li><li>Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.</li><li>Add the people who should get alerts, and send a test alert to check the texts arrive.</li></ol><h3>If the power or internet goes off</h3><p>Your sensors send readings over your internet. If the power or the internet at your site goes off, readings stop arriving, and after 30 minutes with nothing from a sensor we text everyone on call to say it has gone quiet, so you hear about the outage too. Our alerts are sent from our servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but your Wi-Fi router or gateway may not unless it is on a backup battery; some sensors store readings and send them when the connection comes back.</p></section></div>
-<h2 class="tech-h" id="tech">For tech-savvy setups</h2><p>Every way a sensor can report, with the exact address, header and field the product reads.</p>
-<div class="help-links"><a class="btn btn-sm" href="#native">Any device or script that can send a web request</a><a class="btn btn-sm" href="#webhook">Devices that can only put the key in the body</a><a class="btn btn-sm" href="#monnit">Monnit sensors, through iMonnit</a><a class="btn btn-sm" href="#sensorpush">SensorPush</a><a class="btn btn-sm" href="#vendor-cloud">Any vendor cloud you can read with a web address</a><a class="btn btn-sm" href="#anything">Anything else that sends its own JSON</a></div>
-<h2 id="native">Any device or script that can send a web request</h2><div class="panel"><p>Gateways and hubs that let you set the address, headers and body of what they send; a Raspberry Pi; your own script.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits. Give it a Sensor ID you will recognise, such as WALKIN-1, or leave it blank and one is made from the location. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>Set the device to send an HTTPS POST to https://cyberlogix.example.com/api/sensor-pulse every few minutes.</li><li>Add two headers: X-CyberLogix-Sensor-Key with the sensor key, and Content-Type: application/json.</li><li>Send a JSON body with sensor_id (the Sensor ID from step 1) and the temperature as temperature_fahrenheit or temperature_celsius. You may add humidity_percent, battery_percent and signal_percent; a battery level lets us warn you before it goes flat.</li><li>Check the answer. 200 means the reading was taken and the unit shows it in the console. 401 means the key was not recognised; 403 means the key belongs to a different unit; 404 means no unit has that Sensor ID.</li></ol><p>What one message looks like:</p><pre>{
+<div class="panel"><section class="need" id="what-you-need"><h2>What you need</h2><p>CyberLogix does not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at us. We watch the readings and alert your team.</p><details class="more" data-open-wide><summary>Which sensors, what they cost</summary><h3>Which sensors work</h3><ul class="need-kinds"><li><b>A sensor that can send to a web address.</b> Many Wi-Fi and gateway sensors can send each reading to a web address you give them (often called a webhook or HTTP push). Most devices that can be set up with a URL work this way.</li><li><b>A sensor whose maker&#x27;s cloud we can read.</b> Some sensors only send to their maker&#x27;s own app. If that cloud lets you read readings with a web address and a key (an API), we fetch them every few minutes: you paste the key, we do the rest.</li></ul><h3>Roughly what they cost</h3><p>Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commercial one with a probe for a walk-in or freezer about $100 to $250. Some kinds also need a small gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Prices vary by brand and change; check with the seller before you buy. Our price does not include sensors.</p><h3>Setting it up, step by step</h3><ol class="steps"><li>Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker&#x27;s cloud has an API.</li><li>Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.</li><li>In CyberLogix, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.</li><li>In the sensor&#x27;s app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker&#x27;s cloud, add it under Fetch from a sensor cloud, in the console&#x27;s Advanced tab.</li><li>Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.</li><li>Add the people who should get alerts, and send a test alert to check the texts arrive.</li></ol><h3>If the power or internet goes off</h3><p>Your sensors send readings over your internet. If the power or the internet at your site goes off, readings stop arriving, and after 30 minutes with nothing from a sensor we text everyone on call to say it has gone quiet, so you hear about the outage too. Our alerts are sent from our servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but your Wi-Fi router or gateway may not unless it is on a backup battery; some sensors store readings and send them when the connection comes back.</p></details></section></div>
+<h2 class="tech-h" id="tech">For tech-savvy setups</h2><p>Every way a sensor can report, with the exact address, header and field the product reads. Open the one for your sensor.</p>
+<details class="fold guide" id="native"><summary><h2>Any device or script that can send a web request</h2></summary><div class="panel"><p>Gateways and hubs that let you set the address, headers and body of what they send; a Raspberry Pi; your own script.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits. Give it a Sensor ID you will recognise, such as WALKIN-1, or leave it blank and one is made from the location. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>Set the device to send an HTTPS POST to https://cyberlogix.example.com/api/sensor-pulse every few minutes.</li><li>Add two headers: X-CyberLogix-Sensor-Key with the sensor key, and Content-Type: application/json.</li><li>Send a JSON body with sensor_id (the Sensor ID from step 1) and the temperature as temperature_fahrenheit or temperature_celsius. You may add humidity_percent, battery_percent and signal_percent; a battery level lets us warn you before it goes flat.</li><li>Check the answer. 200 means the reading was taken and the unit shows it in the console. 401 means the key was not recognised; 403 means the key belongs to a different unit; 404 means no unit has that Sensor ID.</li></ol><p>What one message looks like:</p><pre>{
   &quot;sensor_id&quot;: &quot;WALKIN-1&quot;,
   &quot;temperature_fahrenheit&quot;: 2.5,
   &quot;battery_percent&quot;: 88
-}</pre></div>
-<h2 id="webhook">Devices that can only put the key in the body (Elitech, Dickson and others)</h2><div class="panel"><p>Wi-Fi and cellular loggers whose cloud forwards each reading to a web address, with a form for the body but no way to add headers.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>In the device&#x27;s or vendor&#x27;s forwarding settings, set the address to https://cyberlogix.example.com/api/v1/bridge/sensor-webhook-ingest and the method to POST, sending JSON.</li><li>Shape the body with these fields: device_sn (the serial from step 1), api_key_token (the sensor key), reading_value (the number) and metric_type, which says what the number is: temperature_f, temperature_c, humidity_pct, battery_pct, signal_pct. Optionally location_label.</li><li>Send temperature as its own message from humidity or battery: one reading per message.</li><li>Check the answer. 200 means it was taken. 202 means the serial is not on any unit yet: the reading is held under Devices knocking in the console, where one tap adds it and keeps what it sent. 401 means the key was not recognised.</li></ol><p>What one message looks like:</p><pre>{
+}</pre></div></details>
+<details class="fold guide" id="webhook"><summary><h2>Devices that can only put the key in the body (Elitech, Dickson and others)</h2></summary><div class="panel"><p>Wi-Fi and cellular loggers whose cloud forwards each reading to a web address, with a form for the body but no way to add headers.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>In the device&#x27;s or vendor&#x27;s forwarding settings, set the address to https://cyberlogix.example.com/api/v1/bridge/sensor-webhook-ingest and the method to POST, sending JSON.</li><li>Shape the body with these fields: device_sn (the serial from step 1), api_key_token (the sensor key), reading_value (the number) and metric_type, which says what the number is: temperature_f, temperature_c, humidity_pct, battery_pct, signal_pct. Optionally location_label.</li><li>Send temperature as its own message from humidity or battery: one reading per message.</li><li>Check the answer. 200 means it was taken. 202 means the serial is not on any unit yet: the reading is held under Devices knocking in the console, where one tap adds it and keeps what it sent. 401 means the key was not recognised.</li></ol><p>What one message looks like:</p><pre>{
   &quot;device_sn&quot;: &quot;ELITECH-00:1B:44:11&quot;,
   &quot;api_key_token&quot;: &quot;(sensor key)&quot;,
   &quot;reading_value&quot;: 3.1,
   &quot;metric_type&quot;: &quot;temperature_c&quot;
-}</pre></div>
-<h2 id="monnit">Monnit sensors, through iMonnit</h2><div class="panel"><p>Monnit wireless sensors and gateways, with an iMonnit account.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. For Monnit the serial is the sensor&#x27;s SensorID, the number iMonnit shows for it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>In iMonnit, find where it sends sensor readings on to a web address (a webhook) and give it this address: https://cyberlogix.example.com/api/v1/bridge/any?k=(the sensor key).</li><li>If iMonnit lets you add a header, send the key in X-CyberLogix-Sensor-Key instead and leave ?k= off the address: an address with a key in it ends up in logs.</li><li>Nothing needs mapping. We read SensorID as the serial, DataValues as the reading, DataTypes for Celsius or Fahrenheit, MessageDate as when it was taken, and Battery and SignalStrength as battery and signal.</li><li>One webhook for several sensors: a sensor key only reports for its own unit and refuses the rest with 403. Send the business key in X-CyberLogix-Key instead, and replace it from the console if it is ever seen by somebody it should not be.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
+}</pre></div></details>
+<details class="fold guide" id="monnit"><summary><h2>Monnit sensors, through iMonnit</h2></summary><div class="panel"><p>Monnit wireless sensors and gateways, with an iMonnit account.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. For Monnit the serial is the sensor&#x27;s SensorID, the number iMonnit shows for it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>In iMonnit, find where it sends sensor readings on to a web address (a webhook) and give it this address: https://cyberlogix.example.com/api/v1/bridge/any?k=(the sensor key).</li><li>If iMonnit lets you add a header, send the key in X-CyberLogix-Sensor-Key instead and leave ?k= off the address: an address with a key in it ends up in logs.</li><li>Nothing needs mapping. We read SensorID as the serial, DataValues as the reading, DataTypes for Celsius or Fahrenheit, MessageDate as when it was taken, and Battery and SignalStrength as battery and signal.</li><li>One webhook for several sensors: a sensor key only reports for its own unit and refuses the rest with 403. Send the business key in X-CyberLogix-Key instead, and replace it from the console if it is ever seen by somebody it should not be.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
   &quot;SensorID&quot;: &quot;123456&quot;,
   &quot;DataValues&quot;: &quot;3.4&quot;,
   &quot;DataTypes&quot;: &quot;TemperatureC&quot;,
   &quot;MessageDate&quot;: &quot;2026-11-03 06:00:00&quot;,
   &quot;Battery&quot;: &quot;92&quot;,
   &quot;SignalStrength&quot;: &quot;80&quot;
-}</pre></div>
-<h2 id="sensorpush">SensorPush</h2><div class="panel"><p>SensorPush sensors with a G1 gateway, which reports to SensorPush&#x27;s own cloud and not to any address you choose.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. For SensorPush the serial is the sensor&#x27;s id as its cloud names it.</li><li>The gateway cannot be pointed at us, so the readings have to be fetched from SensorPush&#x27;s cloud and passed on. Our fetcher (Fetch from a sensor cloud, in the next guide) only sends GET requests with headers you fix in advance. If the account&#x27;s data can be read that way, use it. If reading it needs a sign-in step that hands out a short-lived token, or a POST, the fetcher cannot do it: run a small relay of your own that reads SensorPush and sends each reading on, as below.</li><li>The relay sends an HTTPS POST to https://cyberlogix.example.com/api/v1/bridge/any with the sensor key in the X-CyberLogix-Sensor-Key header (or the business key in X-CyberLogix-Key, for several sensors).</li><li>Each reading as JSON with sensor (the sensor&#x27;s id), temperature and observed. A SensorPush temperature is read as Fahrenheit, which is what it reports unless the account was changed; if yours is in Celsius, send sensor_id and temp_c instead, which say so.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
+}</pre></div></details>
+<details class="fold guide" id="sensorpush"><summary><h2>SensorPush</h2></summary><div class="panel"><p>SensorPush sensors with a G1 gateway, which reports to SensorPush&#x27;s own cloud and not to any address you choose.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. For SensorPush the serial is the sensor&#x27;s id as its cloud names it.</li><li>The gateway cannot be pointed at us, so the readings have to be fetched from SensorPush&#x27;s cloud and passed on. Our fetcher (Fetch from a sensor cloud, in the next guide) only sends GET requests with headers you fix in advance. If the account&#x27;s data can be read that way, use it. If reading it needs a sign-in step that hands out a short-lived token, or a POST, the fetcher cannot do it: run a small relay of your own that reads SensorPush and sends each reading on, as below.</li><li>The relay sends an HTTPS POST to https://cyberlogix.example.com/api/v1/bridge/any with the sensor key in the X-CyberLogix-Sensor-Key header (or the business key in X-CyberLogix-Key, for several sensors).</li><li>Each reading as JSON with sensor (the sensor&#x27;s id), temperature and observed. A SensorPush temperature is read as Fahrenheit, which is what it reports unless the account was changed; if yours is in Celsius, send sensor_id and temp_c instead, which say so.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
   &quot;sensor&quot;: &quot;16725.1234567890&quot;,
   &quot;temperature&quot;: 37.4,
   &quot;observed&quot;: &quot;2026-11-03T06:00:00Z&quot;
-}</pre></div>
-<h2 id="vendor-cloud">Any vendor cloud you can read with a web address</h2><div class="panel"><p>Hardware that only talks to its maker&#x27;s cloud, when that cloud gives you an HTTPS address that answers with the latest readings as JSON.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. The serial is whatever the vendor&#x27;s data calls the device.</li><li>Get the address and the credential from the vendor: an HTTPS address that answers a plain GET with JSON, and the header it wants the credential in, such as Authorization.</li><li>In the console, open Fetch from a sensor cloud (under the Advanced tab). Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.</li><li>Press Try now. It fetches once and says what came back: readings taken, nothing new, or why nothing could be used.</li><li>What comes back is read the same way as the send-anything route below: one reading, a list, or readings under samples, readings, data, results or sensors, and each needs a serial that is on one of your units.</li><li>The address must start with https and point at the public internet. Redirects are not followed: save the final address. After 5 failures in a row it stops asking and the owner is emailed; Try now starts it again.</li></ol><p>What one message looks like:</p><pre>{
+}</pre></div></details>
+<details class="fold guide" id="vendor-cloud"><summary><h2>Any vendor cloud you can read with a web address</h2></summary><div class="panel"><p>Hardware that only talks to its maker&#x27;s cloud, when that cloud gives you an HTTPS address that answers with the latest readings as JSON.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. The serial is whatever the vendor&#x27;s data calls the device.</li><li>Get the address and the credential from the vendor: an HTTPS address that answers a plain GET with JSON, and the header it wants the credential in, such as Authorization.</li><li>In the console, open Fetch from a sensor cloud (under the Advanced tab). Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.</li><li>Press Try now. It fetches once and says what came back: readings taken, nothing new, or why nothing could be used.</li><li>What comes back is read the same way as the send-anything route below: one reading, a list, or readings under samples, readings, data, results or sensors, and each needs a serial that is on one of your units.</li><li>The address must start with https and point at the public internet. Redirects are not followed: save the final address. After 5 failures in a row it stops asking and the owner is emailed; Try now starts it again.</li></ol><p>What one message looks like:</p><pre>{
   &quot;readings&quot;: [
     {
       &quot;device_id&quot;: &quot;GW-7781&quot;,
@@ -2136,12 +2130,12 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
       &quot;timestamp&quot;: &quot;2026-11-03T06:00:00Z&quot;
     }
   ]
-}</pre></div>
-<h2 id="anything">Anything else that sends its own JSON</h2><div class="panel"><p>A device or cloud that sends readings in its own format, with names we have never seen.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>Point the device at https://cyberlogix.example.com/api/v1/bridge/any with POST and JSON, and the sensor key in the X-CyberLogix-Sensor-Key header. If it cannot set headers, add ?k=(the sensor key) to the address instead.</li><li>We look for a serial in a field named like one of: device_sn, deviceserial, serialnumber, serial, sensorid, deviceid, device, sensorname, macaddress, mac, imei, id. Case, spaces, dashes and underscores do not matter, and the field may be nested.</li><li>And for the reading in a field named like one of: reading_value, temperature, temperaturec, temperaturef, tempc, tempf, temp, currentreading, value, reading, datavalue, datavalues, plotvalue, plotvalues, measurement.</li><li>Celsius or Fahrenheit has to be said, never guessed: in the field name (temp_c, temperatureF), in the value (&quot;3.5 C&quot;), or in the word celsius or fahrenheit. If it is not, the reading is held under Devices knocking and you choose the unit when you add it.</li><li>Before pointing anything at us, paste one real payload into Use a sensor you already own (it calls /api/v1/bridge/preview). It says what would be read from it and what is missing, and records nothing.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
+}</pre></div></details>
+<details class="fold guide" id="anything"><summary><h2>Anything else that sends its own JSON</h2></summary><div class="panel"><p>A device or cloud that sends readings in its own format, with names we have never seen.</p><ol class="steps"><li>In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device&#x27;s own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it.</li><li>Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor&#x27;s settings.</li><li>Point the device at https://cyberlogix.example.com/api/v1/bridge/any with POST and JSON, and the sensor key in the X-CyberLogix-Sensor-Key header. If it cannot set headers, add ?k=(the sensor key) to the address instead.</li><li>We look for a serial in a field named like one of: device_sn, deviceserial, serialnumber, serial, sensorid, deviceid, device, sensorname, macaddress, mac, imei, id. Case, spaces, dashes and underscores do not matter, and the field may be nested.</li><li>And for the reading in a field named like one of: reading_value, temperature, temperaturec, temperaturef, tempc, tempf, temp, currentreading, value, reading, datavalue, datavalues, plotvalue, plotvalues, measurement.</li><li>Celsius or Fahrenheit has to be said, never guessed: in the field name (temp_c, temperatureF), in the value (&quot;3.5 C&quot;), or in the word celsius or fahrenheit. If it is not, the reading is held under Devices knocking and you choose the unit when you add it.</li><li>Before pointing anything at us, paste one real payload into Use a sensor you already own (it calls /api/v1/bridge/preview). It says what would be read from it and what is missing, and records nothing.</li><li>If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.</li></ol><p>What one message looks like:</p><pre>{
   &quot;Device ID&quot;: &quot;DICKSON-7A:2C:19&quot;,
   &quot;Temp C&quot;: &quot;3.2&quot;,
   &quot;Time&quot;: &quot;2026-11-03T06:00:00Z&quot;
-}</pre></div>
+}</pre></div></details>
 </main>
 
 <footer class="site">
@@ -2415,6 +2409,61 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
       raf = requestAnimationFrame(frame);
     }
   });
+})();
+
+</script>
+<script>
+// /help/sensors: each sensor guide is a fold (sensor_guides.render_html).
+// A link to one, such as /help/sensors#monnit, opens it, on arrival and
+// whenever the address's #part changes; opening one by hand puts its name
+// in the address, so it can be copied and sent. On a wide screen "What you
+// need" opens by itself; on a phone it waits behind its "More".
+(function () {
+  "use strict";
+  let wide = true;
+  try { wide = window.matchMedia("(min-width: 721px)").matches; } catch (_) { wide = true; }
+  if (wide) document.querySelectorAll("details[data-open-wide]").forEach((d) => { d.open = true; });
+
+  function openFor() {
+    let id = "";
+    try { id = decodeURIComponent((window.location.hash || "").slice(1)); } catch (_) { return; }
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    const fold = target.tagName === "DETAILS" ? target : target.closest("details");
+    if (!fold) return;
+    // The fold the link names, and any fold around it.
+    for (let d = fold; d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
+    land(target);
+  }
+
+  // The page's fonts, and Pilot's room at the sides of a phone screen,
+  // arrive after this runs and push the guide down. For a few seconds,
+  // land on it again each time the page's size changes, unless the reader
+  // has scrolled since.
+  let watch = null;
+  function land(target) {
+    target.scrollIntoView();
+    let y = window.scrollY;
+    if (watch) watch.disconnect();
+    if (typeof ResizeObserver !== "function") return;
+    watch = new ResizeObserver(() => {
+      if (window.scrollY !== y) { watch.disconnect(); return; }
+      target.scrollIntoView();
+      y = window.scrollY;
+    });
+    watch.observe(document.body);
+    const w = watch;
+    setTimeout(() => w.disconnect(), 4000);
+  }
+
+  document.querySelectorAll("details.guide[id]").forEach((d) => {
+    d.addEventListener("toggle", () => {
+      if (!d.open || window.location.hash === `#${d.id}`) return;
+      try { window.history.replaceState(null, "", `#${d.id}`); } catch (_) { /* a file:// copy */ }
+    });
+  });
+  openFor();
+  window.addEventListener("hashchange", openFor);
 })();
 
 </script>

@@ -1,4 +1,4 @@
-// Pilot core 1.1.1 · pilot.js
+// Pilot core 1.2.0 · pilot.js
 // The one Pilot file a page loads. Once the page has finished loading, it
 // fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
 // owner's picture, pilot-robot-128/256.webp) and the app's config, which
@@ -8,13 +8,13 @@
 //
 // When the page is idle, and only if the visitor hasn't asked for less
 // motion, it fetches the moving robot (pilot-motion.js, pilot-actor.js,
-// pilot-actor.css and the robot's layers: data-motion, data-actor,
-// data-actor-css, data-rest-*; the pose pictures in data-poses load when a
-// move first needs them).
+// pilot-actor.css and the robot's layers; pose pictures load when a move
+// first needs them).
 //
 // It keeps the robot out of the way (pilot-mascot.js placeNow), looking
 // again on scroll and resize (once a frame at most), on focus, and when the
-// page changes. Pages can reserve room (docs/PILOT.md).
+// page or its address changes; first showing it whole for a few seconds on
+// a visit's first page. Pages can reserve room (docs/PILOT.md).
 //
 // It also keeps Pilot with the user:
 // - from page to page: the chat and whether it's open are in sessionStorage
@@ -23,16 +23,12 @@
 //   being added or removed, and which tab is answering. Only one tab sends a
 //   request at a time (a Web Lock where the browser has them).
 //
-// An app uses it with one tag (docs/PILOT.md lists every data-* and the
-// config fields):
-//   <script src="pilot/pilot.js" defer id="pilot-core" data-store=… data-mascot=…
-//           data-app="the app's config" data-pack="its knowledge pack" data-css=…
-//           data-panel-css=… data-robot=… data-robot2x=… data-render=…
-//           data-providers=… data-engine=… data-media=… data-panel=…></script>
+// An app uses it with one tag, <script id="pilot-core" data-…> (docs/PILOT.md
+// lists every data-* and the config fields).
 (function () {
   "use strict";
 
-  const VERSION = "1.1.1";
+  const VERSION = "1.2.0";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -51,6 +47,7 @@
   let fitFull = false; // the next look may move to another corner (not just tuck in place)
   let scrolling = 0; // a timer while the page is being scrolled
   let peekOff = 0; // tapped out of its tucked-away spot until then
+  let revealUntil = 0; // the first look of a visit: shown whole until then
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
 
@@ -109,20 +106,19 @@
   const M = () => window.PilotMascot;
   const list = (v) => (Array.isArray(v) ? v : typeof v === "string" && v ? [v] : []).filter((x) => typeof x === "string");
 
-  // Where the robot should be now (pilot-mascot.js placeNow): clear of
-  // pop-ups, the app's avoid and yieldTo, the page's words and buttons, and
-  // a box being typed in. Mid-scroll it only checks its own spot.
+  // Where the robot should be now (pilot-mascot.js placeNow, which says how).
   function fit() {
     fitQueued = false;
     const full = fitFull;
     fitFull = false;
     if (!rootEl || !config) return;
     const open = Boolean(panel && panel.isOpen);
-    const modal = M().modalOpen(document, rootEl, window);
+    const modal = M().modalOpen(document, rootEl, window, list(config.modals));
     rootEl.classList.toggle("pilot-yield", modal && !open);
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
     const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
-      corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false });
+      corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false,
+      keepIn: Boolean(config.keepInViewport), reveal: Date.now() < revealUntil });
     if (place.corner !== shownCorner) placeAt(place.corner);
     // A tap brings it out for a while, but never onto a box being typed in.
     rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
@@ -151,6 +147,7 @@
     // A box gets focus (or loses it): out of its way at once, back after.
     document.addEventListener("focusin", () => queueFit(true));
     document.addEventListener("focusout", () => queueFit(true));
+    window.addEventListener("hashchange", () => queueFit(true)); // a CSS :target pop-up
     if (typeof MutationObserver === "function") {
       new MutationObserver((records) => {
         if (records.some((r) => !rootEl.contains(r.target))) queueFit(true);
@@ -169,8 +166,7 @@
     || shownCorner !== store.ui().corner || (list(config.avoid).length + list(config.yieldTo).length > 0
       && M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window).length > 0);
 
-  // Drag the robot to another corner: it follows the pointer from corner to
-  // corner and stays where it's let go (kept on this device).
+  // Drag the robot to another corner, kept on this device.
   function draggable() {
     let start = null;
     let moved = false;
@@ -209,10 +205,20 @@
     });
   }
 
+  // A visit's first page: shown whole (with a glow) for a few seconds.
+  function reveal() {
+    const ms = M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs);
+    if (!ms) return;
+    revealUntil = Date.now() + ms;
+    rootEl.classList.add("pilot-hello");
+    setTimeout(() => { revealUntil = 0; rootEl.classList.remove("pilot-hello"); queueFit(true); }, ms);
+  }
+
   function build() {
     rootEl = document.createElement("div");
     rootEl.className = "pilot-root";
     if (config.themeClass) rootEl.classList.add(config.themeClass);
+    if (config.keepInViewport) for (const n of [rootEl, document.documentElement]) n.classList.add("pilot-keep-in");
     placeAt(store.ui().corner);
     launcher = document.createElement("button");
     launcher.type = "button";
@@ -227,6 +233,7 @@
     draggable();
     status();
     document.documentElement.classList.add("pilot-on"); // pages may reserve var(--pilot-gutter)
+    reveal();
     watchPage();
     wake();
   }
@@ -308,8 +315,7 @@
       const m = event.data || {};
       if (m.from === tab) return;
       if (m.type === "hello") {
-        // A new tab of this site: share the chat, and a key kept for this
-        // visit only, so Pilot carries on there too. Same site only.
+        // A new tab of this site: share the chat, and a key kept for this visit.
         const all = store.all();
         post({ type: "state", to: m.from, messages: store.loadChat(), settings: all.remember || !all.keys.length ? null : all });
       } else if (m.type === "state" && m.to === tab) {

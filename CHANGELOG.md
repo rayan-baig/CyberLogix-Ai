@@ -4,6 +4,34 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.24.0 — 2026-11-21
+
+Pilot's own welcome for CyberLogix, a short sensor setup page, and smaller
+summary tiles on a phone. No price or plan term has changed.
+
+- **Pilot speaks fridge.** Its window now says "Your fridge-alarm helper",
+  and its first buttons are what a café asks most: **Which fridges need
+  me?**, **What does this alert mean?**, **Is the food still OK?**, **Add a
+  fridge** and **Add my AI key**. Signed in, Pilot answers them from your
+  own fridges (and asks before it adds anything); on a public page it says
+  where to look, since it can't see anybody's fridges there. The page's own
+  suggestions sit under them. Its key settings no longer offer picture or
+  video keys, which CyberLogix has no use for. A question asked before
+  there is a key waits in the box and is sent the moment a key is added.
+- **Pilot core 1.2.0**, the same files as the MTRX Horizyn site. When every
+  corner of the screen is busy, the robot now shrinks into its corner by the
+  core's own setting; 3.23.0's stylesheet fix for that is gone. It steps
+  back while the phone's Menu is open.
+- **Setting up sensors fits a phone.** Each sensor guide on /help/sensors
+  is a fold you open, and "What you need" shows its first lines with the
+  rest behind **More** on a phone: about 2,500px on a phone, from about
+  14,200. A link to one guide (/help/sensors#monnit) still lands on it and
+  opens it, and opening one puts its name in the address, ready to send.
+- **The summary tiles are a compact two-column grid on a phone**, each
+  figure on one line with its words ("1 of 1 under watch"): about 280px at
+  375px wide, from about 530.
+
+
 ## 3.23.0 — 2026-11-21
 
 What the latest strict review found, fixed. No price or plan term has
