@@ -34,27 +34,27 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.1.1 as it ships on the MTRX Horizyn site (commit 8b0ecd7).
+# Pilot core 1.2.0 as it ships on the MTRX Horizyn site (commit 4c82361).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "f8cd10a058138d5c",
-    "pilot-actor.js": "ba210dfb444d86df",
-    "pilot-engine.js": "a57ffece42dcf1a3",
-    "pilot-mascot.js": "526c0bcb4bdeee8d",
-    "pilot-media.js": "d94af02b571c4531",
-    "pilot-motion.js": "d8097cf57a82b706",
-    "pilot-panel.css": "04aac3d9f703259a",
-    "pilot-panel.js": "d81c9ce70ae55dc6",
-    "pilot-providers.js": "aaa2286a833b8ec9",
-    "pilot-render.js": "9c1a1057b3fa8dac",
+    "pilot-actor.css": "f1d7cddaaf7f84a9",
+    "pilot-actor.js": "412fa7979ac219fe",
+    "pilot-engine.js": "73df16d8c108676d",
+    "pilot-mascot.js": "d3e3c0d066f50c67",
+    "pilot-media.js": "630cdf62403c27c5",
+    "pilot-motion.js": "b3e623dec9d46991",
+    "pilot-panel.css": "51091b11ebcb2b77",
+    "pilot-panel.js": "fe80cdb71981b3a0",
+    "pilot-providers.js": "3d86f09a1186a80c",
+    "pilot-render.js": "f970ba3fe286e30e",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
     "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
     "pilot-rest-head.webp": "5eb064f177cffcb3",
     "pilot-robot-128.webp": "05a92f32d99b8076",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "4a4c8a34d8ed9a59",
-    "pilot.css": "6c817bdc1a3af9fb",
-    "pilot.js": "651e86c8964cfb88",
+    "pilot-store.js": "b43fa177c626d5b7",
+    "pilot.css": "96ffe0be9cf86f25",
+    "pilot.js": "b08414622cf07124",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -202,11 +202,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.1.1"}
+    assert versions == {"1.2.0"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.1.1";' in (PILOT / name).read_text(), name
-    assert "core 1.1.1" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.2.0";' in (PILOT / name).read_text(), name
+    assert "core 1.2.0" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -236,7 +236,10 @@ def test_the_window_matches_the_design_words():
                   "Type a message…", "Bring Your Own API Key", "Image generation", "Video generation"):
         assert words in panel, words
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
-    assert 'tagline: "Your AI copilot. Powered by you."' in config
+    # Core 1.2.0: CyberLogix's own tagline and pills (the owner approved
+    # app-specific pills on websites); the design's stay the core's default.
+    assert 'tagline: "Your fridge-alarm helper",' in config
+    assert "Your AI copilot. Powered by you." not in config
     assert "themeClass" not in config, "the robot and window look exactly as on the MTRX site"
     assert "kidView: () => false" in config and 'storagePrefix: "cyberlogix-pilot"' in config
 
@@ -388,14 +391,39 @@ def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
 
 def test_the_robot_is_never_tucked_past_the_screen_edge():
     """Round 5: tucked away, it hung off the screen (355-411px on a 375px
-    phone, 1330-1418px on a 1366px desktop). The app's own stylesheet keeps
-    it inside a 16px margin, shrinking in its corner; no core file changes."""
+    phone). 3.23.0 fixed that in this app's stylesheet; core 1.2.0 has the
+    setting (keepInViewport), so the app's copy of the fix is gone and the
+    core's shrink-into-the-corner does it."""
+    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    assert "keepInViewport: true," in config
     theme = (ROOT / "static/theme.css").read_text()
-    tail = theme[theme.index("Pilot's robot stays wholly on the screen"):]
-    assert ":root .pilot-root { --pilot-gap: 16px; --pilot-peek-show: 71px; }" in tail
-    assert "--pilot-gap: 16px; --pilot-peek-show: 51px;" in tail
-    assert "transform: scale(.62) !important" in tail
-    assert "translateX" not in tail
-    # The core still slides it out; the app's rule wins on specificity.
+    assert "Pilot's robot stays wholly on the screen" not in theme
+    assert ".pilot-peek" not in theme and "--pilot-peek-show" not in theme
+    # Nor the room 3.23.0 made on the Getting started card for its bigger
+    # shrunken robot: the core's smaller one fits the side room it keeps.
+    assert "#first-day { padding-right" not in theme
     core = (PILOT / "pilot.css").read_text()
-    assert "translateX(var(--pilot-tuck))" in core
+    assert ".pilot-root.pilot-keep-in.pilot-peek .pilot-launcher" in core
+    assert "scale(var(--pilot-peek-scale))" in core
+
+
+def test_cyberlogixs_own_welcome():
+    """Core 1.2.0: the window's welcome is this app's own. Five pills a
+    café asks most, the last one the key settings; no picture or video key
+    sections; the phone's Menu counts as a pop-up; and the signed-in
+    suggestions under the welcome don't repeat a pill."""
+    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    labels = re.findall(r'\{ icon: "([a-z]+)", label: "([^"]+)", action: "([^"]+)"(, send: true)? \}', config)
+    assert [(icon, label) for icon, label, _a, _s in labels] == [
+        ("bars", "Which fridges need me?"), ("help", "What does this alert mean?"),
+        ("chat", "Is the food still OK?"), ("bolt", "Add a fridge"), ("key", "Add my AI key")]
+    assert [bool(send) for *_x, send in labels] == [True, True, True, True, False]
+    assert labels[-1][2] == "settings"
+    assert all(len(label) <= 40 for _i, label, _a, _s in labels)
+    assert 'hideKeySections: ["image", "video"],' in config
+    assert 'modals: [".menu[open] > nav"],' in config
+    live = config[config.index("const LIVE = ["):config.index("];", config.index("const LIVE = ["))]
+    for _i, label, _a, _s in labels:
+        assert f'"{label}"' not in live, label
+    # A public page tells the AI it can't see anybody's fridges there.
+    assert "Not signed in: Pilot can't see their fridges or alerts here." in config

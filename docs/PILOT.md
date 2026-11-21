@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.1.1**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.2.0**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -31,30 +31,44 @@ for a food fridge, 30 for a freezer, 10 for a vaccine fridge) and the 15°F that
 the 30 minutes before a sensor counts as offline, the 10 minutes before calls, and the 60-second
 text promise.
 
-Core 1.1.1 looks again for a free corner as the page scrolls, never covers a box being typed
+Core 1.1.1 (and so 1.2.0) looks again for a free corner as the page scrolls, never covers a box being typed
 in, and, once a chat has started, puts the page's suggestions above the conversation. This
 app's `avoid` list adds the console's tabs (`.finder`, `.f-tab`), the pinned "Needs you now"
 bar and its buttons, the "It's fixed" dialog and the front page's first-screen facts, and its
 `keyNote` says in one sentence what an AI key is and where to get one.
 
-**Always wholly on the screen (3.23.0).** When every corner is busy, core 1.1.1 "tucks" the
-robot away by sliding it past the screen's edge (`.pilot-peek .pilot-launcher { transform:
-translateX(var(--pilot-tuck)) }` in `static/pilot/pilot.css`), so only a slice shows: on a 375px
-phone it sat at 355–411px, on a 1366px desktop at 1330–1418px. The core has no setting to turn
-that off, so this app's own stylesheet (`static/theme.css`, end) does it without editing a core
-file: a 16px margin on every screen (`--pilot-gap: 16px`), and, tucked away, the robot shrinks
-into its corner (`transform: scale(.62)`, from that corner) instead of sliding out.
-`--pilot-peek-show` is set to the width of the shrunken robot plus its margin (71px on a
-desktop, 51px on a phone), which is what the core's `peekBox` counts when it looks for a corner
-where the tucked robot covers nothing. The config's `avoid` list also keeps it off the Getting
-started card (`#first-day`) and its buttons.
+**Always wholly on the screen.** When every corner is busy, the core "tucks" the robot away. Up
+to core 1.1.1 that slid it past the screen's edge, so only a slice showed (355–411px on a 375px
+phone), and 3.23.0 worked round it in this app's stylesheet. Core 1.2.0 has the setting, and the
+config turns it on (`keepInViewport: true`): tucked away, the robot shrinks into its corner,
+wholly on the screen (`.pilot-keep-in` in `static/pilot/pilot.css`, half size 8px from the edges
+on a desktop, 42% size 3px from the edges on a phone), and the core's placement counts that small
+box when it looks for a corner where it covers nothing. 3.24.0 removed the app's own copy of the
+fix from `static/theme.css`, with the extra room it gave the Getting started card on a phone:
+the core's smaller tucked robot sits in the side room the core keeps on a phone, clear of the
+card's words and buttons (checked at 320 and 375px). The config's `avoid` list also keeps it off
+that card (`#first-day`) and its buttons.
 
-*The core change that would make this a setting:* a `peek: "edge" | "shrink"` option (or a
-`keepInside: true`) read by `pilot.js`, which sets a class such as `.pilot-peek-shrink` on the
-root; `pilot.css` would then scale the launcher from its corner under that class instead of
-translating it, and `pilot-mascot.js` `peekBox` would return the shrunken box inside the margin
-(`left = view.width - gap - size.width * scale`) rather than a slice at the edge. Until a core
-release has it, the app stylesheet above is the whole change.
+**CyberLogix's own welcome (3.24.0, core 1.2.0).** The window's header says "Your fridge-alarm
+helper", and its five pills are what a café asks most:
+
+| Pill | What it does |
+|---|---|
+| Which fridges need me? | sent at once: which units are warm, out of range or quiet, and what to check first |
+| What does this alert mean? | sent at once: the latest alert in plain words, where it stands, what to do |
+| Is the food still OK? | sent at once: the existing rule of thumb, always with its not-a-ruling note |
+| Add a fridge | sent at once: on the console the `add_sensor` tool (it asks first), elsewhere the steps |
+| Add my AI key | opens key settings |
+
+Signed in, the console's tools answer them. On a public page (and the console's sign-in) the page
+tells the AI that the person is not signed in and it can't see their fridges there, so it says
+where to look instead of guessing. The page's own suggestions show under the pills; the signed-in
+ones ("Show open alerts", "It's fixed now", "Make a proof report") repeat none of them. The key
+settings leave out image and video keys (`hideKeySections`), which CyberLogix has no use for. The
+phone's **Menu** on the public pages is a `<details>` drop-down, not a dialog, so it is listed in
+`modals` and the robot steps back while it is open; every other pop-up here is a `<dialog>` or
+`role="dialog"`, which the core already counts. A message sent before there is a key waits in the
+box and goes the moment a key is saved (core 1.2.0).
 
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
@@ -65,21 +79,20 @@ console's alert banners, the Simple view's "Needs you now" and its buttons, and 
 answer an alert; on a phone every page keeps its last lines clear of the robot with
 `padding-bottom: var(--pilot-gutter)` (`static/theme.css`).
 
-The window's first buttons ("Ask anything…", "Get things done…", "Help with code…",
-"Analyze & explain…") are the core's own and the same in every app. What CyberLogix sets is
-what "Get things done…" fills in and the suggestions above the conversation, written for a café
-or small restaurant first.
+The suggestions on the welcome and above the conversation, and what a task fills in, are
+written for a café or small restaurant first.
 
 ## The files
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.1.1, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.2.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
 
-The look is the MTRX site's exactly, including "Your AI copilot. Powered by you."
+The robot and the window look exactly as on the MTRX site; the tagline and the welcome's pills
+are CyberLogix's own.
 
 ## What it knows
 

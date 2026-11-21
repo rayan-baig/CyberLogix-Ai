@@ -1,9 +1,13 @@
-// Pilot core 1.1.1 · pilot-panel.js
+// Pilot core 1.2.0 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
-// greeting and its five pill buttons, the messages, the "Type a message…"
-// box, and the gear, palette and ? buttons at the bottom. Settings (keys,
-// models, image and video keys, memory) and help open inside the same frame.
-// Loaded only when the user first opens Pilot (pilot.js).
+// greeting and its pill buttons (the design's five unless the app sets its
+// own: config.welcomePills, with config.tagline under the name), this
+// page's suggestions, the messages, the "Type a message…" box, and the
+// gear, palette and ? buttons at the bottom. Settings (keys, models, image
+// and video keys unless config.hideKeySections hides them, memory) and help
+// open inside the same frame. A message typed before there is a key stays
+// in the box and is sent once a key is added. Loaded only when the user
+// first opens Pilot (pilot.js).
 //
 // Every word on screen is placed with textContent or built by
 // pilot-render.js from text nodes: nothing is ever set as HTML. No style
@@ -11,7 +15,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.1.1";
+  const VERSION = "1.2.0";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -112,6 +116,46 @@
     return redact(out.join("\n")).slice(0, SCREEN_LIMIT);
   }
 
+  // ---------------------------------------------------------------- the welcome's pills
+  // The design's five, unless the app gives its own (config.welcomePills):
+  // up to five {icon, label, action}. `action` is one of the built-ins
+  // below, or any other words: a prompt put in the box (with `send: true`,
+  // sent at once; before there is a key it waits in the box).
+
+  const DEFAULT_TAGLINE = "Your AI copilot. Powered by you.";
+  const BUILTINS = ["ask", "task", "code", "explain-screen", "summarise-screen", "summarize-screen", "settings", "help"];
+  const DEFAULT_PILLS = [
+    { icon: "chat", label: "Ask anything…", action: "ask" },
+    { icon: "bolt", label: "Get things done…", action: "task" },
+    { icon: "code", label: "Help with code…", action: "code" },
+    { icon: "bars", label: "Analyze & explain…", action: "explain-screen" },
+    { icon: "gear", label: "Customize with your API key", action: "settings" },
+  ];
+  const PILL_LABEL_MOST = 40;
+  const PROMPT_MOST = 1000;
+
+  // The pills to show: the app's (cleaned: words only, a known icon, at
+  // most five) or, if it gives none that work, the design's five.
+  function welcomePills(given) {
+    const out = [];
+    for (const p of Array.isArray(given) ? given : []) {
+      if (out.length >= 5) break;
+      if (!p || typeof p !== "object") continue;
+      const label = typeof p.label === "string" ? p.label.replace(/\s+/g, " ").trim().slice(0, PILL_LABEL_MOST) : "";
+      // A prompt keeps its words as given (a trailing space leaves the cursor
+      // ready after "My idea: "); a built-in's name is matched trimmed.
+      const raw = typeof p.action === "string" ? p.action.slice(0, PROMPT_MOST) : "";
+      const action = BUILTINS.includes(raw.trim()) ? raw.trim() : raw;
+      if (!label || !raw.trim()) continue;
+      const icon = typeof p.icon === "string" && Object.prototype.hasOwnProperty.call(ICONS, p.icon) ? p.icon : "spark";
+      out.push({ icon, label, action, builtin: BUILTINS.includes(action), send: p.send === true });
+    }
+    return out.length ? out : DEFAULT_PILLS.map((p) => ({ ...p, builtin: true, send: false }));
+  }
+
+  // The key settings an app hides (config.hideKeySections): "image", "video".
+  const hiddenSections = (given) => new Set((Array.isArray(given) ? given : []).filter((x) => x === "image" || x === "video"));
+
   // ---------------------------------------------------------------- the window
 
   function create(options) {
@@ -126,6 +170,11 @@
     const media = []; // pictures and videos made on this page: {at, kind, ...}
     let lastShared = 0;
     let editing = null; // which key form is open in settings
+    // Asked for before there was a key: kept (and left in the box) until a
+    // key is added, then sent. {text} or {screen: [prompt, label]}.
+    let pending = null;
+    const pills = welcomePills(config.welcomePills);
+    const hidden = hiddenSections(config.hideKeySections);
 
     const screen = () => {
       try { return (typeof config.screen === "function" && config.screen()) || { name: document.title }; } catch (_) { return { name: document.title }; }
@@ -194,7 +243,7 @@
       el("div", { class: "pilot-brand" }, window.PilotMascot.mark(document),
         el("div", { class: "pilot-brand-words" },
           el("b", { class: "pilot-word", text: config.name || "Pilot" }),
-          el("span", { class: "pilot-tagline", text: config.tagline || "Your AI copilot. Powered by you." }))));
+          el("span", { class: "pilot-tagline", text: (typeof config.tagline === "string" && config.tagline.trim()) || DEFAULT_TAGLINE }))));
 
     const welcome = el("div", { class: "pilot-welcome" });
     const log = el("ol", { class: "pilot-log", "aria-live": "polite", "aria-label": "Chat with Pilot" });
@@ -248,19 +297,41 @@
         icon("chevron"));
     }
 
-    function drawWelcome() {
+    // What a pill does when pressed.
+    function runPill(p) {
       const s = screen();
-      let task = "";
-      try { task = typeof config.taskPrompt === "function" ? config.taskPrompt(s) : ""; } catch (_) { task = ""; }
+      if (!p.builtin) { if (p.send) ask(p.action); else fill(p.action); return; }
+      if (p.action === "ask") { input.focus(); return; }
+      if (p.action === "task") {
+        let task = "";
+        try { task = typeof config.taskPrompt === "function" ? config.taskPrompt(s) : ""; } catch (_) { task = ""; }
+        fill(task || "What can you do for me on this page?");
+        return;
+      }
+      if (p.action === "code") { fill("Help me with this code: "); return; }
+      if (p.action === "explain-screen") { shareScreen("Explain this screen: what is it for, and what can I do here?", "Analyze & explain this screen"); return; }
+      if (p.action === "summarise-screen" || p.action === "summarize-screen") { shareScreen("Summarise what's on this screen in a few short points.", "Summarise this screen"); return; }
+      if (p.action === "help") { show("help"); return; }
+      show("settings");
+    }
+
+    // This page's suggestions (config.chips), at most three.
+    function pageChips() {
+      let list = [];
+      try { list = (typeof config.chips === "function" ? config.chips(screen()) : config.chips) || []; } catch (_) { list = []; }
+      return (Array.isArray(list) ? list : []).filter((c) => c && typeof c.label === "string" && c.label.trim()).slice(0, 3);
+    }
+
+    function drawWelcome() {
+      // The page's suggestions are on the welcome too, before a key is
+      // added: pressing one with no key keeps it waiting in the box.
+      const here = pageChips();
       put(welcome,
         el("div", { class: "pilot-hello" }, icon("spark"),
           el("p", {}, el("span", { text: "Hello! I'm Pilot." }), el("br"), el("span", { text: "How can I help you today?" }))),
-        el("div", { class: "pilot-pills" },
-          pill("chat", "Ask anything…", () => { input.focus(); }),
-          pill("bolt", "Get things done…", () => fill(task || "What can you do for me on this page?")),
-          pill("code", "Help with code…", () => fill("Help me with this code: ")),
-          pill("bars", "Analyze & explain…", () => shareScreen("Explain this screen: what is it for, and what can I do here?", "Analyze & explain this screen")),
-          pill("gear", "Customize with your API key", () => show("settings"))),
+        el("div", { class: "pilot-pills" }, ...pills.map((p) => pill(p.icon, p.label, () => runPill(p)))),
+        here.length ? el("div", { class: "pilot-chips pilot-chips-welcome", role: "group", "aria-label": "Suggestions for this page" },
+          ...here.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: () => ask(c.prompt || c.label) } }))) : null,
         store.ready() ? null : keyCard());
       welcome.hidden = state.messages.length > 0;
     }
@@ -269,6 +340,31 @@
       const want = Boolean(config.keyNote) && !store.ready() && view === "chat";
       footNote.hidden = !want;
       if (want && footNote.textContent !== config.keyNote) footNote.textContent = config.keyNote;
+    }
+
+    // ---------------------------------------------------------------- before there is a key
+    // A message (or a pill or suggestion) asked for with no key isn't
+    // thrown away: it stays in the box, key settings open, and it is sent
+    // as soon as a key is added (here or in another tab).
+
+    function hold(job) {
+      pending = job;
+      if (job.text) fill(job.text);
+      show("settings");
+    }
+
+    function sendPending() {
+      if (!pending || !store.ready() || state.busy || otherBusy) return;
+      const job = pending;
+      pending = null;
+      if (view !== "chat") show("chat");
+      if (job.text) {
+        if (input.value.trim() === job.text.trim()) { input.value = ""; grow(); }
+        ask(job.text);
+      } else if (job.screen) {
+        lastShared = 0;
+        shareScreen(job.screen[0], job.screen[1]);
+      }
     }
 
     function fill(text) {
@@ -413,10 +509,7 @@
         chips.querySelectorAll("button").forEach((b) => { b.disabled = true; });
         return;
       }
-      const s = screen();
-      let list = [];
-      try { list = (typeof config.chips === "function" ? config.chips(s) : config.chips) || []; } catch (_) { list = []; }
-      const all = list.slice(0, 3).map((c) => ({ label: c.label, run: () => ask(c.prompt || c.label) }));
+      const all = pageChips().map((c) => ({ label: c.label, run: () => ask(c.prompt || c.label) }));
       all.push({ label: "Summarise this", run: () => shareScreen("Summarise what's on this screen in a few short points.", "Summarise this screen") });
       put(chips, ...all.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: c.run } })),
         el("button", { type: "button", class: "pilot-link pilot-clear", text: "Clear chat", on: { click: clearChat } }));
@@ -543,6 +636,7 @@
       // "Remember that …" with memory on: kept in this browser, not sent.
       const remember = words.match(/^(?:please\s+)?remember(?:\s+that)?[:,]?\s+(.{3,})$/i);
       if (remember && store.memory().on && !extra) {
+        if (input.value.trim() === words) { input.value = ""; grow(); }
         const r = store.remember(remember[1].replace(/[.!]+$/, ""));
         const next = state.messages.concat([{ role: "user", text: words },
           { role: "note", kind: r.error ? "error" : "info", text: r.error || "Saved to Pilot's memory in this browser. See it in settings." }]);
@@ -552,14 +646,14 @@
         queueDraw();
         return;
       }
-      if (!store.ready()) { show("settings"); return; }
+      if (!store.ready()) { if (!extra) hold({ text: words }); else show("settings"); return; }
       await engine.send(words, extra);
     }
 
     function shareScreen(prompt, label) {
       if (Date.now() - lastShared < 800) return;
       lastShared = Date.now();
-      if (!store.ready()) { show("settings"); return; }
+      if (!store.ready()) { hold({ screen: [prompt, label] }); return; }
       const s = screen();
       const outline = (window.PilotPack && typeof window.PilotPack.screenText === "function" && window.PilotPack.screenText()) || screenText();
       ask(prompt, { shared: `Screen: ${s.name || document.title}\n${outline}`, label });
@@ -569,9 +663,12 @@
       e.preventDefault();
       if (state.busy) return;
       const text = input.value;
-      input.value = "";
-      grow();
-      if (view !== "chat") show("chat");
+      // No key yet: the words stay in the box (ask keeps them waiting).
+      if (store.ready() || !text.trim()) {
+        input.value = "";
+        grow();
+        if (view !== "chat") show("chat");
+      }
       ask(text);
     });
     sendBtn.addEventListener("click", (e) => { if (state.busy) { e.preventDefault(); engine.stop(); } });
@@ -730,6 +827,7 @@
     function changed() {
       pilot.post({ type: "settings", settings: store.all() });
       pilot.changed();
+      sendPending();
     }
 
     const label = (k) => `${k.provider === "compatible" ? P.providerName(k) : (P.NAMES[k.provider] || k.provider)} · ${k.model || "no model"}`;
@@ -814,13 +912,15 @@
           el("span", { class: "pilot-keycard-words" }, el("b", { text: "Bring Your Own API Key" }),
             el("small", { text: "Use your OpenAI, Claude, Gemini, or any compatible API key." })), icon("chevron")),
         config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null,
+        pending ? el("p", { class: "pilot-waiting", role: "status",
+          text: pending.text ? "Your message is waiting in the box. It sends as soon as you add a key." : "Pilot will look at this screen as soon as you add a key." }) : null,
         el("h3", { class: "pilot-h3", text: "Chat keys" }),
         a.keys.length ? el("ul", { class: "pilot-keys" }, ...keyRows) : el("p", { class: "pilot-small", text: "No key yet. Add one to start chatting." }),
         chatForm || addBtn,
         el("label", { class: "pilot-check" }, remember,
           el("span", { text: "Remember my keys on this device (otherwise they're forgotten when this tab closes)" })),
-        mediaSection("image", "Image generation", "Lets Pilot make pictures in the chat, with your own image key."),
-        mediaSection("video", "Video generation", "Lets Pilot make short videos, with your own video key. Videos can cost more: your provider bills each one."),
+        hidden.has("image") ? null : mediaSection("image", "Image generation", "Lets Pilot make pictures in the chat, with your own image key."),
+        hidden.has("video") ? null : mediaSection("video", "Video generation", "Lets Pilot make short videos, with your own video key. Videos can cost more: your provider bills each one."),
         el("h3", { class: "pilot-h3", text: "What Pilot remembers" }),
         el("label", { class: "pilot-check" }, memOn, el("span", { text: "Let Pilot remember notes about how you like answers (only in this browser)" })),
         mem.on ? notes : null,
@@ -879,9 +979,9 @@
       engine,
       screenText,
     };
-    pilot.onChange(() => { if (view === "chat") queueDraw(); });
+    pilot.onChange(() => { if (view === "chat") queueDraw(); if (pending && store.ready()) setTimeout(sendPending, 0); });
     return api;
   }
 
-  window.PilotPanel = { VERSION, create, screenText, redact };
+  window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, hiddenSections, DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS };
 })();

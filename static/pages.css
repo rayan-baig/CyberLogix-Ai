@@ -217,6 +217,24 @@ footer.site a:hover, footer.site a:focus-visible { color: var(--ink); }
 .easiest code { word-break: break-all; }
 .easiest-help { margin-top: 14px; }
 .tech-h { margin-top: 40px; }
+/* Each guide is a fold (help-sensors.js opens the one a link names). Its
+   summary is the guide's heading, the same look as /pricing's folds. */
+details.guide > summary h2 { margin: 0; font: inherit; color: inherit; }
+details.guide > .panel { margin-top: 0; }
+details.guide:target > summary { border-color: var(--accent); }
+/* A link to a guide lands it below the sticky top bar, not under it. */
+details.guide, #what-you-need, #tech { scroll-margin-top: 84px; }
+/* "What you need" here keeps its heading and first lines, and folds the
+   rest behind "More" on a phone (opened on a wide screen). */
+.need details.more > summary {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 16px; margin-top: 4px;
+  border: 1px solid var(--border-lit); border-radius: 999px;
+  color: var(--accent); font-size: 14px; list-style: none;
+}
+.need details.more > summary::-webkit-details-marker { display: none; }
+.need details.more > summary::after { content: "+"; font-size: 16px; }
+.need details.more[open] > summary { display: none; }
 
 /* --- pricing folds -----------------------------------------------------
    Each long section of /pricing is a fold with a heading-sized summary:

@@ -37,20 +37,27 @@
   // Only the page's name and which tab is open: never a unit, a reading or
   // anybody's name. Those reach the AI only through a tool the person's own
   // request runs.
+  // A public page (or the console's sign-in) shows Pilot none of the
+  // person's fridges, so the welcome's "Which fridges need me?" and the like
+  // get an answer that says where to look instead of a guess.
+  const SIGNED_OUT = "Not signed in: Pilot can't see their fridges or alerts here. For those, they sign in to the console or the Simple view (Today).";
+
   function screen() {
     if (onConsole) {
-      if (!signedIn()) return { name: "Console sign-in" };
+      if (!signedIn()) return { name: "Console sign-in", facts: SIGNED_OUT };
       const tab = window.CyberLogixConsole.tab();
       return { name: `Console (Advanced view)${tab ? `, ${tab} tab` : ""}`, facts: "The person is signed in." };
     }
-    if (onToday) return { name: PAGES["/today"], facts: signedIn() ? "The person is signed in." : "Not signed in." };
-    if (path.startsWith("/for/")) return { name: `Industry page: ${document.title}` };
-    return { name: PAGES[path] || document.title };
+    if (onToday) return { name: PAGES["/today"], facts: signedIn() ? "The person is signed in." : SIGNED_OUT };
+    if (path === "/demo") return { name: PAGES["/demo"], facts: "Not signed in: this is the demo, with pretend fridges and alerts, not the person's own." };
+    if (path.startsWith("/for/")) return { name: `Industry page: ${document.title}`, facts: SIGNED_OUT };
+    return { name: PAGES[path] || document.title, facts: SIGNED_OUT };
   }
 
-  const LIVE = [["What's warm now?", "Which units are warm or out of range right now?"],
-    ["Show open alerts", "Show my open alerts."],
-    ["Is the food still OK?", "Is the food still OK in the unit that went warm?"]];
+  // Signed in, under the welcome's own five (so none says the same thing).
+  const LIVE = [["Show open alerts", "Show my open alerts."],
+    ["It's fixed now", "The fridge that went warm is fixed. Mark its alert fixed."],
+    ["Make a proof report", "Make a proof of monitoring report for last month."]];
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
@@ -97,7 +104,27 @@
   window.Pilot.mount({
     appName: "CyberLogix AI",
     name: "Pilot",
-    tagline: "Your AI copilot. Powered by you.",
+    // Core 1.2.0: the welcome is CyberLogix's own (docs/PILOT.md). The five
+    // pills are what a café asks most; signed in, the console's tools answer
+    // them (each change asks first), and on a public page Pilot says where
+    // to look (screen().facts).
+    tagline: "Your fridge-alarm helper",
+    welcomePills: [
+      { icon: "bars", label: "Which fridges need me?", action: "Which of my fridges and freezers need me right now, and what should I check first?", send: true },
+      { icon: "help", label: "What does this alert mean?", action: "Explain my latest alert in plain words: what happened, where it stands now, and what I should do.", send: true },
+      { icon: "chat", label: "Is the food still OK?", action: "Is the food still OK in the fridge or freezer that went warm?", send: true },
+      { icon: "bolt", label: "Add a fridge", action: "Help me add a fridge or freezer.", send: true },
+      { icon: "key", label: "Add my AI key", action: "settings" },
+    ],
+    // CyberLogix has no use for making pictures or videos.
+    hideKeySections: ["image", "video"],
+    // With every corner busy the robot shrinks into its corner, wholly on
+    // the screen, instead of hanging off the edge (it replaced this app's
+    // own stylesheet fix of 3.23.0).
+    keepInViewport: true,
+    // The phone's Menu on the public pages is a <details> drop-down, not a
+    // dialog: the robot steps back while it is open.
+    modals: [".menu[open] > nav"],
     storagePrefix: "cyberlogix-pilot",
     pack: d.pack || "",
     // Exactly the hosts the security policy lets a browser reach for an

@@ -1,4 +1,4 @@
-/* Pilot core 1.1.1 · pilot-panel.css
+/* Pilot core 1.2.0 · pilot-panel.css
    The chat window that opens from the robot: dark navy-to-indigo glass with
    a blue and violet glow edge, the Pilot header, the greeting, the five
    pills, the "Type a message…" box and the round buttons at the bottom.
@@ -167,6 +167,11 @@
 .pilot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
 .pilot-chips[hidden] { display: none; }
 .pilot-chips-wait .pilot-chip { opacity: 0.55; cursor: default; }
+/* This page's suggestions on the welcome (before a chat starts): under the pills. */
+.pilot-chips-welcome { margin: 12px 0 0; }
+/* A message waiting for a key (settings). */
+.pilot-waiting { margin: 8px 2px 0; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; color: var(--pilot-ink);
+  border: 1px solid rgba(34, 211, 238, 0.45); background: rgba(34, 211, 238, 0.08); }
 .pilot-chip { padding: 7px 13px; border-radius: 999px; border: 1px solid rgba(99, 130, 255, 0.4); background: rgba(24, 32, 84, 0.6);
   font-size: 13.5px; cursor: pointer; color: #e0e7ff; }
 .pilot-chip:hover, .pilot-chip:focus-visible { border-color: rgba(96, 165, 250, 0.9); outline: none; }

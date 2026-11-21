@@ -1,4 +1,4 @@
-/* Pilot core 1.1.1 · pilot.css
+/* Pilot core 1.2.0 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -19,6 +19,10 @@
   --pilot-size: 88px;
   --pilot-gap: 16px;
   --pilot-peek-show: 36px; /* how much of the robot shows while it's tucked away */
+  --pilot-clear-x: 12px; /* the room kept from the page's words, across */
+  --pilot-clear-y: 4px; /* and up and down */
+  --pilot-peek-scale: 0.5; /* keepInViewport: its size while tucked away */
+  --pilot-keep-margin: 8px; /* keepInViewport: from the screen's edges */
   position: fixed;
   z-index: 2147483000;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -109,6 +113,32 @@
    quieter still. */
 .pilot-typing.pilot-peek .pilot-launcher { opacity: 0.55; }
 
+/* keepInViewport (the app's config): nothing hangs off the screen's edge.
+   Tucked away, the robot shrinks to --pilot-peek-scale in its corner,
+   --pilot-keep-margin from the edges (pilot-mascot.js peekBox counts the
+   same box), and grows back a little on hover. */
+.pilot-root.pilot-keep-in { --pilot-keep-d: calc(var(--pilot-gap) - var(--pilot-keep-margin)); }
+.pilot-root.pilot-keep-in.pilot-peek .pilot-launcher,
+.pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:hover,
+.pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:focus-visible {
+  transform-origin: 100% 100%;
+  transform: translate(var(--pilot-keep-d), var(--pilot-keep-d)) scale(var(--pilot-peek-scale));
+}
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-bl .pilot-launcher,
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-bl:not(.pilot-typing) .pilot-launcher:hover {
+  transform-origin: 0 100%; transform: translate(calc(-1 * var(--pilot-keep-d)), var(--pilot-keep-d)) scale(var(--pilot-peek-scale)); }
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-tr .pilot-launcher,
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-tr:not(.pilot-typing) .pilot-launcher:hover {
+  transform-origin: 100% 0; transform: translate(var(--pilot-keep-d), calc(-1 * var(--pilot-keep-d))) scale(var(--pilot-peek-scale)); }
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-tl .pilot-launcher,
+.pilot-root.pilot-keep-in.pilot-peek.pilot-at-tl:not(.pilot-typing) .pilot-launcher:hover {
+  transform-origin: 0 0; transform: translate(calc(-1 * var(--pilot-keep-d)), calc(-1 * var(--pilot-keep-d))) scale(var(--pilot-peek-scale)); }
+.pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:hover { opacity: 1; }
+
+/* The first page of a visit: shown whole for a few seconds, with a soft
+   glow, so people notice it (pilot.js reveal). */
+.pilot-hello .pilot-launcher::before { animation: pilot-think 1.6s ease-in-out 2; }
+
 /* Room for the robot: a page (or an app's own stylesheet) can keep its last
    lines and buttons clear with padding-bottom: var(--pilot-gutter), or the
    .pilot-gutter class. Set while Pilot is on the page. */
@@ -121,8 +151,10 @@
    on anything; pilot.js also puts it on the app's gutter elements (`main`
    unless the config says otherwise) where their own padding is narrower. */
 @media (max-width: 720px) {
-  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; }
+  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; --pilot-peek-scale: 0.42; --pilot-keep-margin: 3px; }
   :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); --pilot-side: 24px; }
+  /* keepInViewport: room for the small tucked-away robot (24 px, 3 px in, and a little air). */
+  :root.pilot-on.pilot-keep-in { --pilot-side: 30px; }
   :root.pilot-on .pilot-gutter-side {
     padding-right: max(var(--pilot-side), env(safe-area-inset-right, 0px));
     padding-left: max(var(--pilot-side), env(safe-area-inset-left, 0px));
@@ -132,6 +164,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher { transition: none; }
   .pilot-robot,
+  .pilot-hello .pilot-launcher::before,
   .pilot-thinking .pilot-launcher::before,
   .pilot-dot-thinking { animation: none; }
   .pilot-thinking .pilot-launcher::before { opacity: 1; }
