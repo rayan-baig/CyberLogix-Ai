@@ -108,7 +108,11 @@ def test_the_alert_says_exactly_what_a_real_one_would():
     assert "Press 1" in story["messages"]["call_script"]
     assert f"{story['real_wait_minutes']} minutes" in story["messages"]["call_script"]
     assert story["messages"]["ack_reply"].startswith("CyberLogix: thanks, Sam.")
-    assert "No more calls" in story["messages"]["ack_reply"]
+    # Before the pretend call rings, "Nobody else will be called"; after
+    # it, "No more calls for this alert" (3.30.0).
+    assert "Nobody else will be called" in story["messages"]["ack_reply"]
+    assert "No more calls" not in story["messages"]["ack_reply"]
+    assert "No more calls" in story["messages"]["ack_reply_called"]
 
 
 def test_the_page_shows_texts_calls_and_reply_1():

@@ -146,7 +146,11 @@
     const lines = [];
     if (wide.length) lines.push("**Several fridges are warming at once.** That can mean a power cut, a door left open, or someone at the controls: check the site now.");
     const urgent = rows.filter((r) => r.s.state !== "waiting_first");
-    if (!urgent.length && !wide.length) {
+    // The food on a closed alert nobody has answered (3.30.0): never
+    // "Nothing needs you right now" beside it.
+    const food = (dd.incidents || []).filter((i) => i && i.state === "resolved" && !i.site_wide
+      && i.food_question && i.food_question.ask_on_today);
+    if (!urgent.length && !wide.length && !food.length) {
       const total = units.length;
       lines.push(total === 1 ? "Nothing needs you right now: your one unit is within its limits."
         : `Nothing needs you right now: all ${total} fridges and freezers are within their limits.`);
@@ -157,6 +161,10 @@
       });
       lines.push(`${urgent.length === 1 ? "This one needs you:" : `These ${urgent.length} need you, worst first:`}\n${list.join("\n")}`);
     }
+    food.forEach((i) => {
+      const u = units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
+      lines.push(`Check the ${i.food_question.word} in **${unitName(u)}**: ${words(i.food_question.words)}. Nobody has said yet whether it was kept. Press **${i.food_question.word === "stock" ? "Stock kept" : "Food kept"}** or **Thrown away**${onToday ? " at the top of the page" : " on the alert"}, for the record.`);
+    });
     const waiting = rows.filter((r) => r.s.state === "waiting_first");
     if (waiting.length) {
       lines.push(`${waiting.length === 1 ? `**${unitName(waiting[0].u)}** is` : `${waiting.length} units are`} waiting for a first reading. [Connect a sensor](${CONNECT}).`);
@@ -210,6 +218,9 @@
     const long = outFor(since);
     const at = clock(since);
     const wait = Number(u.alert_after_minutes) || 0;
+    if (u.condition && u.condition.back_in_range) {
+      return `**${unitName(u)}** is back in range${now ? ` at ${now}` : ""}, but its alert is still open. Press **It's fixed** to close it, then say what happened to the food.${tail}`;
+    }
     const parts = [
       `**${unitName(u)}** is too ${cold ? "cold" : "warm"}${now ? `: ${now}` : ""}${limit ? `, ${cold ? "below" : "above"} its ${limit} limit` : ""}.`,
       `It went out of range${at ? ` at ${at}` : ""}${long ? ` and has been out for ${long}` : ""}${peak && peak !== now ? `; worst so far ${peak}` : ""}.`,
@@ -327,7 +338,11 @@
   const link = (to) => ({ link: to });
   const answer = (fn) => ({ answer: fn });
   // Signed in, under the welcome's own five (so none says the same thing).
-  const LIVE = [["Log for the inspector", answer(LOG)],
+  // Signed in: straight to the log for the last seven days (3.30.0), not
+  // an answer that says where it is. On the console it only changes the
+  // page's #, so nothing reloads.
+  const LOG_HERE = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#inspector-log?open=1`;
+  const LIVE = [["Log for the inspector", link(LOG_HERE)],
     ["It's fixed now", answer(fixedAnswer)],
     ["Make a proof report", "Make a proof of monitoring report for last month."]];
   // Written for the person most of these pages are for: a café or small

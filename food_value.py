@@ -12,22 +12,22 @@ list a sector uses; a sector not in it gets no estimate at all (no figure
 is better than an invented one). docs/ALERTS.md says the same for whoever
 runs the server.
 
-When an alert counts (`protected`, 3.28.0): it is a unit's own alert (not
+When an alert counts (`protected`, 3.30.0): it is a unit's own alert (not
 a site-wide one, which sits on top of its units' alerts), it is closed,
-and either
+and somebody said the food was kept (the "Food kept" answer, or a
+corrective action that kept it: unaffected, moved, sold or used). Only
+the saved answer counts. Until somebody taps, a closed alert is "food
+unanswered" (`question`): it says how long it took to come back ("Back in
+range in 12 minutes") and asks, and never "Food kept" or "$800 protected".
+3.28.0 counted an answered alert back in range within two hours as kept,
+so an alert closed by itself after "It's fixed" said "Food protected:
+about $3,000" while nobody had said a word about the food.
 
-* somebody said the food was kept (the "Food kept" answer after "It's
-  fixed", or a corrective action that kept it: unaffected, moved, sold or
-  used), or
-* a person answered it ("I'm on it" or "It's fixed") and the unit was back
-  in range within `SAFE_HOURS` (two hours) of going out.
-
-It never counts when the food was recorded as thrown away. An alert that
-ended on its own with nobody answering is not counted: nobody had to act,
-so nothing is claimed. A unit out of range for longer than two hours, or
-closed while still out of range, with nobody saying the food was kept, is
-"Food at risk: check it" (`at_risk`), never "protected": eight hours at
-62.5°F used to say "Food protected: about $3,000".
+It never counts when the food was recorded as thrown away. A unit out of
+range for longer than two hours, or closed while still out of range, with
+nobody saying what happened to the food, is "Food at risk: check it"
+(`at_risk`): eight hours at 62.5°F once said "Food protected: about
+$3,000".
 """
 
 from __future__ import annotations
@@ -125,11 +125,7 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
     if not _closed_unit_alert(incident):
         return None
     fate = getattr(incident, "product_disposition", "") or ""
-    if fate == "discarded":
-        return None
-    answered = (incident.acknowledged_at is not None
-                or getattr(incident, "fix_reported_at", None) is not None)
-    if fate not in KEPT and not (answered and _back_in_time(incident)):
+    if fate not in KEPT:
         return None
     guess = estimate(sensor)
     if guess is None:
@@ -144,14 +140,13 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
 def at_risk(incident, sensor) -> Optional[Dict[str, Any]]:
     """"Food at risk: check it", on a closed alert that ran too long.
 
-    Out of range for over SAFE_HOURS (or closed while still out), nobody
-    said the food was kept, and nobody recorded it thrown away. None
-    otherwise, and None where the sector has no estimate.
+    Out of range for over SAFE_HOURS (or closed while still out), and
+    nobody has said what happened to the food. None otherwise, and None
+    where the sector has no estimate.
     """
     if not _closed_unit_alert(incident):
         return None
-    fate = getattr(incident, "product_disposition", "") or ""
-    if fate == "discarded" or fate in KEPT:
+    if getattr(incident, "product_disposition", "") or "":
         return None
     if _back_in_time(incident):
         return None
@@ -168,17 +163,79 @@ def at_risk(incident, sensor) -> Optional[Dict[str, Any]]:
     }
 
 
+def _minutes_words(minutes: float) -> str:
+    from domain import minutes_words
+
+    return minutes_words(minutes)
+
+
+# How long /today and the console's "Needs you now" keep asking about the
+# food on a closed alert nobody has answered. The alert itself asks for as
+# long as it is kept.
+ASK_ON_TODAY_DAYS = 7
+
+
+def question(incident, sensor, now=None) -> Optional[Dict[str, Any]]:
+    """The food question on a closed alert nobody has answered (3.30.0).
+
+    {"word": "food" | "stock", "at_risk", "words", "note", "back_minutes",
+    "ask_on_today"}: words is "Back in range in 12 minutes" when it came
+    back within SAFE_HOURS, else "Food at risk: check it". None once
+    somebody answered, on a live alert, and where the sector has no
+    estimate (nothing to ask about).
+    """
+    from datetime import timedelta
+
+    from store import utc_now
+
+    if not _closed_unit_alert(incident):
+        return None
+    if getattr(incident, "product_disposition", "") or "":
+        return None
+    guess = estimate(sensor)
+    if guess is None:
+        return None
+    word = "food" if guess["label"].startswith("Food") else "stock"
+    start = getattr(incident, "out_since", None) or incident.opened_at
+    back = max(0.0, (incident.resolved_at - start).total_seconds() / 60.0)
+    risky = at_risk(incident, sensor)
+    now = now or utc_now()
+    if risky:
+        words, note = risky["words"], risky["note"]
+    else:
+        words = f"Back in range in {_minutes_words(back)}"
+        note = f"Nobody has said yet whether the {word} was kept. One tap, for the record."
+    return {
+        "word": word,
+        "at_risk": bool(risky),
+        "words": words,
+        "note": note,
+        "back_minutes": round(back, 1),
+        "ask_on_today": incident.resolved_at >= now - timedelta(days=ASK_ON_TODAY_DAYS),
+    }
+
+
 def month_total(pairs: Iterable) -> Dict[str, Any]:
-    """The month's estimate over (incident, sensor) pairs:
-    {"usd", "alerts", "at_risk"}, by the same rule as each alert's line."""
+    """The month's estimate over (incident, sensor) pairs, from the saved
+    answers only: {"usd", "alerts" (marked kept), "thrown", "at_risk",
+    "unanswered" (closed, nobody said, back within two hours)}."""
     usd = 0
-    alerts = 0
-    risky = 0
+    alerts = thrown = risky = unanswered = 0
     for incident, sensor in pairs:
         row = protected(incident, sensor)
         if row:
             usd += row["usd"]
             alerts += 1
-        elif at_risk(incident, sensor):
-            risky += 1
-    return {"usd": usd, "alerts": alerts, "at_risk": risky}
+            continue
+        if not _closed_unit_alert(incident) or estimate(sensor) is None:
+            continue
+        fate = getattr(incident, "product_disposition", "") or ""
+        if fate == "discarded":
+            thrown += 1
+        elif not fate:
+            if at_risk(incident, sensor):
+                risky += 1
+            else:
+                unanswered += 1
+    return {"usd": usd, "alerts": alerts, "thrown": thrown, "at_risk": risky,
+            "unanswered": unanswered}

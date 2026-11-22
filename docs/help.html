@@ -808,6 +808,9 @@ body.has-terminal main { padding-bottom: 148px; }
 #term-body .info { color: var(--accent); }
 
 #toasts { position: fixed; right: 18px; bottom: 96px; z-index: 80; display: grid; gap: 8px; }
+/* Off the sensor key and its instructions (console.js, placeToasts). */
+#toasts.toasts-top, #toasts.toasts-top-left { top: 76px; bottom: auto; }
+#toasts.toasts-left, #toasts.toasts-top-left { right: auto; left: 18px; }
 .toast {
   background: var(--raised); border: 1px solid var(--border-lit);
   border-left: 3px solid var(--accent);
@@ -824,8 +827,12 @@ body.has-terminal main { padding-bottom: 148px; }
 /* "Food at risk: check it" (console.js, foodAtRisk): never "protected"
    for an alert that ran over two hours with nobody saying it was kept. */
 .food-risk { margin: 6px 0 4px; font-size: 13.5px; color: var(--warning); }
-.food-risk p { margin: 0; }
-.food-risk .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+/* The food question on a closed alert nobody has answered yet (3.30.0),
+   and the answer once given ("Thrown away, Jo, 4:09 PM"). */
+.food-ask { margin: 6px 0 4px; font-size: 13.5px; color: var(--ink-2, inherit); }
+.food-said { margin: 6px 0 4px; font-size: 13.5px; }
+.food-risk p, .food-ask p { margin: 0; }
+.food-risk .sub, .food-ask .sub, .food-said .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .food-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -1195,6 +1202,7 @@ body.acct-small .nav .status-line { display: none; }
   /* A phone-sized table has to scroll sideways rather than squash. */
   #fleet-table, .scrollx { overflow-x: auto; }
   #toasts { right: 10px; left: 10px; bottom: 88px; }
+  #toasts.toasts-left, #toasts.toasts-top-left { right: 10px; left: 10px; }
   .toast { max-width: none; }
   /* A title, a note and two buttons do not fit one phone row; the title
      was squeezed into a column a word wide. They wrap instead. */

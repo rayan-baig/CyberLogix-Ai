@@ -162,6 +162,10 @@ h2.plain {
 .need-when { font-size: 14px; color: var(--muted); margin: 0 0 12px; }
 .need-acts { display: flex; gap: 10px; flex-wrap: wrap; }
 .need-acts .btn { min-height: 44px; padding: 0 18px; font-size: 15px; }
+/* Food kept / Thrown away (3.30.0): two equal answers side by side, under
+   the headline or a job, never one wide and one narrow. */
+.food-acts .btn { flex: 1 1 0; width: auto; min-width: 0; }
+.verdict .food-acts, .todo .food-acts { margin-top: 14px; max-width: 420px; }
 
 /* The explanation, folded under the answer. */
 .intro { margin-top: 34px; }

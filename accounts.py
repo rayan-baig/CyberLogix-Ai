@@ -24,10 +24,11 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from domain import mask_email
 from ratelimit import wait_words
+from records import USER_PREFS
 from store import ROLES, STORE, LoginSession, Tenant, User, hash_secret, verify_password
 
 logger = logging.getLogger("cyberlogix.accounts")
@@ -387,12 +388,42 @@ def logout(session: LoginSession = Depends(require_session)):
 
 @router.get("/me")
 def whoami(user: User = Depends(require_operator)):
-    """The signed-in operator and their tenant."""
+    """The signed-in operator, their tenant, and their own screen settings
+    (`prefs`, saved on the person's sign-in so they follow them)."""
     tenant = tenant_of(user)
     return {
         "user": user.public(),
         "tenant": tenant.public(sensor_count=STORE.seat_count(tenant.tenant_id)),
+        "prefs": dict(STORE.person_of(user).prefs),
     }
+
+
+class PrefsChange(BaseModel):
+    """Screen settings to save: only the names records.USER_PREFS lists."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    today_intro: Optional[str] = Field(
+        None, description="/today's \"What this is\": 'open' or 'closed'.")
+
+    @field_validator("today_intro")
+    @classmethod
+    def known_value(cls, value):
+        if value is not None and value not in USER_PREFS["today_intro"]:
+            raise ValueError("today_intro must be 'open' or 'closed'")
+        return value
+
+
+@router.post("/me/prefs")
+def save_prefs(payload: PrefsChange, user: User = Depends(require_operator)):
+    """Save the person's own screen settings, for every device they use.
+
+    On the person's sign-in, not the business they have open, and nothing
+    about anybody else: a viewer may save their own."""
+    person = STORE.person_of(user)
+    changes = {k: v for k, v in payload.model_dump().items() if v is not None}
+    STORE.set_user_prefs(person, changes)
+    return {"prefs": dict(person.prefs)}
 
 
 @router.post("/me/password")

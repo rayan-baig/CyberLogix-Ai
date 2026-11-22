@@ -66,6 +66,26 @@ def person_name(label: Optional[str]) -> Optional[str]:
         return text
     return text.split(" ")[0] if text else None
 
+# What happened to the food, in the words a screen uses (3.30.0): the
+# product disposition recorded after an alert, from the "Food kept" /
+# "Thrown away" question or a corrective action.
+FOOD_ANSWER_WORDS = {
+    "unaffected": "Food kept",
+    "moved": "Moved and kept",
+    "sold_or_used": "Used straight away",
+    "quarantined": "Put aside to check",
+    "discarded": "Thrown away",
+    "not_applicable": "Nothing to check",
+}
+
+
+def food_answer_words(disposition: Optional[str]) -> Optional[str]:
+    """"Food kept", "Thrown away" and so on, or None before any answer."""
+    if not disposition:
+        return None
+    return FOOD_ANSWER_WORDS.get(disposition, disposition.replace("_", " ").capitalize())
+
+
 # Written on every sensor row from 3.19.0. A row without it was saved
 # under the old sector defaults (domain.LEGACY_DANGER_ABOVE).
 SENSOR_DEFAULTS_VERSION = 2
@@ -526,6 +546,10 @@ class Incident:
     corrective_action_by: Optional[str] = None
     corrective_action_at: Optional[datetime] = None
     product_disposition: Optional[str] = None
+    # Who said what happened to the food, and when (3.30.0): "Thrown away,
+    # Jo, 4:09 PM" in the alert's history and on /today's month line.
+    food_answered_by: Optional[str] = None
+    food_answered_at: Optional[datetime] = None
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     # The readings that prove this event, copied onto the incident when it
@@ -800,6 +824,8 @@ class Incident:
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),
             "product_disposition": self.product_disposition,
+            "food_answered_by": self.food_answered_by,
+            "food_answered_at": iso(self.food_answered_at),
             "reviewed_by": self.reviewed_by,
             "reviewed_at": iso(self.reviewed_at),
             "evidence_readings": list(self.evidence_readings),
@@ -856,6 +882,9 @@ class Incident:
             corrective_action_by=row.get("corrective_action_by"),
             corrective_action_at=_parse(row.get("corrective_action_at")),
             product_disposition=row.get("product_disposition"),
+            # Defaulted: answers before 3.30.0 kept no name or time.
+            food_answered_by=row.get("food_answered_by"),
+            food_answered_at=_parse(row.get("food_answered_at")),
             reviewed_by=row.get("reviewed_by"),
             reviewed_at=_parse(row.get("reviewed_at")),
             # Defaulted, so incidents written before evidence was
@@ -944,6 +973,12 @@ class Incident:
             "corrective_action_by": self.corrective_action_by,
             "corrective_action_at": iso(self.corrective_action_at),
             "product_disposition": self.product_disposition,
+            # Who said what happened to the food and when, and the answer in
+            # words ("Food kept", "Thrown away"), or None before anybody did.
+            "food_answered_by": self.food_answered_by,
+            "food_answered_by_name": person_name(self.food_answered_by),
+            "food_answered_at": iso(self.food_answered_at),
+            "food_answer_words": food_answer_words(self.product_disposition),
             "reviewed_by": self.reviewed_by,
             "reviewed_at": iso(self.reviewed_at),
             # What an inspector is actually checking. A cold fridge with
@@ -1011,6 +1046,10 @@ class User:
     # their own. While it is set the sign-in stays inside that one business:
     # it cannot join or start others, which the owner could then walk into.
     password_from_owner: bool = False
+    # The person's own screen settings, kept on the account so they follow
+    # them from phone to computer (3.30.0): {"today_intro": "open" |
+    # "closed"} for /today's "What this is". Only names in USER_PREFS.
+    prefs: Dict[str, Any] = field(default_factory=dict)
 
     def can(self, required: str) -> bool:
         """True when this user's role is at least `required`."""
@@ -1034,6 +1073,7 @@ class User:
             "disabled": self.disabled,
             "linked_to": self.linked_to,
             "password_from_owner": self.password_from_owner,
+            "prefs": dict(self.prefs),
         }
 
     @classmethod
@@ -1051,6 +1091,8 @@ class User:
             disabled=row.get("disabled", False),
             linked_to=row.get("linked_to"),
             password_from_owner=bool(row.get("password_from_owner", False)),
+            prefs={k: v for k, v in dict(row.get("prefs") or {}).items()
+                   if USER_PREFS.get(k) and v in USER_PREFS[k]},
         )
 
     def public(self) -> Dict[str, Any]:
@@ -1069,6 +1111,13 @@ class User:
             "linked": self.linked_to is not None,
             "must_change_password": self.password_from_owner,
         }
+
+
+# The screen settings a person may save on their account, and the values
+# each takes (User.prefs, POST /api/accounts/me/prefs).
+USER_PREFS: Dict[str, tuple] = {
+    "today_intro": ("open", "closed"),
+}
 
 
 @dataclass

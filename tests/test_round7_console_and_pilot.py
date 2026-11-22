@@ -271,12 +271,16 @@ def test_a_closed_answered_alert_says_food_protected_as_an_estimate(api):
     assert api.post(f"/api/voice/acknowledge/{incident_id}", headers=owner, json={}).status_code == 200
     _pulse(api, key, 38.0)
     assert api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={}).status_code == 200
+    # Since 3.30.0, only once somebody says the food was kept.
+    assert row()["food_protected"] is None
+    assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
+                    json={"food": "kept"}).status_code == 200
     saved = row()["food_protected"]
     usd = food_value.STOCK_USD["food"]["walk-in fridge"]
     assert saved["usd"] == usd
     assert saved["words"] == f"Food protected: about ${usd:,}"
     assert saved["note"].startswith("An estimate:")
-    assert "i.food_protected.words" in CONSOLE_JS and "i.food_protected.note" in CONSOLE_JS
+    assert "esc(i.food_protected.words)" in CONSOLE_JS and "esc(i.food_protected.note)" in CONSOLE_JS
 
 
 def test_an_alert_nobody_answered_or_whose_food_was_binned_claims_nothing(operator_factory, sensor_factory):
@@ -289,6 +293,9 @@ def test_an_alert_nobody_answered_or_whose_food_was_binned_claims_nothing(operat
     incident.resolved_at = utc_now()
     assert food_value.protected(incident, sensor) is None
     incident.acknowledged_at = utc_now() - timedelta(minutes=5)
+    # Answered and quick is not "kept" until somebody says so (3.30.0).
+    assert food_value.protected(incident, sensor) is None
+    incident.product_disposition = "unaffected"
     assert food_value.protected(incident, sensor)["usd"] == food_value.STOCK_USD["food"]["fridge"]
     incident.product_disposition = "discarded"
     assert food_value.protected(incident, sensor) is None
@@ -302,9 +309,8 @@ def test_the_monthly_email_adds_it_up_as_an_estimate():
               "inspector_log": "", "period_start": "2026-10-01", "period_end": "2026-10-31",
               "caveat": "", "temperature_unit": "F"}
     text = monthly.render_text(report)
-    # 3.28.0: the rule is said as it is (food_value.protected).
-    assert ("Food protected: about $3,800 (2 alerts answered and back in range within "
-            "2 hours, or marked Food kept).") in " ".join(text.split())
+    # 3.30.0: the rule is said as it is (food_value.protected): the answer.
+    assert "Food protected: about $3,800 (2 alerts marked Food kept)." in " ".join(text.split())
     assert "An estimate: what a typical fridge or freezer of each kind holds" in " ".join(text.split())
     report["food_protected_usd"] = 0
     assert "Food protected" not in monthly.render_text(report)
@@ -313,7 +319,7 @@ def test_the_monthly_email_adds_it_up_as_an_estimate():
 def test_the_owner_tunes_it_in_one_place_and_it_is_written_down():
     assert "STOCK_USD" in (ROOT / "food_value.py").read_text()
     alerts = (ROOT / "docs/ALERTS.md").read_text()
-    assert '"Food protected": an estimate on a closed alert' in alerts
+    assert '### The food question, and "Food protected"' in alerts
     assert "`food_value.py`" in alerts
 
 

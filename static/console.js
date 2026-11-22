@@ -75,6 +75,37 @@ function logToConsole(message, kind = "info") {
   body.scrollTop = body.scrollHeight;
 }
 
+/* Where the toasts go (3.30.0): their usual corner, unless that would sit
+   on something the person is reading that cannot be got back, such as a
+   new sensor key and its instructions ("Recorded, not texted" covered
+   them on a desktop). Then the top, under the header, or whichever place
+   covers least of it. */
+function placeToasts(box) {
+  const shown = (node) => !node.hidden && node.getClientRects().length;
+  const avoid = Array.from(document.querySelectorAll("[data-toast-avoid]")).filter(shown)
+    .map((node) => node.getBoundingClientRect());
+  if (!avoid.length) { box.classList.remove(...TOAST_SPOTS); return; }
+  // Buttons count too, a little: the top corner sat on "Add me".
+  const buttons = Array.from(document.querySelectorAll("main button, main a.btn, .needs-bar button"))
+    .filter(shown).map((node) => node.getBoundingClientRect());
+  const area = (r, a) => Math.max(0, Math.min(r.right, a.right) - Math.max(r.left, a.left))
+    * Math.max(0, Math.min(r.bottom, a.bottom) - Math.max(r.top, a.top));
+  let best = "";
+  let least = Infinity;
+  for (const spot of [""].concat(TOAST_SPOTS)) {
+    box.classList.remove(...TOAST_SPOTS);
+    if (spot) box.classList.add(spot);
+    const r = box.getBoundingClientRect();
+    const cost = avoid.reduce((sum, a) => sum + area(r, a) * 1000, 0)
+      + buttons.reduce((sum, a) => sum + area(r, a), 0);
+    if (cost < least) { least = cost; best = spot; }
+    if (cost === 0) break;
+  }
+  box.classList.remove(...TOAST_SPOTS);
+  if (best) box.classList.add(best);
+}
+const TOAST_SPOTS = ["toasts-top", "toasts-left", "toasts-top-left"];
+
 /* A toast for the moment, a terminal line for the record. */
 function toast(message, kind = "") {
   // One message at a time (3.28.0): "Added you", "Recorded, not texted"
@@ -89,6 +120,7 @@ function toast(message, kind = "") {
   el.className = "toast " + kind;
   el.textContent = message;
   box.appendChild(el);
+  placeToasts(box);
   state.lastToast = { message, kind, at: Date.now() };
   setTimeout(() => el.remove(), 5200);
   logToConsole(message, kind === "err" ? "err" : kind === "ok" ? "ok" : "info");
@@ -1106,9 +1138,9 @@ function render(d, health) {
   // my food OK", not six. "Readings in range: shown after 24 hours", "Flat
   // batteries: 0" and "Readings logged: 4" were filler on a café's first
   // screen. A flat battery or a day's figure still shows when it has one.
-  let phone = false;
-  try { phone = window.matchMedia("(max-width: 720px)").matches; } catch (_) { phone = false; }
-  const calm = phone && smallAccount(d) && !state.wall;
+  // On a desktop too (3.30.0): "Readings in range —" was an empty sixth
+  // figure on a café's wide screen.
+  const calm = smallAccount(d) && !state.wall;
   $("tiles").innerHTML = [
     tile(`${Noun(2)} online`, `${s.sensors_online}`,
          `of ${s.sensors_total} under watch`),
@@ -2065,9 +2097,21 @@ function incidentTimeline(i) {
         + (i.close_note ? `: ${i.close_note}` : "");
     steps.push({ cls: "done", when: i.resolved_at, text });
   }
+  // What happened to the food, who said so and when (3.30.0): "Thrown
+  // away, Jo" at 4:09 PM.
+  if (i.food_answer_words) {
+    const by = i.food_answered_by_name || (i.food_answered_by
+      ? CLXWords.person(null, i.food_answered_by) : "");
+    steps.push({ cls: "done", when: i.food_answered_at || null,
+      text: by ? `${i.food_answer_words}, ${by}` : i.food_answer_words,
+      order: i.food_answered_at ? undefined : Infinity });
+  }
   if (!i.resolved_at) {
+    const unit = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === i.sensor_id);
+    const back = Boolean(unit && unit.condition && unit.condition.back_in_range);
     steps.push({ cls: "", when: null,
-      text: `Out of range for ${CLXWords.outFor(i.out_since || i.opened_at)} so far` });
+      text: back ? "Back in range now: press It's fixed to close it"
+        : `Out of range for ${CLXWords.outFor(i.out_since || i.opened_at)} so far` });
   }
 
   // In the order things happened: the worst reading can come after the
@@ -2082,18 +2126,31 @@ function incidentTimeline(i) {
     + `</li>`).join("")}</ul>`;
 }
 
-/* "Food at risk: check it" (3.28.0): a closed alert that ran over two
-   hours, or was closed still out of range, with nobody saying the food
-   was kept. Never "Food protected" for those. The two answers are here
-   for whoever can act on the alert. */
+/* The food on a closed alert (3.30.0). Until somebody taps, the
+   question: "Back in range in 12 minutes" (or "Food at risk: check it"
+   when it ran over two hours or was closed still warm), with Food kept
+   and Thrown away for whoever can act on the alert. Never "Food kept" or
+   "$800 protected" before an answer, whichever way the alert closed. Once
+   answered: "Thrown away, Jo, 4:09 PM", and the estimate only for food
+   kept. */
 function foodAtRisk(i) {
+  const q = i.food_question;
   const canAct = Boolean(state.user && state.user.role !== "viewer") && !state.wall;
-  const kept = i.food_at_risk.words.startsWith("Stock") ? "Stock kept" : "Food kept";
-  return `<div class="food-risk"><p><b>${esc(i.food_at_risk.words)}</b>
-      <span class="sub">${esc(i.food_at_risk.note)}</span></p>${canAct
+  const kept = q.word === "stock" ? "Stock kept" : "Food kept";
+  return `<div class="${q.at_risk ? "food-risk" : "food-ask"}"><p><b>${esc(q.words)}</b>
+      <span class="sub">${esc(q.note)}</span></p>${canAct
     ? `<div class="food-acts"><button class="btn btn-sm" type="button" data-food-kept="${
         esc(i.incident_id)}">${kept}</button><button class="btn btn-sm" type="button" data-food-thrown="${
         esc(i.incident_id)}">Thrown away</button></div>` : ""}</div>`;
+}
+
+function foodAnswered(i) {
+  if (!i.food_answer_words) return "";
+  const who = [i.food_answer_words, i.food_answered_by_name,
+    i.food_answered_at ? CLXWords.clock(i.food_answered_at) : ""].filter(Boolean).join(", ");
+  return `<p class="${i.food_protected ? "food-saved" : "food-said"}"><b>${esc(who)}</b>${
+    i.food_protected ? `<span class="sub">${esc(i.food_protected.words)}. ${
+      esc(i.food_protected.note)}</span>` : ""}</p>`;
 }
 
 /* A unit's name as the kitchen says it, for an alert about it. */
@@ -2166,10 +2223,8 @@ function renderIncidents(incidents, entitlements, siteWide) {
       ${i.state === "resolved" && (i.peak_display ?? i.peak_fahrenheit) != null
         ? "" : `<div class="card-note">${esc(i.breach_details)}</div>`}
       ${textsFailedNote(i)}
-      ${i.state === "resolved" && i.food_protected
-        ? `<p class="food-saved"><b>${esc(i.food_protected.words)}</b>
-             <span class="sub">${esc(i.food_protected.note)}</span></p>` : ""}
-      ${i.state === "resolved" && i.food_at_risk ? foodAtRisk(i) : ""}
+      ${i.state === "resolved" ? foodAnswered(i) : ""}
+      ${i.state === "resolved" && i.food_question ? foodAtRisk(i) : ""}
       ${incidentTimeline(i)}
 
       <details class="incident-more">
@@ -2221,8 +2276,35 @@ function renderNeedsBar(d) {
     (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1)
     || String(a.opened_at).localeCompare(String(b.opened_at)));
   if (!all.length) {
-    bar.hidden = true;
-    bar.innerHTML = "";
+    // Nothing live, but a closed alert nobody has answered the food
+    // question for (3.30.0): the same "One thing to do" as /today.
+    const food = (d.incidents || []).filter((x) => x.state === "resolved" && !x.site_wide
+      && x.food_question && x.food_question.ask_on_today)
+      .sort((a, b) => Number(b.food_question.at_risk) - Number(a.food_question.at_risk)
+        || String(b.resolved_at).localeCompare(String(a.resolved_at)));
+    if (!food.length || state.wall) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      measureNav();
+      return;
+    }
+    const f = food[0];
+    const q = f.food_question;
+    const canAct = Boolean(state.user && state.user.role !== "viewer");
+    bar.innerHTML = `<div class="needs-bar-in">
+        <span class="needs-bar-kicker">Needs you now</span>
+        <p class="needs-bar-what"><b>One thing to do: check the ${esc(q.word)} in ${
+          esc(unitNameFor(f.sensor_id))}.</b> <span class="needs-bar-who">${esc(q.words)}. ${
+          esc(q.note)}</span></p>
+        <span class="needs-bar-acts">
+          ${canAct ? `<button class="btn btn-sm btn-primary" type="button" data-food-kept="${
+            esc(f.incident_id)}">${q.word === "stock" ? "Stock kept" : "Food kept"}</button>
+          <button class="btn btn-sm" type="button" data-food-thrown="${esc(f.incident_id)}">Thrown away</button>` : ""}
+          ${food.length > 1 ? `<button class="btn btn-sm linkish" type="button" data-needs-more="1">${
+            food.length - 1} more</button>` : ""}
+        </span>
+      </div>`;
+    bar.hidden = false;
     measureNav();
     return;
   }
@@ -2232,9 +2314,14 @@ function renderNeedsBar(d) {
     ? `${unit.last_temperature_display}°${unit.temperature_unit || state.unit}`
     : `${i.temperature_display ?? i.temperature_fahrenheit}°${i.temperature_unit || state.unit}`;
   const warm = !(unit && unit.condition && unit.condition.too === "cold");
+  // Back in range with the alert still open (3.30.0): "1.5°F, too warm"
+  // was said of a freezer well inside its limit.
+  const back = Boolean(unit && unit.condition && unit.condition.back_in_range);
   const what = i.site_wide
     ? `<b>Several fridges are warming at once.</b> ${esc(i.breach_details || "")}`
-    : `<b>${esc(unitNameFor(i.sensor_id))}</b> is ${esc(deg)}, too ${warm ? "warm" : "cold"} for ${
+    : back
+      ? `<b>${esc(unitNameFor(i.sensor_id))}</b> is back in range at ${esc(deg)}: press <b>It's fixed</b>.`
+      : `<b>${esc(unitNameFor(i.sensor_id))}</b> is ${esc(deg)}, too ${warm ? "warm" : "cold"} for ${
         esc(CLXWords.outFor(i.out_since || i.opened_at))}.`;
   const who = i.state === "acknowledged"
     ? (i.fix_reported_at
@@ -2404,18 +2491,34 @@ function upgradeBlock(tenant) {
         charged here and no card is asked for.</div>
       <div class="u-d-flex u-gap-8 u-flex-wrap">
         ${starter ? `<button class="btn btn-sm" data-upgrade="starter">
-          Starter · ${esc(starter.monthly_label)} a month · 1 location,
-          ${esc(starter.max_units)} units</button>` : ""}
+          ${esc(planWords("starter", starter))}</button>` : ""}
         <button class="btn btn-sm btn-primary" data-upgrade="growth">
-          Growth · 50 units</button>
+          ${esc(planWords("growth", starter))}</button>
         <button class="btn btn-sm" data-upgrade="enterprise">
-          Enterprise · 1000 units</button>
+          ${esc(planWords("enterprise", starter))}</button>
       </div>
       ${starter ? `<div class="u-fs-11-5 u-c-muted u-mt-7">Starter is for a
         caf&eacute; or shop: texts and the site-wide alert, no phone
         calls.</div>` : ""}
       <div id="upgrade-out" class="u-fs-11-5 u-mt-7"></div>
     </div>`;
+}
+
+/* What each plan button says, in the pricing page's own words (3.30.0):
+   "Growth · 50 units" read as a different plan from /pricing's "Growth ·
+   $149 a month a location, up to 10 units there". From the server's
+   starter and Growth terms (pricing.starter_terms, pricing.growth_terms),
+   so no figure is typed here; the fallbacks are only for an older server. */
+function planWords(plan, starter) {
+  const t = Object.assign({}, (state.data && state.data.plan_prices) || {}, starter || {});
+  if (plan === "starter") {
+    return `Starter · ${t.monthly_label || ""} a month · one location, up to ${t.max_units || 3} fridges or freezers`;
+  }
+  if (plan === "growth") {
+    return `Growth · ${t.growth_label || "$149"} a month a location, up to ${
+      t.units_per_location || 10} units a location`;
+  }
+  return "Enterprise · several locations, chain prices";
 }
 
 /* Starter's way up. The fourth unit and the second location are refused
@@ -2438,7 +2541,7 @@ function starterBlock(tenant, starter) {
   }
   return `<div class="u-bt u-mt-9 u-pt-10">${summary}
       <button class="btn btn-sm btn-primary" data-upgrade="growth">Move to
-        Growth · 50 units</button>
+        ${esc(planWords("growth", starter))}</button>
       <div id="upgrade-out" class="u-fs-11-5 u-mt-7"></div>
     </div>`;
 }
@@ -4754,13 +4857,15 @@ function initInspectorForm() {
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function inspectorLink() {
-  const found = /^#inspector-log\?(.*)$/.exec(location.hash || "");
+  const found = /^#inspector-log(?:\?(.*))?$/.exec(location.hash || "");
   if (!found) return null;
-  const params = new URLSearchParams(found[1]);
-  const from = params.get("from") || "";
-  const to = params.get("to") || "";
+  const params = new URLSearchParams(found[1] || "");
+  // No dates (Pilot's "Log for the inspector", 3.30.0): the last seven days.
+  const today = new Date();
+  const from = params.get("from") || isoDay(new Date(today.getTime() - 6 * 86400000));
+  const to = params.get("to") || isoDay(today);
   if (!DAY.test(from) || !DAY.test(to)) return null;
-  return { business: params.get("business") || "", from, to };
+  return { business: params.get("business") || "", from, to, open: params.get("open") === "1" };
 }
 
 async function followInspectorLink() {
@@ -4787,6 +4892,8 @@ async function followInspectorLink() {
   applyFinder();
   const card = $("find-inspector-log");
   if (card) card.scrollIntoView({ block: "center" });
+  // Straight to the log itself, not only its card.
+  if (link.open) openInspectorLog(link.from, link.to, false);
 }
 
 /* "/console#connect" opens "Connect your sensor" (3.27.0): Pilot's "How
@@ -4852,10 +4959,12 @@ async function openInspectorLog(from, to, print) {
                   esc(stamp(b.acknowledged_at))}${b.minutes_to_acknowledge !== null
                   ? ` · after ${esc(minutesWords(b.minutes_to_acknowledge))}` : ""}</span>`
               : `<strong>Nobody</strong>`}</td>
-            <td>${b.corrective_action
-              ? `${esc(b.corrective_action)}${b.product_disposition
-                  ? `<span class="log-sub">Product: ${esc(b.product_disposition)}</span>` : ""}`
-              : `<strong>Not recorded</strong>`}</td>
+            <td>${b.corrective_action ? esc(b.corrective_action)
+              : b.food_answer ? "" : `<strong>Not recorded</strong>`}${b.food_answer
+                ? `<span class="log-sub">Food: ${esc(b.food_answer)}${b.food_answered_by
+                    ? `, ${esc(b.food_answered_by)}` : ""}${b.food_answered_at
+                    ? `, ${esc(stamp(b.food_answered_at))}` : ""}</span>`
+                : b.closed_at ? `<span class="log-sub">Food: not answered</span>` : ""}</td>
             <td>${esc(b.reviewed_by || "—")}</td>
             <td>${b.closed_at ? `${esc(stamp(b.closed_at))}${b.closed_by
                 ? `<span class="log-sub">by ${esc(b.closed_by)}${b.closed_out_of_range

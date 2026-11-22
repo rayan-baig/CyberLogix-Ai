@@ -76,7 +76,8 @@ function stateOf(unit) {
     return { word: "Waiting for its first reading", cls: "w-quiet", why: c.line, first: true };
   }
   if (c.state === "watching" || c.state === "alert" || c.state === "paused") {
-    return { word: c.word, cls: WORD_CLASS[c.kind], why: c.line, state: c.state,
+    return { word: c.back ? "Back in range: press It's fixed" : c.word,
+             cls: WORD_CLASS[c.kind], why: c.line, state: c.state, back: Boolean(c.back),
              held: Boolean(c.held), overdue: Boolean(c.overdue) };
   }
   if (unit.hours_until_breach != null && unit.hours_until_breach <= 6) {
@@ -108,6 +109,7 @@ function renderNeeds(data, units) {
     const unit = byId[i.sensor_id] || { sensor_id: i.sensor_id };
     const now = unit.last_temperature_display != null
       ? `${unit.last_temperature_display}°` : `${i.temperature_display}°`;
+    const back = Boolean(((unit.condition || {}).back_in_range));
     const who = i.state === "acknowledged"
       ? (i.fix_reported_at
           ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed. It closes by itself once it is back in range.`
@@ -115,9 +117,11 @@ function renderNeeds(data, units) {
       : CLXWords.nobodyYet(i);
     return `
     <div class="need ${i.state === "open" ? "need-open" : ""}">
-      <p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
+      ${back ? `<p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
+        back in range at ${esc(now)}. Press <b>It's fixed</b> to close the alert.</p>`
+      : `<p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
         ${esc(now)} and has been out of range for ${esc(CLXWords.outFor(i.out_since || i.opened_at))},
-        since ${esc(CLXWords.clock(i.out_since || i.opened_at))}.</p>
+        since ${esc(CLXWords.clock(i.out_since || i.opened_at))}.</p>`}
       <p class="need-when">${who}</p>
       ${needButtons(i)}
     </div>`;
@@ -142,15 +146,42 @@ CLXAnswer.setup({
   done: () => load(),
 });
 
-$("needs").addEventListener("click", (event) => {
+function onAnswerClick(event) {
   const button = event.target.closest("button");
   if (!button) return;
   if (button.dataset.ack) CLXAnswer.onIt(button.dataset.ack, button);
   else if (button.dataset.fixed) CLXAnswer.fixed(button.dataset.fixed, button);
-});
+  else if (button.dataset.foodKept) CLXAnswer.food(button.dataset.foodKept, "kept", button);
+  else if (button.dataset.foodThrown) CLXAnswer.food(button.dataset.foodThrown, "thrown", button);
+}
+["needs", "verdict", "todo"].forEach((id) => $(id).addEventListener("click", onAnswerClick));
+
+/* The food question (3.30.0): a closed alert nobody has said the food
+   was kept or thrown away for, in the last week (food_value.question).
+   "Everything is fine... nothing for you to do" was said beside "food at
+   risk on 1: check it". Riskiest first. */
+function foodQuestions(data) {
+  return (data.incidents || []).filter((i) => i.state === "resolved" && !i.site_wide
+    && i.food_question && i.food_question.ask_on_today)
+    .sort((a, b) => Number(b.food_question.at_risk) - Number(a.food_question.at_risk)
+      || String(b.resolved_at).localeCompare(String(a.resolved_at)));
+}
+
+function foodButtons(i, viewer) {
+  if (viewer) return "";
+  const kept = i.food_question.word === "stock" ? "Stock kept" : "Food kept";
+  return `<div class="need-acts food-acts">
+      <button class="btn btn-primary" type="button" data-food-kept="${esc(i.incident_id)}">${kept}</button>
+      <button class="btn" type="button" data-food-thrown="${esc(i.incident_id)}">Thrown away</button>
+    </div>`;
+}
+
+function foodWhy(i) {
+  return `${i.food_question.words}. ${i.food_question.note}`;
+}
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
-function verdict(units, jobs, paused, live) {
+function verdict(units, jobs, paused, live, food) {
   const box = $("verdict");
   // Paused by the owner (retention.py): no "everything is fine" while
   // nobody is being texted or called.
@@ -164,6 +195,19 @@ function verdict(units, jobs, paused, live) {
   // An alert that is still live outranks everything else on the page:
   // the person reading this may be the one we texted.
   const unanswered = live.filter((i) => i.state === "open").length;
+  const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
+  const backAgain = live.length && !unanswered && live.every((i) =>
+    ((byId[i.sensor_id] || {}).condition || {}).back_in_range);
+  if (backAgain) {
+    // Somebody has it and the reading is back in range: the one thing
+    // left is "It's fixed" (3.30.0), not "once it is cold again".
+    box.className = "verdict watch";
+    box.innerHTML = `<h1>Back in range: press It's fixed</h1>
+       <p>${live.length === 1 ? `${esc(whichOne(byId[live[0].sensor_id], units))} is cold again.`
+         : "They are cold again."} Press <b>It's fixed</b> below to close the alert, then
+          say what happened to the food.</p>`;
+    return false;
+  }
   if (live.length) {
     box.className = "verdict bad";
     box.innerHTML = unanswered
@@ -175,6 +219,20 @@ function verdict(units, jobs, paused, live) {
     return;
   }
   const urgent = jobs.filter((j) => j.now).length;
+  const out = units.filter((u) => (u.condition || {}).state === "watching");
+  if (food.length && !urgent && !out.length) {
+    // "One thing to do: check the food in Walk-in fridge", with the two
+    // answers right here (3.30.0).
+    const first = food[0];
+    const name = whichOne(byId[first.sensor_id] || { sensor_id: first.sensor_id }, units);
+    const others = food.length - 1;
+    box.className = first.food_question.at_risk ? "verdict bad" : "verdict watch";
+    box.innerHTML = `<h1>${food.length === 1 ? "One thing" : `${food.length} things`} to do:
+         check the ${esc(first.food_question.word)} in ${esc(name)}</h1>
+       <p>${esc(foodWhy(first))}${others ? ` ${others} more below.` : ""}</p>
+       ${foodButtons(first, viewerOnly())}`;
+    return true;
+  }
   if (urgent) {
     box.className = "verdict bad";
     box.innerHTML =
@@ -189,7 +247,6 @@ function verdict(units, jobs, paused, live) {
   // Out of range and not alerted yet (inside its wait, or held after
   // somebody closed it by hand): never "Nothing is spoiling" while a
   // fridge is warm. It says which one, how warm, and when we alert.
-  const out = units.filter((u) => (u.condition || {}).state === "watching");
   if (out.length) {
     const c = CLXWords.condition(out[0]);
     const name = whichOne(out[0], units);
@@ -265,20 +322,79 @@ function watchWords(entitlements) {
     + "A door opened for a minute is not an alarm.";
 }
 
-/* Open the explanation for somebody new. For everyone else it folds to
-   one quiet line, "How this works" (3.28.0): the folded box was still a
-   big panel at the foot of a returning owner's screen. */
-function introFor(units) {
-  let seen = false;
-  try { seen = localStorage.getItem("cyberlogix.today.seen") === "1"; } catch (_) { /* private */ }
-  if (!seen || !units.length) {
-    $("intro").open = true;
-  } else {
-    $("intro").classList.add("intro-back");
-    $("intro").querySelector("summary").textContent = "How this works";
-  }
-  try { localStorage.setItem("cyberlogix.today.seen", "1"); } catch (_) { /* private */ }
+/* Who is signed in, and their own settings (3.30.0): read once. A
+   machine key or an older server answers without them, and the page
+   works as before. */
+let me = null;
+async function loadMe() {
+  const key = token();
+  if (!key) return null;
+  try {
+    const got = await fetch("/api/accounts/me", { headers: { Authorization: "Bearer " + key } });
+    if (got.ok) me = await got.json();
+  } catch (_) { me = null; }
+  return me;
 }
+
+function viewerOnly() {
+  return Boolean(me && me.user && me.user.role === "viewer");
+}
+
+/* Saved for the person, not the device (3.30.0): whether "What this is"
+   is open or folded follows them from the phone to the office computer. */
+function savePref(name, value) {
+  const key = token();
+  if (!key || !me) return;
+  fetch("/api/accounts/me/prefs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({ [name]: value }),
+  }).catch(() => { /* the next toggle tries again */ });
+}
+
+/* Open the explanation for somebody new. For everyone else it folds to
+   one quiet line, "How this works" (3.28.0). Which it is now comes from
+   the person's own saved choice (3.30.0): opening or folding it is saved
+   for them, and somebody who has never chosen sees it open once. */
+function foldIntro(open) {
+  const box = $("intro");
+  box.open = open;
+  box.classList.toggle("intro-back", !open);
+  box.querySelector("summary").textContent = open
+    ? "What this is, and how it works" : "How this works";
+}
+
+let introState = null;
+function introFor(units) {
+  const saved = me && me.prefs ? me.prefs.today_intro : null;
+  let open;
+  if (saved === "open" || saved === "closed") {
+    open = saved === "open";
+  } else if (me) {
+    open = true;
+    // Seen once: folded next time, wherever they sign in.
+    savePref("today_intro", "closed");
+  } else {
+    // No account to save it on (a machine key): this device remembers.
+    let seen = false;
+    try { seen = localStorage.getItem("cyberlogix.today.seen") === "1"; } catch (_) { /* private */ }
+    open = !seen;
+    try { localStorage.setItem("cyberlogix.today.seen", "1"); } catch (_) { /* private */ }
+  }
+  if (!units.length) open = true;
+  introState = open;
+  foldIntro(open);
+}
+
+$("intro").addEventListener("toggle", () => {
+  const open = $("intro").open;
+  // The page folding it on load fires this too: only a change counts.
+  if (open === introState) return;
+  introState = open;
+  $("intro").classList.toggle("intro-back", !open);
+  savePref("today_intro", open ? "open" : "closed");
+  if (me) me.prefs = Object.assign({}, me.prefs || {}, { today_intro: open ? "open" : "closed" });
+});
 
 /* "This month: 1 alert, answered in 4 minutes, food kept." (3.28.0), from
    the server's this_month, by the same rule as each alert's line. */
@@ -287,12 +403,21 @@ function monthLine(data, units) {
   const box = $("month");
   if (!m || !units.length || !units.some((u) => u.last_seen)) { box.hidden = true; return; }
   $("month-line").textContent = m.words;
-  const sub = $("month-sub");
-  sub.hidden = !m.food_usd;
+  // Who said what about the food, and when (3.30.0): "Walk-in fridge:
+  // Thrown away, Jo, 4:09 PM." The dollar figure only for food somebody
+  // said was kept, never because the fridge came back quickly.
+  const answers = m.food_answers || [];
+  const lines = answers.map((a) => {
+    const who = [a.words, a.by_name, CLXWords.clock(a.at)].filter(Boolean).join(", ");
+    return (m.alerts > 1 || answers.length > 1) ? `${a.unit}: ${who}.` : `${who}.`;
+  });
   if (m.food_usd) {
-    sub.textContent = `About $${Number(m.food_usd).toLocaleString("en-US")} of food protected: `
-      + "an estimate of what a typical fridge or freezer of each kind holds.";
+    lines.push(`About $${Number(m.food_usd).toLocaleString("en-US")} of food kept: `
+      + "an estimate of what a typical fridge or freezer of each kind holds.");
   }
+  const sub = $("month-sub");
+  sub.hidden = !lines.length;
+  sub.textContent = lines.join(" ");
   box.hidden = false;
 }
 
@@ -346,7 +471,7 @@ function render(data) {
         todo: "Go and look at it. A sensor that stopped talking is the one "
             + "problem this app cannot warn you about by itself.",
         help: "/help#sensor-offline" });
-    } else if (state.cls === "w-soon") {
+    } else if (state.cls === "w-soon" && state.state !== "alert") {
       jobs.push({ now: false, mark: "↑",
         what: `<strong>${esc(name)}</strong> is warming up. ${
           esc(state.why)}`,
@@ -362,7 +487,15 @@ function render(data) {
     }
   });
 
-  verdict(units, jobs, (data.account || {}).paused, live);
+  const food = foodQuestions(data);
+  const shownAbove = verdict(units, jobs, (data.account || {}).paused, live, food) === true;
+  const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
+  (shownAbove ? food.slice(1) : food).forEach((i) => {
+    const name = whichOne(byId[i.sensor_id] || { sensor_id: i.sensor_id }, units);
+    jobs.push({ now: i.food_question.at_risk, mark: "!",
+      what: `Check the ${esc(i.food_question.word)} in <strong>${esc(name)}</strong>.`,
+      todo: foodWhy(i), acts: foodButtons(i, viewerOnly()) });
+  });
 
   $("todo-wrap").hidden = jobs.length === 0;
   // Urgent first: somebody reading on a phone in a kitchen sees two
@@ -376,6 +509,7 @@ function render(data) {
       <span class="grow">
         <p class="todo-what">${job.what}</p>
         <p class="todo-do">${esc(job.todo)}</p>
+        ${job.acts || ""}
         ${job.help ? `<a class="offline-help" href="${esc(job.help)}"
             >${job.help === "/help/sensors" ? "How to connect a sensor"
               : "What to check, step by step"}</a>` : ""}
@@ -433,8 +567,10 @@ async function load() {
 const POLL_MS = 30000;
 let pollTimer = null;
 let lastData = null;
+let meAsked = false;
 async function tick() {
   clearTimeout(pollTimer);
+  if (!meAsked) { meAsked = true; await loadMe(); }
   await load();
   pollTimer = setTimeout(tick, CLXWords.pollDelay((lastData || {}).sensors, POLL_MS));
 }

@@ -236,8 +236,8 @@
     </div>
     <p class="finder-none" id="find-none" hidden></p>
     <!-- On a small account the estate and operator tools wait here. -->
-    <p class="adv-note" id="adv-note" hidden>Tools for bigger estates (meeting notes, staff licences, spending limits, the
-      record's fingerprints) are under <b>Advanced</b>.</p>
+    <p class="adv-note" id="adv-note" hidden>The OmniArmor connection, things to do from a meeting, the full
+      activity log and tools for bigger estates are under <b>Advanced</b>.</p>
     <!-- A tab a new business has nothing on yet says, in one sentence, what
          will appear there, and offers the next thing to do. Never a blank
          page. Filled by renderTabEmpty() in console.js. -->
@@ -468,7 +468,7 @@
           </form>
           <div id="poller-body"></div>
         </section>
-        <section class="card" id="find-omniarmor" data-group="setup" data-find="omniarmor kitchen safety bundle connection daily report temperature log checklist connect key" data-label="OmniArmor connection">
+        <section class="card" id="find-omniarmor" data-small-advanced="1" data-group="setup" data-find="omniarmor kitchen safety bundle connection daily report temperature log checklist connect key" data-label="OmniArmor connection">
           <div class="card-head">
             <span class="card-title">OmniArmor connection</span>
             <span class="card-note" id="omni-note">Owners only</span>
@@ -541,7 +541,7 @@
           <p class="card-plain" id="aikey-not-owner" hidden>Only an owner can
              save an AI key.</p>
         </section>
-        <section class="card" id="find-tasks" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
+        <section class="card" id="find-tasks" data-small-advanced="1" data-group="setup" data-find="tasks jobs to do things agreed action items meeting notes follow up overdue owner due date" data-label="Things to do">
           <div class="card-head">
             <span class="card-title">Things to do</span>
             <span class="card-note" id="task-note"></span>
@@ -646,7 +646,7 @@
             <div id="cost-body"></div>
           </section>
 
-          <section class="card" id="find-audit-trail" data-group="setup" data-find="who did what audit trail history who did what log record" data-label="Who did what">
+          <section class="card" id="find-audit-trail" data-small-advanced="1" data-group="setup" data-find="who did what audit trail history who did what log record" data-label="Who did what">
             <div class="card-head">
               <span class="card-title">Who did what</span>
             </div>
@@ -663,7 +663,7 @@
           <p class="card-plain">Name it by where it is, and we start watching it as soon as its sensor sends a reading.</p>
           <!-- A key is shown once. A toast that fades after three seconds
                is the wrong container for something you cannot get back. -->
-          <div id="issued-key" class="banner warn" data-pilot-private hidden
+          <div id="issued-key" class="banner warn" data-pilot-private data-toast-avoid hidden
                role="status" aria-live="polite">
             <div><b><span id="issued-kind">Sensor key for</span> <span id="issued-for">—</span></b></div>
             <div class="digest" id="issued-value" tabindex="0"></div>

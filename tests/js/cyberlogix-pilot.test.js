@@ -493,7 +493,8 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   assert.deepEqual(kinds("/help/sensors"), ["ai", "answer", "answer"]);
   assert.deepEqual(kinds("/for/restaurant"), ["ai", "ai", "answer"]);
   assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
-  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "answer", "ai"]);
+  // "Log for the inspector" goes straight to the log once signed in (3.30.0).
+  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["link", "answer", "ai"]);
   const texts = {};
   for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
     for (const c of mountAt(pathname).chips()) if (c.answer) texts[c.label] = ask(c);
@@ -528,11 +529,13 @@ test("3.28.0: 'It's fixed now' points at the real button, and never closes anyth
   assert.equal(fixedChip("/console", { overview: overviewWith() }).prompt, undefined);
 });
 
-test("3.28.0: 'Log for the inspector' never offers Sign in to somebody signed in", () => {
-  const log = (pathname, opts) => ask(mountAt(pathname, opts).chips().find((c) => /og for the inspector/.test(c.label)));
-  assert.doesNotMatch(log("/today", { overview: overviewWith() }), /Sign in/);
-  assert.match(log("/today", { overview: overviewWith() }), /\[Open the full console\]\(\/console\?view=full\)/);
-  assert.doesNotMatch(log("/console", { overview: overviewWith() }), /Sign in/);
+test("3.30.0: 'Log for the inspector' links straight to the log once signed in, and a visitor gets Sign in", () => {
+  const chip = (pathname, opts) => PANEL.cleanChips(mountAt(pathname, opts).chips(), BASE + pathname)
+    .find((c) => /og for the inspector/.test(c.label));
+  // From /today: the full console, opened on the last week's log.
+  assert.equal(chip("/today", { overview: overviewWith() }).link, `${BASE}/console?view=full#inspector-log?open=1`);
+  // On the console itself only the # changes, so nothing reloads.
+  assert.equal(chip("/console", { overview: overviewWith() }).link, `${BASE}/console#inspector-log?open=1`);
   // A visitor still gets the way in.
   assert.match(ask(mountAt("/help").chips().find((c) => c.label === "A log for the inspector")), /\[Sign in\]\(\/console\)/);
 });

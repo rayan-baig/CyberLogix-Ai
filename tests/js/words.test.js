@@ -106,3 +106,12 @@ test("held after a close by hand: who, when, how warm, and when we alert again",
   assert.equal(c.held, true);
   W.setNow(null);
 });
+
+test("3.30.0: an open alert back in range says so, not 'Too warm'", () => {
+  const back = W.condition({ condition: { state: "alert", back_in_range: true, too: null, out_since: "2026-11-21T15:00:00Z" } });
+  assert.equal(back.word, "Back in range");
+  assert.equal(back.line, "Back in range: press It's fixed.");
+  assert.equal(back.kind, "watch");
+  const warm = W.condition({ condition: { state: "alert", back_in_range: false, too: "warm", out_since: "2026-11-21T15:00:00Z" } });
+  assert.equal(warm.word, "Too warm");
+});

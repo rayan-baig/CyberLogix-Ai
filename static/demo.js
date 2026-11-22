@@ -30,6 +30,7 @@ function fresh() {
     acked: false,
     fixed: false,
     fixedAt: null,
+    food: null,           // "kept" or "thrown", once answered after the fix
     calls: [],            // {who, at, state}
     events: new Set(),    // which timeline lines have been written
     step: "fine",
@@ -176,9 +177,13 @@ function acknowledge(how) {
   $("reply-1").disabled = true;
   showCall(false);
   const who = S.people[0].name;
+  // "No more calls for this alert" only once a call really rang (3.30.0);
+  // before one, "Nobody else will be called".
+  const rang = run.events.has("call-0");
   if (how === "text") {
     bubble("me", "1");
-    bubble("them", S.messages.ack_reply);
+    bubble("them", rang && S.messages.ack_reply_called ? S.messages.ack_reply_called
+      : S.messages.ack_reply);
     timeline("ack", "ack", `${who} replied 1. Nobody else is called.`);
   } else {
     timeline("ack", "ack", `${who} pressed 1 on the call. Nobody else is called.`);
@@ -196,11 +201,32 @@ function fix() {
   run.fixedAt = run.t;
   $("fix").hidden = true;
   timeline("fixed", "done", "Fixed: the door was left open. It is cooling back down.");
+  timeline("food-asked", "", `Asked ${S.people[0].name}: was the food kept or thrown away?`);
   $("alert-note").textContent = "sorted";
   // Straight away, not on the next tick: the banner kept offering "Mark it
   // fixed" for several seconds after it was pressed, while the walk-in
   // was still above its limit on the way back down.
   draw();
+}
+
+/* The food question after "Mark it fixed" (3.30.0), as the real app asks
+   once an alert closes: one tap, written into the record with a name. */
+function answerFood(fate) {
+  if (!run.fixed || run.food) return;
+  run.food = fate;
+  timeline("food", "done", `${fate === "kept" ? "Food kept" : "Thrown away"}, ${S.people[0].name}.`);
+  draw();
+}
+
+function foodAsk() {
+  return run.fixed && !run.food
+    ? `<p class="demo-food-q"><b>One more thing: what about the food?</b> In real life
+         this is asked once it is cold again, and goes in the record with your name.</p>
+       <div class="demo-food-acts">
+         <button class="btn btn-sm btn-primary demo-jump" type="button" data-act="food-kept">Food kept</button>
+         <button class="btn btn-sm demo-jump" type="button" data-act="food-thrown">Thrown away</button>
+       </div>`
+    : "";
 }
 
 /* ---------------- drawing ---------------- */
@@ -253,38 +279,47 @@ function draw() {
   }).join("");
 
   const box = $("verdict");
+  let html = "";
   if (warm && run.fixed) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
+    html = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
       <p>Marked fixed and written down. It will show as fine once it is back
-         under ${esc(fmt(warm.limit_f))}°F.</p>`;
+         under ${esc(fmt(warm.limit_f))}°F.</p>${foodAsk()}`;
   } else if (warm && !run.alertOpen) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(warm.name)} is over its limit</h2>
+    html = `<h2>${esc(warm.name)} is over its limit</h2>
       <p>Nobody is texted yet: we wait to see if it stays over, so a door
          open for a minute wakes nobody.</p>`;
   } else if (warm && !run.acked) {
     box.className = "demo-verdict bad";
-    box.innerHTML = `<h2>${esc(warm.name)} is too warm</h2>
+    html = `<h2>${esc(warm.name)} is too warm</h2>
       <p>${esc(people())} have been texted. Reply 1 on the phone below to say you are on it.</p>
       <button class="btn btn-sm demo-jump" type="button" data-act="phone">See the text</button>`;
   } else if (warm) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(S.people[0].name)} is on it</h2>
-      <p>The calls have stopped. Once the door is shut and the food checked, mark it fixed.</p>
+    html = `<h2>${esc(S.people[0].name)} is on it</h2>
+      <p>${run.events.has("call-0") ? "The calls have stopped."
+        : "Nobody else will be called."} Once the door is shut and the food checked, mark it fixed.</p>
       <button class="btn btn-sm demo-jump" type="button" data-act="fix">Mark it fixed</button>`;
   } else if (soon) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(soon.name)} is warming up</h2>
+    html = `<h2>${esc(soon.name)} is warming up</h2>
       <p>Still safe, but rising. If it goes over ${esc(fmt(soon.limit_f))}°F and stays there, an alert goes out.</p>`;
   } else if (run.fixed) {
     box.className = "demo-verdict ok";
-    box.innerHTML = `<h2>Everything is fine again</h2>
-      <p>The alert is closed and written down. That is the whole idea.</p>`;
+    html = `<h2>Everything is fine again</h2>
+      <p>The alert is closed and written down${run.food
+        ? `, with what happened to the food` : ""}. That is the whole idea.</p>${foodAsk()}`;
   } else {
     box.className = "demo-verdict ok";
-    box.innerHTML = `<h2>Everything is fine</h2>
+    html = `<h2>Everything is fine</h2>
       <p>All 4 are the right temperature. Nothing for you to do.</p>`;
+  }
+  // Only when it changed: redrawn every second, the buttons in it were
+  // replaced between a press and its release, and the press was lost.
+  if (box.dataset.drawn !== html) {
+    box.innerHTML = html;
+    box.dataset.drawn = html;
   }
   $("alert-note").textContent = run.fixed ? "sorted"
     : run.alertOpen ? (run.acked ? "acknowledged" : "1 open") : "none";
@@ -370,6 +405,8 @@ $("verdict").addEventListener("click", (event) => {
   const act = event.target.closest("[data-act]");
   if (!act) return;
   if (act.getAttribute("data-act") === "fix") fix();
+  if (act.getAttribute("data-act") === "food-kept") answerFood("kept");
+  if (act.getAttribute("data-act") === "food-thrown") answerFood("thrown");
   if (act.getAttribute("data-act") === "phone") {
     $("phone-title").closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
   }

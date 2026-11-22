@@ -754,6 +754,16 @@ def starter_terms() -> Dict[str, Any]:
     }
 
 
+def growth_terms() -> Dict[str, Any]:
+    """Growth as the pricing page's plan picker says it (3.30.0): a
+    restaurant location's price and the units it covers, from the code."""
+    restaurant = PRICE_BOOK["restaurant"]["monthly_usd"]
+    return {
+        "growth_label": f"${restaurant:,.0f}",
+        "units_per_location": UNITS_PER_LOCATION,
+    }
+
+
 def plan_features(plan: str) -> List[str]:
     """What each plan gives, in a few plain lines, distinct from the next.
 

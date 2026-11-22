@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from contracts import require_current
+from records import food_answer_words
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -173,6 +174,11 @@ def _breach(incident, readings, unit: str, above, below) -> Dict[str, Any]:
         "corrective_action": incident.corrective_action or "",
         "corrective_action_by": incident.corrective_action_by or "",
         "product_disposition": incident.product_disposition or "",
+        # What happened to the food in words, and who said so and when
+        # (3.30.0): "Thrown away", by Jo, at 4:09 PM.
+        "food_answer": food_answer_words(incident.product_disposition) or "",
+        "food_answered_by": incident.food_answered_by or "",
+        "food_answered_at": iso(incident.food_answered_at),
         "reviewed_by": incident.reviewed_by or "",
     }
 

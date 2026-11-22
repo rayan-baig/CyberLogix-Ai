@@ -110,12 +110,20 @@ def test_eight_hours_warm_is_food_at_risk_not_food_protected(api):
     assert "more than 2 hours" in row["food_at_risk"]["note"]
 
 
-def test_answered_and_back_within_two_hours_still_counts(api):
+def test_answered_and_back_within_two_hours_asks_rather_than_counts(api):
+    """3.30.0: back in time is not "Food protected" until somebody says so
+    (tests/test_round9_food_answer_and_small_cafe.py has the rest)."""
     owner = _sign_up(api)
     incident_id, _ = _long_answered_alert(api, owner, hours=1.5)
     row = _row(api, owner, incident_id)
-    assert row["food_protected"]["usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
+    assert row["food_protected"] is None
     assert row["food_at_risk"] is None
+    assert row["food_question"]["words"] == "Back in range in about 2 hours"
+    assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
+                    json={"food": "kept"}).status_code == 200
+    row = _row(api, owner, incident_id)
+    assert row["food_protected"]["usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
+    assert row["food_question"] is None
 
 
 def test_its_fixed_asks_food_kept_or_thrown_and_the_answer_decides(api):
@@ -180,8 +188,11 @@ def test_the_monthly_email_uses_the_same_rule_and_names_the_risk(operator_factor
         incident.resolved_at = now
         return incident
 
-    total = food_value.month_total([(closed(1.0), sensor), (closed(8.0), sensor)])
-    assert total == {"usd": food_value.STOCK_USD["food"]["fridge"], "alerts": 1, "at_risk": 1}
+    kept = closed(1.0)
+    kept.product_disposition = "unaffected"
+    total = food_value.month_total([(kept, sensor), (closed(8.0), sensor), (closed(1.0), sensor)])
+    assert total == {"usd": food_value.STOCK_USD["food"]["fridge"], "alerts": 1, "at_risk": 1,
+                     "thrown": 0, "unanswered": 1}
     report = {"company_name": "Rosa's Cafe", "month_label": "October 2026", "units": 1,
               "readings": 100, "in_range_percent": 99.0, "breach_count": 0,
               "food_protected_usd": 800, "food_protected_alerts": 1, "food_at_risk_alerts": 1,
@@ -189,7 +200,7 @@ def test_the_monthly_email_uses_the_same_rule_and_names_the_risk(operator_factor
               "inspector_log": "", "period_start": "2026-10-01", "period_end": "2026-10-31",
               "caveat": "", "temperature_unit": "F"}
     text = " ".join(monthly.render_text(report).split())
-    assert "Food at risk: 1 alert ran over 2 hours with nobody saying the food was kept." in text
+    assert "Food at risk: 1 alert ran over 2 hours with nobody saying what happened to the food." in text
 
 
 def test_the_pages_ask_after_its_fixed_and_offer_the_answer_on_the_alert():
@@ -201,7 +212,7 @@ def test_the_pages_ask_after_its_fixed_and_offer_the_answer_on_the_alert():
     assert "body && body.ask_food" in ANSWER_JS
     risk = _function(CONSOLE_JS, "foodAtRisk")
     assert "data-food-kept" in risk and "data-food-thrown" in risk and "state.wall" in risk
-    assert "i.food_at_risk ? foodAtRisk(i)" in CONSOLE_JS
+    assert "i.food_question ? foodAtRisk(i)" in CONSOLE_JS
 
 
 # --- 2. never "phoned" when no call was placed ---------------------------------
@@ -335,7 +346,8 @@ def test_one_toast_at_a_time_and_the_first_day_merges_with_the_last():
 
 
 def test_a_small_account_on_a_phone_sees_three_tiles_not_filler():
-    assert "const calm = phone && smallAccount(d) && !state.wall;" in CONSOLE_JS
+    # On a desktop too since 3.30.0.
+    assert "const calm = smallAccount(d) && !state.wall;" in CONSOLE_JS
     for label in ("Readings in range", "Flat batteries", "Readings logged"):
         at = CONSOLE_JS.index(f'tile("{label}"')
         assert "calm" in CONSOLE_JS[at - 120:at], label
@@ -359,8 +371,10 @@ def test_a_small_accounts_header_extras_are_in_the_business_menu():
 
 
 def test_a_returning_owners_explainer_is_one_line():
-    intro = _function(SIMPLE_JS, "introFor")
-    assert 'classList.add("intro-back")' in intro and '"How this works"' in intro
+    # Folded by foldIntro, from the person's saved choice (3.30.0).
+    fold = _function(SIMPLE_JS, "foldIntro")
+    assert 'classList.toggle("intro-back", !open)' in fold and '"How this works"' in fold
+    assert "foldIntro(open);" in _function(SIMPLE_JS, "introFor")
     assert ".intro.intro-back:not([open])" in (STATIC / "simple.css").read_text()
 
 
@@ -380,6 +394,12 @@ def test_this_month_says_the_alerts_how_fast_and_the_food(api):
     assert api.post(f"/api/voice/acknowledge/{incident_id}", headers=owner, json={}).status_code == 200
     _pulse(api, key, 38.0)
     assert api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={}).status_code == 200
+    # Until somebody says, "food not answered yet", never "food kept" (3.30.0).
+    month = api.get("/api/console/overview", headers=owner).json()["this_month"]
+    assert month["words"] == "This month: 1 alert, answered in 10 minutes, food not answered yet."
+    assert month["food_kept"] == 0 and month["food_usd"] == 0
+    assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
+                    json={"food": "kept"}).status_code == 200
     month = api.get("/api/console/overview", headers=owner).json()["this_month"]
     assert month["alerts"] == 1 and month["food_kept"] == 1
     assert month["words"] == "This month: 1 alert, answered in 10 minutes, food kept."

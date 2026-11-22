@@ -137,8 +137,10 @@ me?", "Make a proof report") stay AI prompts.
 **"It's fixed now" points at the real button (3.28.0).** It is an answer, not a request to the
 AI: it names the open alert and says where its **It's fixed** button is, which checks the fridge
 is back in range and asks whether the food was kept. Pilot never closes an alert itself from this
-suggestion. Signed in on `/today`, "Log for the inspector" links to the full console, never to
-"Sign in".
+suggestion. Signed in, "Log for the inspector" is a link straight to the log (3.30.0):
+`/console?view=full#inspector-log?open=1` from `/today`, only the `#` on the console, and the
+console opens the last seven days' log. A visitor's "A log for the inspector" still says where it
+is, with "Sign in".
 
 **Fridge rows and temperatures are on the avoid list (3.28.0).** `.thing-temp`, `.thing-name`,
 `.demo-unit-temp`, `.demo-unit-top`, `#needs` and `.need`: at 375px the robot waved over a
