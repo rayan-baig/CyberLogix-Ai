@@ -659,3 +659,118 @@ test("1.4.1: the 320px console with an open alert: the robot hides rather than t
   assert.equal(place.hide, true, JSON.stringify(place));
   assert.equal(place.corner[0], "b", "hidden, it keeps a bottom corner");
 });
+
+// ---------------------------------------------------------------- core 1.4.2 (3.31.0)
+
+// What the window compares a typed question with, with no key (core 1.4.2's
+// typedHere): the welcome's pills and this page's suggestions.
+const typedItems = (given, pathname) => PANEL.ownPills(given.welcomePills, BASE + pathname)
+  .concat(PANEL.cleanChips(given.chips(given.screen()), BASE + pathname));
+const typed = (pathname, words, opts) => {
+  const given = mountAt(pathname, { overview: overviewWith(), ...opts });
+  const hit = PANEL.matchTyped(words, typedItems(given, pathname));
+  return hit ? hit.label : null;
+};
+
+test("1.4.2: with no key, a typed question finds this app's own answer on the console, /today and the public pages", () => {
+  for (const pathname of ["/console", "/today"]) {
+    for (const [words, want] of [["Is my walk-in fridge OK?", "Which fridges need me?"], ["why is my freezer warm", "Which fridges need me?"],
+      ["What does the alert mean?", "What does this alert mean?"], ["Is the food safe?", "Is the food still OK?"],
+      ["Should I throw the food away?", "Is the food still OK?"], ["How do I add a new fridge?", "How do I connect a sensor?"],
+      ["Where is the inspector log?", "Log for the inspector"], ["How do I close this alert?", "It's fixed now"], ["fridge", "Which fridges need me?"]]) {
+      assert.equal(typed(pathname, words), want, `${pathname}: ${words}`);
+    }
+  }
+  // Signed out on the console: its own sign-in suggestions.
+  assert.equal(typed("/console", "How do I sign in?", { signedIn: false }), "How do I sign in?");
+  assert.equal(typed("/console", "I forgot my password", { signedIn: false }), "I forgot my password");
+  // A visitor.
+  for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
+    for (const [words, want] of [["Will it work for my restaurant?", "Will it work for my café?"], ["Is it good for a coffee shop?", "Will it work for my café?"],
+      ["How much does it cost?", "What does it cost?"], ["How much is it?", "What does it cost?"], ["Can I see a demo?", "See it live"],
+      ["What sensor should I buy?", "What sensors do I need?"]]) {
+      assert.equal(typed(pathname, words), want, `${pathname}: ${words}`);
+    }
+  }
+  // Each page's own facts.
+  assert.equal(typed("/", "What if the wifi goes down?"), "Wi-Fi or power goes off?");
+  assert.equal(typed("/", "Will opening the door set off the alarm?"), "Will a door left open wake us?");
+  assert.equal(typed("/", "Do you call at night?"), "Do you phone at night?");
+  assert.equal(typed("/pricing", "Which plan for my cafe?"), "Which plan for a café?");
+  assert.equal(typed("/pricing", "Do I need a card for the trial?"), "What's in the trial?");
+  assert.equal(typed("/help", "My fridge is too warm, what do I do?"), "A fridge is warm: what now?");
+  assert.equal(typed("/help/sensors", "How do I set up a sensor?"), "Set up step by step");
+  assert.equal(typed("/demo", "What am I seeing?"), "What am I seeing?");
+});
+
+test("1.4.2: anything else typed with no key still goes to key settings: no guess, and \"does this\" never picks the alert's answer", () => {
+  const never = ["Write me a poem about fridges", "What's the weather like?", "Tell me a joke", "ok", "Is it ok?", "Who made you?",
+    "What can you do?", "How do I install a fridge sensor with my wifi router?", "Explain this page", "Add my AI key", "", "   ",
+    // Core 1.4.2 counts "does" and "this" (as "doe" and "thi"); both are in "What does this alert mean?".
+    "Does this work for a bakery?", "Does this work with my sensor?", "What does this button do?", "What does this page do?", "this"];
+  for (const pathname of ["/console", "/today", "/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
+    for (const words of never) {
+      const got = typed(pathname, words);
+      if (pathname === "/" || pathname === "/pricing" || pathname === "/help" || pathname === "/help/sensors"
+        || pathname === "/for/restaurant" || pathname === "/demo") {
+        // A visitor asking if it works for a bakery gets the café answer: that one is right.
+        if (words === "Does this work for a bakery?") { assert.equal(got, "Will it work for my café?", pathname); continue; }
+        if (words === "Does this work with my sensor?") { assert.equal(got, "What sensors do I need?", pathname); continue; }
+      }
+      assert.equal(got, null, `${pathname}: ${words}`);
+    }
+  }
+  // Every answer or link this app gives with no key carries its own words, and none is a prompt or a built-in.
+  for (const [pathname, signedIn] of [["/console", true], ["/console", false], ["/today", true], ["/", false], ["/pricing", false],
+    ["/help", false], ["/help/sensors", false], ["/for", false], ["/for/restaurant", false], ["/demo", false]]) {
+    const given = mountAt(pathname, { overview: overviewWith(), signedIn });
+    for (const item of typedItems(given, pathname)) {
+      const plain = Boolean(item.link || item.answer !== undefined);
+      assert.equal(Boolean(item.match && item.match.length), plain, `${pathname}: ${item.label}`);
+    }
+  }
+});
+
+test("1.4.2: on the console and /today the suggestion after the page's own is this app's summary, with no key and nothing sent; the public pages keep the core's (key only)", () => {
+  for (const pathname of ["/console", "/today"]) {
+    const given = mountAt(pathname, { overview: overviewWith() });
+    const chip = PANEL.screenChip(given.screenChip, false, BASE + pathname);
+    assert.equal(chip.label, "Sum up my fridges");
+    assert.equal(typeof chip.answer, "function");
+    assert.equal(chip.prompt, undefined, "never sent to the AI");
+    // With a key too, the same (the core's "Summarise this" would send the screen).
+    assert.equal(PANEL.screenChip(given.screenChip, true, BASE + pathname).label, "Sum up my fridges");
+    const text = ask(chip);
+    assert.ok(text.startsWith("**3 fridges and freezers:** 1 fine, 2 need you."), text);
+    assert.ok(text.includes("1 alert is open, and nobody has answered it."), text);
+    assert.ok(text.includes("Ask **Which fridges need me?** for each one."), text);
+    assert.doesNotMatch(text, NO_PEOPLE);
+    // Someone on it, and a quiet day.
+    const ack = ask(PANEL.screenChip(mountAt(pathname, { overview: overviewWith({ ack: true }) }).screenChip, false, BASE + pathname));
+    assert.ok(ack.includes("1 alert is open, and someone is on it."), ack);
+    assert.doesNotMatch(ack, NO_PEOPLE);
+    const quiet = ask(PANEL.screenChip(mountAt(pathname, { overview: overviewWith({ quiet: true }) }).screenChip, false, BASE + pathname));
+    assert.equal(quiet, "**2 fridges and freezers:** 2 fine.\n\nNo alert is open.\n\nNothing needs you right now.");
+    // Not loaded yet, or signed out: where to look instead.
+    const out = ask(PANEL.screenChip(mountAt(pathname, { signedIn: false }).screenChip, false, BASE + pathname));
+    assert.match(out, /sign in/i);
+  }
+  for (const pathname of ["/", "/pricing", "/help", "/demo"]) {
+    const given = mountAt(pathname);
+    assert.equal(given.screenChip, undefined);
+    assert.equal(PANEL.screenChip(given.screenChip, false, BASE + pathname), null, "no suggestion that only asks for a key");
+    assert.equal(PANEL.screenChip(given.screenChip, true, BASE + pathname).label, "Summarise this");
+  }
+});
+
+test("1.4.2: the config leaves the handle and typed matching on and sets no core stopgap", () => {
+  for (const pathname of ["/", "/console", "/today"]) {
+    const given = mountAt(pathname, { overview: overviewWith() });
+    // Not the logo: on /today with an alert at 320px the handle's only free spot on the first screen is beside it.
+    for (const sel of [".brand", ".brand-mark", ".brand-name"]) assert.ok(!J(given.avoid).includes(sel), sel);
+    assert.equal("handle" in given, false, "the handle at the screen's edge stays on (the core's default)");
+    assert.equal("matchTyped" in given, false, "typed questions are matched (the core's default)");
+    assert.equal("hideWhenCrowded" in given, false);
+  }
+  assert.ok(!CONFIG.includes("--pilot-keep-d"));
+});

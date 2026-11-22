@@ -1,4 +1,4 @@
-// Pilot core 1.4.1 · pilot-mascot.js
+// Pilot core 1.4.2 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
@@ -27,7 +27,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.1";
+  const VERSION = "1.4.2";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -189,12 +189,36 @@
   // the bottom corners can't be used at all (a box being typed in).
   // Words and small pictures: their area in square pixels.
   const WEIGHT = { control: 1e6, block: 1e5, pinned: 5e4, top: 1e7 };
+  // How near a link, a button or a box counts as under the robot on a
+  // computer (core 1.4.2: contentIn's pad).
+  const CONTROL_PAD = 8;
+  // What touching a link, a button or a box costs at the least (costOf: a
+  // tenth of WEIGHT.control), or one thing the app asked it to avoid. On a
+  // computer (core 1.4.2) the robot hides rather than pay this much.
+  const TOUCH = WEIGHT.control * 0.1;
 
-  // The robot's box in a corner. view: {width, height}; size: {width, height}.
-  function cornerBox(corner, view, size, gap) {
+  // A corner's room from the screen's edges (core 1.4.2): {x, y}, x from its
+  // side edge, y from its top or bottom edge. gap: a number (both ways, as
+  // before), or {x, b, t}: the side room and the room the app really gives
+  // the bottom and the top corners (placeNow reads them from the robot's own
+  // place, so a corner an app raises above a bottom tab bar is measured
+  // there).
+  function gapAt(gap, corner) {
+    if (gap && typeof gap === "object") {
+      const x = Number.isFinite(gap.x) ? gap.x : 16;
+      const y = corner[0] === "t" ? gap.t : gap.b;
+      return { x, y: Number.isFinite(y) ? y : x };
+    }
     const g = gap === undefined ? 16 : gap;
-    const left = corner[1] === "l" ? g : view.width - g - size.width;
-    const top = corner[0] === "t" ? g : view.height - g - size.height;
+    return { x: g, y: g };
+  }
+
+  // The robot's box in a corner. view: {width, height}; size: {width, height};
+  // gap: as gapAt.
+  function cornerBox(corner, view, size, gap) {
+    const g = gapAt(gap, corner);
+    const left = corner[1] === "l" ? g.x : view.width - g.x - size.width;
+    const top = corner[0] === "t" ? g.y : view.height - g.y - size.height;
     return { left, top, right: left + size.width, bottom: top + size.height };
   }
 
@@ -211,14 +235,22 @@
   // screen's edges, and this is the small robot's box. It never shrinks
   // below a tap target of TAP_LEAST pixels each way (core 1.3.0): pilot.css
   // keeps --pilot-peek-scale at or above that too.
+  // Core 1.4.2: keep.pull, how far pilot.css moves the small robot toward
+  // its top or bottom edge (--pilot-keep-dy: the core's own room, never the
+  // extra an app adds to raise its corners). With it the box is measured
+  // from the corner's own room (gap, as gapAt), so a corner raised above a
+  // tab bar is measured above the bar, where it is drawn, never over it.
+  // Without it, `margin` from the edge, as before.
   function peekBox(corner, view, size, gap, show, keep) {
     if (keep) {
       const s = keepScale(keep.scale, size);
       const m = Math.max(0, Number(keep.margin) || 0);
       const w = size.width * s;
       const h = size.height * s;
+      const pull = Number(keep.pull);
+      const y = Number.isFinite(pull) ? Math.max(m, gapAt(gap, corner).y - Math.max(0, pull)) : m;
       const left = corner[1] === "l" ? m : view.width - m - w;
-      const top = corner[0] === "t" ? m : view.height - m - h;
+      const top = corner[0] === "t" ? y : view.height - y - h;
       return { left, top, right: left + w, bottom: top + h };
     }
     const box = cornerBox(corner, view, size, gap);
@@ -257,7 +289,12 @@
   //     and buttons that tucked-away box covers (core 1.4.0: weighted, so a
   //     link or button costs far more than words: placeNow's costOf).
   //   narrow (core 1.4.0): a phone's view (isNarrow): top corners come last,
-  //     and cost WEIGHT.top more when nothing is free.
+  //     and cost WEIGHT.top more when nothing is free. On a computer (core
+  //     1.4.2) a top corner costs WEIGHT.top more too when it would touch a
+  //     link or a button (the header's links: TOUCH or more), so it never
+  //     parks there while a bottom corner covers less.
+  //   awayAt (core 1.4.2): with `away`, the least cost at which it hides
+  //     (WEIGHT.pinned unless given; placeNow gives TOUCH on a computer).
   //   tuck (core 1.4.0): don't sit whole anywhere, only tucked away (the first
   //     look on a small screen).
   //   away (core 1.4.1): it may fade out instead (placeNow allows it on a
@@ -320,10 +357,11 @@
         if (!cost) return { corner: c, peek: true };
         // Something the app asked it to avoid: a lot, and more the more of it.
         const n = cost(slice, c) + blocks.filter((b) => overlaps(slice, b, 0)).reduce((sum, b) => sum + WEIGHT.block + areaOf(b, slice), 0)
-          + (narrow && c[0] === "t" && c !== mine ? WEIGHT.top : 0);
+          + (c[0] === "t" && c !== mine && (narrow || cost(slice, c) >= TOUCH) ? WEIGHT.top : 0);
         if (!best || n < best.n) best = { corner: c, n };
       }
-      if (o.away && (!best || (cost && best.n >= WEIGHT.pinned))) return gone();
+      const most = Number.isFinite(o.awayAt) ? o.awayAt : WEIGHT.pinned;
+      if (o.away && (!best || (cost && best.n >= most))) return gone();
       if (best) return { corner: best.corner, peek: true };
     }
     return { corner: mine, peek: true };
@@ -483,11 +521,18 @@
   // corner, in screen pixels): the boxes of those things, [] when it's free.
   // Looks at a grid of points (the top element at each one, never Pilot's
   // own), so it costs a handful of lookups, not a walk over the page.
-  function contentIn(doc, area, own, grid) {
+  // pad (core 1.4.2): links, buttons and boxes count within this many
+  // pixels around the area too (placeNow: CONTROL_PAD on a computer), so the
+  // robot never sits touching one (Genesis's "Save my spark" by 7 px, the
+  // header's last link at the top right of Orbyt at 1024 px); words and bars
+  // still count only under the area itself.
+  function contentIn(doc, area, own, grid, pad) {
     const d = doc || root.document;
     if (!d || typeof d.elementsFromPoint !== "function" || !area) return [];
-    const n = Math.max(2, grid || 4);
-    const inset = { left: area.left + 3, top: area.top + 3, right: area.right - 3, bottom: area.bottom - 3 };
+    const p = Math.max(0, Number(pad) || 0);
+    const n = Math.max(2, grid || 4, p ? 5 : 0);
+    const exact = { left: area.left + 3, top: area.top + 3, right: area.right - 3, bottom: area.bottom - 3 };
+    const inset = p ? grow(area, p, p) : exact; // the full pad from the area's own edge
     const out = [];
     const seen = new Set();
     const memo = new Map();
@@ -502,6 +547,7 @@
         if (!top || seen.has(top)) continue;
         seen.add(top);
         const hit = contentBox(top, inset, own, d, memo);
+        if (hit && p && hit.kind !== "control" && !overlaps(hit, exact, 0)) continue;
         // The same thing found at two points counts once (core 1.4.0).
         const key = hit && `${hit.kind}:${hit.left},${hit.top},${hit.right},${hit.bottom}`;
         if (hit && !seen.has(key)) { seen.add(key); out.push(hit); }
@@ -527,6 +573,26 @@
   }
 
   // ---------------------------------------------------------------- where to sit now (pilot.js asks)
+
+  // The room the robot's corners have from the bottom and the top edge (core
+  // 1.4.2): {x, b, t} for gapAt. Read from the robot's own place (its root's
+  // `bottom` or `top`, as the page's styles set it: an app's raised corner,
+  // the phone's safe area) for the edge it is on now, and kept for the
+  // other edge, so a corner is measured the same whichever one it is in
+  // (no flipping between them). Until it has been on an edge, `side`
+  // (--pilot-gap), as before.
+  const rooms = new WeakMap();
+  function edgeRoom(own, css, side, shown) {
+    const keyed = own && typeof own === "object";
+    const seen = (keyed && rooms.get(own)) || {};
+    const edge = CORNERS.includes(shown) ? shown[0] : "";
+    const v = edge && css ? parseFloat(edge === "t" ? css.top : css.bottom) : NaN;
+    if (Number.isFinite(v) && v >= 0) {
+      seen[edge] = v;
+      if (keyed) rooms.set(own, seen);
+    }
+    return { x: side, b: Number.isFinite(seen.b) ? seen.b : side, t: Number.isFinite(seen.t) ? seen.t : side };
+  }
 
   // The box being typed in (an input, a textarea or an editable element of
   // the page, never Pilot's own), or null.
@@ -555,7 +621,9 @@
   // top): on a phone it keeps to one bottom corner, tucked away
   // (scrollPlace). `away` (unless false): on a phone, or while a box is
   // typed in, it hides rather than cover a link, a button, a bar that stays
-  // put or something to avoid: the answer then has `hide: true`.
+  // put or something to avoid: the answer then has `hide: true`. Core
+  // 1.4.2: on a computer too, rather than touch a link, a button or
+  // something to avoid (within CONTROL_PAD); pilot.js then offers the handle.
   function placeNow(o) {
     const blocks = boxesOf(o.doc, o.avoid, o.own, o.win);
     const field = typingIn(o.doc, o.own);
@@ -565,27 +633,38 @@
     const view = { width: o.win.innerWidth, height: o.win.innerHeight };
     const css = o.win.getComputedStyle(o.own);
     const num = (name, dflt) => { const v = parseFloat(css.getPropertyValue(name)); return Number.isFinite(v) ? v : dflt; };
-    const gap = num("--pilot-gap", 16);
+    const side = num("--pilot-gap", 16);
+    // Core 1.4.2: the room its bottom (or top) corners really have, read
+    // from its own place (an app may raise them above a tab bar), and how far
+    // pilot.css pulls the tucked robot toward that edge: the core's own room
+    // (--pilot-keep-room), never the app's extra.
+    const gap = edgeRoom(o.own, css, side, o.shown);
     const peekShow = num("--pilot-peek-show", size.width / 2);
-    const keep = o.keepIn ? { scale: num("--pilot-peek-scale", 0.4), margin: num("--pilot-keep-margin", 4) } : null;
+    const margin = num("--pilot-keep-margin", 4);
+    const keep = o.keepIn ? { scale: num("--pilot-peek-scale", 0.4), margin, pull: Math.min(side, num("--pilot-keep-room", side)) - margin } : null;
     // The room kept from the page's words: a little more across than up and
     // down, where the robot's hand reaches.
     const cx = num("--pilot-clear-x", 12);
     const cy = num("--pilot-clear-y", 4);
     // (The small tucked-away slice is checked as it is: it sits in the
     // page's side room.)
-    const busy = o.text ? (box, c, small) => contentIn(o.doc, small ? box : grow(box, cx, cy), o.own).length > 0 : undefined;
+    // Core 1.4.2: on a computer, links and buttons count within CONTROL_PAD.
+    const narrow = isNarrow(view);
+    const pad = narrow ? 0 : CONTROL_PAD;
+    const busy = o.text ? (box, c, small) => contentIn(o.doc, small ? box : grow(box, cx, cy), o.own, 4, pad).length > 0 : undefined;
     // With nowhere free, how much of the page the tucked-away robot would
     // cover in a corner: the least is best (core 1.3.0).
-    const cost = o.text ? (box) => costOf(contentIn(o.doc, box, o.own), box) : undefined;
-    const narrow = isNarrow(view);
-    const away = o.away !== false && (narrow || Boolean(field));
+    const cost = o.text ? (box) => costOf(contentIn(o.doc, box, o.own, 4, pad), box) : undefined;
+    // Core 1.4.2: on a computer too, but only rather than touch a link, a
+    // button or something to avoid (a bar that stays put is fine there).
+    const away = o.away !== false;
+    const awayAt = narrow || field ? WEIGHT.pinned : TOUCH;
     let place;
     if (o.scrolled && narrow && !field) {
       place = scrollPlace({ corner: o.corner, stay: o.shown, view, size, gap, blocks, busy, cost, peekShow, keep, full: Boolean(o.full), away });
     } else if (o.full || field) {
       place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, cost, peekShow, keep,
-        narrow, tuck: Boolean(o.tuck), away, stay: o.shown });
+        narrow, tuck: Boolean(o.tuck), away, awayAt, stay: o.shown });
     } else {
       const spot = cornerBox(o.shown, view, size, gap);
       place = { corner: o.shown, peek: Boolean(o.tuck) || blocks.some((b) => overlaps(spot, b, 6)) || Boolean(busy && busy(spot)) };
@@ -658,6 +737,134 @@
     return Boolean(inner && inner.clientHeight >= win.innerHeight * 0.5 && inner.scrollTop > 8);
   }
 
+  // ---------------------------------------------------------------- the handle (core 1.4.2)
+
+  // Hidden at rest, the robot could stay out of sight for a whole visit (at
+  // the top of a page with a link in every corner, say), and a visitor might
+  // never find Pilot. So after HANDLE_MS hidden with the page still (not
+  // scrolling, nothing typed in), a handle shows at the screen's left or
+  // right edge: a slice of the robot peeking in (pilot.css .pilot-handle), a
+  // HANDLE-pixel square to tap, which opens Pilot. It goes only where that
+  // whole square covers nothing pressed (a link, a button, a box), no bar
+  // that stays put and nothing the app asks the robot to avoid; with no such
+  // spot it stays hidden. A spot with nothing under it at all is first;
+  // failing that, one with only words under its see-through part.
+  const HANDLE = 44;
+  const HANDLE_MS = 2000;
+  const HANDLE_STEP = 12;
+
+  // The handle's square at the `side` edge ("l" or "r"), `top` pixels down.
+  function handleBox(side, top, view) {
+    const left = side === "l" ? 0 : view.width - HANDLE;
+    return { left, top, right: left + HANDLE, bottom: top + HANDLE };
+  }
+
+  // The boxes of the things a visitor presses that reach into a strip at the
+  // left or right edge (wide enough for the handle), on screen: [{left, ...}].
+  function controlsAtEdges(doc, own, win, view) {
+    const out = [];
+    const near = HANDLE + 8;
+    let found = [];
+    try { found = doc.querySelectorAll(INTERACTIVE); } catch (_) { return out; }
+    for (const el of found) {
+      if (own && own.contains(el)) continue;
+      for (const r of (el.getClientRects ? el.getClientRects() : [])) {
+        if (r.width <= 0 || r.height <= 0 || r.bottom < 0 || r.top > view.height) continue;
+        if (r.left > near && r.right < view.width - near) continue;
+        if (!shown(el, win)) break;
+        out.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
+    }
+    return out;
+  }
+
+  // How free the handle's square is: "free" (nothing under it), "words"
+  // (only words or a small picture), or "" (something pressed, a bar that
+  // stays put, or something to avoid). controls: controlsAtEdges.
+  function handleRoom(o, box, controls, blocks) {
+    if (controls.some((b) => overlaps(box, b, 4)) || blocks.some((b) => overlaps(box, b, 4))) return "";
+    const hits = contentIn(o.doc, box, o.own, 4);
+    if (hits.some((h) => h.kind === "control" || h.kind === "pinned")) return "";
+    return hits.length ? "words" : "free";
+  }
+
+  // Where the handle may go: {side, top}, or null when nowhere is free. o:
+  // {doc, win, own, avoid (selectors), corner (the side it is tried at
+  // first)}. Each edge is tried from the bottom up (where the robot sits,
+  // and the thumb reaches), the robot's own side first.
+  function handleSpot(o) {
+    const view = { width: o.win.innerWidth, height: o.win.innerHeight };
+    if (!(view.width > HANDLE * 2 && view.height > HANDLE * 2)) return null;
+    const blocks = boxesOf(o.doc, o.avoid, o.own, o.win);
+    const controls = controlsAtEdges(o.doc, o.own, o.win, view);
+    const first = CORNERS.includes(o.corner) ? o.corner[1] : "r";
+    let words = null;
+    for (const side of [first, first === "r" ? "l" : "r"]) {
+      for (let top = view.height - HANDLE - 12; top >= 8; top -= HANDLE_STEP) {
+        const room = handleRoom(o, handleBox(side, top, view), controls, blocks);
+        if (room === "free") return { side, top };
+        if (room === "words" && !words) words = { side, top };
+      }
+    }
+    return words;
+  }
+
+  // Is the handle's spot still free (the page may have changed under it)?
+  function handleFree(o, spot) {
+    const view = { width: o.win.innerWidth, height: o.win.innerHeight };
+    if (!spot || spot.top < 0 || spot.top + HANDLE > view.height) return false;
+    return handleRoom(o, handleBox(spot.side, spot.top, view), controlsAtEdges(o.doc, o.own, o.win, view),
+      boxesOf(o.doc, o.avoid, o.own, o.win)) !== "";
+  }
+
+  // The handle for pilot.js: {update(rest)}, called after each look. rest:
+  // the robot is hidden (.pilot-away) and the page is still. o: {doc, win,
+  // root (Pilot's root), launcher (its robot picture is used), open (opens
+  // Pilot), avoid () => selectors, corner () => the corner it is in}.
+  // The handle is a <button> in Pilot's root, so it steps back with the robot
+  // for a page's pop-up, and placement never counts it as the page's.
+  function restHandle(o) {
+    const d = o.doc;
+    let timer = 0;
+    let btn = null;
+    let spot = null;
+    const ask = () => ({ doc: d, win: o.win, own: o.root, avoid: o.avoid(), corner: o.corner() });
+    const off = () => { spot = null; o.root.classList.remove("pilot-handle-on"); };
+    function make() {
+      btn = d.createElement("button");
+      btn.type = "button";
+      btn.className = "pilot-handle";
+      btn.setAttribute("aria-label", "Open Pilot, your AI helper");
+      const pic = o.launcher && o.launcher.querySelector(".pilot-robot");
+      if (pic) {
+        const img = pic.cloneNode(false);
+        img.className = "pilot-handle-robot";
+        btn.appendChild(img);
+      }
+      btn.addEventListener("click", () => o.open());
+      o.root.appendChild(btn);
+    }
+    function look() {
+      timer = 0;
+      if (!o.root.classList.contains("pilot-away") || typingIn(d, o.root)) return;
+      spot = handleSpot(ask());
+      if (!spot) { off(); return; }
+      if (!btn) make();
+      btn.classList.toggle("pilot-handle-l", spot.side === "l");
+      btn.classList.toggle("pilot-handle-r", spot.side !== "l");
+      btn.style.top = `${Math.round(spot.top)}px`; // the CSS object model: allowed by a strict CSP
+      o.root.classList.add("pilot-handle-on");
+    }
+    return {
+      update(rest) {
+        if (!rest) { clearTimeout(timer); timer = 0; off(); return; }
+        if (spot && !handleFree(ask(), spot)) off();
+        if (!spot && !timer) timer = setTimeout(look, HANDLE_MS);
+      },
+      get spot() { return spot; },
+    };
+  }
+
   // The resting robot's layers for pilot-actor.js (core 1.4.1): the
   // addresses on Pilot's script tag (data-rest-body, -head, -eyes) and, with
   // data-rest-*-set, the sizes it is drawn at too ({src, srcset, sizes}), so a
@@ -669,7 +876,8 @@
 
   const api = { VERSION, SIZES, scrolledAway, restArt, TAP_LEAST, keepScale, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, covered, coverLayer, cornerOrder, cornerBox, peekBox, overlaps,
     choosePlace, scrollPlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn,
-    NARROW_MOST, WEIGHT, isNarrow, cornerPasses, pinnedBar, costOf, COMPACT, isCompact, inStroll };
+    NARROW_MOST, WEIGHT, isNarrow, cornerPasses, pinnedBar, costOf, COMPACT, isCompact, inStroll,
+    gapAt, edgeRoom, CONTROL_PAD, TOUCH, HANDLE, HANDLE_MS, handleBox, handleSpot, handleFree, restHandle };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;
 })(typeof window !== "undefined" ? window : globalThis);

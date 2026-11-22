@@ -728,7 +728,8 @@ test("placement 1.1.1: the loader looks again on scroll and resize (once a frame
   assert.match(loader, /list\(config\.gutter\)\.length \? list\(config\.gutter\) : \["main"\]/);
   const mascot = fs.readFileSync(core("pilot-mascot.js"), "utf8");
   // (1.2.0: with a little room around the robot, and the small tucked-away slice as it is.)
-  assert.match(mascot, /contentIn\(o\.doc, small \? box : grow\(box, cx, cy\), o\.own\)\.length > 0/);
+  // (1.4.2: links and buttons within CONTROL_PAD count too on a computer.)
+  assert.match(mascot, /contentIn\(o\.doc, small \? box : grow\(box, cx, cy\), o\.own, 4, pad\)\.length > 0/);
   assert.match(mascot, /hard: field \? \[field\.getBoundingClientRect\(\)\] : \[\]/);
   // Mid-scroll it only checks its own spot.
   assert.match(mascot, /const spot = cornerBox\(o\.shown, view, size, gap\);/);
@@ -800,7 +801,7 @@ function panelHelpers() {
 
 test("welcome 1.2.0: the design's five pills and tagline unless the app gives its own", () => {
   const P = panelHelpers();
-  assert.equal(P.VERSION, "1.4.1");
+  assert.equal(P.VERSION, "1.4.2");
   assert.equal(P.DEFAULT_TAGLINE, "Your AI copilot. Powered by you.");
   const five = P.welcomePills(undefined);
   assert.deepEqual(five.map((p) => p.label), ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]);
@@ -846,7 +847,8 @@ test("welcome 1.2.0: a message typed with no key stays in the box, key settings 
   const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
   // Sending with no key: the box isn't emptied, and ask() holds the words.
   assert.match(panel, /if \(store\.ready\(\) \|\| !text\.trim\(\)\) \{\s*input\.value = "";/);
-  assert.ok(panel.includes('if (!store.ready()) { if (!extra) hold({ text: words }); else show("settings"); return; }'));
+  // (Core 1.4.2: unless one of the app's own answers clearly fits the words: matchTyped.)
+  assert.ok(panel.includes('if (!extra && typedHere(words)) return;\n        if (!extra) hold({ text: words }); else show("settings");'));
   assert.ok(panel.includes('if (!store.ready()) { hold({ screen: [prompt, label] }); return; }'));
   assert.match(panel, /function hold\(job\) \{\s*pending = job;\s*if \(job\.text\) fill\(job\.text\);\s*show\("settings"\);/);
   // A key added (here or in another tab): the waiting message goes.
@@ -994,15 +996,15 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
 
 // ---------------------------------------------------------------- core 1.3.0: the first look, one key ask, room for the welcome, tap targets
 
-test("core 1.4.1: every core file says 1.4.1", () => {
+test("core 1.4.2: every core file says 1.4.2", () => {
   const files = fs.readdirSync(path.join(__dirname, "..", "..", "static", "pilot")).filter((n) => /\.(js|css)$/.test(n));
   assert.equal(files.length, 13);
   for (const f of files) {
-    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.1 · /, f);
+    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.2 · /, f);
     const v = fs.readFileSync(core(f), "utf8").match(/const VERSION = "([\d.]+)"/);
-    if (v) assert.equal(v[1], "1.4.1", f);
+    if (v) assert.equal(v[1], "1.4.2", f);
   }
-  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.1");
+  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.2");
 });
 
 test("first look 1.3.0: it uses the same free-corner check as normal placement, and never sits on content", () => {
@@ -1299,7 +1301,7 @@ test("pills 1.4.0: pressing one that needs no AI never asks for a key and sends 
   assert.ok(answerFn.length > 200);
   for (const never of ["hold(", "engine.send", "fetch", "show(\"settings\")", "ask("]) assert.ok(!answerFn.includes(never), never);
   // It is shown through the chat (safe renderer), marked as the app's own, with the key offered under it.
-  assert.ok(answerFn.includes('{ role: "assistant", text, local: true }'));
+  assert.ok(answerFn.includes('{ role: "assistant", text: lead ? `${lead}\\n\\n${text}` : text, local: true }'));
   assert.ok(answerFn.includes('{ role: "note", kind: "more", text: more }'));
   assert.ok(answerFn.includes("!store.ready()"));
   assert.ok(panel.includes("const opts = m.local ? { local: location.href } : undefined;"));
@@ -1356,7 +1358,8 @@ test("wandering 1.4.0: something to avoid holds the robot still only where it st
   assert.equal(Mascot.inStroll([box(20, 760, 60, 20)], W, launcher), true);
   assert.equal(Mascot.inStroll([], W, launcher), false);
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
-  assert.ok(loader.includes("M().inStroll(M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window), window, launcher)"));
+  assert.ok(loader.includes("const avoid = () => [...list(config.avoid), ...list(config.yieldTo)];"));
+  assert.ok(loader.includes("M().inStroll(M().boxesOf(document, avoid(), rootEl, window), window, launcher)"));
 });
 
 // ---------------------------------------------------------------- core 1.4.1: hide rather than cover, one bottom corner while scrolling, the welcome stays
@@ -1605,4 +1608,416 @@ test("welcome 1.4.1: the \"Want more?\" line shows once per chat, under the firs
   assert.ok(answerFn.includes("if (text && more && !store.ready() && !offered) add.push("));
   // A chat kept from 1.4.0 with several such lines draws only the first.
   assert.ok(panel.includes("const n = more && offered ? null : messageNode(m);"));
+});
+
+// ---------------------------------------------------------------- core 1.4.2: raised corners, the screen chip, the handle
+
+// A made-up phone page for placement: each item {cls, rect: [left, top, width, height], press (a link or a button),
+// fixed / sticky (a bar that stays put), words (its own words fill its box), in (the index of the item it sits in)}.
+// Later items are on top. own: Pilot's root, whose style gives the CSS variables and its own `bottom` (cssBottom).
+function fakePage({ width = 375, height = 812, items = [], vars = {}, cssBottom, cssTop } = {}) {
+  const R = (l, t, w, h) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h });
+  const els = [];
+  for (const it of items) {
+    const r = R(...it.rect);
+    const e = { nodeType: 1, tagName: it.tag || (it.press ? "A" : "DIV"), cls: it.cls || "", press: Boolean(it.press),
+      parentElement: it.in === undefined ? null : els[it.in],
+      style: { position: it.fixed ? "fixed" : it.sticky ? "sticky" : "static", visibility: "visible", display: "block", opacity: "1" },
+      getBoundingClientRect: () => r, getClientRects: () => [r],
+      childNodes: it.words ? [{ nodeType: 3, nodeValue: "words", rects: [r] }] : [] };
+    e.closest = (sel) => {
+      if (sel === Mascot.INTERACTIVE) { for (let n = e; n; n = n.parentElement) if (n.press) return n; }
+      return null;
+    };
+    els.push(e);
+  }
+  const kids = [];
+  const classes = new Set();
+  const own = { nodeType: 1, contains: (n) => n === own || kids.includes(n), appendChild: (n) => { kids.push(n); },
+    classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c),
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)) }, kids };
+  const ownStyle = { getPropertyValue: (name) => (vars[name] === undefined ? "" : String(vars[name])),
+    bottom: cssBottom === undefined ? undefined : `${cssBottom}px`, top: cssTop === undefined ? undefined : `${cssTop}px` };
+  const win = { innerWidth: width, innerHeight: height,
+    getComputedStyle: (el) => (el === own ? ownStyle : { ...el.style, getPropertyValue: () => "" }) };
+  const inside = (r, x, y) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  const doc = { body: { nodeType: 1 }, defaultView: win,
+    querySelectorAll: (sel) => (sel === Mascot.INTERACTIVE ? els.filter((e) => e.press)
+      : sel.startsWith(".") ? els.filter((e) => e.cls === sel.slice(1)) : []),
+    createRange: () => ({ selectNodeContents(n) { this.n = n; }, getClientRects() { return (this.n && this.n.rects) || []; } }),
+    elementsFromPoint: (x, y) => els.filter((e) => inside(e.getBoundingClientRect(), x, y)).reverse(),
+    createElement: (tag) => {
+      const c = new Set();
+      return { tagName: tag.toUpperCase(), style: {}, attrs: {}, kids: [], on: {},
+        classList: { add: (k) => c.add(k), remove: (k) => c.delete(k), contains: (k) => c.has(k), toggle: (k, on) => (on ? c.add(k) : c.delete(k)) },
+        get className() { return [...c].join(" "); }, set className(v) { c.clear(); for (const k of String(v).split(" ").filter(Boolean)) c.add(k); },
+        setAttribute(k, v) { this.attrs[k] = v; }, appendChild(n) { this.kids.push(n); }, addEventListener(k, fn) { this.on[k] = fn; } };
+    } };
+  doc.activeElement = doc.body;
+  const pic = { className: "pilot-robot", cloneNode() { return { className: "pilot-robot", src: "/robot.webp" }; } };
+  const launcher = { offsetWidth: width > 720 ? 88 : 56, offsetHeight: width > 720 ? 85 : 54,
+    getBoundingClientRect: () => R(width - 68, height - 66, 56, 54), querySelector: (sel) => (sel === ".pilot-robot" ? pic : null) };
+  return { doc, win, own, launcher, els, avoid: [], corner: "br", shown: "br", full: true, text: true, keepIn: true };
+}
+
+// OmniArmor's signed-in phone page: a fixed tab bar (64 px, with its links) along the bottom; the app raises the
+// robot's corners above it (--pilot-gap: 76px; bottom: 76px) and keeps the core's 3 px margin and 0.82 scale.
+const PHONE_KEEP = { "--pilot-peek-scale": 0.82, "--pilot-keep-margin": 3, "--pilot-keep-room": 12, "--pilot-peek-show": 20 };
+function tabBarPage({ width = 375, height = 812, raised = true, linksAbove = false } = {}) {
+  const items = [
+    { cls: "lines", rect: [16, 300, width - 46, height - 400], words: true },
+    { cls: "tabbar", rect: [0, height - 64, width, 64], fixed: true },
+  ];
+  for (let i = 0; i < 4; i++) items.push({ rect: [8 + i * ((width - 16) / 4), height - 58, (width - 16) / 4 - 4, 52], press: true, in: 1 });
+  // A row of buttons just above the tab bar, edge to edge (for the "it still moves off a link" case).
+  if (linksAbove) items.push({ rect: [0, height - 130, width, 60], press: true });
+  const vars = raised ? { ...PHONE_KEEP, "--pilot-gap": 76 } : { ...PHONE_KEEP, "--pilot-gap": 12 };
+  return fakePage({ width, height, items, vars, cssBottom: raised ? 76 : 12 });
+}
+
+test("placement 1.4.2: a corner raised above a bottom tab bar is measured there when tucked; it no longer hides on every scrolled page", () => {
+  const p = tabBarPage();
+  // Scrolled, nothing but words near the corner: tucked in its bottom corner, above the tab bar (1.4.1: hidden).
+  const place = Mascot.placeNow({ ...p, scrolled: true });
+  assert.deepEqual(place, { corner: "br", peek: true, typing: false });
+  // At the top of the page too, and with the robot's first look, it never hides for the tab bar.
+  assert.equal(Mascot.placeNow(p).hide, undefined);
+  assert.equal(Mascot.placeNow({ ...p, scrolled: true, full: false }).hide, undefined);
+  // The tucked box: above the tab bar, never nearer the bottom than the corner's raise (76 px less the core's own
+  // 9 px pull: 67 px, where OmniArmor's own CSS draws it), the core's 3 px from the side.
+  const keep = { scale: 0.82, margin: 3, pull: 12 - 3 };
+  const box = Mascot.peekBox("br", { width: 375, height: 812 }, { width: 56, height: 54 }, { x: 76, b: 76, t: 76 }, 20, keep);
+  assert.equal(box.right, 375 - 3);
+  assert.equal(box.bottom, 812 - 67);
+  assert.ok(box.bottom <= 812 - 64, "never over the tab bar");
+  // The phone's safe area (the root's real `bottom`, 76 + 34 px) is honoured too.
+  const safe = fakePage({ ...{ width: 375, height: 812 }, vars: { ...PHONE_KEEP, "--pilot-gap": 76 }, cssBottom: 110 });
+  assert.deepEqual(Mascot.edgeRoom(safe.own, safe.win.getComputedStyle(safe.own), 76, "br"), { x: 76, b: 110, t: 76 });
+  // Kept for the other edge, so a bottom corner is measured the same from a top corner (no flipping).
+  assert.deepEqual(Mascot.edgeRoom(safe.own, { getPropertyValue: () => "", top: "12px" }, 76, "tr"), { x: 76, b: 110, t: 12 });
+  // A link right above the bar still moves it: hidden (scrolled, links under both bottom corners), as in 1.4.1.
+  const busy = tabBarPage({ linksAbove: true });
+  assert.equal(Mascot.placeNow({ ...busy, scrolled: true }).hide, true);
+});
+
+test("placement 1.4.2: apps that set nothing are measured exactly as before; pilot.css pulls a raised corner only by the core's own room", () => {
+  const view = { width: 375, height: 812 };
+  const size = { width: 56, height: 54 };
+  // The core's own gap: 3 px from the edges, as in 1.4.1, with or without the new pull.
+  const old = Mascot.peekBox("br", view, size, 12, 20, { scale: 0.82, margin: 3 });
+  assert.deepEqual(Mascot.peekBox("br", view, size, 12, 20, { scale: 0.82, margin: 3, pull: 9 }), old);
+  assert.deepEqual(Mascot.peekBox("tl", view, size, { x: 12, b: 12, t: 12 }, 20, { scale: 0.82, margin: 3, pull: 9 }), Mascot.peekBox("tl", view, size, 12, 20, { scale: 0.82, margin: 3 }));
+  assert.equal(old.bottom, 812 - 3);
+  // A number gap is both ways, as before; an object gives each edge its own.
+  assert.deepEqual(Mascot.gapAt(16, "br"), { x: 16, y: 16 });
+  assert.deepEqual(Mascot.gapAt({ x: 12, b: 76, t: 12 }, "bl"), { x: 12, y: 76 });
+  assert.deepEqual(Mascot.cornerBox("br", view, size, { x: 12, b: 76, t: 12 }), { left: 307, top: 812 - 76 - 54, right: 363, bottom: 812 - 76 });
+  // The same page with the core's own corner (no tab bar raise, nothing set): unchanged placement.
+  const plain = phonePage();
+  assert.deepEqual(Mascot.placeNow({ ...plain, scrolled: true }), { corner: "br", peek: true, typing: false });
+  // pilot.css: sideways as before (--pilot-keep-d); up or down by --pilot-keep-dy, the core's own room (16 px, 12 px
+  // on a phone, the same as its gap, so nothing moves for an app that sets nothing).
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.ok(css.includes("--pilot-keep-dy: calc(min(var(--pilot-gap), var(--pilot-keep-room)) - var(--pilot-keep-margin));"));
+  assert.ok(css.includes("--pilot-keep-room: 16px;"));
+  assert.match(css, /@media \(max-width: 720px\) \{\s*\.pilot-root \{ --pilot-size: 56px; --pilot-gap: 12px;[^}]*--pilot-keep-room: 12px; \}/);
+  assert.ok(css.includes("transform: translate(var(--pilot-keep-d), var(--pilot-keep-dy)) scale(var(--pilot-peek-scale));"));
+  assert.ok(!/translate\((?:calc\([^)]*\)\)|var\([^)]*\)), (?:calc\(-1 \* )?var\(--pilot-keep-d\)/.test(css), "no corner pulls up or down by --pilot-keep-d any more");
+  assert.equal((css.match(/var\(--pilot-keep-dy\)\)\)? scale\(var\(--pilot-peek-scale\)\)/g) || []).length, 4);
+  // placeNow reads the pull from the same variables.
+  const mascot = fs.readFileSync(core("pilot-mascot.js"), "utf8");
+  assert.ok(mascot.includes('pull: Math.min(side, num("--pilot-keep-room", side)) - margin'));
+});
+
+test("chips 1.4.2: \"Summarise this\" only once a key is set; an app can leave it out or put its own in its place", () => {
+  const P = panelHelpers();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const base = "https://mtrx.example/orbyt";
+  // No key: no suggestion that would only ask for one.
+  assert.equal(P.screenChip(undefined, false, base), null);
+  assert.deepEqual(plain(P.screenChip(undefined, true, base)),
+    { label: "Summarise this", prompt: "Summarise what's on this screen in a few short points.", said: "Summarise this screen" });
+  // Off.
+  assert.equal(P.screenChip(false, true, base), null);
+  // The app's own, needing no key: shown either way.
+  assert.deepEqual(plain(P.screenChip({ label: "  What's on   this page? ", answer: "Orbyt's forms." }, false, base)),
+    { label: "What's on this page?", answer: "Orbyt's forms." });
+  assert.deepEqual(plain(P.screenChip({ label: "See the demo", link: "/demo" }, false, base)), { label: "See the demo", link: "https://mtrx.example/demo" });
+  // A link to another site, or an empty answer: left out (as for any suggestion).
+  assert.equal(P.screenChip({ label: "Elsewhere", link: "https://other.example/" }, true, base), null);
+  assert.equal(P.screenChip({ label: "Nothing", answer: "  " }, true, base), null);
+  // The app's own question about the screen: it needs the AI, so only with a key.
+  assert.equal(P.screenChip({ label: "Explain my checks", prompt: "Explain the checks on this screen." }, false, base), null);
+  assert.deepEqual(plain(P.screenChip({ label: "Explain my checks", prompt: "Explain the checks on this screen." }, true, base)),
+    { label: "Explain my checks", prompt: "Explain the checks on this screen.", said: "Explain my checks" });
+  // Anything else given: the default.
+  assert.equal(P.screenChip({ label: "" }, false, base), null);
+  assert.equal(plain(P.screenChip(true, true, base)).label, "Summarise this");
+  // The window uses it: no "Summarise this" pushed after every app's suggestions any more.
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  const draw = panel.slice(panel.indexOf("function drawChips()"), panel.indexOf("function clearChat()"));
+  assert.ok(draw.includes("const own = screenChip(config.screenChip, store.ready(), location.href);"));
+  assert.ok(draw.includes("if (own) all.push({ label: own.label, run: () => (own.prompt ? shareScreen(own.prompt, own.said) : runChip(own)) });"));
+  assert.ok(!draw.includes('all.push({ label: "Summarise this"'));
+});
+
+// CyberLogix's console with an open alert, 320x640, scrolled to 500 (core-issues.md item 4): the sticky "Needs you
+// now" bar (avoided) across the top, the search box and the "Everything" tab (both avoided) along the bottom.
+function consolePage() {
+  const items = [
+    { cls: "row", rect: [16, 60, 288, 520], words: true },
+    { cls: "needs", rect: [0, 0, 320, 56], sticky: true, words: true },
+    { cls: "finder", tag: "INPUT", rect: [0, 590, 200, 50], press: true },
+    { cls: "f-tab", tag: "BUTTON", rect: [200, 596, 120, 44], press: true },
+  ];
+  const p = fakePage({ width: 320, height: 640, items, vars: { ...PHONE_KEEP, "--pilot-gap": 12 }, cssBottom: 12 });
+  return { ...p, avoid: [".needs", ".finder", ".f-tab"] };
+}
+
+test("placement 1.4.2: CyberLogix's 320 px console with every corner busy: hidden, never over the search box or a tab, scrolled or not", () => {
+  const p = consolePage();
+  for (const scrolled of [true, false]) {
+    for (const shown of ["br", "bl"]) {
+      for (const full of [true, false]) {
+        const place = Mascot.placeNow({ ...p, shown, scrolled, full });
+        if (!full && !scrolled) continue; // mid-scroll at the top only tucks in place (pilot.js never asks that at rest)
+        assert.equal(place.hide, true, JSON.stringify({ scrolled, shown, full, place }));
+        assert.equal(place.corner[0], "b", "it keeps a bottom corner, so it comes back there");
+      }
+    }
+  }
+  // The handle that may show instead never covers the bar, the search box or the tab: here, at an edge between them.
+  const spot = Mascot.handleSpot(p);
+  assert.ok(spot, "the side edges between the bars are free");
+  const sq = Mascot.handleBox(spot.side, spot.top, { width: 320, height: 640 });
+  for (const e of p.els.filter((x) => x.cls !== "row")) assert.ok(!Mascot.overlaps(sq, e.getBoundingClientRect(), 0), e.cls);
+});
+
+test("handle 1.4.2: hidden at rest, a 44 px handle at a screen edge where it covers nothing pressed, no bar and nothing avoided", () => {
+  assert.equal(Mascot.HANDLE, 44);
+  assert.equal(Mascot.HANDLE_MS, 2000);
+  const W = 375, H = 812;
+  const sq = (s) => Mascot.handleBox(s.side, s.top, { width: W, height: H });
+  // An empty page: the robot's own side, near the bottom (above the phone's bottom edge).
+  const empty = fakePage();
+  assert.deepEqual(Mascot.handleSpot(empty), { side: "r", top: H - 44 - 12 });
+  assert.deepEqual(Mascot.handleSpot({ ...empty, corner: "bl" }), { side: "l", top: H - 44 - 12 });
+  // Big link cards across the whole bottom half and a header with links (Orbyt's path cards): above the cards.
+  const cards = fakePage({ items: [
+    { cls: "head", rect: [0, 0, W, 53], sticky: true }, { rect: [12, 6, 200, 42], press: true, in: 0 },
+    { rect: [0, 400, W, 200], press: true }, { rect: [0, 604, W, 208], press: true }] });
+  const s1 = Mascot.handleSpot(cards);
+  assert.ok(s1 && s1.top + 44 <= 400 - 4 && s1.top >= 53, JSON.stringify(s1));
+  for (const e of cards.els) assert.ok(!Mascot.overlaps(sq(s1), e.getBoundingClientRect(), 0));
+  // Links down the whole right edge: the left edge.
+  const right = fakePage({ items: [{ rect: [W - 60, 0, 60, H], press: true }] });
+  assert.equal(Mascot.handleSpot(right).side, "l");
+  // Something the app asks it to avoid counts like a link.
+  const avoided = fakePage({ items: [{ cls: "badge", rect: [W - 50, 600, 50, 212] }] });
+  const s2 = Mascot.handleSpot({ ...avoided, avoid: [".badge"] });
+  assert.ok(s2.side === "r" && s2.top + 44 <= 600 - 4, JSON.stringify(s2));
+  // A fixed tab bar's empty part is no place for it either.
+  const bar = tabBarPage();
+  assert.ok(Mascot.handleSpot(bar).top + 44 <= H - 64, JSON.stringify(Mascot.handleSpot(bar)));
+  // Words only under it (the see-through part of the square): only when no spot is free.
+  const words = fakePage({ items: [{ rect: [0, 0, W, H], words: true }] });
+  assert.deepEqual(Mascot.handleSpot(words), { side: "r", top: H - 44 - 12 });
+  const someFree = fakePage({ items: [{ rect: [0, 200, W, H - 200], words: true }] });
+  assert.ok(Mascot.handleSpot(someFree).top + 44 <= 200, JSON.stringify(Mascot.handleSpot(someFree)));
+  // Truly nothing free (RankUp's gift page: full-width Pay buttons all the way down): it stays hidden.
+  const pay = [];
+  for (let y = 0; y < H; y += 100) pay.push({ tag: "BUTTON", rect: [0, y, W, 96], press: true });
+  assert.equal(Mascot.handleSpot(fakePage({ items: pay })), null);
+  // A spot is checked again: once a link comes under it, it's no longer free.
+  assert.equal(Mascot.handleFree(empty, { side: "r", top: 300 }), true);
+  const moved = fakePage({ items: [{ rect: [W - 100, 290, 100, 40], press: true }] });
+  assert.equal(Mascot.handleFree(moved, { side: "r", top: 300 }), false);
+});
+
+test("handle 1.4.2: it shows after 2 s hidden with the page still, as a button that opens Pilot; gone when the robot is back or the page moves", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const p = fakePage();
+  let opened = 0;
+  const make = (page) => Mascot.restHandle({ doc: page.doc, win: page.win, root: page.own, launcher: page.launcher, open: () => { opened += 1; },
+    avoid: () => page.avoid, corner: () => "br" });
+  const h = make(p);
+  p.own.classList.add("pilot-away");
+  h.update(true);
+  t.mock.timers.tick(1900);
+  assert.equal(p.own.classList.contains("pilot-handle-on"), false, "not before about 2 s");
+  t.mock.timers.tick(200);
+  assert.equal(p.own.classList.contains("pilot-handle-on"), true);
+  const btn = p.own.kids[0];
+  assert.equal(btn.tagName, "BUTTON");
+  assert.equal(btn.type, "button");
+  assert.equal(btn.attrs["aria-label"], "Open Pilot, your AI helper");
+  assert.ok(btn.classList.contains("pilot-handle") && btn.classList.contains("pilot-handle-r"));
+  assert.equal(btn.style.top, `${812 - 44 - 12}px`);
+  assert.equal(btn.kids[0].className, "pilot-handle-robot", "a slice of the robot's own picture");
+  btn.on.click();
+  assert.equal(opened, 1);
+  // Still at rest: it stays. The page scrolls or the robot comes back: gone at once.
+  h.update(true);
+  assert.equal(p.own.classList.contains("pilot-handle-on"), true);
+  h.update(false);
+  assert.equal(p.own.classList.contains("pilot-handle-on"), false);
+  // Back at rest: 2 s again.
+  h.update(true);
+  t.mock.timers.tick(2100);
+  assert.equal(p.own.classList.contains("pilot-handle-on"), true);
+  // A box is being typed in when the time comes: no handle.
+  const q = fakePage();
+  const hq = make(q);
+  q.own.classList.add("pilot-away");
+  hq.update(true);
+  q.doc.activeElement = { nodeType: 1, tagName: "INPUT", type: "text" };
+  t.mock.timers.tick(2100);
+  assert.equal(q.own.classList.contains("pilot-handle-on"), false);
+  // Nowhere free: it stays hidden.
+  const pay = [];
+  for (let y = 0; y < 812; y += 100) pay.push({ tag: "BUTTON", rect: [0, y, 375, 96], press: true });
+  const full = fakePage({ items: pay });
+  const hf = make(full);
+  full.own.classList.add("pilot-away");
+  hf.update(true);
+  t.mock.timers.tick(2100);
+  assert.equal(full.own.classList.contains("pilot-handle-on"), false);
+  assert.equal(full.own.kids.length, 0);
+});
+
+test("handle 1.4.2: the loader asks for it after each look (unless config.handle is false); pilot.css shows it only while the robot is hidden", () => {
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.ok(loader.includes("if (handle) handle.update(Boolean(place.hide && !place.typing && !scrolling));"));
+  assert.ok(loader.includes("if (config.handle !== false) handle = M().restHandle({ doc: document, win: window, root: rootEl, launcher, open, avoid, corner: () => shownCorner });"));
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.match(css, /\.pilot-handle \{ display: none; position: fixed; width: 44px; height: 44px;/);
+  assert.ok(css.includes(".pilot-root.pilot-away.pilot-handle-on:not(.pilot-open):not(.pilot-loading) .pilot-handle { display: block;"));
+  // No other rule shows it (so a page's pop-up, which hides the whole root, hides it too).
+  assert.equal((css.match(/\.pilot-handle[^{]*\{[^}]*display: block/g) || []).length, 1);
+  assert.ok(css.includes(".pilot-handle:focus-visible"));
+});
+
+test("typed 1.4.2: with no key, a typed question that clearly fits one of the app's own answers gets it; anything else goes on as before", () => {
+  const P = panelHelpers();
+  const base = "https://clx.example/console";
+  // CyberLogix-like pills and page suggestions (the reviewer's example).
+  const pills = P.ownPills([
+    { icon: "bars", label: "Which fridges need me?", answer: "Two fridges are warm.", match: ["fridge", "warm", "ok", "Freezers"] },
+    { icon: "chat", label: "Is the food still OK?", answer: "Check the times." },
+    { icon: "spark", label: "See it live", link: "/demo" },
+    { icon: "bolt", label: "What does it cost?", answer: "From 5 a month." },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], base);
+  const chips = P.cleanChips([{ label: "What sensors do I need?", answer: "Any of these.", match: ["sensor", "probe"] },
+    { label: "Explain this page", prompt: "Explain this page." }], base);
+  const items = pills.concat(chips);
+  const pick = (t) => { const m = P.matchTyped(t, items); return m ? m.label : null; };
+  assert.equal(pick("Is my walk-in fridge OK?"), "Which fridges need me?");
+  assert.equal(pick("which fridges need me"), "Which fridges need me?");
+  assert.equal(pick("Is my food still ok?"), "Is the food still OK?");
+  assert.equal(pick("How much does it cost?"), "What does it cost?");
+  assert.equal(pick("can I see it live"), "See it live");
+  assert.equal(pick("sensors?"), "What sensors do I need?", "one word, listed by the app in `match`");
+  assert.equal(pick("freezers"), "Which fridges need me?");
+  assert.equal(pick("fridge"), "Which fridges need me?");
+  // Never a wrong match on unrelated questions.
+  for (const q of ["What's the weather like?", "Write me a poem about fridges", "How do I install a fridge sensor with my wifi router?",
+    "ok", "Is it ok?", "What can you do?", "Tell me a joke", "How do I reset my password?", "Who made you?",
+    "Explain this page", "Add my AI key", "", "   ", "Is the fridge food ok?"]) {
+    assert.equal(pick(q), null, q);
+  }
+  // A prompt or a built-in (they need the AI or open settings) is never what it answers with.
+  assert.equal(P.matchTyped("explain this page please", chips.filter((c) => c.prompt)), null);
+  // Question words don't count.
+  assert.deepEqual(JSON.parse(JSON.stringify(P.wordsOf("What is my walk-in fridge's temperature?"))), ["walk", "fridge", "temperature"]);
+  assert.equal(P.MATCH_LEAD, "Here's what I can tell you without an AI key:");
+  // `match` is kept only on items that answer with no AI, cleaned.
+  assert.deepEqual(JSON.parse(JSON.stringify(pills[0].match)), ["fridge", "warm", "ok", "freezer"]);
+  assert.equal(P.ownPills([{ label: "Q", action: "Ask this", match: ["x"] }], base)[0].match, undefined);
+  // The window: no key, a typed question tries this first; the answer is the app's own (local: never sent to the AI),
+  // with the line saying so; a link is shown as a link to tap; config.matchTyped: false turns it off.
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  const askFn = panel.slice(panel.indexOf("async function ask(text, extra)"), panel.indexOf("function typedHere"));
+  assert.ok(askFn.includes("if (!extra && typedHere(words)) return;"));
+  assert.ok(askFn.indexOf("typedHere(words)") < askFn.indexOf("hold({ text: words })"));
+  assert.ok(panel.includes('if (config.matchTyped === false || answering || state.busy) return false;'));
+  assert.ok(panel.includes("answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD);"));
+  assert.ok(panel.includes('{ role: "assistant", text: lead ? `${lead}\\n\\n${text}` : text, local: true }'));
+});
+
+test("placement 1.4.2: on a computer a link within 8 px counts; never a top corner over the header's links; it hides rather than touch one", () => {
+  assert.equal(Mascot.CONTROL_PAD, 8);
+  assert.equal(Mascot.TOUCH, Mascot.WEIGHT.control * 0.1);
+  const W = 1024, H = 800;
+  // Genesis at 1024 px: "Save my spark" ends 7 px into the tucked robot's corner, a text box at the bottom left,
+  // the header's links at both top corners.
+  const page = (saveRight) => fakePage({ width: W, height: H, vars: { "--pilot-peek-scale": 0.52, "--pilot-keep-margin": 8, "--pilot-keep-room": 16 }, cssBottom: 16,
+    items: [
+      { cls: "head", rect: [0, 0, W, 72], sticky: true }, { rect: [31, 14, 200, 44], press: true, in: 0 }, { rect: [880, 22, 120, 30], press: true, in: 0 },
+      { tag: "INPUT", rect: [47, 752, 300, 46], press: true },
+      { tag: "BUTTON", rect: [saveRight - 130, 752, 130, 46], press: true },
+    ] });
+  const near = page(977);
+  // The tucked robot's box at the bottom right starts at 970: the button reaches 7 px in. Without the pad, a grid
+  // point might miss that sliver; with it, it counts.
+  const slice = Mascot.peekBox("br", { width: W, height: H }, { width: 88, height: 85 }, 16, 36, { scale: 0.52, margin: 8, pull: 8 });
+  assert.ok(Mascot.contentIn(near.doc, slice, near.own, 4, 8).some((h) => h.kind === "control"));
+  // A button 6 px short of the box counts too; words that near don't.
+  const gap6 = page(964);
+  assert.ok(Mascot.contentIn(gap6.doc, slice, gap6.own, 4, 8).some((h) => h.kind === "control"));
+  const words = fakePage({ width: W, height: H, items: [{ rect: [900, 740, 64, 20], words: true }] });
+  assert.deepEqual(Mascot.contentIn(words.doc, slice, words.own, 4, 8), []);
+  // Every corner touches a link or a box: on a computer it now hides (the handle shows instead), keeping a
+  // bottom corner; never a top corner over the header's links (1.4.1 tucked over the header's last link on Orbyt).
+  const place = Mascot.placeNow({ ...near, shown: "br" });
+  assert.equal(place.hide, true, JSON.stringify(place));
+  assert.equal(place.corner[0], "b");
+  // An app can keep 1.4.1's tucking (hideWhenCrowded: false), and still never in a top corner over the links.
+  const kept = Mascot.placeNow({ ...near, away: false });
+  assert.equal(kept.hide, undefined);
+  assert.equal(kept.corner[0], "b", JSON.stringify(kept));
+  // Room at the bottom right: it sits there, as before.
+  const room = page(700);
+  assert.deepEqual(Mascot.placeNow(room), { corner: "br", peek: false, typing: false });
+  // The empty end of a header (no link there) is still a place to tuck on a computer, as before.
+  const wide = phonePage({ cardAtBottom: true, width: 1366, height: 900 });
+  assert.equal(Mascot.placeNow(wide).hide, undefined);
+});
+
+test("welcome 1.4.2: under the app's own answer, this page's suggestions first, then the welcome's pills, each once", () => {
+  const P = panelHelpers();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const base = "https://mtrx.example/";
+  const pills = P.ownPills([
+    { icon: "spark", label: "Help with my idea", link: "/genesis#new" },
+    { icon: "chat", label: "What is Orbyt?", answer: "Orbyt is..." },
+    { icon: "bolt", label: "What apps are coming?", answer: "Three apps." },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], base);
+  const chips = P.cleanChips([{ label: "Which app fits me?", answer: "One for each." }, { label: "What is Orbyt?", answer: "Dup." },
+    { label: "Explain this page", prompt: "Explain it." }], base);
+  const local = [{ role: "user", text: "Which app fits me?" }, { role: "assistant", text: "One for each.", local: true }];
+  const got = plain(P.againItems(local, pills, chips, true));
+  // The one just asked is left out; the page's own next; a pill with the same words as a suggestion shows once.
+  assert.deepEqual(got.map((x) => x.label), ["What is Orbyt?", "Explain this page", "Help with my idea", "What apps are coming?", "Add my AI key"]);
+  assert.equal(got[0].chip, true);
+  assert.equal(got[0].answer, "Dup.", "the page's own suggestion wins");
+  assert.equal(got[2].chip, undefined);
+  // At most six; nothing under an AI answer.
+  const many = P.cleanChips([{ label: "A b", answer: "x" }, { label: "C d", answer: "x" }, { label: "E f", answer: "x" }], base);
+  const capped = plain(P.againItems(local, pills.concat(P.ownPills([{ label: "G h", answer: "x" }, { label: "I j", answer: "x" }], base)), many, true));
+  assert.equal(capped.length, P.AGAIN_MOST + 1, "six, and the key pill after them");
+  assert.equal(capped[capped.length - 1].label, "Add my AI key");
+  assert.equal(plain(P.againItems(local, pills, many, false)).some((x) => x.label === "Add my AI key"), false);
+  assert.deepEqual(plain(P.againItems([{ role: "user", text: "Hi" }, { role: "assistant", text: "Hello" }], pills, chips, true)), []);
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes("const list = againItems(state.messages, pills, pageChips(),"));
+  assert.ok(panel.includes("() => (p.chip ? runChip(p) : runPill(p))"));
+});
+
+test("panel 1.4.2: scrolled, the chat's top edge fades under the header instead of showing half a line", () => {
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes('scroller.addEventListener("scroll", () => scroller.classList.toggle("pilot-scrolled", scroller.scrollTop > 1), { passive: true });'));
+  const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
+  assert.match(css, /\.pilot-scroll\.pilot-scrolled \{ -webkit-mask-image: linear-gradient\(to bottom, transparent 0, #000 16px\);\s*mask-image: linear-gradient/);
 });

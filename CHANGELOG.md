@@ -4,6 +4,33 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.31.0 — 2026-11-22
+
+Pilot, the helper robot, moves to the shared Pilot core 1.4.2. You can type
+a question without an AI key and still get Pilot's own answer, and Pilot is
+always easy to find. No price or plan term has changed.
+
+- **Type your question, no key needed.** If what you type fits one of
+  Pilot's own answers, you get it straight away: "Is my walk-in fridge OK?"
+  shows which fridges need you, "How much does it cost?" points to the
+  prices, "Should I throw the food away?" gives the food guidance. It is
+  worked out on your device and nothing is sent anywhere. A question Pilot
+  can't answer by itself still asks for an AI key, with your words kept.
+- **"Sum up my fridges".** On the console and the Simple view, the last
+  suggestion is a short summary of your fridges: how many are fine, how
+  many need you, open alerts and any food nobody has answered for. It needs
+  no key and stays on your device. On the public pages, "Summarise this"
+  only shows once you have added an AI key, since it needs one.
+- **Pilot is always easy to find.** When the robot steps aside so it
+  doesn't cover a button, a temperature or a fridge's status, a small slice
+  of it peeks in at the edge of the screen after a moment. Tap it to open
+  Pilot. It only shows where it covers nothing you need.
+- **Never over the menu on a computer.** On a big screen the robot keeps a
+  little further from links and buttons, never sits on the header's links,
+  and steps aside when every corner is busy.
+- **Easier follow-up questions.** Under one of Pilot's own answers, this
+  page's suggestions come first, then the welcome's questions.
+
 ## 3.30.0 — 2026-11-22
 
 The food question is asked however an alert closes, and nothing says "food
