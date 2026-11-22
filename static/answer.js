@@ -101,10 +101,82 @@
         return;
       }
       dialog.close();
-      cfg.say((got.body && got.body.message) || "Closed.");
-      cfg.done();
+      afterClose(dialog.dataset.id, got.body, (got.body && got.body.message) || "Closed.");
     });
     return dialog;
+  }
+
+  /* "Food kept" or "Thrown away" (3.28.0): asked once an alert closes,
+     because it decides whether the alert says "Food protected" or "Food
+     at risk: check it" (food_value.py). "Not sure yet" leaves it to be
+     answered later from the alert. */
+  let foodDialog = null;
+  function buildFood() {
+    if (foodDialog) return foodDialog;
+    const kept = el("button", { class: "btn btn-primary", type: "button", id: "food-kept",
+      "data-food": "kept", text: "Food kept" });
+    const thrown = el("button", { class: "btn", type: "button", id: "food-thrown",
+      "data-food": "thrown", text: "Thrown away" });
+    const later = el("button", { class: "btn linkish", type: "button", id: "food-later",
+      text: "Not sure yet" });
+    foodDialog = el("dialog", { class: "confirm-dialog food-dialog", id: "food-dialog",
+      "aria-labelledby": "food-title" }, [
+      el("h2", { class: "confirm-title", id: "food-title", text: "Closed. What about the food?" }),
+      el("p", { class: "fix-sub", id: "food-sub",
+        text: "One tap, for the record. It goes in the log with your name." }),
+      el("p", { class: "confirm-out", id: "food-out", role: "status" }),
+      el("div", { class: "confirm-acts food-acts" }, [kept, thrown, later]),
+    ]);
+    document.body.appendChild(foodDialog);
+    foodDialog.addEventListener("click", async (event) => {
+      const b = event.target.closest("button");
+      if (!b) return;
+      if (b === later) {
+        foodDialog.close();
+        cfg.say(foodDialog.dataset.closed || "Closed.", "ok");
+        cfg.done();
+        return;
+      }
+      if (!b.dataset.food) return;
+      const ok = await food(foodDialog.dataset.id, b.dataset.food, b, true);
+      if (ok) foodDialog.close();
+    });
+    return foodDialog;
+  }
+
+  function afterClose(id, body, closedWords) {
+    const ask = body && body.ask_food;
+    if (!ask) { cfg.say(closedWords, "ok"); cfg.done(); return; }
+    const d = buildFood();
+    d.dataset.id = id;
+    d.dataset.closed = closedWords;
+    const word = ask.word === "stock" ? "stock" : "food";
+    d.querySelector("#food-title").textContent = `Closed. What about the ${word}?`;
+    d.querySelector("#food-kept").textContent = word === "stock" ? "Stock kept" : "Food kept";
+    d.querySelector("#food-out").textContent = "";
+    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+  }
+
+  /* Say what happened to the food, from the dialog or from the alert's
+     own "Food at risk: check it" buttons. One message, then a fresh look. */
+  async function food(id, answerWord, button, fromDialog) {
+    if (button) button.disabled = true;
+    let got = null;
+    try {
+      got = await post(`/api/voice/food/${encodeURIComponent(id)}`, { food: answerWord });
+    } catch (_) { got = null; }
+    if (button) button.disabled = false;
+    if (!got || !got.ok) {
+      const msg = got ? words(got.body, "That did not go through. Try again.")
+        : "No connection. Nothing was changed.";
+      if (fromDialog && foodDialog) foodDialog.querySelector("#food-out").textContent = msg;
+      else cfg.say(msg, "err");
+      return false;
+    }
+    const closed = fromDialog && foodDialog ? `${foodDialog.dataset.closed || "Closed."} ` : "";
+    cfg.say(closed + ((got.body && got.body.message) || "Noted."), "ok");
+    cfg.done();
+    return true;
   }
 
   function showStillOut(id, detail) {
@@ -139,15 +211,16 @@
     if (kind === "ack") {
       cfg.say(got.body && got.body.status === "ALREADY_ACKNOWLEDGED"
         ? got.body.message : "Thanks. Everyone can see you are on it.", "ok");
-    } else {
-      cfg.say("Closed. Thanks for sorting it.", "ok");
+      cfg.done();
+      return;
     }
-    cfg.done();
+    afterClose(id, got.body, "Closed. Thanks for sorting it.");
   }
 
   root.CLXAnswer = Object.freeze({
     setup(options) { cfg = Object.assign(cfg, options || {}); },
     onIt: (id, button) => answer("ack", id, button),
     fixed: (id, button) => answer("fix", id, button),
+    food: (id, answerWord, button) => food(id, answerWord, button, false),
   });
 })(typeof window !== "undefined" ? window : globalThis);

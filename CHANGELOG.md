@@ -4,6 +4,53 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.28.0 — 2026-11-22
+
+"Food protected" and "we have phoned" are only said when they are true,
+a small café's screens are calmer, and the pricing page says which plan a
+café gets. No price or plan term has changed.
+
+- **Food protected, honestly.** A closed alert says "Food protected" only
+  if somebody answered it and the fridge was back in range within two
+  hours, or somebody said the food was kept. Eight hours at 62.5°F used to
+  say "Food protected: about $3,000"; now it says **Food at risk: check
+  it**, with **Food kept** and **Thrown away** buttons. The monthly email
+  adds up the same way and says how many were at risk.
+- **"It's fixed" asks about the food.** Once an alert closes, one quick
+  question: **Food kept**, **Thrown away** or **Not sure yet**. The answer
+  goes in the inspector's log with your name.
+- **No "we have phoned" when nobody was phoned.** On a server with calls
+  switched off, "Needs you now" says "We would have phoned the list now,
+  but calls are off on this server", and the alert's history says "Would
+  have phoned the list". A call that failed says so. The same in Pilot,
+  the Simple view and the insurance pack.
+- **This month, in one line.** The Simple view shows "This month: 1
+  alert, answered in 4 minutes, food kept." under your fridges.
+- **The repair offer is quieter.** It needs more than one warm spell
+  before it says a unit is failing, it goes away once the unit is back and
+  somebody marked it fixed, it never says "failing" beside "Fine", and it
+  is never on the TV screen.
+- **A calmer small café.** One message at a time (Add me, Send a test and
+  "All done" no longer stack three deep). On a phone, three figures at the
+  top, not six. "What runs by itself", the AI key card and "Set up for
+  your industry" wait under Advanced for a small account, and the
+  locations box no longer suggests "Store 118 Boca Raton". On a computer,
+  your plan, the activity log and the TV screen are in your business's
+  menu, not across the top bar. For a returning owner, "What this is"
+  is one line, "How this works".
+- **Pilot.** It stays off the Simple view's fridge rows and temperatures
+  and the demo's cards (on a phone the status label sits under the name,
+  so the robot's corner holds nothing that says whether a fridge is OK).
+  **It's fixed now** points at the real **It's fixed** button instead of
+  asking an AI to close it. **Log for the inspector** no longer offers
+  "Sign in" to somebody signed in. **Which plan for a café?** on the
+  pricing page answers at once.
+- **Pricing says which plan is yours.** "Small café? Starter is $59 a
+  month", then three choices: one café with up to three fridges
+  (Starter), a restaurant with more or phone calls (Growth), or several
+  locations and other trades (work out your price).
+
+
 ## 3.27.0 — 2026-11-22
 
 Pilot helps before anyone adds an AI key. No price or plan term has

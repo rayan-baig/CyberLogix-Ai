@@ -12,7 +12,7 @@ import asyncio
 import logging
 import re
 import secrets
-from typing import Optional
+from typing import Dict, Optional
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -787,8 +787,26 @@ def resolve_incident(
         "status": "RESOLVED",
         "resolved_by": actor,
         "message": message,
+        # "Food kept or thrown away?", asked by the page once it closes
+        # (static/answer.js), where the sector has food or stock to ask
+        # about and nobody has said yet. None otherwise.
+        "ask_food": _food_question(incident, sensor),
         "incident": incident.public(),
     }
+
+
+def _food_question(incident: Incident, sensor) -> Optional[Dict[str, str]]:
+    """{"word": "food" | "stock"} when the page should ask what happened
+    to it, or None (a site-wide alert, a sector with no estimate, or it was
+    already recorded)."""
+    import food_value
+
+    if incident.site_wide or incident.product_disposition:
+        return None
+    guess = food_value.estimate(sensor)
+    if guess is None:
+        return None
+    return {"word": "food" if guess["label"].startswith("Food") else "stock"}
 
 
 def out_temperature(incident: Incident, tenant: Tenant) -> Optional[str]:
@@ -926,6 +944,60 @@ def record_corrective_action(
                     f"{incident_id}: {payload.action[:200]}")
     return {
         "message": "Recorded against the excursion.",
+        "incident": incident.public(),
+    }
+
+
+# "Food kept" or "Thrown away", the quick question after "It's fixed"
+# (3.28.0): what happened to the food, as one of DISPOSITIONS. It decides
+# whether the closed alert says "Food protected" (food_value.py).
+FOOD_ANSWERS = {"kept": "unaffected", "thrown": "discarded"}
+
+
+class FoodAnswer(BaseModel):
+    """What happened to the food in a unit after its alert."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    food: str = Field(..., description="'kept' or 'thrown'.")
+
+    @field_validator("food")
+    @classmethod
+    def known_answer(cls, value):
+        if value not in FOOD_ANSWERS:
+            raise ValueError("food must be 'kept' or 'thrown'")
+        return value
+
+
+@router.post("/food/{incident_id}")
+def record_food(
+    incident_id: str,
+    payload: FoodAnswer,
+    tenant: Tenant = Depends(require_tenant),
+    operator: Optional[User] = Depends(optional_operator),
+    _: object = Depends(require_role_or_machine("operator")),
+):
+    """Say what happened to the food: kept, or thrown away.
+
+    Written as the alert's product disposition, with who said so in the
+    audit trail. An inspector's log reads it as what happened to the
+    product; the console reads it to say "Food protected" honestly.
+    """
+    incident = _load_incident(incident_id, tenant)
+    if incident.site_wide:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Say what happened to the food on each fridge's own alert.",
+        )
+    actor = actor_label(operator, "API key")
+    fate = FOOD_ANSWERS[payload.food]
+    STORE.record_disposition(incident, fate)
+    write_audit(tenant, operator, "incident.food",
+                f"{incident_id}: food {'kept' if payload.food == 'kept' else 'thrown away'}.",
+                fallback_actor=actor)
+    return {
+        "message": ("Noted: food kept." if payload.food == "kept"
+                    else "Noted: food thrown away. That goes in the record."),
         "incident": incident.public(),
     }
 

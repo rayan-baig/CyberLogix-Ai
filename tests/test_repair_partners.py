@@ -80,8 +80,10 @@ def shop(api, operator_factory, sensor_factory):
     sensor_factory(headers, "HG-WALKIN", "restaurant", "Walk-in freezer", above=32.0)
     sensor_factory(headers, "HG-CHEST", "restaurant", "Chest freezer", above=32.0)
     sensor_factory(headers, "HG-FINE", "restaurant", "Bar freezer", above=32.0)
-    # Sat at 0°F, then went over its 32°F limit 35 minutes ago and stayed.
-    _seed("HG-WALKIN", [0.0] * 6 + [38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 51.0])
+    # Went warm once and came back (3.28.0: one spell is not "failing"),
+    # then went over its 32°F limit 35 minutes ago and stayed.
+    _seed("HG-WALKIN", [0.0] * 4 + [40.0, 41.0, 40.0] + [0.0] * 4
+          + [38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 51.0])
     # Creeping up 5°F an hour, in range, heading for 32°F.
     _seed("HG-CHEST", [10.0 + i * 0.5 for i in range(25)], spacing_minutes=6)
     _seed("HG-FINE", [0.0] * 20)
@@ -254,7 +256,7 @@ def test_leads_take_turns_between_partners_covering_an_area(api, admin_headers, 
     for n in range(6):
         headers, _, _ = operator_factory(company_name=f"Shop {n}", email=f"o{n}@shops.example")
         sensor_factory(headers, f"S{n}-F", "restaurant", "Freezer", above=32.0)
-        _seed(f"S{n}-F", [0.0] * 6 + [40.0 + i for i in range(8)])
+        _seed(f"S{n}-F", [0.0] * 4 + [40.0, 41.0, 40.0] + [0.0] * 4 + [40.0 + i for i in range(8)])
         resp = _quote(api, {"headers": headers}, sensor_id=f"S{n}-F")
         assert resp.status_code == 201, resp.text
         order.append(resp.json()["partner"]["company_name"])

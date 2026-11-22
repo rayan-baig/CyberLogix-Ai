@@ -220,7 +220,11 @@
       who = i.fix_reported_at ? "Someone on your team said it is fixed. It closes by itself once it is back in range."
         : "Someone on your team is on it. Once it is sorted, press **It's fixed**: it closes when it is back in range.";
     } else {
-      who = `Nobody has answered yet${i.voice_escalated_at ? ", and we have phoned" : ""}. Press ${ON_IT} to say you have it.`;
+      // "and we have phoned" only when a call really went out (3.28.0).
+      const calls = !i.voice_escalated_at ? "" : i.phoned ? ", and we have phoned"
+        : i.calls_off ? ". We would have phoned the list now, but calls are off on this server"
+          : ", and the call did not go through";
+      who = `Nobody has answered yet${calls}. Press ${ON_IT} to say you have it.`;
     }
     const check = cold ? "Check its thermostat setting and that nothing is blocking the vent."
       : "Check the door is shut and sealing, and that the unit is running.";
@@ -278,7 +282,27 @@
   const POWER = () => `Sensors send their readings over your internet. If the power or the Wi-Fi goes off, readings stop, and after ${fig(F.offlineMinutes, "30")} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts go out from our servers, not from your building.\n\nUntil the sensor reports again, check that fridge with a thermometer and write it down. [What to check](/help#sensor-offline)`;
   const CALLS = () => `Yes, on plans with calls. If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, CyberLogix phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
   const TRIAL = () => `The free trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors, needs no card, and includes ${fig(F.trialCalls, "5")} alert calls. Nothing moves you to a paid plan by itself: you choose one when you are ready. [Start a free trial](/signup)`;
-  const LOG = () => `In the console, open **Log for an inspector** on the **Proof** tab (on a small account, under **More**). Pick the dates, and print it or save it as a PDF. It has every unit's temperatures, each time one went out of range, and who answered it.${onConsole ? "" : " [Sign in](/console)"}`;
+  // Signed in on /today, the console is a link to open, never "Sign in"
+  // (3.28.0): that was offered to somebody already signed in.
+  const LOG = () => `In the console, open **Log for an inspector** on the **Proof** tab (on a small account, under **More**). Pick the dates, and print it or save it as a PDF. It has every unit's temperatures, each time one went out of range, and who answered it.${
+    onConsole ? "" : onToday && signedIn() ? " [Open the full console](/console?view=full)" : " [Sign in](/console)"}`;
+
+  // "It's fixed now" (3.28.0): Pilot does not close an alert for anybody.
+  // It points at the real **It's fixed** button on the alert, which checks
+  // the fridge is back in range and asks what happened to the food.
+  function fixedAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const live = liveAlerts(dd);
+    if (!live.length) return "No alert is open right now, so there is nothing to mark fixed.";
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const i = live[0];
+    const u = units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
+    const name = i.site_wide ? "the site-wide alert" : `**${unitName(u)}**`;
+    const where = onToday ? "under **Needs you now**" : "at the top of the page, or on the alert under **Alerts**";
+    const more = live.length > 1 ? ` There ${live.length === 2 ? "is 1 more alert" : `are ${live.length - 1} more alerts`}, each with its own button.` : "";
+    return `Press **It's fixed** on ${name}, ${where}.${more}\n\nIf it is back in range it closes, and you are asked one thing: was the food kept or thrown away. If it is still out of range, it stays open and closes by itself once it is cold, so nobody is woken for a fridge that is fine.`;
+  }
   const WARM = () => `When a fridge stays out of range past its wait, everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds with which unit, the reading and what to check first. Reply 1, or press **I'm on it**, to say you have it; on plans with calls, nobody answering means a phone call after ${fig(F.callAfterMinutes, "10")} minutes.\n\nCheck the door is shut and the unit is running, and move the food if it stays warm. Once it's sorted, press **It's fixed**: it closes when it is back in range.`;
   const STEPS = () => [
     "1. Buy one sensor for each fridge or freezer that can send to a web address, or whose maker's cloud has an API.",
@@ -289,6 +313,12 @@
     "",
     "The guide for each brand is on this page, or [start a free trial](/signup) to get a key.",
   ].join("\n");
+  // The pricing page's "Which plan for a café?" (3.28.0), from the figures.
+  const PLAN = () => [
+    `**One café or shop with up to ${fig(F.starterUnits, "3")} fridges or freezers: Starter, $${fig(F.fromPrice, "59")} a month.** Text alerts to everyone on call, the inspector's log and insurance packs.`,
+    `More fridges than that, phone calls when a text goes unanswered, or the forecast: Growth, $${fig(F.restaurantPrice, "149")} a month a location for a restaurant, up to ${fig(F.unitsPerLocation, "10")} units there.`,
+    `Either way, start with the free ${fig(F.trialDays, "14")}-day trial, no card. [Work out your price](/pricing#calc-title)`,
+  ].join("\n\n");
   const DEMO_WHAT = "A pretend kitchen with four sensors. In about a minute the walk-in starts to warm up, and you see exactly what would happen: the wait, the text, the phone call if nobody answers, and the record once it's fixed. No texts or calls are sent, and nothing is saved.";
   const SIGN_IN = "Use the email and password you signed up with, on [the console](/console). On a phone you can add it to your home screen. No account yet? [Start a free trial](/signup).";
 
@@ -298,7 +328,7 @@
   const answer = (fn) => ({ answer: fn });
   // Signed in, under the welcome's own five (so none says the same thing).
   const LIVE = [["Log for the inspector", answer(LOG)],
-    ["It's fixed now", "The fridge that went warm is fixed. Mark its alert fixed."],
+    ["It's fixed now", answer(fixedAnswer)],
     ["Make a proof report", "Make a proof of monitoring report for last month."]];
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
@@ -307,7 +337,7 @@
     "/": [["Will a door left open wake us?", answer(DOOR)],
       ["Wi-Fi or power goes off?", answer(POWER)],
       ["Do you phone at night?", answer(CALLS)]],
-    "/pricing": [["Which plan for a café?", "Which plan fits a café with a few fridges and a freezer? Ask me one or two questions first."],
+    "/pricing": [["Which plan for a café?", answer(PLAN)],
       ["Do you phone us?", answer(CALLS)],
       ["What's in the trial?", answer(TRIAL)]],
     "/help": [["A fridge is warm: what now?", answer(WARM)],
@@ -421,7 +451,12 @@
       // A fridge's status label ("Too warm", "No signal", "Fine") on its
       // card, in Problems, on /today and in the demo, and the alert's
       // own heading: the robot must never hide whether a fridge is OK.
-      ".sensor-top", ".incident-top", ".thing-word", ".demo-word", ".badge"],
+      ".sensor-top", ".incident-top", ".thing-word", ".demo-word", ".badge",
+      // A fridge's temperature and name on /today and the demo (3.28.0): at
+      // 375px the robot waved over "62.5°" on the Simple view's last row,
+      // and over the demo Freezer card's edge. And /today's own "Needs you
+      // now" card, buttons and all.
+      ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

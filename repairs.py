@@ -306,8 +306,18 @@ def _unit_kind(sensor: Sensor) -> str:
     return "freezer" if above is not None and above <= 32.0 else "fridge"
 
 
+def _marked_fixed(latest, since: Optional[datetime]) -> bool:
+    """A person closed the unit's newest alert ("It's fixed", or closed it
+    with a note), and it came after this warm spell began."""
+    if latest is None or latest.resolved_at is None:
+        return False
+    if not (getattr(latest, "resolved_by", None) or getattr(latest, "fix_reported_by", None)):
+        return False
+    return since is None or latest.resolved_at >= since
+
+
 def repair_signal(sensor: Sensor, forecast: Optional[Dict[str, Any]] = None,
-                  unit: str = "F") -> Optional[Dict[str, Any]]:
+                  unit: str = "F", latest=None) -> Optional[Dict[str, Any]]:
     """What, if anything, says this unit needs a repair.
 
     Two things count, both already worked out by forecaster.py and
@@ -326,11 +336,28 @@ def repair_signal(sensor: Sensor, forecast: Optional[Dict[str, Any]] = None,
     shape = f.get("pattern") or {}
     now_reading = f.get("current_temperature")
     limit = format_temperature(above, unit)
-    if shape.get("pattern") == "failure" and shape.get("confident"):
+    # "Failing" (3.28.0) only after more than one warm spell, and never
+    # once the unit came back down and somebody marked it fixed: one warm
+    # night that was dealt with is not a failing unit. A unit that came back
+    # down on its own after repeated spells is "keeps going warm", never
+    # "failing" beside a "Fine" label.
+    if (shape.get("pattern") == "failure" and shape.get("confident")
+            and int(shape.get("events") or 1) > 1):
         event = shape.get("event") or {}
         since = _when(event.get("started_at"))
         minutes = float(event.get("minutes") or 0.0)
         recovered = bool(event.get("recovered"))
+        if recovered and _marked_fixed(latest, since):
+            return None
+        spells = int(shape.get("events") or 1)
+        if recovered:
+            seen = (f"It has gone above its limit of {limit} {spells} times lately "
+                    "and come back down each time. That is not how a defrost or an "
+                    "opened door looks, and a unit that keeps doing it usually "
+                    "needs a look.")
+            if now_reading is not None:
+                seen += f" It read {format_temperature(now_reading, unit)} at the last check."
+            return {"kind": "repeated", "seen": seen, "since": iso(since) if since else None}
         seen = (f"It went above its limit of {limit}"
                 + (f" for about {round(minutes)} minutes" if minutes >= 1 else "")
                 + ("" if recovered else " and has not come back down")
@@ -340,7 +367,11 @@ def repair_signal(sensor: Sensor, forecast: Optional[Dict[str, Any]] = None,
             seen += f" It read {format_temperature(now_reading, unit)} at the last check."
         return {"kind": "failing", "seen": seen, "since": iso(since) if since else None}
     trend = f.get("trend_f_per_hour")
+    # Drifting is about a unit still in range: one already over its limit
+    # has an alert, and "heading for its limit" would be wrong (3.28.0).
+    in_range_now = now_reading is None or float(now_reading) <= float(above)
     if (shape.get("pattern") not in ("defrost", "door")
+            and in_range_now
             and f.get("forecast") == "breach_projected"
             and trend is not None and float(trend) > 0
             and f.get("risk_level") in ("critical", "high", "elevated")
@@ -394,7 +425,8 @@ def next_allowed(sensor_id: str) -> Optional[datetime]:
 
 
 def unit_state(tenant: Tenant, sensor: Sensor,
-               forecast: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+               forecast: Optional[Dict[str, Any]] = None,
+               latest=None) -> Optional[Dict[str, Any]]:
     """What the console shows on a unit card: an offer, a recent request, or None."""
     rows = leads_for_sensor(sensor.sensor_id)
     last = rows[-1] if rows else None
@@ -403,7 +435,7 @@ def unit_state(tenant: Tenant, sensor: Sensor,
         return {"offer": False, "sent_at": last.get("delivered_at"),
                 "sent_to": last.get("partner_name"), "again_after": iso(wait)}
     try:
-        signal = repair_signal(sensor, forecast, tenant.temperature_unit)
+        signal = repair_signal(sensor, forecast, tenant.temperature_unit, latest=latest)
     except Exception:  # noqa: BLE001 - a card must still render
         logger.exception("Repair check failed for %s.", sensor.sensor_id)
         return None

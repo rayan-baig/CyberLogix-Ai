@@ -258,3 +258,22 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
 /* The calculator names the plan its figure is for (pricing.js,
    cheapestPlan): "Starter fits you: $59 a month". */
 .calc-fit { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--good); }
+
+/* Which plan is mine (pricing.html, 3.28.0): three answers before any
+   figure, the small café's first. */
+.plan-pick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
+.plan-pick-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px;
+  border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink); text-decoration: none; }
+.plan-pick-card:hover, .plan-pick-card:focus-visible { border-color: var(--accent); }
+.plan-pick-card.is-lead { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.plan-pick-who { font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.plan-pick-card .plan-pick-plan { font-family: var(--display); font-size: 18px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.plan-pick-card.is-lead .plan-pick-plan { color: var(--accent); }
+.plan-pick-card .plan-pick-who { color: var(--ink-2); }
+.plan-pick-card .plan-pick-what { color: var(--muted); }
+.plan-pick-what { font-size: 13px; line-height: 1.45; color: var(--muted); }
+@media (max-width: 720px) {
+  .plan-pick { grid-template-columns: 1fr; gap: 8px; }
+  .plan-pick-card { padding: 12px 14px; }
+}

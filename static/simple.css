@@ -139,8 +139,13 @@ h2.plain {
 .foot .sub { color: var(--muted); font-size: 13px; }
 
 @media (max-width: 520px) {
-  .thing { flex-wrap: wrap; gap: 8px 12px; }
-  .thing-temp { min-width: 68px; font-size: 24px; }
+  /* On a phone the label goes under the name (3.28.0), so a row's right
+     edge, where Pilot's robot sits, holds nothing that says whether the
+     fridge is OK. The robot waved over 62.5° and over Too warm. */
+  .thing { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 6px 12px; align-items: center; }
+  .thing-temp { min-width: 68px; font-size: 24px; grid-row: 1 / span 2; }
+  .thing-word { grid-column: 2; justify-self: start; }
+  :root.pilot-on .thing { padding-right: 60px; }
 }
 
 /* "Needs you now": a live alert, with the two buttons that deal with it.
@@ -162,3 +167,14 @@ h2.plain {
 .intro { margin-top: 34px; }
 .intro summary { cursor: pointer; list-style: revert; }
 .intro[open] summary { margin-bottom: 12px; }
+
+/* "This month" (simple.js, monthLine): one line, quieter than the verdict. */
+.month { margin: 22px 0 0; padding: 14px 18px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface-2); }
+.month-line { margin: 0; font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.month-sub { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+/* A returning owner's explainer: one quiet line until opened (introFor). */
+.intro.intro-back:not([open]) { padding: 0; border: 0; background: none; margin-top: 26px; }
+.intro.intro-back .intro-h { font-family: inherit; font-size: 14px; letter-spacing: 0;
+  text-transform: none; color: var(--muted); margin: 0; }

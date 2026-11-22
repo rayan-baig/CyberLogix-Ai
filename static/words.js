@@ -153,12 +153,23 @@
     return Math.max(1000, soonest);
   }
 
+  /* "Nobody has answered yet", and what the calls did, from the alert's
+     own record (3.28.0). "and we have phoned" only when a call really went
+     out (`phoned`): it was said on a server with calls switched off. */
+  function nobodyYet(i) {
+    const x = i || {};
+    if (!x.voice_escalated_at) return "Nobody has answered yet.";
+    if (x.phoned) return "Nobody has answered yet, and we have phoned.";
+    if (x.calls_off) return "Nobody has answered yet. We would have phoned the list now, but calls are off on this server.";
+    return "Nobody has answered yet, and the call did not go through.";
+  }
+
   let clockNow = () => Date.now();
   function now() { return clockNow(); }
   /* For the tests: read the time from here instead of the computer. */
   function setNow(fn) { clockNow = typeof fn === "function" ? fn : () => Date.now(); }
 
-  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven };
+  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CLXWords = Object.freeze(api);
 })(typeof window !== "undefined" ? window : globalThis);
