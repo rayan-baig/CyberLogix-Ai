@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+import food_value
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
 from records import person_name
@@ -261,6 +262,10 @@ def console_overview(
         row["first_out_display"] = display_temperature(incident.first_out_f, unit)
         row["peak_display"] = display_temperature(incident.peak_f, unit)
         row["temperature_unit"] = unit
+        # On a closed alert: what the food in it was roughly worth, as an
+        # estimate (food_value.py, where the owner tunes the figures).
+        row["food_protected"] = food_value.protected(
+            incident, STORE.get_sensor(incident.sensor_id))
         incidents.append(row)
     # The possible attack or site-wide failure alerts, apart from the
     # units' own: the console shows them as one banner each, above

@@ -747,7 +747,25 @@ def raise_alert(tenant: Tenant, sensor, temperature: float,
     payload["webhook_fanout"] = webhook_results
     if due is not None:
         payload["alerted_because"] = due["because"]
+    # Every reply to a sensor says in words what happened (3.26.0): a
+    # far-too-warm reading came back with no message at all, which a
+    # device's log, or the connect wizard, printed as "undefined".
+    payload["message"] = _alert_reply_words(fanout, payload.get("breach_details"))
     return payload
+
+
+def _alert_reply_words(fanout: list, breach: Optional[str]) -> str:
+    """What the sensor is told when its reading opened an alert."""
+    went = sum(1 for r in fanout if r.get("delivered"))
+    off = bool(fanout) and all(r.get("status") == "not_configured" for r in fanout)
+    first = (breach.strip().rstrip(".") + ". ") if breach else "Out of range. "
+    if not fanout:
+        return first + "Alert opened. Nobody is on the list to text yet."
+    if off:
+        return first + "Alert opened. Texts are off on this server, so nobody was texted."
+    if went:
+        return first + f"Alert opened and texted to {went} of {len(fanout)}."
+    return first + "Alert opened. The texts did not go through; see the console."
 
 
 def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):

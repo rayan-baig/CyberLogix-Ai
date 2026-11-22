@@ -735,7 +735,9 @@ def test_without_the_server_secret_nothing_is_connected(api, kitchen, monkeypatc
     refused = api.put("/api/connections/omniarmor", headers=kitchen["owner"],
                       json={"address": ADDRESS, "key": KEY})
     assert refused.status_code == 503
-    assert "CYBERLOGIX_CREDENTIAL_KEY" in refused.json()["detail"]
+    # 3.26.0: said to the owner, so no server setting's name in it.
+    assert "Ask your provider to switch this on" in refused.json()["detail"]
+    assert "CYBERLOGIX_" not in refused.json()["detail"]
 
 
 def test_a_changed_server_secret_cannot_open_an_old_key(kitchen, monkeypatch):

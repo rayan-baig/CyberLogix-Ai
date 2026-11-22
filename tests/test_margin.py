@@ -169,7 +169,8 @@ def test_with_neither_it_still_admits_it(monkeypatch):
     monkeypatch.setitem(invoicing.ISSUER, "remit_to", "")
     monkeypatch.setattr(mail, "PAY_URL", "")
 
-    assert "not configured" in mail.payment_instructions()
+    assert "not set up yet" in mail.payment_instructions()
+    assert "CYBERLOGIX_" not in mail.payment_instructions()
 
 
 # ---- measuring, rather than assuming ------------------------------------

@@ -210,27 +210,33 @@
          it, because scrolling past the thing you wanted is how you end up
          believing a product does not have it. -->
     <div class="finder" id="finder" role="search">
-      <span class="finder-search">
+      <span class="finder-search" id="finder-search">
         <label class="sr" for="find-q">Search the console</label>
         <input id="find-q" type="search" autocomplete="off"
                placeholder="Search — try fridge, licence, invoice">
         <button class="finder-clear" id="find-clear" type="button"
                 hidden aria-label="Clear the search">&times;</button>
       </span>
-      <button class="f-tab" data-tab="all" aria-pressed="true" type="button">Everything</button>
-      <button class="f-tab" data-tab="fridges" aria-pressed="false" type="button">Fridges</button>
-      <button class="f-tab" data-tab="alerts" aria-pressed="false" type="button">Alerts</button>
-      <button class="f-tab" data-tab="licences" aria-pressed="false" type="button">Licences</button>
-      <button class="f-tab" data-tab="people" aria-pressed="false" type="button">People</button>
-      <button class="f-tab" data-tab="money" aria-pressed="false" type="button">Money</button>
-      <button class="f-tab" data-tab="proof" aria-pressed="false" type="button">Proof</button>
-      <button class="f-tab" data-tab="setup" aria-pressed="false" type="button">Setup</button>
-      <button class="f-tab f-tab-adv" data-tab="advanced" aria-pressed="false" type="button">Advanced</button>
+      <!-- One row of tabs. A small account with one or two fridges sees
+           three (Fridges, Alerts, Team) and More, with no search: there
+           is little to search yet (console.js, simpleTabs). On a phone the
+           row scrolls sideways rather than wrapping. -->
+      <div class="f-tabs" id="f-tabs">
+        <button class="f-tab" data-tab="all" aria-pressed="true" type="button">Everything</button>
+        <button class="f-tab" data-tab="fridges" aria-pressed="false" type="button">Fridges</button>
+        <button class="f-tab" data-tab="alerts" aria-pressed="false" type="button">Alerts</button>
+        <button class="f-tab" data-tab="licences" aria-pressed="false" type="button">Licences</button>
+        <button class="f-tab" data-tab="people" aria-pressed="false" type="button">Team</button>
+        <button class="f-tab" data-tab="money" aria-pressed="false" type="button">Money</button>
+        <button class="f-tab" data-tab="proof" aria-pressed="false" type="button">Proof</button>
+        <button class="f-tab" data-tab="setup" aria-pressed="false" type="button">Setup</button>
+        <button class="f-tab f-tab-adv" data-tab="advanced" aria-pressed="false" type="button">Advanced</button>
+        <button class="f-more" id="tabs-more" type="button" hidden>More</button>
+      </div>
     </div>
     <p class="finder-none" id="find-none" hidden></p>
     <!-- On a small account the estate and operator tools wait here. -->
-    <p class="adv-note" id="adv-note" hidden>Tools for bigger estates (price
-      quotes for chains, meeting notes, staff licences, spending limits, the
+    <p class="adv-note" id="adv-note" hidden>Tools for bigger estates (meeting notes, staff licences, spending limits, the
       record's fingerprints) are under <b>Advanced</b>.</p>
     <!-- A tab a new business has nothing on yet says, in one sentence, what
          will appear there, and offers the next thing to do. Never a blank
@@ -383,7 +389,7 @@
             <button class="btn btn-sm btn-primary" type="submit" id="inspector-print">Print the log</button>
           </form>
         </section>
-        <section class="card" id="find-sector-standing" data-advanced="1" data-group="proof" data-find="how you compare sector standing benchmark compare industry ranking peers" data-label="How you compare">
+        <section class="card" id="find-sector-standing" data-empty="1" data-advanced="1" data-group="proof" data-find="how you compare sector standing benchmark compare industry ranking peers" data-label="How you compare">
           <div class="card-head">
             <span class="card-title">How you compare</span>
             <span class="card-note" id="bench-note"></span>
@@ -411,9 +417,12 @@
             <span class="card-title">How we reach you</span>
             <span class="card-note" id="hook-note"></span>
           </div>
-          <p class="card-plain">Text and phone call. Whether they are working, and what they cost.</p>
+          <p class="card-plain" id="reach-texts">Text and phone call, to the people under Who gets called.</p>
+          <!-- Optional extras (3.26.0): never "Nothing connected" over a
+               business whose texts are set up. -->
+          <h3 class="sub-head">Also send alerts to Slack or Teams (optional)</h3>
           <div id="hook-body"></div>
-          <form id="hook-form" class="u-mt-12">
+          <form id="hook-form" class="u-mt-8">
             <div class="row">
               <select id="hook-kind" class="u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
                 <option value="slack">Slack</option>
@@ -558,31 +567,14 @@
             <span class="mod-chip c-telemetry">3rd-party gateway</span>
           </div>
           <p class="card-plain">Paste one message from any brand of sensor and we will read it.</p>
-          <p class="card-note u-m-0-0-12">
-            Push a payload as an off-the-shelf Elitech, Dickson or Monnit unit
-            would, through the real ingest endpoint.
-          </p>
-          <form id="byod-form">
-            <div class="field">
-              <label for="byod-sn">Device serial</label>
-              <input id="byod-sn" required placeholder="ELITECH-SN-9982"
-                     class="u-ff-mono">
-            </div>
-            <div class="field">
-              <label for="byod-temp">Temperature (°F)</label>
-              <input id="byod-temp" type="number" step="0.1" value="84.5" required
-                     class="u-ff-mono">
-            </div>
-            <button class="btn btn-primary" type="submit">Simulate hardware pulse</button>
-          </form>
-          <div id="byod-out"></div>
 
-          <!-- The form above sends OUR field names, which is what the
-               endpoint used to require and why "point your existing
-               sensor at this URL" was not true. This is the real thing:
-               paste what the device sends and the mapping is worked out
+          <!-- Paste what the device sends and the mapping is worked out
                from it, because a preset for a vendor is a guess about
-               firmware nobody here has run. -->
+               firmware nobody here has run. (3.26.0: the "Simulate
+               hardware pulse" form, which posted a made-up reading
+               through the real ingest route and could raise a real alert,
+               is gone from the customer console: it was a developer's
+               tool. The route itself is in docs/API.md.) -->
           <h3 class="sub-head">Paste what your sensor sends</h3>
           <p class="card-note u-m-0-0-10">
             One real payload, copied out of your vendor's console. Nothing
@@ -607,32 +599,6 @@
               Wire real hardware to this endpoint</summary>
             <pre class="snippet u-mt-8" id="byod-snippet"></pre>
           </details>
-          </section>
-          <section class="card mod-commerce" id="find-enterprise-tier-calculator" data-advanced="1" data-group="money" data-find="work out a price for a big customer enterprise tier calculator price quote cost estimate large" data-label="Work out a price for a big customer">
-          <div class="card-head">
-            <span class="card-title">Work out a price for a big customer</span>
-            <span class="mod-chip c-commerce">Volume matrix</span>
-          </div>
-          <p class="card-plain">For estates too large for the standard plans.</p>
-          <p class="card-note u-m-0-0-12">
-            Contract value by enrolled branch count. Brackets step, so the next
-            boundary is shown alongside.
-          </p>
-          <div class="field">
-            <label for="calc-branches">Total branches enrolled</label>
-            <input id="calc-branches" type="number" min="1" max="10000" value="10"
-                   class="u-ff-mono">
-          </div>
-          <div class="field">
-            <label for="calc-vertical">Industry vertical</label>
-            <select id="calc-vertical"></select>
-          </div>
-          <div class="field">
-            <label for="calc-units">Units per branch</label>
-            <input id="calc-units" type="number" min="1" value="3"
-                   class="u-ff-mono">
-          </div>
-          <div id="calc-out"></div>
           </section>
           <section class="card mod-paperwork" id="find-sector-shortcuts" data-group="setup" data-find="set up for your industry sector shortcuts industry preset defaults restaurant pharmacy" data-label="Set up for your industry">
             <div class="card-head">
@@ -683,7 +649,6 @@
           <section class="card" id="find-audit-trail" data-group="setup" data-find="who did what audit trail history who did what log record" data-label="Who did what">
             <div class="card-head">
               <span class="card-title">Who did what</span>
-              <span class="card-note">Who did what</span>
             </div>
             <p class="card-plain">Every change anybody made to this account, and when.</p>
             <div id="audit-body"></div>

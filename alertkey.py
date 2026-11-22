@@ -70,8 +70,10 @@ def configured() -> bool:
 
 
 def why_not() -> str:
-    return ("This server cannot keep an AI key safely yet: "
-            f"{SETTING} is not set. Ask whoever runs it to set it.")
+    # Said to a customer: what to do, not the name of a server setting
+    # (3.26.0). The setting is in docs/PILOT.md and the operator's log.
+    return ("Not switched on for this server yet. "
+            "Ask your provider to switch this on.")
 
 
 def _cipher():

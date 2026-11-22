@@ -264,8 +264,9 @@ def payment_instructions(invoice=None) -> str:
         lines.append(f"Pay online: {link}")
     if not lines:
         return (
-            "Payment details are not configured on this deployment "
-            "(CYBERLOGIX_REMIT_TO or CYBERLOGIX_PAY_URL). Reply to this "
+            # To the customer: no server setting's name (3.26.0). The
+            # operator is told which ones in the log and in docs/MAIL.md.
+            "The payment details are not set up yet. Reply to this "
             "message and we will send them."
         )
     return "\n".join(lines)

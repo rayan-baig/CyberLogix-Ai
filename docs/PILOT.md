@@ -87,6 +87,26 @@ a phone); and since the welcome has this app's own key pill, there is no second 
 key wording says "AI key". The config's `keyNoteShort` is the welcome's one line ("AI keys are
 for grown-ups (18+)."); the full `keyNote` is its tooltip and stays beside the key settings.
 
+**Three visitor pills need no key (3.26.0).** On the public pages **See it live** goes to
+`/demo`, **What does it cost?** to the calculator on `/pricing`, and **What sensors do I need?**
+to `/help/sensors`, key or no key: the page answers them better than a paragraph would. Core
+1.3.0's pills are a built-in or a prompt, with no link kind, so `static/pilot-cyberlogix.js`
+catches the press (`LINK_PILLS`) before the core asks for a key; a link pill in the core is
+asked for in the MTRX Horizyn repository. **Will it work for my café?** and every typed
+question still need a key.
+
+**Never on the logo (3.26.0).** On a phone the robot sat top-left, on the logo, on a new
+business's first screen, and jumped there after a long scroll on `/help/sensors`. The cause is
+core 1.3.0's last resort when every corner is busy: it picks the corner whose tucked-away robot
+covers least, and a box in `avoid` counts as a million square pixels while the page's words
+count only their area. The Getting started card (`#first-day`) was in `avoid` and, on a phone,
+spans the screen, so both bottom corners "covered" it and a top corner always won; on
+`/help/sensors` the small logo was simply less than the edge of a fold. The config now avoids
+every page's header bar (`.top`, `.demo-top`, the console's `.nav`) and only the Getting started
+card's buttons, not the whole card (the core already keeps off its words). Checked at every
+700px of `/`, `/pricing`, `/help`, `/help/sensors` (every fold open), `/for/restaurant`, `/demo`
+and a new business's console on a 375px phone: never top-left.
+
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
 `static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its

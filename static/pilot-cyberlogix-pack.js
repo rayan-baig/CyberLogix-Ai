@@ -37,7 +37,7 @@ Fridge and freezer alarms that call you. A product of MTRX Horizyn. Wireless tem
 - Freezers warm up on a timer to defrost. Once a unit's defrosts are learned, an on-time defrost no warmer than usual is recorded but doesn't wake anyone; a longer or warmer one alerts as normal.
 - A sensor that has sent nothing for ${f.offlineMinutes || "30"} minutes shows as offline, and everyone on call gets one text saying it has gone quiet.
 - CyberLogix reads its own sensors, not the fridge's controls, and never controls a fridge.
-- "Send a test alert" (People tab, Who gets called) texts everyone on the list a message starting TEST that says nothing is wrong.
+- "Send a test alert" (Team tab, Who gets called) texts everyone on the list a message starting TEST that says nothing is wrong.
 
 ## Fridge and freezer limits
 When a unit is added, the console asks "Fridge or freezer?". For food (restaurants, cafés, shops, country club kitchens) a fridge alarms over ${deg(f.fridgeLimit)} and a freezer over ${deg(f.freezerLimit)}. Vaccine and specimen units in pharmacies and labs get their own ranges (a fridge between 36°F and 46°F, a freezer between -58°F and 5°F). The limit is saved on the unit, and an owner or operator can change a unit's limits on its card. Temperatures show in °F or °C (the °F button at the top of the console).
@@ -55,7 +55,7 @@ CyberLogix does not sell sensors. Buy a wireless temperature sensor for each fri
 A new business sees "Getting started" at the top of the console with these steps ticked off as they're done.
 
 ## Plans and prices
-- From ${usd(f.fromPrice, "59")} a month. Starter is ${usd(f.fromPrice, "59")} a month for one restaurant or café location with up to ${f.starterUnits || "3"} fridges or freezers: texts to everyone on call, the site-wide alert, the inspector's log and monthly report, and tamper-evident readings and claim packets.
+- From ${usd(f.fromPrice, "59")} a month. Starter is ${usd(f.fromPrice, "59")} a month for one restaurant or café location with up to ${f.starterUnits || "3"} fridges or freezers: texts to everyone on call, the site-wide alert, the inspector's log and monthly report, and tamper-evident readings and insurance packs (the evidence for an insurance claim).
 - Restaurants: ${usd(f.restaurantPrice, "149")} a month per location. Pharmacies: ${usd(f.pharmacyPrice, "199")} a month per pharmacy. Each covers up to ${f.unitsPerLocation || "10"} fridges and freezers at that location; each one past that is ${usd(f.extraUnit, "15")} a month. Other trades are priced by quote ("Talk to us").
 - Plans: Trial, Starter (texts only), Growth (up to 50 sensors, with phone calls and warnings before a unit gets too warm) and Enterprise (up to 1,000, with calls). Paying yearly gives 2 months free. Chains of locations get a discount. No setup fee, and never a share of savings.
 - The free trial lasts ${f.trialDays || "14"} days for up to ${f.trialUnits || "5"} sensors, needs no card, and includes ${f.trialCalls || "5"} alert calls. When it ends, sensors are still watched for 14 more days; the owner then picks a paid plan under Money, What you pay. Moving to a paid plan shows the terms first and changes nothing until "Yes, move". Pilot can't change plans.
@@ -96,7 +96,7 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
     "It learns each freezer's defrost cycle, so routine defrosts don't wake anyone, while a longer or warmer one still alerts.",
     "Fridge or freezer is asked when a unit is added, with food limits of 41°F and 10°F, saved on the unit so a later change to a default can never move it.",
     "Use the sensors you choose: any that can send to a web address, or whose maker's cloud we can read. You're not tied to one brand of hardware.",
-    "Every reading is sealed in a tamper-evident record, with an inspector's log, claim packets and monthly proof of monitoring reports an insurer can check by code.",
+    "Every reading is sealed in a tamper-evident record, with an inspector's log, insurance packs and monthly proof of monitoring reports an insurer can check by code.",
     "Plain prices from $59 a month, no setup fee, no share of savings, and a free trial with no card.",
     "Honest about food safety: it reports what was measured and the rule of thumb, and leaves the decision to the business's own plan.",
     "A Simple view that answers \"is there anything I have to do?\" in plain words, and the full console when you want the detail.",

@@ -63,7 +63,7 @@ at a time; taking somebody off the roster takes them out of its turns, and
 removing a site removes its rotation (its people were released to the
 whole estate, and go back to being on call all the time).
 
-In the console it is the **On call now** card, on the People tab under
+In the console it is the **On call now** card, on the Team tab under
 "Who gets called": who is on call now and until when, who is next, the
 next six turns in the rotation's own time, who is in no rotation (and so
 always on call), each person's quiet hours, and the warnings below.
@@ -109,6 +109,11 @@ the console's Getting started checklist (after the sensor, who gets
 alerts, and the sensor's first reading: nothing is called protected
 before a reading has arrived), which can send it directly: the
 words beside the button say what it is, so there is no are-you-sure.
+On a server with texts off it is recorded and not texted, and says so:
+"Recorded, not texted: texts are off on this server." It still ticks the
+box. After the connect wizard's "Received!", the wizard offers the next
+step: "Next: send a test" (or "Next: add who gets alerts" with nobody to
+text yet).
 
 ## When an alert is sent: it has to stay out of range
 
@@ -208,6 +213,24 @@ insurer reads.
   wait has passed again from the close (a unit set to alert at once waits
   its kind's usual wait), even for a reading far past the limit. A new
   spell that starts after the unit came back is alerted on as normal.
+
+### "Food protected": an estimate on a closed alert
+
+A closed alert in the console, and the monthly email, say roughly what the
+food in the unit was worth: "Food protected: about $800", with the words
+"An estimate: what a typical fridge holds, not a count of this one." under
+it. It is counted only for a unit's own alert that is closed, that a
+person answered ("I'm on it" or "It's fixed"), and whose food was not
+recorded as thrown away. An alert that ended on its own, unanswered,
+claims nothing.
+
+The figures are in one place, `food_value.py`, for the owner to tune:
+`STOCK_USD` is what a typical unit of each kind holds (fridge, freezer,
+walk-in fridge, walk-in freezer; a walk-in is any unit whose name says
+"walk-in" or "cold room"), one list for food (restaurants, country clubs)
+and one for vaccines and medicines (pharmacies, labs). `SECTOR_STOCK` says
+which list a sector uses; a sector not in it shows no estimate at all. The
+monthly email adds up the month's alerts the same way.
 
 ### One clock for every page
 

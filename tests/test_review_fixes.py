@@ -270,7 +270,7 @@ def test_the_console_asks_before_it_moves_the_plan():
 
 
 @pytest.mark.parametrize("card", [
-    "find-enterprise-tier-calculator", "find-meeting-intelligence", "find-licences",
+    "find-meeting-intelligence", "find-licences",
     "find-people", "find-spend-controls", "find-compliance-vault",
     "find-byod-sensor-webhook"])
 def test_operator_cards_wait_under_advanced(card):

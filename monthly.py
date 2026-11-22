@@ -227,6 +227,16 @@ def summary(tenant: Tenant, first: date, last: date,
 
     earned = earned_between(tenant.tenant_id, iso(start) or "", iso(end) or "")
 
+    # What the alerts answered this month protected, as an estimate
+    # (food_value.py: a typical unit's stock, which the owner tunes there).
+    import food_value
+
+    by_id = {s.sensor_id: s for s in sensors}
+    saved = food_value.month_total(
+        (i, by_id.get(i.sensor_id))
+        for i in STORE.incidents_for(tenant.tenant_id, since=start)
+        if i.resolved_at is not None and start <= i.opened_at < end)
+
     offline = [{"unit": names[s.sensor_id], "last_seen": iso(s.last_seen)}
                for s in sensors if s.last_seen is not None and s.offline(now)]
     never = [names[s.sensor_id] for s in sensors if s.last_seen is None]
@@ -269,6 +279,8 @@ def summary(tenant: Tenant, first: date, last: date,
         "credits_earned": earned,
         "credits_earned_usd": round(sum(float(c["amount_usd"]) for c in earned), 2),
         "credit_waiting_usd": credits.balance(tenant.tenant_id),
+        "food_protected_usd": saved["usd"],
+        "food_protected_alerts": saved["alerts"],
     }
 
 
@@ -350,6 +362,13 @@ def render_text(report: Dict[str, Any]) -> str:
     else:
         lines.append("Nothing was recorded this month, so there is nothing "
                      "to report. That is not the same as nothing going wrong.")
+
+    if report.get("food_protected_usd"):
+        n = report["food_protected_alerts"]
+        lines += ["", f"Food protected: about ${report['food_protected_usd']:,} "
+                      f"({n} alert{'' if n == 1 else 's'} answered and closed with the "
+                      "food kept). An estimate: what a typical fridge or freezer of "
+                      "each kind holds, not a count of your stock."]
 
     if report.get("site_wide_alerts"):
         count = report["site_wide_count"]

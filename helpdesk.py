@@ -423,7 +423,7 @@ def faq() -> List[Dict[str, Any]]:
             "id": "test-alert",
             "q": "How do I check the alerts really reach us?",
             "a": [
-                "Send a test alert. In the console, open the People tab, "
+                "Send a test alert. In the console, open the Team tab, "
                 "find Who gets called and press Send a test alert. Everyone "
                 "on the list gets a text that starts “TEST” and says nothing "
                 "is wrong. On a plan with phone calls, or with one of the "
@@ -526,7 +526,7 @@ def faq() -> List[Dict[str, Any]]:
                 'On the sign-in screen, choose “Forgotten your password?”, or '
                 'go to <a href="/reset">the reset page</a>. We email you a '
                 "link to set a new one. An owner can also send you a reset "
-                "link from the People tab.",
+                "link from the Team tab.",
             ],
         },
         {

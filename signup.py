@@ -47,6 +47,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from accounts import MIN_PASSWORD_LENGTH
+from ratelimit import wait_words
 from domain import mask_email
 from store import INDUSTRY_PROFILES, PLAN_TIERS, STORE, iso, utc_now
 
@@ -119,7 +120,7 @@ def check_rate(request: Request) -> None:
                 detail=(
                     f"{SIGNUPS_PER_CALLER_PER_HOUR} trials have already been "
                     f"started from here in the last hour. Try again in "
-                    f"{wait} seconds, or get in touch and we will set the "
+                    f"{wait_words(wait)}, or get in touch and we will set the "
                     "account up directly."
                 ),
                 headers={"Retry-After": str(wait)},
@@ -135,7 +136,7 @@ def check_rate(request: Request) -> None:
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
                     "Sign-ups are temporarily rate limited. Try again "
-                    f"in {wait} seconds."
+                    f"in {wait_words(wait)}."
                 ),
                 headers={"Retry-After": str(wait)},
             )

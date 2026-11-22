@@ -748,7 +748,7 @@ def starter_terms() -> Dict[str, Any]:
             "Text alerts to everyone on call",
             "The site-wide alert when several units warm at once",
             "The inspector's log and the monthly report",
-            "Tamper-evident readings and claim packets",
+            "Tamper-evident readings and insurance packs",
         ],
         "moves_to": "growth",
     }

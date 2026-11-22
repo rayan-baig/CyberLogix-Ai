@@ -227,8 +227,9 @@ def sector_benchmark(
             "cohort_size": len(rows),
             "minimum_cohort": MIN_COHORT_TENANTS,
             "reason": (
-                f"Only {len(rows)} operators in this sector have reported in "
-                f"the period. Below {MIN_COHORT_TENANTS} a participant could "
+                f"Only {len(rows)} "
+                f"{'operator in this sector has' if len(rows) == 1 else 'operators in this sector have'} "
+                f"reported in the period. Below {MIN_COHORT_TENANTS} a participant could "
                 "work out a named competitor's figures, so nothing is "
                 "published."
             ),

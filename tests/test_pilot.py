@@ -383,8 +383,12 @@ def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
     avoid = config[config.index("avoid: ["):config.index("],", config.index("avoid: ["))]
     for sel in (".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog",
-                "#first-day"):
+                ".checklist-acts", ".btn-go"):
         assert f'"{sel}"' in avoid, sel
+    # 3.26.0: the Getting started card's buttons, not the whole card, which
+    # spans a phone's screen and sent the robot onto the logo (see
+    # tests/test_round7_console_and_pilot.py).
+    assert '"#first-day"' not in avoid
     assert "An AI key is a private code you make on" in config
     assert "usually under API keys" in config
 

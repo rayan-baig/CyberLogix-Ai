@@ -486,6 +486,19 @@ a { color: var(--accent); }
 main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 .layout { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 22px; }
 @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0,1fr); } }
+/* A tab with nothing in one of the two columns (3.26.0, console.js
+   balanceLayout): the other takes the width, and a side column on its own
+   lays its cards out as an even grid. The Money tab was one narrow column
+   down the right of an empty page. */
+.layout.solo-main, .layout.solo-side { grid-template-columns: minmax(0, 1fr); }
+.layout.solo-main > aside, .layout.solo-side > div:first-child { display: none; }
+@media (min-width: 901px) {
+  .layout.solo-side > aside {
+    display: grid; gap: 22px; align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  }
+  .layout.solo-side > aside > .card { margin-bottom: 0; }
+}
 .modules {
   display: grid; gap: 22px; margin-bottom: 0;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -495,8 +508,9 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
    three modules of different lengths still line their buttons up. */
 .modules > .card form { display: flex; flex-direction: column; flex: 1; }
 .modules > .card form .btn-primary { margin-top: auto; }
-.modules > .card #calc-out { margin-top: auto; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+/* auto-fit (3.26.0): when a tab shows only one of the two, it takes the
+   row instead of half of it beside a gap. */
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
 .pair > .card { margin-bottom: 22px; }
 @media (max-width: 900px) { .pair { grid-template-columns: minmax(0,1fr); } }
 
@@ -803,6 +817,11 @@ body.has-terminal main { padding-bottom: 148px; }
 }
 .toast.err { border-left-color: var(--critical); }
 .toast.ok  { border-left-color: var(--good); }
+.toast.warn { border-left-color: var(--warning); }
+/* On a closed alert: "Food protected: about $800", an estimate, said so
+   underneath (food_value.py). */
+.food-saved { margin: 6px 0 4px; font-size: 13.5px; color: var(--good); }
+.food-saved .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
@@ -885,7 +904,7 @@ body.has-terminal main { padding-bottom: 148px; }
 /* ---------- wall display ---------- */
 body.wall .nav, body.wall .layout > aside, body.wall #terminal,
 body.wall .modules, body.wall .pair, body.wall .side-cards,
-body.wall #byod-form { display: none !important; }
+body.wall #shape-form { display: none !important; }
 body.wall main { padding: 22px; max-width: none; }
 body.wall .layout { grid-template-columns: minmax(0, 1fr); }
 body.wall #delivery-banner, body.wall .card-head .btn { display: none !important; }
@@ -912,6 +931,12 @@ body.wall .fleet { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   position: fixed; right: 16px; top: 16px; z-index: 70; display: none;
 }
 body.wall #wall-exit { display: inline-flex; }
+/* The TV screen (3.26.0): the button that leaves it has a strip of its
+   own above the tiles instead of sitting on the last one; Pilot's robot
+   and the "under Advanced" hint are for someone at a keyboard, not a
+   screen on the wall. */
+body.wall main { padding-top: 64px; }
+body.wall .pilot-root, body.wall #adv-note, body.wall #tab-empty { display: none !important; }
 /* A wall screen is read from across the room, often out of the corner of
    an eye. This is the one place in the product where more emphasis is the
    right answer: a slow breathe that catches peripheral vision without
@@ -1124,6 +1149,16 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   }
   .brand-name { font-size: 18px; }
   #term-toggle { display: none; }
+  /* The account bar in two rows, not three (3.26.0): the logo, the
+     business and °F, then Simple view, Help and Sign out. The TV screen
+     is for a screen on the kitchen wall, not a phone, so a phone does not
+     offer it. */
+  #wall-mode { display: none; }
+  .nav .pulse { display: none; }
+  .nav .brand { gap: 8px; }
+  .nav .brand-mark img { width: 28px; height: 28px; }
+  #chip-company { max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav .btn-sm { padding: 6px 10px; }
   .card { padding: 14px; }
   /* The seven summary tiles as a compact two-column grid: about a third
      of a phone's screen, not most of it. The odd one out spans the row. */
@@ -1417,6 +1452,19 @@ body[data-stale] #offline-banner {
               background .2s var(--ease);
 }
 .f-tab:hover { border-color: var(--border-lit); color: var(--ink); }
+/* The tabs' own row (3.26.0), so on a phone it can scroll sideways as one
+   line while the search keeps a row of its own. */
+.f-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.finder-search[hidden] { display: none; }
+/* "More": the rest of the tabs and the search, for a small account that
+   sees only Fridges, Alerts and Team. */
+.f-more {
+  padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+  border: 1px dashed var(--border-lit); background: transparent;
+  color: var(--ink-2); font-size: 13.5px;
+}
+.f-more:hover { color: var(--ink); border-color: var(--accent); }
+.f-more[hidden] { display: none; }
 .f-tab[aria-pressed="true"] {
   border-color: var(--accent); color: var(--ink);
   background: var(--accent-dim);
@@ -1461,10 +1509,20 @@ body[data-stale] #offline-banner {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }
   .f-tab .n:not(.n-live) { display: none; }
-  /* On a phone the account bar scrolls away and only the finder stays:
-     both together were sticky and held a third of an 844px screen. */
+  /* On a phone the account bar scrolls away, and so does the finder
+     (3.26.0): pinned, it still held a fifth of the screen over every card.
+     Its tabs are one row that scrolls sideways, never two or three. */
   .nav { position: relative; }
-  .finder { top: 0; }
+  .finder { top: 0; position: relative; }
+  .finder-search { flex: 1 1 100%; }
+  .f-tabs {
+    flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; gap: 6px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .f-tabs::-webkit-scrollbar { display: none; }
+  .f-tab, .f-more { flex: none; }
+  .f-more { padding: 8px 12px; font-size: 13px; min-height: 36px; }
 }
 
 /* One sentence under each card title, saying what the card is for.
@@ -1750,7 +1808,7 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
   .needs-bar-what { font-size: 14px; flex-basis: 100%; }
   .needs-bar .btn { min-height: 40px; flex: 1 1 auto; }
   .needs-bar-acts { width: 100%; }
-  .finder { top: var(--needs-h, 0px); }
+  .finder { top: auto; }
 }
 
 /* Calm states in sentence case: "Waiting for its first reading",
@@ -1856,6 +1914,10 @@ body.wall .needs-bar-acts { display: none; }
 .connect-wait.is-in { border-color: color-mix(in srgb, var(--good) 55%, transparent);
                       background: color-mix(in srgb, var(--good) 10%, transparent); }
 .connect-wait.is-in b { color: var(--good); }
+/* "Next: send a test" under the "Received!" line (3.26.0). */
+.connect-wait.is-in { flex-wrap: wrap; }
+.connect-wait.is-in > span:not(.connect-tick) { flex: 1 1 200px; min-width: 0; }
+.connect-wait .connect-next { flex: 1 1 100%; width: auto; margin-left: 34px; white-space: normal; }
 .connect-wait.is-late { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
 .connect-tick { flex: 0 0 auto; display: inline-grid; place-items: center; width: 24px; height: 24px;
                 border-radius: 50%; background: var(--good); color: var(--bg); font-weight: 700; }

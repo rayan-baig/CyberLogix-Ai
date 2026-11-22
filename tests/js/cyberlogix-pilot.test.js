@@ -273,3 +273,54 @@ test("never: plan changes, deleting, the on-call list, texts or calls are refuse
   assert.ok(tools.acknowledge_alert);
   delete globalThis.window;
 });
+
+// 3.26.0: on a new business's first screen on a phone the robot sat
+// top-left, on the logo. Core 1.3.0's last resort (every corner busy) picks
+// the corner whose tucked-away robot covers least, and a box in `avoid`
+// counts as a million square pixels. With the whole Getting started card in
+// this app's avoid list (it spans a phone's screen) both bottom corners
+// "covered" it, so a top corner won. This runs the core's own choosePlace on
+// that screen, with the avoid list as the config has it now.
+test("the robot never goes onto the logo on a new business's phone screen", () => {
+  const fs = require("node:fs");
+  const M = require(core("pilot-mascot.js"));
+  const config = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  const list = config.slice(config.indexOf("avoid: ["), config.indexOf("],", config.indexOf("avoid: [")));
+  const avoid = new Set(Array.from(list.matchAll(/"([^"]+)"/g), (m) => m[1]));
+  const view = { width: 375, height: 812 };
+  const size = { width: 56, height: 54 };
+  // The page: the header bar (logo, Sign in), the Getting started card
+  // filling the screen below it, and its button row; the card's words stop
+  // short of the side room, so the bottom corners have nothing to read.
+  const page = [
+    { sel: ".top", box: { left: 0, top: 0, right: 375, bottom: 60 } },
+    { sel: "#app > .nav", box: { left: 0, top: 0, right: 375, bottom: 60 } },
+    { sel: "#first-day", box: { left: 30, top: 250, right: 345, bottom: 1400 } },
+    { sel: ".checklist-acts", box: { left: 79, top: 690, right: 300, bottom: 726 } },
+  ];
+  const words = [{ left: 16, top: 20, right: 42, bottom: 46 }, { left: 290, top: 14, right: 359, bottom: 52 }];
+  const blocks = page.filter((p) => avoid.has(p.sel)).map((p) => p.box);
+  const busy = (box) => words.some((w) => M.overlaps(box, w, 0));
+  const cost = (box) => words.reduce((n, w) => n + M.areaOf(w, box), 0);
+  const place = M.choosePlace({ corner: "br", view, size, gap: 12, blocks, hard: [], busy, cost,
+    keep: { scale: 0.82, margin: 3 } });
+  assert.equal(place.corner[0], "b", `robot went to ${place.corner}`);
+  // And the old list (the whole card, no header) is what sent it top-left.
+  const old = M.choosePlace({ corner: "br", view, size, gap: 12, hard: [], busy, cost, keep: { scale: 0.82, margin: 3 },
+    blocks: [page[2].box] });
+  assert.equal(old.corner, "tl");
+});
+
+// 3.26.0: the visitor's three pills that need no AI go to their page, key or
+// no key; the core has no link pill, so the config catches the press.
+test("the visitor's link pills go to their pages without a key", () => {
+  const fs = require("node:fs");
+  const config = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  for (const [label, href] of [["See it live", "/demo"], ["What does it cost?", "/pricing#calc-title"],
+    ["What sensors do I need?", "/help/sensors"]]) {
+    assert.ok(config.includes(`"${label}": "${href}"`), label);
+    assert.ok(config.includes(`label: "${label}"`), label);
+  }
+  assert.ok(config.includes("event.stopImmediatePropagation();"));
+  assert.ok(config.includes('closest(".pilot-pill")'));
+});

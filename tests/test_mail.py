@@ -226,7 +226,10 @@ def test_an_unconfigured_deployment_admits_it_rather_than_bluffing(
 ):
     """Nobody has set remittance details, so the notice says so."""
     run_dunning()
-    assert "Payment details are not configured" in mailbox[0].get_body(preferencelist=("plain",)).get_content()
+    body = mailbox[0].get_body(preferencelist=("plain",)).get_content()
+    # 3.26.0: in words a customer can use, never the server settings' names.
+    assert "The payment details are not set up yet." in body
+    assert "CYBERLOGIX_" not in body
 
 
 def test_the_same_chase_is_never_sent_twice(mailbox, overdue):

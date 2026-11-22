@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from domain import mask_email
+from ratelimit import wait_words
 from store import ROLES, STORE, LoginSession, Tenant, User, hash_secret, verify_password
 
 logger = logging.getLogger("cyberlogix.accounts")
@@ -91,7 +92,7 @@ def _throttle(key: str, limit: int = MAX_LOGIN_ATTEMPTS) -> None:
         wait = int(LOGIN_WINDOW_SECONDS - (now - oldest)) + 1
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many failed sign-in attempts. Try again in {wait} seconds.",
+            detail=f"Too many failed sign-in attempts. Try again in {wait_words(wait)}.",
             headers={"Retry-After": str(wait)},
         )
 

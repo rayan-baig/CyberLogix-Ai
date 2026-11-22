@@ -285,14 +285,14 @@ def add_contact(
     if payload.quiet_hours is not None:
         contact.quiet_hours = payload.quiet_hours.model_dump()
         STORE.save_contact(contact)
-    scope = "estate-wide"
+    scope = "every site"
     if contact.site_id:
         site = STORE.get_site(contact.site_id)
         scope = site.name if site else contact.site_id
     write_audit(
         tenant, operator, "contact.added",
-        f"{contact.full_name} ({contact.phone}) at position "
-        f"{contact.escalation_order}, covering {scope}.",
+        f"{contact.full_name} ({contact.phone}), number "
+        f"{contact.escalation_order} to be called, for {scope}.",
     )
     return contact.public()
 
