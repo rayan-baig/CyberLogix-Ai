@@ -1,4 +1,4 @@
-// Pilot core 1.4.0 · pilot-panel.js
+// Pilot core 1.4.1 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
 // own: config.welcomePills, with config.tagline under the name; with its
@@ -13,6 +13,9 @@
 // Core 1.4.0: a pill or a page suggestion can also need no AI at all: a
 // `link` (a page of this site) or an `answer` (the app's own words, shown as
 // Pilot's message at once, with no key and nothing sent anywhere).
+// Core 1.4.1: under such an answer the welcome's pills come back as a
+// compact row (not under the AI's answers), so the next question is one tap
+// away; before, they were gone until "Clear chat".
 //
 // Every word on screen is placed with textContent or built by
 // pilot-render.js from text nodes: nothing is ever set as HTML. No style
@@ -20,7 +23,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -240,6 +243,41 @@
   };
   const keyWords = (given) => (ownPills(given).length ? KEY_WORDS.site : KEY_WORDS.design);
 
+  // Where the app's own answer is when it is the chat's newest message (the
+  // "Want more?" line may follow it), or -1 (core 1.4.1).
+  function localAnswerAt(messages) {
+    const msgs = Array.isArray(messages) ? messages : [];
+    let i = msgs.length - 1;
+    if (i >= 0 && msgs[i] && msgs[i].role === "note" && msgs[i].kind === "more") i -= 1;
+    const last = msgs[i];
+    return last && last.role === "assistant" && last.local === true ? i : -1;
+  }
+
+  // The pills to show again under the chat's last message (core 1.4.1): the
+  // welcome's, when that message is the app's own answer (a `local` one,
+  // maybe followed by the "Want more?" line), less the pill just pressed and
+  // the key pill; [] otherwise (an AI answer, a note, an empty chat).
+  // keyPill: keep the key pill too (no key yet, and no "Want more?" line
+  // right under this answer: it shows once per chat).
+  function againPills(messages, given, keyPill) {
+    const msgs = Array.isArray(messages) ? messages : [];
+    const i = localAnswerAt(msgs);
+    if (i < 0) return [];
+    const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? msgs[i - 1].text : "";
+    return (given || []).filter((p) => !(p.builtin && p.action === "settings" && !keyPill) && p.label !== asked);
+  }
+
+  // Where to scroll the chat to show a new answer of the app's own (core
+  // 1.4.1): to the bottom if everything from its first line down fits (as
+  // before), else its first line near the top (8 px under it), so a long
+  // answer is read from its start. All in pixels of the chat's scroll box:
+  // top (the answer's top within the content), height (the content's
+  // height) and view (the box's own height).
+  function answerScroll(top, height, view) {
+    const bottom = Math.max(0, height - view);
+    return height - top <= view ? bottom : Math.max(0, Math.min(bottom, top - 8));
+  }
+
   // The key settings an app hides (config.hideKeySections): "image", "video".
   const hiddenSections = (given) => new Set((Array.isArray(given) ? given : []).filter((x) => x === "image" || x === "video"));
 
@@ -253,6 +291,7 @@
     let state = { messages: store.loadChat(), busy: false, streaming: "", status: "" };
     let otherStream = "";
     let otherBusy = false;
+    let toppedAt = ""; // the app's own answer last opened at its first line (core 1.4.1)
     const cards = new Set(); // confirm and plan cards waiting for an answer
     const media = []; // pictures and videos made on this page: {at, kind, ...}
     let lastShared = 0;
@@ -414,7 +453,9 @@
       const more = config.answerMore === false ? "" : (typeof config.answerMore === "string" && config.answerMore.trim()) || DEFAULT_MORE;
       const add = text ? [{ role: "user", text: label }, { role: "assistant", text, local: true }]
         : [{ role: "user", text: label }, { role: "note", kind: "error", text: "Pilot couldn't find that answer just now. Try again in a moment." }];
-      if (text && more && !store.ready()) add.push({ role: "note", kind: "more", text: more });
+      // Once per chat (core 1.4.1): under the first answer of the app's own only.
+      const offered = state.messages.some((m) => m.role === "note" && m.kind === "more");
+      if (text && more && !store.ready() && !offered) add.push({ role: "note", kind: "more", text: more });
       engine.replace(state.messages.concat(add));
       state = { ...state, messages: engine.messages };
       pilot.post({ type: "chat", messages: state.messages });
@@ -476,16 +517,26 @@
     // welcome an app may give a one-line version (config.keyNoteShort, core
     // 1.3.0), so the pills and suggestions keep their room; the full note
     // is then its tooltip, and beside the key settings.
+    // Core 1.4.1: with a short form, the note is always that one line with a
+    // "More" link that opens the full note in place ("Less" closes it); in
+    // 1.3.0 the full note (two or three lines above the box) came back as
+    // soon as the chat started. An app with no short form keeps the full
+    // note, as the design has it.
+    let noteOpen = false;
     function drawFootNote() {
       const want = Boolean(config.keyNote) && !store.ready() && view === "chat";
       footNote.hidden = !want;
       if (!want) return;
-      const short = typeof config.keyNoteShort === "string" && config.keyNoteShort.trim() && !state.messages.length
-        ? config.keyNoteShort.trim() : "";
-      const text = short || config.keyNote;
-      if (footNote.textContent !== text) footNote.textContent = text;
-      footNote.classList.toggle("pilot-foot-note-short", Boolean(short));
-      if (short) footNote.setAttribute("title", config.keyNote); else footNote.removeAttribute("title");
+      const short = typeof config.keyNoteShort === "string" && config.keyNoteShort.trim() ? config.keyNoteShort.trim() : "";
+      const shows = !short ? "full" : noteOpen ? "open" : "short";
+      if (footNote.getAttribute("data-shows") === shows) return; // drawn already (a rebuild would drop the link's focus)
+      footNote.setAttribute("data-shows", shows);
+      footNote.classList.toggle("pilot-foot-note-short", shows === "short");
+      if (shows === "full") { footNote.textContent = config.keyNote; footNote.removeAttribute("title"); return; }
+      const toggle = el("button", { type: "button", class: "pilot-link pilot-note-more", "aria-expanded": shows === "open" ? "true" : "false",
+        text: shows === "open" ? "Less" : "More", on: { click: () => { noteOpen = !noteOpen; drawFootNote(); } } });
+      put(footNote, el("span", { class: "pilot-foot-note-words", text: shows === "open" ? config.keyNote : short }), " ", toggle);
+      if (shows === "short") footNote.setAttribute("title", config.keyNote); else footNote.removeAttribute("title");
     }
 
     // ---------------------------------------------------------------- before there is a key
@@ -622,11 +673,19 @@
       panel.classList.toggle("pilot-busy", state.busy || otherBusy);
       drawWelcome();
       const nodes = [];
+      const answerAt = localAnswerAt(state.messages);
+      let answerNode = null;
+      let offered = false; // the "Want more?" line shows once per chat (core 1.4.1; older chats may hold several)
       state.messages.forEach((m, i) => {
         for (const item of media) if (item.at === i) nodes.push(mediaNode(item));
-        nodes.push(messageNode(m));
+        const more = m.role === "note" && m.kind === "more";
+        const n = more && offered ? null : messageNode(m);
+        if (more) offered = true;
+        if (i === answerAt) answerNode = n;
+        nodes.push(n);
       });
       for (const item of media) if (item.at >= state.messages.length) nodes.push(mediaNode(item));
+      nodes.push(againRow());
       const live = state.busy ? state.streaming : otherBusy ? otherStream : "";
       if (live) {
         const body = el("div", { class: "pilot-md" });
@@ -648,8 +707,37 @@
       sendBtn.disabled = otherBusy && !state.busy;
       drawChips();
       // The greeting stays in view until a conversation starts; then the
-      // newest message is kept in view.
-      if (view === "chat") scroller.scrollTop = state.messages.length || cards.size ? scroller.scrollHeight : 0;
+      // newest message is kept in view. A new answer of the app's own (core
+      // 1.4.1) opens at its first line when it is too long to show whole
+      // (1.4.0 opened it scrolled to its end); after that the chat is left
+      // where the visitor scrolls it.
+      if (view !== "chat") return;
+      if (answerNode && !live && !cards.size) {
+        const key = `${answerAt}:${state.messages[answerAt].text.length}`;
+        if (isOpen && key !== toppedAt) {
+          toppedAt = key;
+          const top = answerNode.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+          scroller.scrollTop = answerScroll(top, scroller.scrollHeight, scroller.clientHeight);
+        }
+        return;
+      }
+      scroller.scrollTop = state.messages.length || cards.size ? scroller.scrollHeight : 0;
+    }
+
+    // The welcome's pills again, small and in one wrapping row (core 1.4.1),
+    // under the app's own answer when it is the last thing in the chat (the
+    // "Want more?" line may follow it). Not under the AI's answers, and not
+    // while Pilot is busy. The pill just pressed is left out, and the key
+    // pill while the "Want more?" line just above offers the key (or a key
+    // is set). null when there's none.
+    function againRow() {
+      if (state.busy || otherBusy || cards.size) return null;
+      const last = state.messages[state.messages.length - 1];
+      const list = againPills(state.messages, pills, !store.ready() && !(last && last.role === "note" && last.kind === "more"));
+      if (!list.length) return null;
+      return el("li", { class: "pilot-msg pilot-again" },
+        el("div", { class: "pilot-pills pilot-pills-row", role: "group", "aria-label": "More you can ask" },
+          ...list.map((p) => { const b = pill(p.icon, p.label, () => runPill(p)); b.classList.add("pilot-pill-small"); return b; })));
     }
 
     // Suggestions for this page, first once a conversation has started
@@ -671,6 +759,7 @@
     }
 
     function clearChat() {
+      toppedAt = "";
       engine.clear();
       media.length = 0;
       state = { messages: [], busy: false, streaming: "", status: "" };
@@ -1121,6 +1210,7 @@
       get busy() { return state.busy; },
       open() {
         isOpen = true;
+        toppedAt = ""; // opened again: the newest answer of the app's own from its start
         panel.hidden = false;
         root.classList.add("pilot-open");
         show(view);
@@ -1147,5 +1237,5 @@
   }
 
   window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, ownPills, keyPillGiven, keyWords, KEY_WORDS, hiddenSections,
-    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE };
+    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE, againPills, localAnswerAt, answerScroll };
 })();

@@ -888,6 +888,23 @@ def pilot_tag() -> str:
         }
         attrs = " ".join(f'data-{k}="/static/{v}"' for k, v in core.items())
         attrs += f' data-poses="{html.escape(pilot_poses())}"'
+        # Core 1.4.1: the robot and its resting layers in the sizes they are
+        # drawn at on a phone (56 px at 2x and 3x, 88 px at 2x), so a phone
+        # shows a crisp file instead of shrinking the 128 px or 192 px one.
+        # Each address is versioned here: versioned() tags only a whole
+        # attribute that is one address.
+        for key, stem, sizes in (("robot-set", "pilot-robot", (112, 168, 176)),
+                                 ("rest-body-set", "pilot-rest-body", (112, 168)),
+                                 ("rest-head-set", "pilot-rest-head", (112, 168)),
+                                 ("rest-eyes-set", "pilot-rest-eyes", (112, 168))):
+            found = []
+            for size in sizes:
+                url = f"/static/pilot/{stem}-{size}.webp"
+                tag = _asset_tag(url)
+                if tag:
+                    found.append(f"{url}?v={tag} {size}w")
+            if found:
+                attrs += f' data-{key}="{html.escape(", ".join(found))}"'
         facts = " ".join(f'data-{k}="{html.escape(v)}"' for k, v in pilot_facts().items())
         _pilot_tag["tag"] = (f'<script src="/static/pilot/pilot.js" defer id="pilot-core" '
                              f"{attrs} {facts}></script>")

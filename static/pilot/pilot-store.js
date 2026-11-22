@@ -1,4 +1,4 @@
-// Pilot core 1.4.0 · pilot-store.js
+// Pilot core 1.4.1 · pilot-store.js
 // What Pilot keeps, and where: only in this browser, never on a server.
 //
 // - Keys (one or more chat keys, an image key, a video key, each with its
@@ -16,7 +16,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const LIMITS = { messages: 60, text: 20000, notes: 20, note: 200, key: 400, model: 200, baseUrl: 300, keys: 8 };
   const PROVIDERS = ["anthropic", "openai", "gemini", "compatible"];
   // Anthropic makes no pictures or videos, so it isn't offered for those.

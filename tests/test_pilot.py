@@ -34,27 +34,37 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.4.0 as it ships on the MTRX Horizyn site (commit 3908422).
+# Pilot core 1.4.1 as it ships on the MTRX Horizyn site (commit f221ffc), with
+# its phone-size pictures of the robot and the resting layers.
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "9566af637b0d19c9",
-    "pilot-actor.js": "a5f18326230d0b88",
-    "pilot-engine.js": "6288e7cff6baf8ba",
-    "pilot-mascot.js": "e6cb3e84cbe1fbf9",
-    "pilot-media.js": "e0bf06644d2806a0",
-    "pilot-motion.js": "84b420c9a4b9df6c",
-    "pilot-panel.css": "555d7abdb99d743a",
-    "pilot-panel.js": "05483379e52612de",
-    "pilot-providers.js": "3202b5484b5099fb",
-    "pilot-render.js": "02f308052bf31f23",
+    "pilot-actor.css": "953df05a9274ac0f",
+    "pilot-actor.js": "f98b9541abeaa599",
+    "pilot-engine.js": "77487682c695f969",
+    "pilot-mascot.js": "85f524c269a3113d",
+    "pilot-media.js": "6750001f65407e77",
+    "pilot-motion.js": "c7044c5c44e965e9",
+    "pilot-panel.css": "ba9f9004398388d6",
+    "pilot-panel.js": "34054867d3aa5a0f",
+    "pilot-providers.js": "b458d4a89d850b0a",
+    "pilot-render.js": "82ff4ad4a1c9a5e1",
+    "pilot-rest-body-112.webp": "0bc7a049f517a89a",
+    "pilot-rest-body-168.webp": "f71583ad3933cd37",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
+    "pilot-rest-eyes-112.webp": "fb8cf157433a8032",
+    "pilot-rest-eyes-168.webp": "1d1d5f8033585b84",
     "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
+    "pilot-rest-head-112.webp": "acdb6aa6eb5a18ec",
+    "pilot-rest-head-168.webp": "23741d35ee1148f4",
     "pilot-rest-head.webp": "5eb064f177cffcb3",
+    "pilot-robot-112.webp": "a9e98a73a464a7a9",
     "pilot-robot-128.webp": "05a92f32d99b8076",
+    "pilot-robot-168.webp": "adb6cede3ad959b8",
+    "pilot-robot-176.webp": "6bbae2f53510e257",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "d35be1ea8751db51",
-    "pilot.css": "4691f2f93a83808c",
-    "pilot.js": "a44494f9b059eb50",
+    "pilot-store.js": "714d5eaa154fcb22",
+    "pilot.css": "989bdcd7c57fdf5b",
+    "pilot.js": "d6853ec88a77bd94",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -202,17 +212,42 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.4.0"}
+    assert versions == {"1.4.1"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.4.0";' in (PILOT / name).read_text(), name
-    assert "core 1.4.0" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.4.1";' in (PILOT / name).read_text(), name
+    assert "core 1.4.1" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
     for size, most in ((128, 15_000), (256, 40_000)):
         data = (PILOT / f"pilot-robot-{size}.webp").read_bytes()
         assert data[:4] == b"RIFF" and data[8:12] == b"WEBP" and len(data) < most, size
+
+
+def test_the_tag_names_the_phone_sizes_of_the_robot_versioned(api):
+    """Core 1.4.1: the still robot and the resting layers in the sizes they
+    are drawn at on a phone, so a phone shows them crisp instead of shrinking
+    the 128px or 192px file. Every address is fingerprinted like the rest."""
+    page = _page(api, "/").text
+    want = {"robot-set": ("pilot-robot", (112, 168, 176)), "rest-body-set": ("pilot-rest-body", (112, 168)),
+            "rest-head-set": ("pilot-rest-head", (112, 168)), "rest-eyes-set": ("pilot-rest-eyes", (112, 168))}
+    for key, (stem, sizes) in want.items():
+        found = re.search(rf'data-{key}="([^"]+)"', page)
+        assert found, key
+        parts = [part.strip() for part in found.group(1).split(",")]
+        assert len(parts) == len(sizes), (key, parts)
+        for part, size in zip(parts, sizes):
+            url, width = part.split(" ")
+            assert width == f"{size}w", (key, part)
+            assert re.fullmatch(rf"/static/pilot/{stem}-{size}\.webp\?v=[0-9a-f]{{12}}", url), (key, part)
+            data = (PILOT / f"{stem}-{size}.webp").read_bytes()
+            assert data[:4] == b"RIFF" and data[8:12] == b"WEBP", (key, size)
+            # The fingerprint is the file's own, so a new picture is fetched afresh.
+            assert url.endswith(hashlib.sha256(data).hexdigest()[:12]), (key, part)
+            assert _page(api, url).status_code == 200, url
+    # Each attribute once, on the one tag.
+    assert page.count("data-robot-set=") == 1 and page.count("data-rest-eyes-set=") == 1
 
 
 MODEL_NAMES = re.compile(r"claude-|gpt-?\d|gemini-\d|\bo[1-9]-|sonnet|opus|haiku|llama|dall-?e|\bsora\b|whisper|imagen|\bveo\b",
@@ -382,9 +417,14 @@ def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
     on "Advanced". And the key settings say what an AI key is."""
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
     avoid = config[config.index("avoid: ["):config.index("],", config.index("avoid: ["))]
-    for sel in (".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog",
+    for sel in ("#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog",
                 ".checklist-acts", ".btn-go"):
         assert f'"{sel}"' in avoid, sel
+    # 3.29.0: core 1.4.1 hides the phone robot rather than cover the
+    # console's search box or tabs (a box and buttons), so they are no
+    # longer listed; the core's own tests run that placement.
+    for sel in (".finder", ".f-tab"):
+        assert f'"{sel}"' not in avoid, sel
     # 3.26.0: the Getting started card's buttons, not the whole card, which
     # spans a phone's screen and sent the robot onto the logo (see
     # tests/test_round7_console_and_pilot.py).

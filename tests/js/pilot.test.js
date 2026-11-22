@@ -717,7 +717,7 @@ test("placement 1.1.1: contentIn finds words and buttons under the robot's box, 
 test("placement 1.1.1: the loader looks again on scroll and resize (once a frame), on focus, and keeps line ends clear on phones", () => {
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
   assert.match(loader, /requestAnimationFrame\(fit\)/);
-  assert.match(loader, /addEventListener\("scroll", \(\) => \{[\s\S]*?queueFit\(false\);/);
+  assert.match(loader, /addEventListener\("scroll", \(e?\) => \{[\s\S]*?queueFit\(false\);/);
   assert.match(loader, /addEventListener\("resize"/);
   assert.match(loader, /addEventListener\("focusin", \(\) => queueFit\(true\)\)/);
   assert.match(loader, /addEventListener\("focusout"/);
@@ -756,9 +756,10 @@ test("the chat window 1.1.1: suggestions come first once chatting; the grown-ups
   const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
   assert.ok(cfg.includes(`keyNote: "An AI key is a private code you make on an AI company's website`));
   assert.ok(cfg.includes("AI keys are for grown-ups (the AI companies require 18+)."));
-  // On CyberLogix the console's tabs, the Needs you now bar, the front
-  // page's first-screen facts and a fridge's status label are kept clear too.
-  for (const sel of [".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".sensor-top", ".thing-word"]) assert.ok(cfg.includes(`"${sel}"`), sel);
+  // On CyberLogix the Needs you now bar, the front page's first-screen facts
+  // and a fridge's status label are kept clear too (the console's search box
+  // and tabs since core 1.4.1 by the core itself: it hides rather than cover).
+  for (const sel of ["#needs-bar", ".needs-bar-acts", "#facts", ".sensor-top", ".thing-word"]) assert.ok(cfg.includes(`"${sel}"`), sel);
 });
 
 test("placement 1.1.1: placeNow keeps off a focused box, and mid-scroll only tucks in place", () => {
@@ -799,7 +800,7 @@ function panelHelpers() {
 
 test("welcome 1.2.0: the design's five pills and tagline unless the app gives its own", () => {
   const P = panelHelpers();
-  assert.equal(P.VERSION, "1.4.0");
+  assert.equal(P.VERSION, "1.4.1");
   assert.equal(P.DEFAULT_TAGLINE, "Your AI copilot. Powered by you.");
   const five = P.welcomePills(undefined);
   assert.deepEqual(five.map((p) => p.label), ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]);
@@ -993,15 +994,15 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
 
 // ---------------------------------------------------------------- core 1.3.0: the first look, one key ask, room for the welcome, tap targets
 
-test("core 1.4.0: every core file says 1.4.0", () => {
+test("core 1.4.1: every core file says 1.4.1", () => {
   const files = fs.readdirSync(path.join(__dirname, "..", "..", "static", "pilot")).filter((n) => /\.(js|css)$/.test(n));
   assert.equal(files.length, 13);
   for (const f of files) {
-    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.0 · /, f);
+    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.1 · /, f);
     const v = fs.readFileSync(core(f), "utf8").match(/const VERSION = "([\d.]+)"/);
-    if (v) assert.equal(v[1], "1.4.0", f);
+    if (v) assert.equal(v[1], "1.4.1", f);
   }
-  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.0");
+  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.1");
 });
 
 test("first look 1.3.0: it uses the same free-corner check as normal placement, and never sits on content", () => {
@@ -1062,15 +1063,18 @@ test("welcome 1.3.0: websites say 'AI key'; the design (and Pilot for Mac) keeps
   assert.ok(!outside.includes("Paste your API key"));
 });
 
-test("welcome 1.3.0: a one-line grown-ups note on the welcome when the app gives one; the full note stays elsewhere", () => {
+test("welcome 1.3.0/1.4.1: a one-line grown-ups note when the app gives one (always, with More); the full note stays elsewhere", () => {
   const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
-  assert.match(panel, /typeof config\.keyNoteShort === "string" && config\.keyNoteShort\.trim\(\) && !state\.messages\.length/);
-  assert.ok(panel.includes('footNote.classList.toggle("pilot-foot-note-short", Boolean(short));'));
-  assert.ok(panel.includes('if (short) footNote.setAttribute("title", config.keyNote);'));
+  // 1.4.1: the short form whenever the app gives one, not only on the welcome; the design's full note otherwise.
+  assert.ok(panel.includes('const short = typeof config.keyNoteShort === "string" && config.keyNoteShort.trim() ? config.keyNoteShort.trim() : "";'));
+  assert.ok(panel.includes('const shows = !short ? "full" : noteOpen ? "open" : "short";'));
+  assert.ok(panel.includes('if (shows === "full") { footNote.textContent = config.keyNote; footNote.removeAttribute("title"); return; }'));
+  assert.ok(panel.includes('text: shows === "open" ? "Less" : "More", on: { click: () => { noteOpen = !noteOpen; drawFootNote(); } } });'));
+  assert.ok(panel.includes('if (shows === "short") footNote.setAttribute("title", config.keyNote);'));
   // Settings and help keep the full note.
   assert.equal((panel.match(/config\.keyNote \? el\("p", \{ class: "pilot-grownup", text: config\.keyNote \}\)/g) || []).length, 2);
   const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
-  assert.match(css, /\.pilot-foot-note-short \{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \}/);
+  assert.match(css, /\.pilot-foot-note-short \.pilot-foot-note-words \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/);
   // Shorter screens get the tighter welcome: desktops up to 900 px tall, phones up to 760 px.
   assert.match(css, /@media \(min-width: 721px\) and \(max-height: 900px\)/);
   assert.match(css, /@media \(max-width: 720px\) and \(max-height: 760px\)/);
@@ -1168,15 +1172,17 @@ test("placement 1.4.0: on a phone it never parks top-left over the header (Cyber
   assert.deepEqual(hits.map((h) => h.kind), ["pinned"]);
 });
 
-test("placement 1.4.0: it never tucks over a small 'Home' link while a corner avoids one; the corner of a big card costs less", () => {
+test("placement 1.4.0: it never tucks over a small 'Home' link while a corner avoids one", () => {
   const place = Mascot.placeNow(phonePage({ cardAtBottom: true, logo: true }));
   // Core 1.3.0 chose the top right (the Home link covered less area than the card's corner).
+  // Core 1.4.1: every corner has a link here, so it hides, keeping its bottom corner.
   assert.equal(place.corner[0], "b", JSON.stringify(place));
   const small = { left: 326, top: 7, right: 373, bottom: 47, kind: "control" };
   const big = { left: 30, top: 702, right: 345, bottom: 922, kind: "control" };
   const slice = { left: 326, top: 764, right: 372, bottom: 809 };
   const topSlice = { left: 326, top: 3, right: 372, bottom: 48 };
-  assert.ok(Mascot.costOf([small], topSlice) > Mascot.costOf([big], slice) * 3);
+  // A small link covered mostly costs about as much as a big card under part of the robot (1.4.1: the robot's share counts).
+  assert.ok(Mascot.costOf([small], topSlice) >= Mascot.costOf([big], slice) * 0.9);
   // Any link or button costs more than a corner's worth of words.
   const words = { left: 0, top: 700, right: 375, bottom: 812, kind: "text" };
   assert.ok(Mascot.costOf([big], slice) > Mascot.costOf([words], slice) * 10);
@@ -1246,7 +1252,7 @@ test("first look 1.4.0: on a small screen it plays tucked away, and stays tucked
   assert.equal(Mascot.placeNow({ ...p, tuck: true }).peek, true);
   assert.equal(Mascot.placeNow({ ...p, tuck: true, full: false }).peek, true);
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
-  assert.ok(loader.includes("keepIn: Boolean(config.keepInViewport), tuck: quiet });"));
+  assert.ok(loader.includes("keepIn: Boolean(config.keepInViewport), tuck: quiet, "));
   assert.ok(loader.includes("quiet = M().isCompact({ width: window.innerWidth, height: window.innerHeight });"));
   assert.ok(loader.includes("scrolling = setTimeout(() => { scrolling = 0; quiet = false; queueFit(true); }, 160);"));
 });
@@ -1351,4 +1357,252 @@ test("wandering 1.4.0: something to avoid holds the robot still only where it st
   assert.equal(Mascot.inStroll([], W, launcher), false);
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
   assert.ok(loader.includes("M().inStroll(M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window), window, launcher)"));
+});
+
+// ---------------------------------------------------------------- core 1.4.1: hide rather than cover, one bottom corner while scrolling, the welcome stays
+
+test("placement 1.4.1: typing low on a phone with a sticky header, it fades out instead of parking at 3,3; back when typing ends", () => {
+  const rect = (l, t, w, h) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h });
+  const p = phonePage();
+  // Genesis's "today's spark" box, low on the screen (round-7: robot=3,3 over the logo while typing).
+  const field = { nodeType: 1, tagName: "INPUT", type: "text", getBoundingClientRect: () => rect(47, 766, 281, 46) };
+  p.doc.activeElement = field;
+  const typing = Mascot.placeNow(p);
+  assert.equal(typing.typing, true);
+  assert.equal(typing.hide, true, JSON.stringify(typing));
+  assert.equal(typing.corner[0], "b", "hidden, it keeps its bottom corner, so it comes back there");
+  // With room at the top (no header that stays put, nothing there), it may still sit there while typing.
+  const open = phonePage();
+  open.doc.activeElement = field;
+  const words = open.doc.elementsFromPoint;
+  open.doc.elementsFromPoint = (x, y) => (y < 53 ? [] : words(x, y));
+  const free = Mascot.placeNow(open);
+  assert.equal(free.hide, undefined, JSON.stringify(free));
+  assert.equal(free.corner[0], "t");
+  // Typing done: back in its bottom corner, shown.
+  p.doc.activeElement = p.doc.body;
+  const after = Mascot.placeNow(p);
+  assert.equal(after.hide, undefined, JSON.stringify(after));
+  assert.equal(after.corner[0], "b");
+  // An app can keep 1.4.0's tucking over the least (config.hideWhenCrowded: false).
+  p.doc.activeElement = field;
+  assert.equal(Mascot.placeNow({ ...p, away: false }).hide, undefined);
+});
+
+test("placement 1.4.1: a box being typed in under every corner: it hides rather than cover the box", () => {
+  const view = { width: 1366, height: 900 };
+  const size = { width: 88, height: 85 };
+  const field = { left: 0, top: 0, right: 1366, bottom: 900 };
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 16, hard: [field], busy: () => true, cost: () => 10, away: true }),
+    { corner: "br", peek: true, hide: true });
+  // Words only under the tucked robot (no link, bar or box to avoid): it tucks, as before.
+  const low = { left: 0, top: 800, right: 1366, bottom: 900 };
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 16, hard: [low], busy: () => true, cost: () => 10, away: true }),
+    { corner: "tr", peek: true });
+});
+
+test("placement 1.4.1: every corner blocked on a 320 px phone (sticky bar on top, search and tabs below): it hides, never tucks over the search box", () => {
+  const view = { width: 320, height: 640 };
+  const size = { width: 56, height: 54 };
+  const keep = { scale: 0.82, margin: 3 };
+  // CyberLogix's console at y=500: .finder and .f-tab (in `avoid`) fill the bottom strip...
+  const finder = { left: 0, top: 590, right: 200, bottom: 640 };
+  const tab = { left: 200, top: 596, right: 320, bottom: 640 };
+  // ...and the "Needs you now" bar (sticky, also avoided) the top.
+  const bar = { left: 0, top: 0, right: 320, bottom: 56 };
+  const cost = (b, c) => (c[0] === "t" ? Mascot.WEIGHT.pinned + 900 : 1500);
+  const o = { corner: "br", view, size, gap: 12, keep, blocks: [finder, tab, bar], busy: () => true, cost, narrow: true };
+  // Core 1.4.0 tucked bottom-left over the search box's end.
+  assert.deepEqual(Mascot.choosePlace({ ...o, away: true }), { corner: "br", peek: true, hide: true });
+  assert.deepEqual(Mascot.choosePlace({ ...o, away: true, stay: "bl" }), { corner: "bl", peek: true, hide: true });
+  // Without `away` (an app's hideWhenCrowded: false), 1.4.0's choice.
+  assert.equal(Mascot.choosePlace(o).hide, undefined);
+});
+
+test("placement 1.4.1: a big link card under the resting robot counts as fully covered; every corner on a link: hidden at the top of the page", () => {
+  // Orbyt's "Partner with us" path card under the bottom-left corner (375x667).
+  const card = { left: 0, top: 560, right: 375, bottom: 760, kind: "control" };
+  const slice = { left: 3, top: 619, right: 49, bottom: 664 };
+  assert.ok(Mascot.costOf([card], slice) >= Mascot.WEIGHT.control, String(Mascot.costOf([card], slice)));
+  // A link that only touches the robot's edge still costs its small share.
+  const edge = { left: 45, top: 600, right: 375, bottom: 700, kind: "control" };
+  const part = Mascot.costOf([edge], slice);
+  assert.ok(part >= Mascot.WEIGHT.control * 0.1 && part < Mascot.WEIGHT.control * 0.2, String(part));
+  // Big cards across the bottom, a header that stays put with a Home link on top: nowhere is free of a link.
+  const p = phonePage({ cardAtBottom: true, width: 375, height: 667 });
+  const place = Mascot.placeNow(p);
+  assert.equal(place.hide, true, JSON.stringify(place));
+  // On a computer, never hidden for this (it tucks where it covers least, as before).
+  const wide = phonePage({ cardAtBottom: true, width: 1366, height: 900 });
+  assert.equal(Mascot.placeNow(wide).hide, undefined);
+});
+
+test("placement 1.4.1: on a phone once scrolled, one bottom corner, tucked, kept while words pass under it; it moves only off a link", () => {
+  const view = { width: 375, height: 812 };
+  const size = { width: 56, height: 54 };
+  const keep = { scale: 0.82, margin: 3 };
+  const base = { corner: "br", view, size, gap: 12, keep, full: true, away: true };
+  // Words under the bottom left, nothing under the bottom right: it stays where it is (no hopping).
+  const words = (b, c) => (c === "bl" ? 900 : 0);
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "bl", cost: words }), { corner: "bl", peek: true });
+  // Never whole, never a top corner just because it's free.
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "br", cost: () => 0, busy: () => false }), { corner: "br", peek: true });
+  // A top corner it sat in before scrolling: back to the bottom.
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "tr", cost: () => 0 }), { corner: "br", peek: true });
+  // A link comes under it: once scrolling stops, the other bottom corner.
+  const linkLeft = (b, c) => (c === "bl" ? Mascot.WEIGHT.control : 0);
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "bl", cost: linkLeft }), { corner: "br", peek: true });
+  // While the page is still moving it doesn't change corner: it fades out until the link has passed.
+  assert.deepEqual(Mascot.scrollPlace({ ...base, full: false, stay: "bl", cost: linkLeft }), { corner: "bl", peek: true, hide: true });
+  // Links under both bottom corners: hidden until there is room, even with a free top corner (no hopping to the top).
+  const linksBelow = (b, c) => (c[0] === "b" ? Mascot.WEIGHT.control : 0);
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "br", cost: linksBelow, busy: () => false }), { corner: "br", peek: true, hide: true });
+  // Something the app asked it to avoid counts like a link.
+  const avoid = { left: 0, top: 740, right: 60, bottom: 812 };
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "bl", cost: () => 0, blocks: [avoid] }), { corner: "br", peek: true });
+  // A visitor who dragged it to the top keeps the top edge.
+  assert.deepEqual(Mascot.scrollPlace({ ...base, corner: "tl", stay: "tl", cost: () => 0 }), { corner: "tl", peek: true });
+});
+
+test("placement 1.4.1: placeNow keeps the phone robot in its bottom corner while scrolled; computers and the top of the page as before", () => {
+  const p = phonePage({ width: 375, height: 667 });
+  // Scrolled, words under the bottom corners, the header free of nothing: tucked in its own bottom corner.
+  for (const shown of ["br", "bl"]) {
+    const place = Mascot.placeNow({ ...p, shown, scrolled: true });
+    assert.deepEqual(place, { corner: shown, peek: true, typing: false });
+  }
+  // Mid-scroll too.
+  assert.deepEqual(Mascot.placeNow({ ...p, shown: "bl", scrolled: true, full: false }), { corner: "bl", peek: true, typing: false });
+  // Nothing on the page at all: still tucked while scrolled (1.4.0: whole, wherever was free).
+  const empty = phonePage({ width: 375, height: 667 });
+  empty.doc.elementsFromPoint = () => [];
+  assert.deepEqual(Mascot.placeNow({ ...empty, scrolled: true }), { corner: "br", peek: true, typing: false });
+  assert.deepEqual(Mascot.placeNow(empty), { corner: "br", peek: false, typing: false });
+  // A computer ignores `scrolled`.
+  const wide = phonePage({ width: 1366, height: 900 });
+  wide.doc.elementsFromPoint = () => [];
+  assert.deepEqual(Mascot.placeNow({ ...wide, scrolled: true }), { corner: "br", peek: false, typing: false });
+});
+
+test("placement 1.4.1: the loader hides the robot when told, keeps it hidden from wandering, notices scrolling away from the top, and opens anyway", () => {
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.ok(loader.includes('scrolled: scrolledDown, away: config.hideWhenCrowded !== false });'));
+  assert.ok(loader.includes('rootEl.classList.toggle("pilot-away", Boolean(place.hide));'));
+  assert.ok(loader.includes('["pilot-yield", "pilot-away", "pilot-peek", "pilot-typing"]'));
+  assert.match(loader, /async function open\(\) \{[^}]*rootEl\.classList\.remove\("pilot-away"\);/);
+  assert.ok(loader.includes("if (!(t && t.nodeType === 1 && rootEl.contains(t))) scrolledDown = M().scrolledAway(window, document, t);"));
+  assert.ok(loader.includes("scrolledDown = M().scrolledAway(window, document, null);"));
+  // Scrolled away: the window past 8 px, or a box at least half the screen tall that scrolls in its place.
+  const W = { innerHeight: 800, scrollY: 0 };
+  const D = { documentElement: { nodeType: 1 }, body: { nodeType: 1 } };
+  assert.equal(Mascot.scrolledAway(W, D, null), false);
+  assert.equal(Mascot.scrolledAway({ ...W, scrollY: 40 }, D, null), true);
+  assert.equal(Mascot.scrolledAway(W, D, { nodeType: 1, clientHeight: 700, scrollTop: 300 }), true);
+  assert.equal(Mascot.scrolledAway(W, D, { nodeType: 1, clientHeight: 120, scrollTop: 300 }), false, "a small box scrolling sideways or a list isn't the page");
+  assert.equal(Mascot.scrolledAway(W, D, D.documentElement), false);
+  // pilot.css: hidden, and taps go through; only the robot, never an open chat window.
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  assert.match(css, /\.pilot-root\.pilot-away \.pilot-launcher \{ opacity: 0; visibility: hidden; pointer-events: none;/);
+  assert.ok(!/\.pilot-away[^{]*\.pilot-panel/.test(css));
+});
+
+test("welcome 1.4.1: after the app's own answer the welcome's pills come back in a compact row (not after AI answers)", () => {
+  const P = panelHelpers();
+  const pills = P.ownPills([
+    { icon: "spark", label: "Help with my idea", link: "/genesis#new" },
+    { icon: "chat", label: "What is Orbyt?", answer: "Orbyt is..." },
+    { icon: "bars", label: "Explain this page", action: "explain-screen" },
+    { icon: "bolt", label: "What apps are coming?", answer: "Three apps." },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], "https://mtrx.example/");
+  const again = (messages, keyPill) => JSON.parse(JSON.stringify(P.againPills(messages, pills, keyPill))).map((p) => p.label);
+  const local = [{ role: "user", text: "What is Orbyt?" }, { role: "assistant", text: "Orbyt is...", local: true }];
+  // The one just asked and the key pill (the line under the answer offers the key) are left out.
+  assert.deepEqual(again(local), ["Help with my idea", "Explain this page", "What apps are coming?"]);
+  assert.deepEqual(again([...local, { role: "note", kind: "more", text: "Want more?" }]), ["Help with my idea", "Explain this page", "What apps are coming?"]);
+  // Under a later answer (no "Want more?" line there: it shows once per chat), the key pill is kept while there is no key.
+  assert.deepEqual(again(local, true), ["Help with my idea", "Explain this page", "What apps are coming?", "Add my AI key"]);
+  // Not under an AI answer, an error note, or an empty chat; not once the chat has moved on.
+  assert.deepEqual(again([{ role: "user", text: "Hi" }, { role: "assistant", text: "Hello" }]), []);
+  assert.deepEqual(again([{ role: "user", text: "What is Orbyt?" }, { role: "note", kind: "error", text: "Pilot couldn't find that answer" }]), []);
+  assert.deepEqual(again([]), []);
+  assert.deepEqual(again([...local, { role: "user", text: "More?" }, { role: "assistant", text: "Sure" }]), []);
+  // The window draws it under the chat, as small pills (pilot-panel.css), and not while Pilot is busy.
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes("nodes.push(againRow());"));
+  assert.match(panel, /function againRow\(\) \{\s*if \(state\.busy \|\| otherBusy \|\| cards\.size\) return null;/);
+  assert.ok(panel.includes('el("div", { class: "pilot-pills pilot-pills-row", role: "group", "aria-label": "More you can ask" }'));
+  const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
+  assert.match(css, /\.pilot-pills\.pilot-pills-row \{ flex-direction: row; flex-wrap: wrap;/);
+});
+
+test("privacy 1.4.1: an app's own answer never goes to the AI provider, not even after a key is added; a stand-in keeps the turns", async () => {
+  // A built-in answer made from what the page holds (RankUp: chore titles and counts).
+  const secret = "Mia has 3 chores left: Feed Biscuit, Tidy room, Piano 20 min";
+  const store = Store.create({ prefix: "p141", local: memoryStorage(), session: memoryStorage() });
+  // Shown with no key, kept in the chat (page to page, through storage)...
+  store.saveChat([{ role: "user", text: "What's left today?" }, { role: "assistant", text: secret, local: true },
+    { role: "note", kind: "more", text: "Want more? Add your AI key to ask anything." }]);
+  // ...then a key is added and the next question goes to the provider, with the real adapter and a fake network.
+  store.saveSettings(ANTHROPIC);
+  const fetcher = fakeFetch(() => sseResponse([
+    ev({ type: "message_start", message: { id: "m" } }, "message_start"),
+    ev({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, "content_block_start"),
+    ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Sure." } }, "content_block_delta"),
+    ev({ type: "message_delta", delta: { stop_reason: "end_turn" } }, "message_delta"),
+    ev({ type: "message_stop" }, "message_stop"),
+  ]));
+  const engine = Engine.create({ store, providers: Providers, host: { fetch: fetcher }, config: { appName: "Test App", tools: [] } });
+  await engine.send("Can you help me plan the evening?");
+  assert.equal(fetcher.calls.length, 1);
+  const wire = JSON.stringify(fetcher.calls[0].body);
+  for (const bit of ["Mia", "Biscuit", "Tidy room", "Piano", "3 chores"]) assert.ok(!wire.includes(bit), bit);
+  assert.ok(wire.includes(Engine.LOCAL_STANDIN), "the stand-in keeps the turns in order");
+  assert.ok(wire.includes("What's left today?") && wire.includes("Can you help me plan the evening?"));
+  // It is still on screen, unchanged.
+  assert.equal(engine.messages.find((m) => m.local).text, secret);
+  assert.equal(store.loadChat().find((m) => m.local).text, secret);
+  // AI answers are sent as before.
+  const { engine: e2, sent } = engineWith({ replies: [{ text: "One" }, { text: "Two" }] });
+  await e2.send("First");
+  await e2.send("Second");
+  assert.ok(sent[1].messages.some((m) => m.role === "assistant" && m.text === "One"));
+});
+
+test("robot 1.4.1: the pictures can come in the size they are drawn (crisp on phones); without them, as before", () => {
+  const node = (tag) => ({ tag, attrs: {}, kids: [], setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.kids.push(c); },
+    set className(v) { this.attrs.class = v; } });
+  const doc = { createElementNS: (ns, tag) => node(tag), createElement: node };
+  const img = Mascot.robot(doc, { small: "/r128.webp", large: "/r256.webp", set: "/r112.webp 112w, /r168.webp 168w, /r176.webp 176w" });
+  assert.equal(img.attrs.srcset, "/r128.webp 128w, /r256.webp 256w, /r112.webp 112w, /r168.webp 168w, /r176.webp 176w");
+  assert.equal(img.attrs.sizes, Mascot.SIZES);
+  assert.equal(Mascot.SIZES, "(max-width: 720px) 56px, 88px");
+  assert.equal(Mascot.robot(doc, { small: "/r128.webp", large: "/r256.webp" }).attrs.srcset, "/r128.webp 128w, /r256.webp 256w");
+  // The files are there, at the sizes named: a phone's 56 px at 2x and 3x, a computer's 88 px at 2x.
+  for (const [f, w] of [["pilot-robot-112.webp", 112], ["pilot-robot-168.webp", 168], ["pilot-robot-176.webp", 176],
+    ["pilot-rest-body-112.webp", 112], ["pilot-rest-head-168.webp", 168], ["pilot-rest-eyes-112.webp", 112]]) {
+    const b = fs.readFileSync(core(f));
+    assert.equal(b.toString("latin1", 8, 12), "WEBP", f);
+    // VP8X canvas width (24-bit, minus one) at byte 24.
+    assert.equal(b.readUIntLE(24, 3) + 1, w, f);
+  }
+  // The resting robot's layers: the loader hands the actor {src, srcset, sizes} when the page names the sizes;
+  // the actor (shared with Pilot for Mac, which passes addresses) takes either.
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.ok(loader.includes("art: M().restArt(assets),"));
+  assert.ok(loader.includes("set: assets.robotSet"));
+  assert.deepEqual(Mascot.restArt({ restBody: "/b.webp", restHead: "/h.webp", restEyes: "/e.webp" }), { body: "/b.webp", head: "/h.webp", eyes: "/e.webp" });
+  assert.deepEqual(Mascot.restArt({ restBody: "/b.webp", restBodySet: "/b112.webp 112w, /b168.webp 168w", restHead: "/h.webp", restEyes: "/e.webp" }).body,
+    { src: "/b.webp", srcset: "/b112.webp 112w, /b168.webp 168w, /b.webp 192w", sizes: Mascot.SIZES });
+  const actor = fs.readFileSync(core("pilot-actor.js"), "utf8");
+  assert.ok(actor.includes('const s = src && typeof src === "object" ? src : { src };'));
+});
+
+test("welcome 1.4.1: the \"Want more?\" line shows once per chat, under the first answer of the app's own", () => {
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  const answerFn = panel.slice(panel.indexOf("async function answerWith"), panel.indexOf("// A suggestion or pill that needs no AI"));
+  assert.ok(answerFn.includes('const offered = state.messages.some((m) => m.role === "note" && m.kind === "more");'));
+  assert.ok(answerFn.includes("if (text && more && !store.ready() && !offered) add.push("));
+  // A chat kept from 1.4.0 with several such lines draws only the first.
+  assert.ok(panel.includes("const n = more && offered ? null : messageNode(m);"));
 });

@@ -1,4 +1,4 @@
-// Pilot core 1.4.0 · pilot-mascot.js
+// Pilot core 1.4.1 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
@@ -18,10 +18,16 @@
 // The P with its orbit, for the chat window's header, is drawn as SVG with
 // attributes only (no style attributes), so it keeps a strict
 // Content-Security-Policy. The desktop app reuses this file and the pictures.
+//
+// Core 1.4.1: on a phone, or while a box is typed in, when every spot would
+// cover a link, a button, a bar that stays put or something to avoid, the
+// robot fades out (hide) instead, until there is room again; and on a phone
+// once the page is scrolled it keeps to one bottom corner, tucked away
+// (scrollPlace), moving only when that corner would cover something pressed.
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -32,7 +38,13 @@
     return node;
   }
 
-  // The robot picture. urls: {small, large} (the 128 and 256 pixel files).
+  // The robot picture. urls: {small, large} (the 128 and 256 pixel files),
+  // and (core 1.4.1) `set`: more sizes as srcset candidates, "url 112w, url
+  // 168w, url 176w": a phone's 56 px robot at 2x and 3x and a computer's
+  // 88 px at 2x, so the browser shows a file at its own size instead of
+  // shrinking a bigger one (soft on phones). Without it, as before.
+  // SIZES: how wide the robot is drawn (pilot.css --pilot-size).
+  const SIZES = "(max-width: 720px) 56px, 88px";
   function robot(doc, urls) {
     const d = doc || root.document;
     const u = urls || {};
@@ -43,8 +55,9 @@
     img.setAttribute("height", "124");
     img.setAttribute("decoding", "async");
     img.setAttribute("draggable", "false");
-    if (u.large) img.setAttribute("srcset", `${u.small} 128w, ${u.large} 256w`);
-    img.setAttribute("sizes", "(max-width: 720px) 56px, 88px");
+    const more = typeof u.set === "string" && u.set.trim() ? `, ${u.set.trim()}` : "";
+    if (u.large) img.setAttribute("srcset", `${u.small} 128w, ${u.large} 256w${more}`);
+    img.setAttribute("sizes", SIZES);
     img.setAttribute("src", u.small || "");
     return img;
   }
@@ -247,11 +260,19 @@
   //     and cost WEIGHT.top more when nothing is free.
   //   tuck (core 1.4.0): don't sit whole anywhere, only tucked away (the first
   //     look on a small screen).
+  //   away (core 1.4.1): it may fade out instead (placeNow allows it on a
+  //     phone and while a box is typed in);
+  //   stay (core 1.4.1): the corner it is in now, kept while it is hidden.
   // The chosen corner if it's free, else the first free one. If none is
   // free it tucks half away (peek), in the first corner where the slice that
   // still shows covers nothing; failing that, of the corners clear of the
   // hard boxes, the one whose tucked-away box costs least (with `cost`), or
   // else the first; failing that, the chosen corner.
+  // Core 1.4.1: with `away`, when the least-cost corner would still cover a
+  // link, a button, a bar that stays put or something to avoid (WEIGHT.pinned
+  // or more), or every corner is on the box being typed in, it hides
+  // instead: {corner, peek: true, hide: true}. It never parks over a phone's
+  // header (CyberLogix's and Genesis's 3,3) or over an avoided control.
   function choosePlace(opts) {
     const o = opts || {};
     const blocks = (o.blocks || []).filter(Boolean);
@@ -287,9 +308,12 @@
         if (light) return { corner: light.corner, peek: true };
       }
     }
+    const mine = CORNERS.includes(o.corner) ? o.corner : "br";
+    // Hidden (core 1.4.1): it keeps its corner if that is on the chosen
+    // edge, so it comes back where it was.
+    const gone = () => ({ corner: o.stay && CORNERS.includes(o.stay) && o.stay[0] === order[0][0] ? o.stay : order[0], peek: true, hide: true });
     if (hard.length || cost) {
       let best = null;
-      const mine = CORNERS.includes(o.corner) ? o.corner : "br";
       for (const c of order) {
         const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
         if (!clear(slice, hard, 8)) continue;
@@ -299,9 +323,37 @@
           + (narrow && c[0] === "t" && c !== mine ? WEIGHT.top : 0);
         if (!best || n < best.n) best = { corner: c, n };
       }
+      if (o.away && (!best || (cost && best.n >= WEIGHT.pinned))) return gone();
       if (best) return { corner: best.corner, peek: true };
     }
-    return { corner: CORNERS.includes(o.corner) ? o.corner : "br", peek: true };
+    return { corner: mine, peek: true };
+  }
+
+  // Where to sit on a phone once the page is scrolled (core 1.4.1): always
+  // tucked away, in one corner of the chosen edge (the bottom, unless the
+  // visitor dragged it to the top), kept there while the page moves under
+  // it. It moves only when that corner would cover something pressed (a
+  // link, a button, a bar that stays put: cost WEIGHT.pinned or more) or
+  // something to avoid; words under it are fine. Then (with `full`, once the
+  // scrolling stops) the other corner of the same edge; else (with `away`)
+  // it hides until there is room. It never goes to the other edge while
+  // scrolled. Before 1.4.1 it took any free corner, whole, every
+  // time the scrolling stopped: it changed corner every 100 px or so and sat
+  // whole in a top corner over a card. o: as choosePlace, plus `stay` (the
+  // corner it is in now) and `full`.
+  function scrollPlace(o) {
+    const order = cornerOrder(o.corner);
+    const edge = order[0][0];
+    const here = o.stay && CORNERS.includes(o.stay) && o.stay[0] === edge ? o.stay : order[0];
+    const there = `${edge}${here[1] === "r" ? "l" : "r"}`;
+    const blocks = (o.blocks || []).filter(Boolean);
+    const cost = typeof o.cost === "function" ? o.cost : null;
+    const slice = (c) => peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
+    const clear = (box) => !blocks.some((b) => overlaps(box, b, 2));
+    const fine = (c) => { const s = slice(c); return clear(s) && (!cost || cost(s, c) < WEIGHT.pinned); };
+    if (fine(here)) return { corner: here, peek: true };
+    if (o.full && fine(there)) return { corner: there, peek: true };
+    return o.away ? { corner: here, peek: true, hide: true } : { corner: here, peek: true };
   }
 
   // ---------------------------------------------------------------- the page's own words and buttons
@@ -408,14 +460,21 @@
   }
 
   // What covering these content boxes costs, from inside `box` (core 1.4.0):
-  // a link, a button or a box WEIGHT.control times the share of it covered
-  // (at least a tenth), a bar that stays put WEIGHT.pinned, words and small
+  // a link, a button or a box WEIGHT.control times the share covered (at
+  // least a tenth), a bar that stays put WEIGHT.pinned, words and small
   // pictures their area.
+  // Core 1.4.1: the share is the larger of the share of the link covered and
+  // the share of the robot's own box that lies over the link. The corner of
+  // a big card link under the whole robot is as bad as a small "Home" link:
+  // a tap there could mean either (1.4.0 counted only the card's share, a
+  // tenth, so the robot tucked over Orbyt's path cards).
   function costOf(hits, box) {
+    const mine = box ? Math.max(1, (box.right - box.left) * (box.bottom - box.top)) : 1;
     return (hits || []).reduce((sum, b) => {
       const area = areaOf(b, box);
       const whole = Math.max(1, (b.right - b.left) * (b.bottom - b.top));
-      const extra = b.kind === "control" ? WEIGHT.control * Math.max(0.1, Math.min(1, area / whole)) : b.kind === "pinned" ? WEIGHT.pinned : 0;
+      const share = Math.max(area / whole, box ? area / mine : 0);
+      const extra = b.kind === "control" ? WEIGHT.control * Math.max(0.1, Math.min(1, share)) : b.kind === "pinned" ? WEIGHT.pinned : 0;
       return sum + extra + area;
     }, 0);
   }
@@ -492,6 +551,11 @@
   // tucks over one while another corner avoids one; `tuck`: tucked away
   // only (pilot.js asks for that on a small screen's first look, until the
   // visitor scrolls).
+  // Core 1.4.1: `scrolled` (pilot.js: the page is scrolled away from its
+  // top): on a phone it keeps to one bottom corner, tucked away
+  // (scrollPlace). `away` (unless false): on a phone, or while a box is
+  // typed in, it hides rather than cover a link, a button, a bar that stays
+  // put or something to avoid: the answer then has `hide: true`.
   function placeNow(o) {
     const blocks = boxesOf(o.doc, o.avoid, o.own, o.win);
     const field = typingIn(o.doc, o.own);
@@ -515,10 +579,13 @@
     // cover in a corner: the least is best (core 1.3.0).
     const cost = o.text ? (box) => costOf(contentIn(o.doc, box, o.own), box) : undefined;
     const narrow = isNarrow(view);
+    const away = o.away !== false && (narrow || Boolean(field));
     let place;
-    if (o.full || field) {
+    if (o.scrolled && narrow && !field) {
+      place = scrollPlace({ corner: o.corner, stay: o.shown, view, size, gap, blocks, busy, cost, peekShow, keep, full: Boolean(o.full), away });
+    } else if (o.full || field) {
       place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, cost, peekShow, keep,
-        narrow, tuck: Boolean(o.tuck) });
+        narrow, tuck: Boolean(o.tuck), away, stay: o.shown });
     } else {
       const spot = cornerBox(o.shown, view, size, gap);
       place = { corner: o.shown, peek: Boolean(o.tuck) || blocks.some((b) => overlaps(spot, b, 6)) || Boolean(busy && busy(spot)) };
@@ -582,8 +649,26 @@
   const COMPACT = { width: 360, height: 700 };
   const isCompact = (view) => Boolean(view && ((view.width > 0 && view.width <= COMPACT.width) || (view.height > 0 && view.height <= COMPACT.height)));
 
-  const api = { VERSION, TAP_LEAST, keepScale, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, covered, coverLayer, cornerOrder, cornerBox, peekBox, overlaps,
-    choosePlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn,
+  // Is the page scrolled away from its top (core 1.4.1; pilot.js asks on
+  // every scroll)? The window, or the box that scrolled (t) when it is at
+  // least half the screen tall (an app's own shell that scrolls in its place).
+  function scrolledAway(win, doc, t) {
+    if ((win.scrollY || win.pageYOffset || 0) > 8) return true;
+    const inner = t && t.nodeType === 1 && t !== doc.documentElement && t !== doc.body ? t : null;
+    return Boolean(inner && inner.clientHeight >= win.innerHeight * 0.5 && inner.scrollTop > 8);
+  }
+
+  // The resting robot's layers for pilot-actor.js (core 1.4.1): the
+  // addresses on Pilot's script tag (data-rest-body, -head, -eyes) and, with
+  // data-rest-*-set, the sizes it is drawn at too ({src, srcset, sizes}), so a
+  // phone shows them crisp (the 192 px files shrunk to 56 px looked soft).
+  function restArt(a) {
+    const layer = (url, set) => (set ? { src: url, srcset: `${set}, ${url} 192w`, sizes: SIZES } : url);
+    return { body: layer(a.restBody, a.restBodySet), head: layer(a.restHead, a.restHeadSet), eyes: layer(a.restEyes, a.restEyesSet) };
+  }
+
+  const api = { VERSION, SIZES, scrolledAway, restArt, TAP_LEAST, keepScale, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, covered, coverLayer, cornerOrder, cornerBox, peekBox, overlaps,
+    choosePlace, scrollPlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn,
     NARROW_MOST, WEIGHT, isNarrow, cornerPasses, pinnedBar, costOf, COMPACT, isCompact, inStroll };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;

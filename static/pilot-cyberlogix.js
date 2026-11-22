@@ -404,7 +404,8 @@
     // public ones (OWN_PILLS, VISITOR_PILLS above).
     tagline: "Your fridge-alarm helper",
     welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS,
-    // Under an answer Pilot gives without a key (core 1.4.0).
+    // Under the first answer Pilot gives without a key (core 1.4.0; once
+    // per chat since core 1.4.1, and the welcome's pills come back under it).
     answerMore: "Want more? Add your AI key to ask anything.",
     // CyberLogix has no use for making pictures or videos.
     hideKeySections: ["image", "video"],
@@ -422,8 +423,8 @@
     // own computer.
     compatibleHosts: (d.hosts || "").split(/\s+/).filter(Boolean),
     privacyUrl: "/legal#privacy",
-    // Core 1.3.0: the one line the welcome shows (the full note is its
-    // tooltip, and stays beside the key settings and in help).
+    // The one line above the box (core 1.3.0 on the welcome; since core
+    // 1.4.1 for the whole chat, with "More" opening the full note in place).
     keyNoteShort: "AI keys are for grown-ups (18+).",
     keyNote: "An AI key is a private code you make on an AI company's website (OpenAI, Anthropic, Google AI Studio), usually under API keys. Your provider bills you for what Pilot uses. AI keys are for grown-ups (the AI companies require 18+).",
     audienceNote: "The people using this run businesses with fridges and freezers to keep cold: restaurants, pharmacies, labs and more. Many read on a phone in a busy kitchen, so keep answers short and practical. If a unit is warm right now, say to check it first. Pilot never makes a food safety decision: when asked if food is OK, give what was measured and the rule of thumb with its note that it is not a ruling, and say their own written food safety plan and local code decide.",
@@ -437,9 +438,18 @@
     // the robot into a phone's top corner while a bottom one will do, and
     // weighs a link or button it would cover, so the logo and Sign in stay
     // clear without it (checked in a browser on every page at 320 to 1440).
+    // Core 1.4.1 (3.29.0): on a phone, where every corner would cover a
+    // link, a button, a box, a pinned bar or something listed here, the
+    // robot fades out instead (hideWhenCrowded, left at its default). So the
+    // console's search box and tabs (.finder, .f-tab) are off the list: the
+    // core hides the robot rather than tuck it over them (at 320px with an
+    // open alert it tucked over the search box's end), the same with or
+    // without them (checked in a browser at 320 to 1440). The words listed
+    // below (temperatures, status labels) stay: the core lets a tucked robot
+    // sit over words, and listing them is what makes it hide instead.
     avoid: ["#site-wide-banner", "#stale-banner", "#account-banner", "#delivery-banner",
       "#offline-banner", "#terms-banner", "#role-banner", "#needs-wrap", ".need-acts",
-      "#needs-bar", ".needs-bar-acts", ".finder", ".f-tab",
+      "#needs-bar", ".needs-bar-acts",
       ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#facts", ".facts",
       ".kicker", "#add-form button[type=submit]", ".fix-dialog",
       // The Getting started checklist's buttons (Add a sensor, Add me,
