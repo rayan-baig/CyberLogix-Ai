@@ -1,4 +1,4 @@
-/* Pilot core 1.2.0 · pilot.css
+/* Pilot core 1.2.1 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -137,7 +137,7 @@
 
 /* The first page of a visit: shown whole for a few seconds, with a soft
    glow, so people notice it (pilot.js reveal). */
-.pilot-hello .pilot-launcher::before { animation: pilot-think 1.6s ease-in-out 2; }
+.pilot-revealing .pilot-launcher::before { animation: pilot-think 1.6s ease-in-out 2; }
 
 /* Room for the robot: a page (or an app's own stylesheet) can keep its last
    lines and buttons clear with padding-bottom: var(--pilot-gutter), or the
@@ -164,7 +164,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher { transition: none; }
   .pilot-robot,
-  .pilot-hello .pilot-launcher::before,
+  .pilot-revealing .pilot-launcher::before,
   .pilot-thinking .pilot-launcher::before,
   .pilot-dot-thinking { animation: none; }
   .pilot-thinking .pilot-launcher::before { opacity: 1; }

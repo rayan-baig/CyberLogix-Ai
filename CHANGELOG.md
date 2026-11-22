@@ -4,6 +4,14 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.24.1 — 2026-11-22
+
+- **Pilot core 1.2.1**, the same files as the MTRX Horizyn site. Opening
+  Pilot in the first few seconds of a visit, while the robot is being
+  shown off, no longer pulls the robot out of its corner. Nothing else
+  changes.
+
+
 ## 3.24.0 — 2026-11-21
 
 Pilot's own welcome for CyberLogix, a short sensor setup page, and smaller

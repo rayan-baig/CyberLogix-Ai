@@ -1,4 +1,4 @@
-// Pilot core 1.2.0 · pilot.js
+// Pilot core 1.2.1 · pilot.js
 // The one Pilot file a page loads. Once the page has finished loading, it
 // fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
 // owner's picture, pilot-robot-128/256.webp) and the app's config, which
@@ -28,7 +28,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.2.0";
+  const VERSION = "1.2.1";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -210,8 +210,8 @@
     const ms = M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs);
     if (!ms) return;
     revealUntil = Date.now() + ms;
-    rootEl.classList.add("pilot-hello");
-    setTimeout(() => { revealUntil = 0; rootEl.classList.remove("pilot-hello"); queueFit(true); }, ms);
+    rootEl.classList.add("pilot-revealing");
+    setTimeout(() => { revealUntil = 0; rootEl.classList.remove("pilot-revealing"); queueFit(true); }, ms);
   }
 
   function build() {

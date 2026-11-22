@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.2.0**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.2.1**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -86,7 +86,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.2.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.2.1, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
