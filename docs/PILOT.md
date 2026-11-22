@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.4.1**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.4.2**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -130,9 +130,9 @@ Page suggestions that are facts are answers too, from the figures on Pilot's scr
 (`main.pilot_facts`): "Will a door left open wake us?", "Wi-Fi or power goes off?", "Do you
 phone at night?" / "Do you phone us?", "What's in the trial?", "A fridge is warm: what now?",
 "A log for the inspector", "Set up step by step", and the demo's "What am I seeing?" and "What
-happens next?". "Start a free trial" goes to `/signup`, "I forgot my password" to `/reset`. The
-open questions ("Which plan for a café?", "Easiest way to set up", "How would this work for
-me?", "Make a proof report") stay AI prompts.
+happens next?", and the pricing page's "Which plan for a café?" (3.28.0). "Start a free trial"
+goes to `/signup`, "I forgot my password" to `/reset`. The open questions ("Easiest way to set
+up", "How would this work for me?", "When do you alert?", "Make a proof report") stay AI prompts.
 
 **"It's fixed now" points at the real button (3.28.0).** It is an answer, not a request to the
 AI: it names the open alert and says where its **It's fixed** button is, which checks the fridge
@@ -198,6 +198,62 @@ corner, hidden rather than over the search box or tabs at 320px. On a phone it i
 often than before, by design: at the top of `/help`, and on parts of `/pricing` and
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
+**Core 1.4.2 (3.31.0): typed questions without a key, and always findable.** The thirteen files
+from the MTRX Horizyn site (commit a1c9253), byte for byte; the pictures are unchanged. What
+changes here:
+
+- **A typed question that fits one of this app's own answers gets it, with no key.** "Is my
+  walk-in fridge OK?" on the console or `/today` gets "Which fridges need me?", "How much does it
+  cost?" on a public page gets the link to the prices, "Should I throw the food away?" gets "Is
+  the food still OK?", under the line "Here's what I can tell you without an AI key:". It is
+  worked out in the browser and nothing is sent. Every pill and suggestion that answers or links
+  with no key carries its own `match` words (the `MATCH` list in `static/pilot-cyberlogix.js`:
+  "fridge", "warm", "ok" on "Which fridges need me?"; "cost", "price", "much" on "What does it
+  cost?"; "cafe", "restaurant", "bakery" on "Will it work for my café?"; and so on). The core is
+  careful: two typed words must be the item's own, and no other item on the page may come as
+  close, so a question that fits nothing ("Write me a poem about fridges", "What's the weather
+  like?") still opens key settings with the words kept in the box. `matchTyped` is left on.
+- **"does" and "this".** The core takes a plural "s" off a word before it checks its list of
+  words that don't count, so "does" and "this" count (as "doe" and "thi"), and both are in "What
+  does this alert mean?". With no key, "Does this work with my sensor?" or "What does this button
+  do?" got the alert's answer on the console. They are listed on "Which fridges need me?" (and
+  "this" on "It's fixed now") too, so they can never pick the alert's answer on their own.
+  Reported for the core.
+- **"Sum up my fridges" in place of "Summarise this".** On the console and `/today` the
+  suggestion after the page's own is this app's summary (`screenChip`): how many units, how many
+  are fine or need you, the open alerts and whether anyone has answered, and any food nobody has
+  answered for, from what the page already loaded, with no key and nothing sent. (The core's
+  "Summarise this" sends the screen to the AI.) On the public pages the core's own is left, and
+  it now shows only once a key is set.
+- **The handle.** When the robot is hidden at rest (every corner would cover something), after
+  about 2 s with the page still a slice of the robot peeks in at the screen's left or right edge:
+  a 44px button that opens Pilot, only where it covers no link, button, box, pinned bar or
+  anything in `avoid` (the temperatures and status labels included). Left on (`handle` not set).
+  The logo is not on the `avoid` list: at 320px and 375×667 on `/today` with an alert, the alert
+  and "Needs you now" cards (both listed) fill both edges of the first screen, and the only free
+  spot is the left edge beside the logo, where the handle peeks in over the logo mark's edge
+  (listed, there was no robot and no handle there until a scroll).
+- **On a computer** a link or button within 8 px of the robot counts as covered, a top corner
+  touching the header's links is a last resort, and with every corner touching one the robot hides
+  and the handle shows.
+- **Under one of this app's answers** the page's own suggestions come first, then the welcome's
+  pills, each once.
+- Nothing to remove here: this app never raised the robot's corners (core 1.4.2's other fix) or
+  moved it with `--pilot-keep-d`, and sets no `hideWhenCrowded`.
+
+Checked in a real browser at 320×640, 375×667, 375×812, 390×844 and 1440×900 on `/`, `/pricing`,
+`/help`, `/help/sensors`, `/for`, `/for/restaurant`, `/demo`, the console's sign-in, a new
+business's console, a console with an open alert and `/today` with and without one, scrolled top
+to bottom: the robot or the handle on the first screen of every page (the handle about 2.2 s after
+load where every corner is busy, such as the top of `/help` on a phone or `/today` with an alert at
+320px), neither over a button, a box, a temperature or a status label, and
+Pilot still absent from `/signup`, `/legal`, a proof page, an error page and the
+operator's `/book`. The only touches measured are 3 px of the tucked robot's box over the edge of a
+link card (`/for` at 320 to 390px, where every card is a link): the core's side room is 30 px and
+the tucked robot 46 px wide, 3 px in, the same on 3.30.0 (reported for the core). Typed questions
+that fit an answer were answered with no key and no request carrying them; others opened key
+settings with the words kept.
+
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
 `static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its
@@ -214,7 +270,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.4.1, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
+| `static/pilot/*` | Pilot core 1.4.2, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
@@ -293,4 +349,5 @@ this site's own, with nothing inline.
 model names, the pack's figures against the code), `tests/test_alert_ai_key.py` (encryption,
 last four, never logged, fallback, owners only, hidden without the secret), and in Node
 `tests/js/pilot.test.js` (the core's own tests) and `tests/js/cyberlogix-pilot.test.js` (the
-tools: confirm first, nothing private, and the refusals).
+tools: confirm first, nothing private, and the refusals; the answers with no key, typed questions
+matched to them, and "Sum up my fridges").

@@ -1,4 +1,4 @@
-// Pilot core 1.4.1 · pilot-panel.js
+// Pilot core 1.4.2 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
 // own: config.welcomePills, with config.tagline under the name; with its
@@ -16,6 +16,11 @@
 // Core 1.4.1: under such an answer the welcome's pills come back as a
 // compact row (not under the AI's answers), so the next question is one tap
 // away; before, they were gone until "Clear chat".
+// Core 1.4.2: the "Summarise this" suggestion (it needs the AI) shows only
+// once a key is set; an app can leave it out or put its own in its place
+// (config.screenChip: screenChip below). And with no key, a typed question
+// that clearly asks what one of the app's own answers (or links) is about
+// gets that answer at once (matchTyped below), instead of key settings.
 //
 // Every word on screen is placed with textContent or built by
 // pilot-render.js from text nodes: nothing is ever set as HTML. No style
@@ -23,7 +28,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.4.1";
+  const VERSION = "1.4.2";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -193,7 +198,7 @@
       const icon0 = typeof p.icon === "string" && Object.prototype.hasOwnProperty.call(ICONS, p.icon) ? p.icon : "spark";
       const plain = noAi(p, base);
       if (plain) {
-        if (label && !plain.bad) out.push({ icon: icon0, label, action: "", builtin: false, send: false, ...plain });
+        if (label && !plain.bad) out.push({ icon: icon0, label, action: "", builtin: false, send: false, ...plain, ...matchWords(p.match) });
         continue;
       }
       // A prompt keeps its words as given (a trailing space leaves the cursor
@@ -215,9 +220,87 @@
       if (!c || typeof c.label !== "string" || !c.label.trim()) continue;
       const plain = noAi(c, base);
       if (plain && plain.bad) continue;
-      out.push(plain ? { label: c.label, ...plain } : { label: c.label, prompt: typeof c.prompt === "string" ? c.prompt : "" });
+      out.push(plain ? { label: c.label, ...plain, ...matchWords(c.match) } : { label: c.label, prompt: typeof c.prompt === "string" ? c.prompt : "" });
     }
     return out;
+  }
+
+  // ---------------------------------------------------------------- a typed question, no key (core 1.4.2)
+  // With no key, a typed question went straight to key settings, even when
+  // one of the app's own answers plainly fits it ("Is my walk-in fridge
+  // OK?" with a "Which fridges need me?" answer). matchTyped compares the
+  // typed words with the words of each pill's and suggestion's label that
+  // answers with no AI ({answer} or {link}), plus the app's own `match`
+  // words on it (match: ["fridge", "warm", "ok"]). All in this browser:
+  // nothing is sent, and the answer stays marked as the app's own (never
+  // sent to the AI later). It is careful: question words and the like
+  // ("what", "is", "my", "help") don't count; it takes an item only when
+  // two of the typed words are its own and they are at least half of what
+  // was typed (one word will do only when the app listed it in `match` and
+  // it is all that was typed), and only when no other item comes as close.
+  // Otherwise null, and the no-key flow is as before.
+
+  const STOP = new Set(("a an and any are am at be can could did do does for from get give got has have help how i if in "
+    + "into is it its just know let like me my need of on or our please show should so some tell than that the their them "
+    + "then there these they this those to up us want was we what whats when where which who why will with would you your").split(" "));
+  // A word in its plain form: lower case, letters and digits only, a plural
+  // "s" (or "ies") taken off.
+  function stem(w) {
+    let x = String(w || "").toLowerCase().replace(/['’]s$/, "").replace(/[^a-z0-9]/g, "");
+    if (x.length > 4 && x.endsWith("ies")) x = `${x.slice(0, -3)}y`;
+    else if (x.length > 3 && x.endsWith("s") && !x.endsWith("ss")) x = x.slice(0, -1);
+    return x;
+  }
+  // The words that count in some text: [] for none.
+  const wordsOf = (text) => [...new Set(String(text || "").split(/[^A-Za-z0-9'’]+/).map(stem).filter((w) => w.length > 1 && !STOP.has(w)))];
+  // An item's own `match` words, cleaned: {match: [...]} or {} when none.
+  function matchWords(given) {
+    const list = (Array.isArray(given) ? given : []).filter((w) => typeof w === "string").slice(0, 20).map(stem).filter((w) => w.length > 1);
+    return list.length ? { match: [...new Set(list)] } : {};
+  }
+  const MATCH_LEAD = "Here's what I can tell you without an AI key:";
+  // The one item (of `items`: cleaned pills and suggestions) that clearly
+  // fits the typed `text`, or null.
+  function matchTyped(text, items) {
+    const asked = wordsOf(text);
+    if (!asked.length || asked.length > 12) return null;
+    const scored = [];
+    for (const item of Array.isArray(items) ? items : []) {
+      if (!item || !(item.link || item.answer !== undefined) || typeof item.label !== "string") continue;
+      const own = new Set(wordsOf(item.label));
+      const listed = new Set(item.match || []);
+      const hits = asked.filter((w) => own.has(w) || listed.has(w));
+      const whole = hits.length >= 2 && hits.length * 2 >= asked.length;
+      const one = asked.length === 1 && listed.has(asked[0]);
+      scored.push({ item, n: hits.length, fits: whole || one });
+    }
+    const best = scored.filter((s) => s.fits).sort((a, b) => b.n - a.n)[0];
+    if (!best) return null;
+    // Another item as close (by words) means it isn't clear which was meant.
+    if (scored.some((s) => s !== best && s.n >= best.n)) return null;
+    return best.item;
+  }
+
+  // The suggestion after this page's own (core 1.4.2), or null. By default
+  // "Summarise this" (it sends an outline of the screen to the AI), only
+  // once a key is set: before, it showed with no key and asked for one, the
+  // one suggestion left that did on sites whose others all work without.
+  // config.screenChip: false leaves it out; {label, answer} or {label, link}
+  // puts the app's own in its place (no key needed, shown always); {label,
+  // prompt} asks the AI that about the screen instead (with a key only).
+  // ready: a key is set. base: this page's address.
+  const SCREEN_CHIP = { label: "Summarise this", prompt: "Summarise what's on this screen in a few short points.", said: "Summarise this screen" };
+  function screenChip(given, ready, base) {
+    if (given === false) return null;
+    if (given && typeof given === "object" && typeof given.label === "string" && given.label.trim()) {
+      const label = given.label.replace(/\s+/g, " ").trim().slice(0, PILL_LABEL_MOST);
+      const plain = noAi(given, base);
+      if (plain) return plain.bad ? null : { label, ...plain };
+      if (typeof given.prompt === "string" && given.prompt.trim()) {
+        return ready ? { label, prompt: given.prompt.slice(0, PROMPT_MOST), said: label } : null;
+      }
+    }
+    return ready ? { ...SCREEN_CHIP } : null;
   }
 
   // The pills to show: the app's, or, if it gives none that work, the
@@ -265,6 +348,33 @@
     if (i < 0) return [];
     const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? msgs[i - 1].text : "";
     return (given || []).filter((p) => !(p.builtin && p.action === "settings" && !keyPill) && p.label !== asked);
+  }
+
+  // The row under the app's own answer (core 1.4.2): this page's own
+  // suggestions first (chips: cleaned, cleanChips), then the welcome's pills
+  // (againPills), each once (by its words), the one just asked left out, at
+  // most AGAIN_MOST, and the key pill (when it is kept) always last, beyond
+  // that. A suggestion comes as {label, icon: "spark", chip}.
+  // 1.4.1 showed only the welcome's pills.
+  const AGAIN_MOST = 6;
+  function againItems(messages, given, chips, keyPill) {
+    const pills = againPills(messages, given, keyPill);
+    const i = localAnswerAt(messages);
+    if (i < 0) return [];
+    const msgs = messages;
+    const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? String(msgs[i - 1].text).trim().toLowerCase() : "";
+    const seen = new Set(asked ? [asked] : []);
+    const out = [];
+    const isKey = (p) => p.builtin && p.action === "settings";
+    const take = (item) => {
+      const key = String(item.label || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (!key || seen.has(key) || out.length >= AGAIN_MOST) return;
+      seen.add(key);
+      out.push(item);
+    };
+    for (const c of Array.isArray(chips) ? chips : []) take({ icon: "spark", ...c, chip: true });
+    for (const p of pills) if (!isKey(p)) take(p);
+    return out.concat(pills.filter(isKey).slice(0, 1));
   }
 
   // Where to scroll the chat to show a new answer of the app's own (core
@@ -383,6 +493,10 @@
     const settingsView = el("div", { class: "pilot-view pilot-settings-view", hidden: true });
     const helpView = el("div", { class: "pilot-view pilot-help-view", hidden: true });
     const scroller = el("div", { class: "pilot-scroll" }, chatView, settingsView, helpView);
+    // Scrolled (core 1.4.2): what passes under the header fades out at the
+    // top edge (pilot-panel.css) instead of showing half a line there (a cut
+    // "Clear chat" underline).
+    scroller.addEventListener("scroll", () => scroller.classList.toggle("pilot-scrolled", scroller.scrollTop > 1), { passive: true });
 
     const input = el("textarea", { class: "pilot-input", rows: "1", maxlength: "4000", placeholder: "Type a message…",
       "aria-label": "Message to Pilot", autocomplete: "off" });
@@ -436,7 +550,9 @@
     // The question shows as the visitor's message (the pill's words). With
     // no key yet, a line under it offers the key (config.answerMore).
     let answering = false;
-    async function answerWith(label, answer) {
+    // lead (core 1.4.2): a line put before the answer (a typed question
+    // answered without a key: MATCH_LEAD).
+    async function answerWith(label, answer, lead) {
       if (answering || state.busy) return;
       answering = true;
       let text = "";
@@ -451,7 +567,7 @@
       }
       text = typeof text === "string" ? text.trim().slice(0, ANSWER_MOST) : "";
       const more = config.answerMore === false ? "" : (typeof config.answerMore === "string" && config.answerMore.trim()) || DEFAULT_MORE;
-      const add = text ? [{ role: "user", text: label }, { role: "assistant", text, local: true }]
+      const add = text ? [{ role: "user", text: label }, { role: "assistant", text: lead ? `${lead}\n\n${text}` : text, local: true }]
         : [{ role: "user", text: label }, { role: "note", kind: "error", text: "Pilot couldn't find that answer just now. Try again in a moment." }];
       // Once per chat (core 1.4.1): under the first answer of the app's own only.
       const offered = state.messages.some((m) => m.role === "note" && m.kind === "more");
@@ -733,11 +849,12 @@
     function againRow() {
       if (state.busy || otherBusy || cards.size) return null;
       const last = state.messages[state.messages.length - 1];
-      const list = againPills(state.messages, pills, !store.ready() && !(last && last.role === "note" && last.kind === "more"));
+      // Core 1.4.2: this page's own suggestions first, then the welcome's pills.
+      const list = againItems(state.messages, pills, pageChips(), !store.ready() && !(last && last.role === "note" && last.kind === "more"));
       if (!list.length) return null;
       return el("li", { class: "pilot-msg pilot-again" },
         el("div", { class: "pilot-pills pilot-pills-row", role: "group", "aria-label": "More you can ask" },
-          ...list.map((p) => { const b = pill(p.icon, p.label, () => runPill(p)); b.classList.add("pilot-pill-small"); return b; })));
+          ...list.map((p) => { const b = pill(p.icon, p.label, () => (p.chip ? runChip(p) : runPill(p))); b.classList.add("pilot-pill-small"); return b; })));
     }
 
     // Suggestions for this page, first once a conversation has started
@@ -753,7 +870,9 @@
         return;
       }
       const all = pageChips().map((c) => ({ label: c.label, run: () => runChip(c) }));
-      all.push({ label: "Summarise this", run: () => shareScreen("Summarise what's on this screen in a few short points.", "Summarise this screen") });
+      // "Summarise this", once a key is set, or the app's own (core 1.4.2).
+      const own = screenChip(config.screenChip, store.ready(), location.href);
+      if (own) all.push({ label: own.label, run: () => (own.prompt ? shareScreen(own.prompt, own.said) : runChip(own)) });
       put(chips, ...all.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: c.run } })),
         el("button", { type: "button", class: "pilot-link pilot-clear", text: "Clear chat", on: { click: clearChat } }));
     }
@@ -890,8 +1009,28 @@
         queueDraw();
         return;
       }
-      if (!store.ready()) { if (!extra) hold({ text: words }); else show("settings"); return; }
+      if (!store.ready()) {
+        if (!extra && typedHere(words)) return;
+        if (!extra) hold({ text: words }); else show("settings");
+        return;
+      }
       await engine.send(words, extra);
+    }
+
+    // No key, and the typed words clearly ask what one of the app's own
+    // answers or links is about (core 1.4.2, matchTyped): shown at once, as
+    // the app's own answer, with a line saying so; a link as a link to tap.
+    // config.matchTyped: false turns it off. True if it was answered.
+    function typedHere(words) {
+      if (config.matchTyped === false || answering || state.busy) return false;
+      let items = [];
+      try { items = ownPills(config.welcomePills, location.href).concat(pageChips()); } catch (_) { items = []; }
+      const hit = matchTyped(words, items);
+      if (!hit) return false;
+      if (input.value.trim() === words) { input.value = ""; grow(); }
+      const safe = String(hit.label).replace(/[[\]()\\*_`]/g, "");
+      answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD);
+      return true;
     }
 
     function shareScreen(prompt, label) {
@@ -1237,5 +1376,6 @@
   }
 
   window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, ownPills, keyPillGiven, keyWords, KEY_WORDS, hiddenSections,
-    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE, againPills, localAnswerAt, answerScroll };
+    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE, againPills, localAnswerAt, answerScroll,
+    SCREEN_CHIP, screenChip, matchTyped, wordsOf, MATCH_LEAD, againItems, AGAIN_MOST };
 })();

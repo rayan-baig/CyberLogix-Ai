@@ -1,4 +1,4 @@
-// Pilot core 1.4.1 · pilot-engine.js
+// Pilot core 1.4.2 · pilot-engine.js
 // The chat engine: builds what Pilot is told, talks to the provider, runs the
 // app's tools, and asks the user before anything changes. No DOM here: the
 // web panel (pilot-panel.js) and, later, the desktop app give it a `host`
@@ -21,7 +21,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.1";
+  const VERSION = "1.4.2";
   const MAX_ROUNDS = 8;
   const MAX_PLAN = 8;
   const PLAN_TOOL = "pilot_plan";

@@ -1,17 +1,18 @@
-// Pilot core 1.4.1 · pilot.js
+// Pilot core 1.4.2 · pilot.js
 // The one Pilot file a page loads. After the page has loaded it fetches the
 // store, the robot (pilot-mascot.js) and the app's config (which calls
 // Pilot.mount); the chat window, engine, providers, renderer and knowledge
 // pack come the first time Pilot is opened, and the moving robot when the
 // page is idle (never under "reduce motion"). It keeps the robot out of the
 // way (pilot-mascot.js placeNow) on scroll, resize, focus and page changes
-// (1.4.1: .pilot-away when there's no room), keeps the chat from page to
+// (1.4.1: .pilot-away when there's no room; 1.4.2: then a handle at the
+// screen's edge once the page is still), keeps the chat from page to
 // page (sessionStorage) and across tabs (BroadcastChannel; one tab answers
 // at a time). One tag: <script id="pilot-core" data-…> (docs/PILOT.md).
 (function () {
   "use strict";
 
-  const VERSION = "1.4.1";
+  const VERSION = "1.4.2";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -32,6 +33,7 @@
   let peekOff = 0; // tapped out of its tucked-away spot until then
   let quiet = false; // tucked till a scroll (reveal)
   let scrolledDown = false; // the page is scrolled away from its top (core 1.4.1)
+  let handle = null; // shown while it is hidden at rest (core 1.4.2)
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
 
@@ -89,6 +91,7 @@
 
   const M = () => window.PilotMascot;
   const list = (v) => (Array.isArray(v) ? v : typeof v === "string" && v ? [v] : []).filter((x) => typeof x === "string");
+  const avoid = () => [...list(config.avoid), ...list(config.yieldTo)];
 
   // Where the robot should be now (pilot-mascot.js placeNow, which says how).
   function fit() {
@@ -96,12 +99,12 @@
     const full = fitFull;
     fitFull = false;
     if (!rootEl || !config) return;
-    const open = Boolean(panel && panel.isOpen);
+    const open = Boolean(panel && panel.isOpen) || rootEl.classList.contains("pilot-loading"); // (1.4.2: opening counts)
     const modal = M().modalOpen(document, rootEl, window, list(config.modals));
     rootEl.classList.toggle("pilot-yield", modal && !open);
     if (open) rootEl.classList.remove("pilot-away");
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
-    const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
+    const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: avoid(),
       corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false,
       keepIn: Boolean(config.keepInViewport), tuck: quiet, scrolled: scrolledDown, away: config.hideWhenCrowded !== false });
     if (place.corner !== shownCorner) placeAt(place.corner);
@@ -109,6 +112,7 @@
     // A tap brings it out for a while, but never onto a box being typed in.
     rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
     rootEl.classList.toggle("pilot-typing", place.typing);
+    if (handle) handle.update(Boolean(place.hide && !place.typing && !scrolling));
   }
 
   function queueFit(full) {
@@ -151,8 +155,7 @@
   // Busy: no wandering (a pop-up, tucked away, or something to avoid where it strolls).
   const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-away", "pilot-peek", "pilot-typing"].some((c) => rootEl.classList.contains(c))
     || scrolling !== 0
-    || shownCorner !== store.ui().corner || (list(config.avoid).length + list(config.yieldTo).length > 0
-      && M().inStroll(M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window), window, launcher));
+    || shownCorner !== store.ui().corner || (avoid().length > 0 && M().inStroll(M().boxesOf(document, avoid(), rootEl, window), window, launcher));
 
   // Drag the robot to another corner, kept on this device.
   function draggable() {
@@ -220,6 +223,7 @@
     rootEl.appendChild(launcher);
     document.body.appendChild(rootEl);
     draggable();
+    if (config.handle !== false) handle = M().restHandle({ doc: document, win: window, root: rootEl, launcher, open, avoid, corner: () => shownCorner });
     status();
     document.documentElement.classList.add("pilot-on"); // pages may reserve var(--pilot-gutter)
     reveal();

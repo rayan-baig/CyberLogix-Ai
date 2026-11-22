@@ -1,4 +1,4 @@
-// Pilot core 1.4.1 · pilot-providers.js
+// Pilot core 1.4.2 · pilot-providers.js
 // The AI providers Pilot can talk to, straight from the browser with the
 // user's own key. The key goes only to the provider the user chose, in the
 // header that provider asks for, and never to the app's own server.
@@ -26,7 +26,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.1";
+  const VERSION = "1.4.2";
   const ANTHROPIC_VERSION = "2026-10-21";
   const DEFAULT_MAX_TOKENS = 4096; // when the provider doesn't say; fits any model
   const MOST_TOKENS = 16000; // a chat answer never needs more

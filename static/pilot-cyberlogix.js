@@ -333,6 +333,85 @@
   const DEMO_WHAT = "A pretend kitchen with four sensors. In about a minute the walk-in starts to warm up, and you see exactly what would happen: the wait, the text, the phone call if nobody answers, and the record once it's fixed. No texts or calls are sent, and nothing is saved.";
   const SIGN_IN = "Use the email and password you signed up with, on [the console](/console). On a phone you can add it to your home screen. No account yet? [Start a free trial](/signup).";
 
+  // "Sum up my fridges" (core 1.4.2's screenChip, on the console and
+  // /today): the page in a few lines, from what it already loaded, in
+  // place of the core's "Summarise this", which would send the screen to
+  // the AI. How many units and how they are, the alerts, and the food
+  // nobody has answered for. Never a name, number or email.
+  function summaryAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    if (!units.length) return `No fridges or freezers added yet. [Connect your first sensor](${CONNECT}).`;
+    const count = { fine: 0, need: 0, waiting: 0 };
+    units.forEach((u) => {
+      const s = stateOf(u).state;
+      if (s === "waiting_first") count.waiting += 1;
+      else if (s in URGENCY) count.need += 1;
+      else count.fine += 1;
+    });
+    const total = units.length;
+    const parts = [`${count.fine} fine`];
+    if (count.need) parts.push(`${count.need} ${count.need === 1 ? "needs" : "need"} you`);
+    if (count.waiting) parts.push(`${count.waiting} waiting for a first reading`);
+    const lines = [`**${total === 1 ? "1 fridge or freezer" : `${total} fridges and freezers`}:** ${parts.join(", ")}.`];
+    const live = liveAlerts(dd);
+    const open = live.filter((i) => i.state === "open").length;
+    lines.push(!live.length ? "No alert is open."
+      : `${live.length === 1 ? "1 alert is open" : `${live.length} alerts are open`}${open ? `, ${open === live.length ? (open === 1 ? "and nobody has answered it" : "and nobody has answered them") : `${open} not answered yet`}` : ", and someone is on it"}.`);
+    const food = (dd.incidents || []).filter((i) => i && i.state === "resolved" && !i.site_wide
+      && i.food_question && i.food_question.ask_on_today).length;
+    if (food) lines.push(`${food === 1 ? "1 closed alert is" : `${food} closed alerts are`} waiting for an answer about the food.`);
+    lines.push(count.need || live.length || food ? "Ask **Which fridges need me?** for each one." : "Nothing needs you right now.");
+    return lines.join("\n\n");
+  }
+
+  // Words a typed question may use for each answer or link that needs no
+  // key (core 1.4.2, matchTyped). With no key, "Is my walk-in fridge OK?"
+  // gets "Which fridges need me?" and "How much is it?" the prices, at
+  // once, in this browser; nothing is sent. The core takes an item only
+  // when two typed words are in its label or here (one, if it is listed
+  // here and all that was typed) and no other item on the page comes as
+  // close, so a word two of a page's items share makes neither match on its
+  // own. Plurals count as one word; "what", "is", "my" and the like never
+  // count.
+  // "does" and "this" should not count either, but core 1.4.2 takes the
+  // plural "s" off before it checks its list of words that don't, so they
+  // count as "doe" and "thi", and both are in "What does this alert mean?":
+  // with no key, "Does this work with my sensor?" or "What does this button
+  // do?" got the alert's answer on the console. Listed on "Which fridges
+  // need me?" (and "this" on "It's fixed now") too, they can never pick
+  // the alert's answer on their own. (Reported for the core.)
+  const MATCH = {
+    "Which fridges need me?": ["fridge", "freezer", "unit", "warm", "cold", "ok", "fine", "temperature", "temp", "problem", "wrong", "status",
+      "does", "this"],
+    "What does this alert mean?": ["alert", "alarm", "mean", "warning", "happened", "happening", "text", "message", "going"],
+    "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "bin", "spoiled", "spoilt", "bad", "good", "discard", "stock"],
+    "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "wire", "hook", "probe", "device", "new"],
+    "Will it work for my café?": ["cafe", "café", "restaurant", "bakery", "kitchen", "coffee", "shop", "bar", "diner", "pub", "deli", "small", "business", "suit", "right"],
+    "What does it cost?": ["cost", "price", "pricing", "much", "plan", "pay", "fee", "month", "monthly", "expensive", "cheap", "subscription"],
+    "See it live": ["demo", "live", "try", "example", "preview", "tour", "sample", "pretend", "watch"],
+    "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "compatible", "kind", "type", "work"],
+    "Log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
+    "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert", "this"],
+    "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute", "short", "quick", "delay", "wait"],
+    "Wi-Fi or power goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
+    "Do you phone at night?": ["phone", "call", "night", "ring", "voice", "escalate", "sleep", "weekend"],
+    "Do you phone us?": ["phone", "call", "night", "ring", "voice", "escalate", "sleep", "weekend"],
+    "Which plan for a café?": ["plan", "cafe", "café", "best", "choose", "pick", "starter", "growth", "small", "restaurant"],
+    "What's in the trial?": ["trial", "free", "card", "try", "day", "include"],
+    "A fridge is warm: what now?": ["warm", "hot", "too", "freezer", "alarm", "alert", "happen"],
+    "A log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
+    "Set up step by step": ["setup", "set", "step", "install", "connect", "guide", "start", "sensor", "instructions"],
+    "Power or Wi-Fi goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
+    "What am I seeing?": ["seeing", "demo", "pretend", "fake", "kitchen", "happening", "screen"],
+    "What happens next?": ["happen", "next", "then", "after", "warm", "text", "call", "alert"],
+    "Start a free trial": ["trial", "free", "signup", "register", "join", "start"],
+    "How do I sign in?": ["sign", "signin", "login", "log", "account", "email", "enter"],
+    "I forgot my password": ["forgot", "forgotten", "password", "reset", "lost", "change"],
+  };
+  const matching = (label) => (MATCH[label] ? { match: MATCH[label] } : {});
+
   // Each a label and what it does: words for the AI, or a {link} / {answer}
   // that needs no key (core 1.4.0).
   const link = (to) => ({ link: to });
@@ -386,7 +465,7 @@
       ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
       ["A log for the inspector", answer(LOG)]];
     else list = CHIPS[path] || [];
-    return list.map(([label, what]) => (typeof what === "string" ? { label, prompt: what } : { label, ...what }));
+    return list.map(([label, what]) => (typeof what === "string" ? { label, prompt: what } : { label, ...what, ...matching(label) }));
   }
 
   // The welcome's five. In the console and on /today (the person's own
@@ -396,17 +475,17 @@
   // what it costs, can I see it. Only the key pill and typed questions need
   // the AI.
   const OWN_PILLS = [
-    { icon: "bars", label: "Which fridges need me?", answer: needsAnswer },
-    { icon: "help", label: "What does this alert mean?", answer: alertAnswer },
-    { icon: "chat", label: "Is the food still OK?", answer: foodAnswer },
-    { icon: "bolt", label: "How do I connect a sensor?", link: "/console#connect" },
+    { icon: "bars", label: "Which fridges need me?", answer: needsAnswer, ...matching("Which fridges need me?") },
+    { icon: "help", label: "What does this alert mean?", answer: alertAnswer, ...matching("What does this alert mean?") },
+    { icon: "chat", label: "Is the food still OK?", answer: foodAnswer, ...matching("Is the food still OK?") },
+    { icon: "bolt", label: "How do I connect a sensor?", link: "/console#connect", ...matching("How do I connect a sensor?") },
     { icon: "key", label: "Add my AI key", action: "settings" },
   ];
   const VISITOR_PILLS = [
-    { icon: "chat", label: "Will it work for my café?", answer: cafeAnswer },
-    { icon: "bars", label: "What does it cost?", link: "/pricing" },
-    { icon: "spark", label: "See it live", link: "/demo" },
-    { icon: "help", label: "What sensors do I need?", link: "/help/sensors" },
+    { icon: "chat", label: "Will it work for my café?", answer: cafeAnswer, ...matching("Will it work for my café?") },
+    { icon: "bars", label: "What does it cost?", link: "/pricing", ...matching("What does it cost?") },
+    { icon: "spark", label: "See it live", link: "/demo", ...matching("See it live") },
+    { icon: "help", label: "What sensors do I need?", link: "/help/sensors", ...matching("What sensors do I need?") },
     { icon: "key", label: "Add my AI key", action: "settings" },
   ];
   const ownPage = onConsole || onToday;
@@ -422,6 +501,14 @@
     // Under the first answer Pilot gives without a key (core 1.4.0; once
     // per chat since core 1.4.1, and the welcome's pills come back under it).
     answerMore: "Want more? Add your AI key to ask anything.",
+    // Core 1.4.2: the suggestion after the page's own. On the console and
+    // /today, this app's own summary of the person's fridges, with no key
+    // and nothing sent (summaryAnswer), in place of "Summarise this", which
+    // sends the screen to the AI. On the public pages the core's own, shown
+    // only once a key is set. Typed questions that fit one of the answers
+    // above are answered with no key (MATCH; matchTyped left on), and the
+    // handle at the screen's edge while the robot is hidden is left on.
+    screenChip: ownPage ? { label: "Sum up my fridges", answer: summaryAnswer } : undefined,
     // CyberLogix has no use for making pictures or videos.
     hideKeySections: ["image", "video"],
     // With every corner busy the robot shrinks into its corner, wholly on
@@ -482,6 +569,12 @@
       // and over the demo Freezer card's edge. And /today's own "Needs you
       // now" card, buttons and all.
       ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need"],
+    // Not the logo (3.31.0): it is a picture and words, not a link, on most
+    // pages, so core 1.4.2's handle may peek in beside it at the screen's
+    // left edge. At 320px and 375x667 on /today with an alert that is the
+    // only free spot on the first screen (the alert and "Needs you now"
+    // cards, both listed, fill both edges below it); listed, the robot was
+    // nowhere to be found there until a scroll.
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

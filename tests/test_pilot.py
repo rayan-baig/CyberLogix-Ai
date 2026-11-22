@@ -34,20 +34,20 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.4.1 as it ships on the MTRX Horizyn site (commit f221ffc), with
-# its phone-size pictures of the robot and the resting layers.
+# Pilot core 1.4.2 as it ships on the MTRX Horizyn site (commit a1c9253), with
+# its phone-size pictures of the robot and the resting layers (unchanged since 1.4.1).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "953df05a9274ac0f",
-    "pilot-actor.js": "f98b9541abeaa599",
-    "pilot-engine.js": "77487682c695f969",
-    "pilot-mascot.js": "85f524c269a3113d",
-    "pilot-media.js": "6750001f65407e77",
-    "pilot-motion.js": "c7044c5c44e965e9",
-    "pilot-panel.css": "ba9f9004398388d6",
-    "pilot-panel.js": "34054867d3aa5a0f",
-    "pilot-providers.js": "b458d4a89d850b0a",
-    "pilot-render.js": "82ff4ad4a1c9a5e1",
+    "pilot-actor.css": "2af8e3b6eb5c5602",
+    "pilot-actor.js": "b5615a34ab14badf",
+    "pilot-engine.js": "117d3e616162c14e",
+    "pilot-mascot.js": "70137849a3a8ae3e",
+    "pilot-media.js": "ff6d67924334ca68",
+    "pilot-motion.js": "8f120150bcec155b",
+    "pilot-panel.css": "34d975d7821c9cbf",
+    "pilot-panel.js": "ecb25a6450b46555",
+    "pilot-providers.js": "2ec1a989f9ec833d",
+    "pilot-render.js": "d4f6fcd3d64a63f6",
     "pilot-rest-body-112.webp": "0bc7a049f517a89a",
     "pilot-rest-body-168.webp": "f71583ad3933cd37",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
@@ -62,9 +62,9 @@ CORE_SHA256 = {
     "pilot-robot-168.webp": "adb6cede3ad959b8",
     "pilot-robot-176.webp": "6bbae2f53510e257",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "714d5eaa154fcb22",
-    "pilot.css": "989bdcd7c57fdf5b",
-    "pilot.js": "d6853ec88a77bd94",
+    "pilot-store.js": "7b1f93b7569eea47",
+    "pilot.css": "d421e8108a3be1d3",
+    "pilot.js": "b42d370592e27541",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -212,11 +212,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.4.1"}
+    assert versions == {"1.4.2"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.4.1";' in (PILOT / name).read_text(), name
-    assert "core 1.4.1" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.4.2";' in (PILOT / name).read_text(), name
+    assert "core 1.4.2" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -462,7 +462,9 @@ def test_cyberlogixs_own_welcome():
     # 3.27.0 (core 1.4.0): a pill is an AI prompt or built-in (action), a
     # page of this site (link), or the app's own answer (answer), which
     # needs no key. tests/js/cyberlogix-pilot.test.js runs the answers.
-    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", (action|link|answer): "?([^",}]+)"? \}'
+    # 3.31.0 (core 1.4.2): each that needs no key carries its own words for
+    # a typed question (`...matching(label)`, the MATCH list).
+    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", (action|link|answer): "?([^",}]+)"?(?:, \.\.\.matching\("\2"\))? \}'
 
     def pills(name):
         start = config.index(f"const {name} = [")
@@ -486,6 +488,8 @@ def test_cyberlogixs_own_welcome():
         # Only the key pill is left for the AI: nothing on the welcome asks
         # for a key before it has helped.
         assert [kind for _i, _l, kind, _v in labels].count("action") == 1
+    for _i, label, kind, _v in own + visitor:
+        assert (f'...matching("{label}")' in config) == (kind != "action"), label
     assert 'answerMore: "Want more? Add your AI key to ask anything.",' in config
     assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
     assert 'hideKeySections: ["image", "video"],' in config

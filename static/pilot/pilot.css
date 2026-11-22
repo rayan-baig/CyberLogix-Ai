@@ -1,4 +1,4 @@
-/* Pilot core 1.4.1 · pilot.css
+/* Pilot core 1.4.2 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -23,6 +23,7 @@
   --pilot-clear-y: 4px; /* and up and down */
   --pilot-peek-scale: 0.52; /* keepInViewport: its size while tucked away (88 px x 0.52: a 44 px tap target) */
   --pilot-keep-margin: 8px; /* keepInViewport: from the screen's edges */
+  --pilot-keep-room: 16px; /* keepInViewport: the core's own room above (or below) a corner; a larger --pilot-gap keeps the extra when tucked */
   position: fixed;
   z-index: 2147483000;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -124,24 +125,55 @@
    Tucked away, the robot shrinks to --pilot-peek-scale in its corner (never
    below a 44 px tap target, core 1.3.0: pilot-mascot.js keepScale),
    --pilot-keep-margin from the edges (pilot-mascot.js peekBox counts the
-   same box), and grows back a little on hover. */
-.pilot-root.pilot-keep-in { --pilot-keep-d: calc(var(--pilot-gap) - var(--pilot-keep-margin)); }
+   same box), and grows back a little on hover.
+   Core 1.4.2: toward its top or bottom edge it moves only by the core's own
+   room (--pilot-keep-dy: --pilot-keep-room less the margin). An app that
+   raises its corners above a bar (a larger --pilot-gap, or its own bottom)
+   keeps them raised when tucked, and placement measures the small robot
+   there, not over the bar. With the core's own gap, as before. */
+.pilot-root.pilot-keep-in { --pilot-keep-d: calc(var(--pilot-gap) - var(--pilot-keep-margin));
+  --pilot-keep-dy: calc(min(var(--pilot-gap), var(--pilot-keep-room)) - var(--pilot-keep-margin)); }
 .pilot-root.pilot-keep-in.pilot-peek .pilot-launcher,
 .pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:hover,
 .pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:focus-visible {
   transform-origin: 100% 100%;
-  transform: translate(var(--pilot-keep-d), var(--pilot-keep-d)) scale(var(--pilot-peek-scale));
+  transform: translate(var(--pilot-keep-d), var(--pilot-keep-dy)) scale(var(--pilot-peek-scale));
 }
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-bl .pilot-launcher,
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-bl:not(.pilot-typing) .pilot-launcher:hover {
-  transform-origin: 0 100%; transform: translate(calc(-1 * var(--pilot-keep-d)), var(--pilot-keep-d)) scale(var(--pilot-peek-scale)); }
+  transform-origin: 0 100%; transform: translate(calc(-1 * var(--pilot-keep-d)), var(--pilot-keep-dy)) scale(var(--pilot-peek-scale)); }
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-tr .pilot-launcher,
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-tr:not(.pilot-typing) .pilot-launcher:hover {
-  transform-origin: 100% 0; transform: translate(var(--pilot-keep-d), calc(-1 * var(--pilot-keep-d))) scale(var(--pilot-peek-scale)); }
+  transform-origin: 100% 0; transform: translate(var(--pilot-keep-d), calc(-1 * var(--pilot-keep-dy))) scale(var(--pilot-peek-scale)); }
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-tl .pilot-launcher,
 .pilot-root.pilot-keep-in.pilot-peek.pilot-at-tl:not(.pilot-typing) .pilot-launcher:hover {
-  transform-origin: 0 0; transform: translate(calc(-1 * var(--pilot-keep-d)), calc(-1 * var(--pilot-keep-d))) scale(var(--pilot-peek-scale)); }
+  transform-origin: 0 0; transform: translate(calc(-1 * var(--pilot-keep-d)), calc(-1 * var(--pilot-keep-dy))) scale(var(--pilot-peek-scale)); }
 .pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:hover { opacity: 1; }
+
+/* The handle (core 1.4.2). Hidden at rest (.pilot-away) for a couple of
+   seconds with the page still, the robot shows a slice of itself at the
+   screen's left or right edge (pilot-mascot.js restHandle: only where the
+   whole 44 px square to tap covers nothing pressed, no bar that stays put and
+   nothing the app asks it to avoid). The rest of the square is see-through.
+   Tapping it opens Pilot. Gone again at the next scroll, or when the robot
+   is back. */
+.pilot-handle { display: none; position: fixed; width: 44px; height: 44px; padding: 0; border: 0; background: none;
+  overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pilot-root.pilot-away.pilot-handle-on:not(.pilot-open):not(.pilot-loading) .pilot-handle { display: block; animation: pilot-handle-in 0.3s ease both; }
+.pilot-handle-r { right: 0; }
+.pilot-handle-l { left: 0; }
+.pilot-handle::before {
+  content: ""; position: absolute; top: 4px; bottom: 4px; width: 40px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(59, 130, 246, 0.45), rgba(139, 92, 246, 0.18) 60%, transparent);
+  opacity: 0.55; pointer-events: none;
+}
+.pilot-handle-r::before { left: 16px; }
+.pilot-handle-l::before { right: 16px; }
+.pilot-handle-robot { position: absolute; top: 0; width: 46px; height: auto; max-width: none; pointer-events: none; user-select: none; }
+.pilot-handle-r .pilot-handle-robot { left: 18px; } /* its left half peeks in at the right edge */
+.pilot-handle-l .pilot-handle-robot { right: 18px; }
+.pilot-handle:focus-visible { outline: 2px solid var(--pilot-cyan); outline-offset: -2px; border-radius: 12px; }
+@keyframes pilot-handle-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* The first page of a visit: a soft glow for a few seconds, so people
    notice the robot, wherever it sits: whole in a free corner, or tucked
@@ -160,7 +192,8 @@
    on anything; pilot.js also puts it on the app's gutter elements (`main`
    unless the config says otherwise) where their own padding is narrower. */
 @media (max-width: 720px) {
-  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; --pilot-peek-scale: 0.82; --pilot-keep-margin: 3px; }
+  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; --pilot-peek-scale: 0.82; --pilot-keep-margin: 3px;
+    --pilot-keep-room: 12px; }
   /* --pilot-peek-scale 0.82: the tucked-away robot stays a 44 px tap target (56 px x 0.82). */
   :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); --pilot-side: 24px; }
   /* keepInViewport: room at the side for the tucked-away robot's edge (it is 46 px, 3 px in; placement keeps it off the
@@ -175,6 +208,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher, .pilot-root.pilot-away .pilot-launcher { transition: none; }
   .pilot-robot,
+  .pilot-root.pilot-away.pilot-handle-on:not(.pilot-open):not(.pilot-loading) .pilot-handle,
   .pilot-revealing .pilot-launcher::before,
   .pilot-thinking .pilot-launcher::before,
   .pilot-dot-thinking { animation: none; }
