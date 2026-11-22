@@ -34,27 +34,27 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.2.1 as it ships on the MTRX Horizyn site (commit 17b4711).
+# Pilot core 1.3.0 as it ships on the MTRX Horizyn site (commit 9f55e67).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "8fb7a9f5f2864a92",
-    "pilot-actor.js": "fa7b58d8d86742a9",
-    "pilot-engine.js": "b49e7bca4079b883",
-    "pilot-mascot.js": "147256f8a2e41923",
-    "pilot-media.js": "bdc4392467daf45e",
-    "pilot-motion.js": "f1d9c435b695218e",
-    "pilot-panel.css": "89bfed4b1249e719",
-    "pilot-panel.js": "040d17fded5c3e35",
-    "pilot-providers.js": "230950ca5c0ea582",
-    "pilot-render.js": "3d5d63605d88402a",
+    "pilot-actor.css": "485e0e46777d05ac",
+    "pilot-actor.js": "1761b209061fafcf",
+    "pilot-engine.js": "3d263ff61d5ce77f",
+    "pilot-mascot.js": "aad3c26534592777",
+    "pilot-media.js": "0eb72daafd62b94a",
+    "pilot-motion.js": "6aab493624a95b7e",
+    "pilot-panel.css": "bf8c19c7f76db7e0",
+    "pilot-panel.js": "f486c85f1282a28f",
+    "pilot-providers.js": "74eba88df717d5c8",
+    "pilot-render.js": "c3f2efb873862546",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
     "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
     "pilot-rest-head.webp": "5eb064f177cffcb3",
     "pilot-robot-128.webp": "05a92f32d99b8076",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "985ee4c2d35437e3",
-    "pilot.css": "109d82483332adad",
-    "pilot.js": "e8ff2e6f98c895ba",
+    "pilot-store.js": "2b31f637cf9e930f",
+    "pilot.css": "3e61aeb55739aa02",
+    "pilot.js": "405662c67747762a",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -202,11 +202,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.2.1"}
+    assert versions == {"1.3.0"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.2.1";' in (PILOT / name).read_text(), name
-    assert "core 1.2.1" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.3.0";' in (PILOT / name).read_text(), name
+    assert "core 1.3.0" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -408,22 +408,37 @@ def test_the_robot_is_never_tucked_past_the_screen_edge():
 
 
 def test_cyberlogixs_own_welcome():
-    """Core 1.2.0: the window's welcome is this app's own. Five pills a
-    café asks most, the last one the key settings; no picture or video key
-    sections; the phone's Menu counts as a pop-up; and the signed-in
+    """Core 1.2.0: the window's welcome is this app's own. 3.25.0: five a
+    café asks about its own fridges on the console and /today, and five a
+    visitor asks on the public pages (the owner approved app-specific
+    buttons on websites); the last of each is the key settings. No picture
+    or video key sections; the phone's Menu counts as a pop-up; and the
     suggestions under the welcome don't repeat a pill."""
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
-    labels = re.findall(r'\{ icon: "([a-z]+)", label: "([^"]+)", action: "([^"]+)"(, send: true)? \}', config)
-    assert [(icon, label) for icon, label, _a, _s in labels] == [
+    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", action: "([^"]+)"(, send: true)? \}'
+
+    def pills(name):
+        start = config.index(f"const {name} = [")
+        return re.findall(pattern, config[start:config.index("];", start)])
+
+    own, visitor = pills("OWN_PILLS"), pills("VISITOR_PILLS")
+    assert [(icon, label) for icon, label, _a, _s in own] == [
         ("bars", "Which fridges need me?"), ("help", "What does this alert mean?"),
         ("chat", "Is the food still OK?"), ("bolt", "Add a fridge"), ("key", "Add my AI key")]
-    assert [bool(send) for *_x, send in labels] == [True, True, True, True, False]
-    assert labels[-1][2] == "settings"
-    assert all(len(label) <= 40 for _i, label, _a, _s in labels)
+    assert [(icon, label) for icon, label, _a, _s in visitor] == [
+        ("chat", "Will it work for my café?"), ("bars", "What does it cost?"),
+        ("spark", "See it live"), ("help", "What sensors do I need?"), ("key", "Add my AI key")]
+    for labels in (own, visitor):
+        assert [bool(send) for *_x, send in labels] == [True, True, True, True, False]
+        assert labels[-1][2] == "settings"
+        assert all(len(label) <= 40 for _i, label, _a, _s in labels)
+    assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
     assert 'hideKeySections: ["image", "video"],' in config
     assert 'modals: [".menu[open] > nav"],' in config
     live = config[config.index("const LIVE = ["):config.index("];", config.index("const LIVE = ["))]
-    for _i, label, _a, _s in labels:
+    for _i, label, _a, _s in own:
         assert f'"{label}"' not in live, label
-    # A public page tells the AI it can't see anybody's fridges there.
+    front = config[config.index('"/": ['):config.index('"/pricing": [')]
+    for _i, label, _a, _s in visitor:
+        assert f'"{label}"' not in front, label
     assert "Not signed in: Pilot can't see their fridges or alerts here." in config

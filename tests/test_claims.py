@@ -36,7 +36,10 @@ def test_the_packet_carries_the_record_and_the_response(
     assert packet["evidence"]["peak_reading"] == 48.0
     events = [step["event"] for step in packet["response"]["timeline"]]
     assert "Breach detected" in events
-    assert "Alert dispatched by SMS" in events
+    # Texts are off under the suite (no Twilio): the packet says the alert
+    # was written and not sent (3.25.0), not "dispatched, 0 delivered".
+    assert "Alert written, not sent" in events
+    assert "Alert dispatched by SMS" not in events
     assert "Acknowledged" in events
     assert packet["event"]["minutes_to_acknowledge"] is not None
 

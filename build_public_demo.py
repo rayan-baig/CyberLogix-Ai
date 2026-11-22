@@ -66,6 +66,8 @@ PATHS = [
     "/api/ai-key",
     "/api/proof-reports",
     "/api/leaving",
+    # "How to connect it": the brands and their steps (sensor_guides.WIZARD).
+    "/api/sensor-guides/wizard",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or
@@ -756,6 +758,9 @@ def build_help(served: str) -> str:
     circuit = (ROOT / "static" / "circuit.js").read_text().replace("</script", "<\\/script")
     page = page.replace('<script src="/static/circuit.js" defer></script>\n', "")
     page = page.replace("</body>", f"<script>\n{circuit}\n</script>\n</body>", 1)
+    # "Sign in" or "Your console" (signedin.js): the copy has neither a
+    # session nor a console to sign in to, and its nav drops the link.
+    page = re.sub(r'<script src="/static/signedin\.js[^"]*" defer></script>\n?', "", page)
     # The sensor guides' folds: the script that opens the one a link names,
     # written in like circuit.js (/help/sensors only).
     folds = '<script src="/static/help-sensors.js" defer></script>\n'

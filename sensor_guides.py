@@ -291,6 +291,135 @@ def guides() -> List[Dict[str, Any]]:
     return GUIDES
 
 
+# --- the console's "How to connect it" wizard -------------------------------
+#
+# Pick the sensor's brand, and see only its few steps, with this
+# deployment's address and the unit's own key and serial already in them.
+# `address` is the web address to paste (shown above the steps, with a
+# Copy button); in it and in the steps {key} is the sensor key, {serial}
+# the device's serial and {sensor_id} the unit's id, which the console
+# fills in. Each brand points at
+# the guide above that says the same at length (`guide`), and
+# tests/test_sensor_guides.py holds every route and header written into a
+# step to the ones that guide declares, as it does the guides themselves.
+
+WIZARD: List[Dict[str, Any]] = [
+    {
+        "id": "monnit",
+        "label": "Monnit",
+        "hint": "Monnit sensors and gateways, with an iMonnit account",
+        "guide": "monnit",
+        "serial": "The sensor's SensorID: the number iMonnit shows for it.",
+        "address": f"{BASE}/api/v1/bridge/any?k={{key}}",
+        "steps": [
+            "In iMonnit, open the setting that sends sensor readings on to "
+            "a web address (a webhook).",
+            "Paste the address above into it.",
+            "Save it. Nothing needs mapping: we read the SensorID, the "
+            "reading, Celsius or Fahrenheit, the time, battery and signal.",
+        ],
+    },
+    {
+        "id": "logger",
+        "label": "Elitech, Dickson or another logger",
+        "hint": "A Wi-Fi or cellular logger whose cloud forwards readings "
+                "with a form for the body",
+        "guide": "webhook",
+        "serial": "The logger's serial number, as its own cloud shows it.",
+        "address": f"{BASE}/api/v1/bridge/sensor-webhook-ingest",
+        "steps": [
+            "In the logger's forwarding settings, paste the address above, "
+            "with the method POST, sending JSON.",
+            "Fill in the body: device_sn is {serial}, api_key_token is "
+            "{key}, reading_value is the reading, and metric_type is "
+            "temperature_c or temperature_f.",
+            "Send temperature as its own message, one reading per message.",
+        ],
+    },
+    {
+        "id": "sensorpush",
+        "label": "SensorPush",
+        "hint": "SensorPush sensors with a G1 gateway",
+        "guide": "sensorpush",
+        "serial": "The sensor's id, as SensorPush's cloud names it.",
+        "address": f"{BASE}/api/v1/bridge/any",
+        "steps": [
+            "SensorPush's gateway only reports to SensorPush's own cloud, so "
+            "a small relay has to read it and pass each reading on. If "
+            "that is not something you can set up, ask us and we will help.",
+            "The relay sends an HTTPS POST to the address above with the "
+            "header X-CyberLogix-Sensor-Key set to {key}.",
+            "Each reading as JSON: sensor is {serial}, with temperature and "
+            "observed as SensorPush gives them.",
+        ],
+    },
+    {
+        "id": "gateway",
+        "label": "A gateway, hub or script",
+        "hint": "Anything that lets you set the address, headers and body: "
+                "a hub, a Raspberry Pi, your own script",
+        "guide": "native",
+        "serial": "",
+        "address": f"{BASE}/api/sensor-pulse",
+        "steps": [
+            "Set it to send an HTTPS POST to the address above every few "
+            "minutes.",
+            "Add the header X-CyberLogix-Sensor-Key set to {key}, and "
+            "Content-Type: application/json.",
+            "Send the reading as JSON: sensor_id is {sensor_id}, with "
+            "temperature_fahrenheit or temperature_celsius.",
+        ],
+    },
+    {
+        "id": "cloud",
+        "label": "My sensor maker's cloud has an API key",
+        "hint": "Sensors that only talk to their maker's app, whose cloud "
+                "gives you an address and a key",
+        "guide": "vendor-cloud",
+        "serial": "The device's id, as the maker's data calls it.",
+        "address": "",
+        "steps": [
+            "Get the web address and the key from the maker's cloud (often "
+            "under API or integrations).",
+            "In the console, open Fetch from a sensor cloud, in the "
+            "Advanced tab, and paste them. We fetch the readings every few "
+            "minutes.",
+            "Press Try now there: it says at once whether readings came back.",
+        ],
+    },
+    {
+        "id": "other",
+        "label": "Something else, or not sure",
+        "hint": "Any sensor whose app can send readings to a web address "
+                "(a webhook or HTTP push)",
+        "guide": "anything",
+        "serial": "The sensor's serial or device id, as its app shows it.",
+        "address": f"{BASE}/api/v1/bridge/any?k={{key}}",
+        "steps": [
+            "In the sensor's app, find where it can send readings to a web "
+            "address (often called a webhook or HTTP push).",
+            "Paste the address above into it.",
+            "Save it. We find the serial and the reading in whatever it "
+            "sends, as long as it says Celsius or Fahrenheit.",
+        ],
+    },
+]
+
+
+def wizard(base: str) -> List[Dict[str, Any]]:
+    """The wizard's brands with this deployment's address in them. The key,
+    the serial and the unit's id are the console's to fill in."""
+    out = []
+    for brand in WIZARD:
+        item = {k: v for k, v in brand.items()}
+        item["address"] = brand["address"].replace(BASE, base)
+        item["steps"] = [step.replace(BASE, base) for step in brand["steps"]]
+        item["needs_serial"] = bool(brand["serial"])
+        item["needs_key"] = bool(brand["address"])
+        out.append(item)
+    return out
+
+
 # --- what you need, before any of the guides --------------------------------
 #
 # CyberLogix sells no hardware. It reads wireless temperature sensors that

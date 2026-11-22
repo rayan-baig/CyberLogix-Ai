@@ -71,6 +71,16 @@ def person_name(label: Optional[str]) -> Optional[str]:
 SENSOR_DEFAULTS_VERSION = 2
 
 
+# A kind of business that shares another trade's sector, and what its
+# limits are called for it. A restaurant and a pharmacy are their sector's
+# own name ("For restaurants & cafés."), so they are not listed.
+KIND_LIMIT_WORDS = {
+    "shop": "Food fridge and freezer limits",
+    "other": "Food fridge and freezer limits",
+    "clinic": "Vaccine and medicine fridge limits",
+}
+
+
 @dataclass
 class Tenant:
     """A paying customer organisation."""
@@ -100,6 +110,13 @@ class Tenant:
     # anything at all.
     industry_vertical: Optional[str] = None
     key_hash: str = ""
+    # The kind of business picked at sign-up (signup.COMMON_KINDS or
+    # "other"), which several kinds share a sector under: a shop and a
+    # florist are watched with a restaurant's food limits. Kept so the
+    # console can say "Food fridge and freezer limits" to a florist rather
+    # than "For restaurants & cafés". None before 3.25.0 and for accounts
+    # made any other way.
+    business_kind: Optional[str] = None
 
     @property
     def expired(self) -> bool:
@@ -127,6 +144,7 @@ class Tenant:
             "temperature_unit": self.temperature_unit,
             "partner_id": self.partner_id,
             "industry_vertical": self.industry_vertical,
+            "business_kind": self.business_kind,
         }
 
     @classmethod
@@ -146,6 +164,7 @@ class Tenant:
             temperature_unit=row.get("temperature_unit", "F"),
             partner_id=row.get("partner_id"),
             industry_vertical=row.get("industry_vertical"),
+            business_kind=row.get("business_kind"),
         )
 
     def public(self, sensor_count: int) -> Dict[str, Any]:
@@ -166,6 +185,11 @@ class Tenant:
             "temperature_unit": self.temperature_unit,
             "partner_id": self.partner_id,
             "industry_vertical": self.industry_vertical,
+            "business_kind": self.business_kind,
+            # What the console's "Add a fridge" says the limits are for,
+            # when the sector's own name would be wrong for this business
+            # (KIND_LIMIT_WORDS); None means the sector's name fits.
+            "limits_words": KIND_LIMIT_WORDS.get(self.business_kind or ""),
             "seats_used": sensor_count,
             "seats_total": tier["max_sensors"],
             "seats_remaining": max(0, tier["max_sensors"] - sensor_count),
@@ -544,6 +568,15 @@ class Incident:
     group_scope: str = ""
     group_total_units: int = 0
     group_night: bool = False
+    # The exact record: the first reading out of range (when it went out,
+    # at `out_since`) and the worst one since, with when it came. Kept
+    # apart because `temperature_fahrenheit` is the latest reading of a
+    # continuing breach: the timeline used to say "Went out of range:
+    # 60.5°F, 1:16 AM" when the reading at 1:16 was 47.2°F and 60.5 was
+    # the peak an hour later. None on alerts written before 3.25.0.
+    first_out_f: Optional[float] = None
+    peak_f: Optional[float] = None
+    peak_at: Optional[datetime] = None
 
     @property
     def site_wide(self) -> bool:
@@ -564,9 +597,21 @@ class Incident:
         return any(r.get("delivered") for r in self._sms_receipts())
 
     @property
+    def texts_off(self) -> bool:
+        """Texts were written but not sent because this server has no text
+        service switched on (dry run): every receipt says not_configured.
+        Not a failure, and not said as one."""
+        receipts = self._sms_receipts()
+        return bool(receipts) and all(
+            (r or {}).get("status") == "not_configured" for r in receipts)
+
+    @property
     def alert_texts_failed(self) -> bool:
-        """Texts were tried and not one got through."""
-        return bool(self._sms_receipts()) and not self.texts_landed
+        """Texts were tried and not one got through. Never in dry run:
+        "texted 1 person · 0 delivered / ALERT TEXTS FAILED" is what a
+        server with texts switched off used to say about every alert."""
+        return (bool(self._sms_receipts()) and not self.texts_landed
+                and not self.texts_off)
 
     def sms_retry_due(self, now: Optional[datetime] = None) -> int:
         """The re-send step this incident is due for now, or 0.
@@ -731,6 +776,9 @@ class Incident:
             "group_scope": self.group_scope,
             "group_total_units": self.group_total_units,
             "group_night": self.group_night,
+            "first_out_f": self.first_out_f,
+            "peak_f": self.peak_f,
+            "peak_at": iso(self.peak_at),
         }
 
     @classmethod
@@ -789,6 +837,11 @@ class Incident:
             group_scope=row.get("group_scope") or "",
             group_total_units=int(row.get("group_total_units") or 0),
             group_night=bool(row.get("group_night")),
+            # Defaulted: alerts written before 3.25.0 kept only the latest
+            # reading, and nothing is made up for them.
+            first_out_f=row.get("first_out_f"),
+            peak_f=row.get("peak_f"),
+            peak_at=_parse(row.get("peak_at")),
         )
 
     def public(self) -> Dict[str, Any]:
@@ -811,6 +864,7 @@ class Incident:
             "notified_count": len(self.sms_fanout) or (1 if self.sms_delivery else 0),
             "texts_landed": self.texts_landed,
             "alert_texts_failed": self.alert_texts_failed,
+            "texts_off": self.texts_off,
             "sms_retries": list(self.sms_retries),
             "next_sms_retry_at": iso(self.next_sms_retry_at()),
             "opened_at": iso(self.opened_at),
@@ -828,6 +882,12 @@ class Incident:
             "out_since": iso(self.started_at),
             "out_until": iso(self.resolved_at),
             "out_minutes": self.out_minutes(),
+            # The first reading out of range and the worst since, apart
+            # from the latest (`temperature_fahrenheit`). None on an alert
+            # from before 3.25.0, which kept only the latest.
+            "first_out_fahrenheit": self.first_out_f,
+            "peak_fahrenheit": self.peak_f,
+            "peak_at": iso(self.peak_at),
             "acknowledged_by_name": person_name(self.acknowledged_by),
             "resolved_note": self.resolved_note,
             "back_to_normal_on_its_own": bool(self.resolved_note) and not self.resolved_by,

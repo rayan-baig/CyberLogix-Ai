@@ -756,9 +756,9 @@ test("the chat window 1.1.1: suggestions come first once chatting; the grown-ups
   const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
   assert.ok(cfg.includes(`keyNote: "An AI key is a private code you make on an AI company's website`));
   assert.ok(cfg.includes("AI keys are for grown-ups (the AI companies require 18+)."));
-  // On CyberLogix the console's tabs, the Needs you now bar and the front
-  // page's first-screen facts are kept clear too.
-  for (const sel of [".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts"]) assert.ok(cfg.includes(`"${sel}"`), sel);
+  // On CyberLogix the console's tabs, the Needs you now bar, the front
+  // page's first-screen facts and a fridge's status label are kept clear too.
+  for (const sel of [".finder", ".f-tab", "#needs-bar", ".needs-bar-acts", "#facts", ".sensor-top", ".thing-word"]) assert.ok(cfg.includes(`"${sel}"`), sel);
 });
 
 test("placement 1.1.1: placeNow keeps off a focused box, and mid-scroll only tucks in place", () => {
@@ -799,7 +799,7 @@ function panelHelpers() {
 
 test("welcome 1.2.0: the design's five pills and tagline unless the app gives its own", () => {
   const P = panelHelpers();
-  assert.equal(P.VERSION, "1.2.1");
+  assert.equal(P.VERSION, "1.3.0");
   assert.equal(P.DEFAULT_TAGLINE, "Your AI copilot. Powered by you.");
   const five = P.welcomePills(undefined);
   assert.deepEqual(five.map((p) => p.label), ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]);
@@ -870,10 +870,11 @@ test("placement 1.2.0: the first look of a visit shows the robot whole, once per
   doc.activeElement = doc.body;
   const o = { doc, win, own: { contains: () => false }, launcher, avoid: [], corner: "br", shown: "br", full: true, text: true };
   assert.equal(Mascot.placeNow(o).peek, true);
-  assert.equal(Mascot.placeNow({ ...o, reveal: true }).peek, false);
+  // Core 1.3.0: the first look never sits on content; with words in every
+  // corner it stays tucked away (its glow plays there).
+  assert.equal(Mascot.placeNow({ ...o, reveal: true }).peek, true);
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
   assert.ok(loader.includes('M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs)'));
-  assert.ok(loader.includes("reveal: Date.now() < revealUntil"));
   const css = fs.readFileSync(core("pilot.css"), "utf8");
   assert.match(css, /\.pilot-revealing \.pilot-launcher::before \{ animation:/);
 });
@@ -893,7 +894,8 @@ test("placement 1.2.0: keepInViewport: tucked away it shrinks into its corner, n
   for (const c of ["br", "bl", "tr", "tl"]) {
     const b = Mascot.peekBox(c, view, size, 12, 20, keep);
     assert.ok(b.left >= 3 && b.top >= 3 && b.right <= 372 && b.bottom <= 797, `${c} ${JSON.stringify(b)}`);
-    assert.ok(Math.abs(b.right - b.left - 56 * 0.42) < 0.01);
+    // Core 1.3.0: never below a 44 px tap target, whatever scale is asked.
+    assert.ok(b.right - b.left >= 44 && b.bottom - b.top >= 44 - 0.01, `${c} ${JSON.stringify(b)}`);
   }
   // Without it, the old slice at the very edge.
   assert.deepEqual(Mascot.peekBox("br", view, size, 12, 20), { left: 355, top: 734, right: 375, bottom: 788 });
@@ -954,31 +956,152 @@ test("placement 1.2.0: a row of dots with tooltips counts, and line ends just be
   assert.equal(placed.peek, true);
 });
 
-test("CyberLogix's own welcome: its tagline and five pills, no picture or video keys, kept on screen, its phone menu", () => {
+test("CyberLogix's own welcome: its tagline, a visitor's five on the public pages and the console's five on its own pages, no picture or video keys, kept on screen, its phone menu", () => {
   const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
   assert.ok(cfg.includes('tagline: "Your fridge-alarm helper",'));
-  for (const label of ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "Add a fridge", "Add my AI key"]) {
+  for (const label of ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "Add a fridge",
+    "Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"]) {
     assert.ok(cfg.includes(`label: "${label}"`), label);
   }
   assert.ok(cfg.includes('hideKeySections: ["image", "video"],'));
   assert.ok(cfg.includes("keepInViewport: true,"));
   assert.ok(cfg.includes('modals: [".menu[open] > nav"],'));
-  // The config's pills come through the core's cleaning as the five given,
-  // on a public page and on the console alike.
+  // The config's pills come through the core's cleaning as the five given:
+  // a visitor's on a public page, the console's on the console and /today.
   const sandbox = { window: {}, document: {} };
   vm.runInNewContext(fs.readFileSync(core("pilot-panel.js"), "utf8"), sandbox);
-  for (const pathname of ["/", "/console", "/today"]) {
+  const own = [["Which fridges need me?", false, true], ["What does this alert mean?", false, true],
+    ["Is the food still OK?", false, true], ["Add a fridge", false, true], ["Add my AI key", true, false]];
+  const visitor = [["Will it work for my café?", false, true], ["What does it cost?", false, true],
+    ["See it live", false, true], ["What sensors do I need?", false, true], ["Add my AI key", true, false]];
+  for (const [pathname, want] of [["/", visitor], ["/pricing", visitor], ["/help", visitor], ["/console", own], ["/today", own]]) {
     let given = null;
     vm.runInNewContext(cfg, { window: { Pilot: { mount: (c) => { given = c; } }, location: { pathname }, localStorage: { getItem: () => null } },
       document: { getElementById: () => ({ dataset: {} }), title: "" } });
     const pills = JSON.parse(JSON.stringify(sandbox.window.PilotPanel.welcomePills(given.welcomePills)));
-    assert.deepEqual(pills.map((p) => [p.label, p.builtin, p.send]), [["Which fridges need me?", false, true],
-      ["What does this alert mean?", false, true], ["Is the food still OK?", false, true], ["Add a fridge", false, true],
-      ["Add my AI key", true, false]], pathname);
+    assert.deepEqual(pills.map((p) => [p.label, p.builtin, p.send]), want, pathname);
     assert.equal(given.keepInViewport, true);
     assert.deepEqual([...sandbox.window.PilotPanel.hiddenSections(given.hideKeySections)], ["image", "video"]);
     // A public page tells the AI it sees nobody's fridges there.
     const sc = given.screen();
     if (pathname === "/") assert.match(sc.facts, /^Not signed in: Pilot can't see their fridges or alerts here\./);
   }
+});
+
+// ---------------------------------------------------------------- core 1.3.0: the first look, one key ask, room for the welcome, tap targets
+
+test("core 1.3.0: every core file says 1.3.0", () => {
+  for (const f of fs.readdirSync(path.join(__dirname, "..", "..", "static", "pilot")).filter((n) => /\.(js|css)$/.test(n))) {
+    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.3\.0 · /, f);
+  }
+  assert.equal(Mascot.VERSION, "1.3.0");
+});
+
+test("first look 1.3.0: it uses the same free-corner check as normal placement, and never sits on content", () => {
+  const rect = (l, t, w, h) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h });
+  // A button in the bottom right corner only (the "Learn more" button, say).
+  const btn = { nodeType: 1, tagName: "BUTTON", getBoundingClientRect: () => rect(250, 700, 125, 100) };
+  btn.closest = () => btn;
+  const win = { innerWidth: 375, innerHeight: 800, getComputedStyle: () => ({ getPropertyValue: () => "" }) };
+  const launcher = { offsetWidth: 56, offsetHeight: 54, getBoundingClientRect: () => rect(307, 734, 56, 54) };
+  const doc = { body: {}, querySelectorAll: () => [], elementsFromPoint: (x, y) => (x > 250 && y > 700 ? [btn] : []) };
+  doc.activeElement = doc.body;
+  const o = { doc, win, own: { contains: () => false }, launcher, avoid: [], corner: "br", shown: "br", full: true, text: true };
+  // During the first look as at any other time: the free corner, whole.
+  assert.deepEqual(Mascot.placeNow({ ...o, reveal: true }), { corner: "bl", peek: false, typing: false });
+  assert.deepEqual(Mascot.placeNow(o), { corner: "bl", peek: false, typing: false });
+  // Mid-scroll (arriving at /orbyt#pitch scrolls the page): it tucks in place, never shows whole on the button.
+  assert.deepEqual(Mascot.placeNow({ ...o, full: false, reveal: true }), { corner: "br", peek: true, typing: false });
+  // The things an app asks it to avoid count during the first look too.
+  const tile = rect(0, 600, 375, 200);
+  const avoidDoc = { ...doc, elementsFromPoint: () => [], querySelectorAll: () => [{ getClientRects: () => [tile], getBoundingClientRect: () => tile, closest: () => null }] };
+  avoidDoc.activeElement = avoidDoc.body;
+  const placed = Mascot.placeNow({ ...o, doc: avoidDoc, win: { ...win, getComputedStyle: () => ({ getPropertyValue: () => "", visibility: "visible", display: "block", opacity: "1" }) },
+    avoid: [".tile"], reveal: true });
+  assert.equal(placed.corner[0], "t");
+  assert.equal(placed.peek, false);
+  // The loader no longer forces the robot out during the first look; it only glows.
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  assert.ok(!loader.includes("revealUntil"));
+  assert.ok(loader.includes('rootEl.classList.add("pilot-revealing")'));
+  const mascot = fs.readFileSync(core("pilot-mascot.js"), "utf8");
+  assert.ok(!/o\.reveal/.test(mascot), "placeNow has no first-look exception");
+});
+
+test("welcome 1.3.0: an app's own key pill means no key card as well; the design's five keep their card", () => {
+  const P = panelHelpers();
+  const site = [{ icon: "spark", label: "Help with my idea", action: "My idea: " }, { icon: "key", label: "Add my AI key", action: "settings" }];
+  assert.equal(P.keyPillGiven(site), true);
+  assert.equal(P.keyPillGiven(undefined), false); // the design's five: the card stays
+  assert.equal(P.keyPillGiven([{ icon: "chat", label: "Ask", action: "ask" }]), false); // app pills with no key pill: card stays
+  // A pill whose prompt merely says "settings" with words around it isn't the built-in.
+  assert.equal(P.keyPillGiven([{ label: "Settings help", action: "Tell me about settings" }]), false);
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes("store.ready() || oneKeyAsk ? null : keyCard()"));
+  assert.ok(panel.includes("const oneKeyAsk = keyPillGiven(config.welcomePills);"));
+});
+
+test("welcome 1.3.0: websites say 'AI key'; the design (and Pilot for Mac) keeps 'Bring Your Own API Key' exactly", () => {
+  const P = panelHelpers();
+  assert.equal(P.keyWords(undefined).title, "Bring Your Own API Key");
+  assert.equal(P.keyWords(undefined).sub, "Use your OpenAI, Claude, Gemini, or any compatible API key.");
+  const site = P.keyWords([{ icon: "key", label: "Add my AI key", action: "settings" }]);
+  for (const w of Object.values(site)) assert.ok(!/\bAPI key\b/i.test(w), w);
+  assert.match(site.title, /AI key/);
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  // No key wording is written outside the two word sets.
+  const outside = panel.replace(/const KEY_WORDS = \{[\s\S]*?\n  \};/, "");
+  assert.ok(!outside.includes("Bring Your Own API Key"));
+  assert.ok(!outside.includes("Paste your API key"));
+});
+
+test("welcome 1.3.0: a one-line grown-ups note on the welcome when the app gives one; the full note stays elsewhere", () => {
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.match(panel, /typeof config\.keyNoteShort === "string" && config\.keyNoteShort\.trim\(\) && !state\.messages\.length/);
+  assert.ok(panel.includes('footNote.classList.toggle("pilot-foot-note-short", Boolean(short));'));
+  assert.ok(panel.includes('if (short) footNote.setAttribute("title", config.keyNote);'));
+  // Settings and help keep the full note.
+  assert.equal((panel.match(/config\.keyNote \? el\("p", \{ class: "pilot-grownup", text: config\.keyNote \}\)/g) || []).length, 2);
+  const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
+  assert.match(css, /\.pilot-foot-note-short \{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \}/);
+  // Shorter screens get the tighter welcome: desktops up to 900 px tall, phones up to 760 px.
+  assert.match(css, /@media \(min-width: 721px\) and \(max-height: 900px\)/);
+  assert.match(css, /@media \(max-width: 720px\) and \(max-height: 760px\)/);
+  // This app's short line keeps the meaning: an AI key is for grown-ups.
+  const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  assert.ok(cfg.includes('keyNoteShort: "AI keys are for grown-ups (18+).",'));
+});
+
+test("tap target 1.3.0: the tucked-away robot is never smaller than 44 px each way", () => {
+  assert.equal(Mascot.TAP_LEAST, 44);
+  // Phones (56 x 54) and computers (88 x 85): whatever scale is asked.
+  for (const size of [{ width: 56, height: 54 }, { width: 88, height: 85 }]) {
+    for (const scale of [0.2, 0.42, 0.5, undefined]) {
+      const s = Mascot.keepScale(scale, size);
+      assert.ok(size.width * s >= 44 && size.height * s >= 44 - 1e-9, `${JSON.stringify(size)} ${scale} -> ${s}`);
+    }
+  }
+  assert.equal(Mascot.keepScale(0.9, { width: 88, height: 85 }), 0.9); // bigger asks are kept
+  assert.equal(Mascot.keepScale(0.5, { width: 30, height: 30 }), 1); // never bigger than the robot
+  // pilot.css's own scales give 44 px too (the robot is drawn 0.97 as tall as wide).
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  const desk = Number(css.match(/--pilot-peek-scale: ([\d.]+);/)[1]);
+  const phone = Number(css.match(/@media \(max-width: 720px\) \{\s*\.pilot-root \{[^}]*--pilot-peek-scale: ([\d.]+);/)[1]);
+  assert.ok(88 * 0.97 * desk >= 44, `desktop ${desk}`);
+  assert.ok(56 * 0.97 * phone >= 44, `phone ${phone}`);
+});
+
+test("first look 1.3.0: with no corner free, it tucks where it covers least, not just in its own corner", () => {
+  const view = { width: 375, height: 800 };
+  const size = { width: 56, height: 54 };
+  const keep = { scale: 0.42, margin: 3 };
+  // Everything is busy; the bottom left covers least.
+  const cost = (box, c) => ({ br: 400, bl: 30, tr: 900, tl: 900 })[c];
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, busy: () => true, cost, keep }), { corner: "bl", peek: true });
+  // Without a cost (an older caller): its own corner, as before.
+  assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, busy: () => true, keep }), { corner: "br", peek: true });
+  // A box being typed in still rules out a corner, however little it covers.
+  const field = { left: 0, top: 700, right: 375, bottom: 800 };
+  assert.equal(Mascot.choosePlace({ corner: "br", view, size, gap: 12, busy: () => true, cost, keep, hard: [field] }).corner[0], "t");
+  assert.equal(Mascot.areaOf({ left: 0, top: 0, right: 10, bottom: 10 }, { left: 5, top: 5, right: 20, bottom: 20 }), 25);
 });

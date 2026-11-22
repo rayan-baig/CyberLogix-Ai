@@ -1,4 +1,4 @@
-// Pilot core 1.2.1 · pilot-motion.js
+// Pilot core 1.3.0 · pilot-motion.js
 // How the robot moves: its poses, its moves, and when it does something.
 // No DOM here, so the web robot, the Mac robot and the tests share it;
 // pilot-actor.js plays a plan on the page.
@@ -29,7 +29,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.2.1";
+  const VERSION = "1.3.0";
   const REST = "rest";
   const POSES = ["standing", "sitting", "wave", "walk1", "walk2", "run1", "run2", "fly", "climb1", "climb2", "flip",
     "throw", "kick", "tennis", "celebrate", "slide", "point", "power", "dash", "love", "land", "arms-crossed"];

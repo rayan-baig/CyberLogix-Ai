@@ -4,6 +4,63 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.25.0 — 2026-11-22
+
+Connecting a sensor is a short wizard, the console is calmer, phone cards
+fit, the price calculator picks your plan, and an alert's record says
+exactly what was read. No price or plan term has changed.
+
+- **"How to connect it" is a wizard.** On the Getting started list (and
+  from the new key's "How to put the key in your sensor") it opens a short
+  box: pick your sensor (Monnit, Elitech or Dickson, SensorPush, a gateway
+  or script, a maker's cloud, or "something else"), and see only its few
+  steps, with this site's address, the fridge's key and its serial already
+  filled in and a Copy button by each. Then it waits for the first reading
+  and ticks **Received!** the moment it lands. A fridge added without its
+  device's serial can be given one right there, and if the key shown when
+  it was added is lost, **Make a new key** makes another.
+- **A calmer console.** The full console opens on one tab: **Alerts** when
+  something is not closed, **Fridges** otherwise (Everything is still a
+  tab). On a trial there is no "At-risk forecast: upgrade to unlock" tile
+  and no "Heading for trouble: Not on this plan" card. The fridge list's
+  search and filter appear from six fridges, and the site filter and
+  **Group by site** from two sites. Plainer words: **TV screen** (was
+  Wall), **Remove** (was Retire) and **Insurance pack** (was Claim packet).
+- **Phone cards that fit.** At 375px a fridge's name has the full width
+  with its status label on the row under it, and "Walk-in" no longer
+  breaks as "Walk- / in". A closed alert's "was out for 2 minutes" sits on
+  its own line under the fridge's name.
+- **The price calculator picks the plan.** It opens on **the cheapest plan
+  that fits** what you type, and names it: a café with three fridges sees
+  **Starter fits you: $59 a month**; with a fourth fridge, **Growth fits
+  you: $149 a month**. You can still pick the rate card or
+  Starter yourself. "How many pharmacys" now says pharmacies.
+- **An exact record of every alert.** The first reading out of range and
+  the worst one are kept apart: the timeline says "Went out of range:
+  47.2°F" at the time it went out and "At its worst: 60.5°F" at the time
+  of the peak, where it used to put the peak beside the first time. The
+  insurance pack and the inspector's log use the same two. On a server
+  with texts switched off an alert says **Not sent: texts are off on this
+  server** instead of "texted 1 person · 0 delivered" and "Alert texts
+  failed".
+- **Pilot for visitors.** On the public pages Pilot's welcome buttons are
+  a visitor's: **Will it work for my café?**, **What does it cost?**, **See
+  it live**, **What sensors do I need?** and **Add my AI key**; the
+  console and Simple view keep the fridge ones. It never sits on a
+  fridge's status label ("Too warm", "Fine").
+- **Pilot core 1.3.0**, the same files as the MTRX Horizyn site. The robot
+  tucked in a corner is never smaller than a 44px tap target (it was about
+  24px on a phone), its first look of a visit no longer sits on the page's
+  words, and the welcome asks for an AI key once, with a one-line
+  grown-ups note.
+- **Small things.** A wrong password is said under the password box, not
+  only in a message that disappears. Signed in, the public pages' **Sign
+  in** button says **Your console**. A florist, caterer or shop that chose
+  "Other / not listed" or "Shop" at sign-up is told its fridges get **Food
+  fridge and freezer limits**, not "For restaurants & cafés" (a clinic:
+  vaccine and medicine fridge limits).
+
+
 ## 3.24.1 — 2026-11-22
 
 - **Pilot core 1.2.1**, the same files as the MTRX Horizyn site. Opening

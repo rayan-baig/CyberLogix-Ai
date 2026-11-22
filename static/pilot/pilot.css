@@ -1,4 +1,4 @@
-/* Pilot core 1.2.1 · pilot.css
+/* Pilot core 1.3.0 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -21,7 +21,7 @@
   --pilot-peek-show: 36px; /* how much of the robot shows while it's tucked away */
   --pilot-clear-x: 12px; /* the room kept from the page's words, across */
   --pilot-clear-y: 4px; /* and up and down */
-  --pilot-peek-scale: 0.5; /* keepInViewport: its size while tucked away */
+  --pilot-peek-scale: 0.52; /* keepInViewport: its size while tucked away (88 px x 0.52: a 44 px tap target) */
   --pilot-keep-margin: 8px; /* keepInViewport: from the screen's edges */
   position: fixed;
   z-index: 2147483000;
@@ -114,7 +114,8 @@
 .pilot-typing.pilot-peek .pilot-launcher { opacity: 0.55; }
 
 /* keepInViewport (the app's config): nothing hangs off the screen's edge.
-   Tucked away, the robot shrinks to --pilot-peek-scale in its corner,
+   Tucked away, the robot shrinks to --pilot-peek-scale in its corner (never
+   below a 44 px tap target, core 1.3.0: pilot-mascot.js keepScale),
    --pilot-keep-margin from the edges (pilot-mascot.js peekBox counts the
    same box), and grows back a little on hover. */
 .pilot-root.pilot-keep-in { --pilot-keep-d: calc(var(--pilot-gap) - var(--pilot-keep-margin)); }
@@ -135,8 +136,9 @@
   transform-origin: 0 0; transform: translate(calc(-1 * var(--pilot-keep-d)), calc(-1 * var(--pilot-keep-d))) scale(var(--pilot-peek-scale)); }
 .pilot-root.pilot-keep-in.pilot-peek:not(.pilot-typing) .pilot-launcher:hover { opacity: 1; }
 
-/* The first page of a visit: shown whole for a few seconds, with a soft
-   glow, so people notice it (pilot.js reveal). */
+/* The first page of a visit: a soft glow for a few seconds, so people
+   notice the robot, wherever it sits: whole in a free corner, or tucked
+   away when every corner has the page's words (pilot.js reveal). */
 .pilot-revealing .pilot-launcher::before { animation: pilot-think 1.6s ease-in-out 2; }
 
 /* Room for the robot: a page (or an app's own stylesheet) can keep its last
@@ -151,9 +153,11 @@
    on anything; pilot.js also puts it on the app's gutter elements (`main`
    unless the config says otherwise) where their own padding is narrower. */
 @media (max-width: 720px) {
-  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; --pilot-peek-scale: 0.42; --pilot-keep-margin: 3px; }
+  .pilot-root { --pilot-size: 56px; --pilot-gap: 12px; --pilot-peek-show: 20px; --pilot-peek-scale: 0.82; --pilot-keep-margin: 3px; }
+  /* --pilot-peek-scale 0.82: the tucked-away robot stays a 44 px tap target (56 px x 0.82). */
   :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); --pilot-side: 24px; }
-  /* keepInViewport: room for the small tucked-away robot (24 px, 3 px in, and a little air). */
+  /* keepInViewport: room at the side for the tucked-away robot's edge (it is 46 px, 3 px in; placement keeps it off the
+     page's words, and it is see-through a little where it has to tuck over them). */
   :root.pilot-on.pilot-keep-in { --pilot-side: 30px; }
   :root.pilot-on .pilot-gutter-side {
     padding-right: max(var(--pilot-side), env(safe-area-inset-right, 0px));

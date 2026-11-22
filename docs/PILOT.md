@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.2.1**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.3.0**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -41,8 +41,8 @@ bar and its buttons, the "It's fixed" dialog and the front page's first-screen f
 to core 1.1.1 that slid it past the screen's edge, so only a slice showed (355–411px on a 375px
 phone), and 3.23.0 worked round it in this app's stylesheet. Core 1.2.0 has the setting, and the
 config turns it on (`keepInViewport: true`): tucked away, the robot shrinks into its corner,
-wholly on the screen (`.pilot-keep-in` in `static/pilot/pilot.css`, half size 8px from the edges
-on a desktop, 42% size 3px from the edges on a phone), and the core's placement counts that small
+wholly on the screen (`.pilot-keep-in` in `static/pilot/pilot.css`, about half size 8px from the edges
+on a desktop and 82% 3px from the edges on a phone since core 1.3.0), and the core's placement counts that small
 box when it looks for a corner where it covers nothing. 3.24.0 removed the app's own copy of the
 fix from `static/theme.css`, with the extra room it gave the Getting started card on a phone:
 the core's smaller tucked robot sits in the side room the core keeps on a phone, clear of the
@@ -70,6 +70,23 @@ phone's **Menu** on the public pages is a `<details>` drop-down, not a dialog, s
 `role="dialog"`, which the core already counts. A message sent before there is a key waits in the
 box and goes the moment a key is saved (core 1.2.0).
 
+**A visitor's welcome on the public pages (3.25.0).** Pilot can see nobody's fridges on `/`,
+`/pricing`, `/help`, `/help/sensors`, `/for/…` and `/demo`, so there the five pills are what a
+visitor deciding asks (`VISITOR_PILLS`): **Will it work for my café?**, **What does it cost?**,
+**See it live**, **What sensors do I need?** (all sent at once) and **Add my AI key**. The
+console and `/today` keep the five above (`OWN_PILLS`). The front page's own suggestions under
+them repeat none ("Will a door left open wake us?", "Wi-Fi or power goes off?", "Do you phone at
+night?"). The `avoid` list also has a fridge's status label wherever it is shown ("Too warm",
+"No signal", "Fine": `.sensor-top`, `.incident-top`, `/today`'s `.thing-word`, the demo's
+`.demo-word`, and any `.badge`), so the robot never hides whether a fridge is OK.
+
+**Core 1.3.0 (3.25.0).** The thirteen files from the MTRX Horizyn site, byte for byte. The first
+look of a visit glows wherever placement puts the robot instead of showing it whole on top of the
+page's words; the tucked-away robot is never smaller than a 44px tap target (it was about 24px on
+a phone); and since the welcome has this app's own key pill, there is no second key card and the
+key wording says "AI key". The config's `keyNoteShort` is the welcome's one line ("AI keys are
+for grown-ups (18+)."); the full `keyNote` is its tooltip and stays beside the key settings.
+
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
 `static/pilot/poses/` (`data-poses`, from `main.pilot_poses`; a new pose is added by putting its
@@ -86,7 +103,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.2.1, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.3.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |

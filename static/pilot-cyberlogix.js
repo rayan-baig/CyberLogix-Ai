@@ -61,9 +61,10 @@
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
-    "/": [["Will it work for my café?", "I run a small café with a couple of fridges and a freezer. How would CyberLogix work for me, in plain words?"],
-      ["What do I need to start?", "What do I need to start watching my fridges and freezer? What's the easiest kind of sensor?"],
-      ["What would it cost me?", "What would CyberLogix cost a café with three fridges, and what's in the free trial?"]],
+    // Under the visitor's welcome buttons, so none of these repeats one.
+    "/": [["Will a door left open wake us?", "If someone leaves the walk-in door open for a minute, does everyone get texted?"],
+      ["Wi-Fi or power goes off?", "What happens if the power or the Wi-Fi at my café goes off?"],
+      ["Do you phone at night?", "If a freezer fails at 3am and nobody answers the text, what happens?"]],
     "/pricing": [["Which plan for a café?", "Which plan fits a café with a few fridges and a freezer? Ask me one or two questions first."],
       ["Do you phone us?", "Which plans phone us if nobody answers the text?"],
       ["What's in the trial?", "What's in the free trial, and do I need a card?"]],
@@ -73,8 +74,8 @@
     "/help/sensors": [["Easiest way to set up", "What's the easiest way to set up a sensor, with no coding?"],
       ["Set up step by step", "Walk me through setting up my first fridge sensor."],
       ["Power or Wi-Fi goes off?", "What happens if the power or the Wi-Fi goes off?"]],
-    "/for": [["Is it for my café?", "Does CyberLogix work for a café or small restaurant?"],
-      ["What would it cost me?", "What would CyberLogix cost a café with three fridges?"]],
+    "/for": [["When do you alert?", "At what temperature, and after how long, does CyberLogix alert, and can I change it?"],
+      ["A log for the inspector", "How do I print a temperature log for a health inspector?"]],
     "/demo": [["What am I seeing?", "What is this demo showing me?"],
       ["What happens next?", "What happens after the alert text, if nobody answers?"],
       ["Start a free trial", "How do I start a free trial?"]],
@@ -96,26 +97,39 @@
     else if (onConsole) list = CHIPS["/console-out"];
     else if (path.startsWith("/for/")) list = [["How would this work for me?", "How would CyberLogix work for a business like mine?"],
       ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
-      ["What does it cost?", "What does CyberLogix cost?"]];
+      ["A log for the inspector", "How do I print a temperature log for a health inspector?"]];
     else list = CHIPS[path] || [];
     return list.map(([label, prompt]) => ({ label, prompt }));
   }
 
+  // The welcome's five. In the console and on /today (the person's own
+  // fridges) they are what a café asks about its fridges; on the public
+  // pages, where Pilot can see nobody's fridges, what a visitor deciding
+  // asks: will it work for me, what it costs, can I see it.
+  const OWN_PILLS = [
+    { icon: "bars", label: "Which fridges need me?", action: "Which of my fridges and freezers need me right now, and what should I check first?", send: true },
+    { icon: "help", label: "What does this alert mean?", action: "Explain my latest alert in plain words: what happened, where it stands now, and what I should do.", send: true },
+    { icon: "chat", label: "Is the food still OK?", action: "Is the food still OK in the fridge or freezer that went warm?", send: true },
+    { icon: "bolt", label: "Add a fridge", action: "Help me add a fridge or freezer.", send: true },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ];
+  const VISITOR_PILLS = [
+    { icon: "chat", label: "Will it work for my café?", action: "I run a small café with a couple of fridges and a freezer. Would CyberLogix work for me? Say how, in plain words.", send: true },
+    { icon: "bars", label: "What does it cost?", action: "What would CyberLogix cost a café with three fridges, and what's in the free trial?", send: true },
+    { icon: "spark", label: "See it live", action: "Where can I see CyberLogix working before I sign up?", send: true },
+    { icon: "help", label: "What sensors do I need?", action: "What sensors do I need, roughly what do they cost, and what's the easiest kind to set up?", send: true },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ];
+  const ownPage = onConsole || onToday;
+
   window.Pilot.mount({
     appName: "CyberLogix AI",
     name: "Pilot",
-    // Core 1.2.0: the welcome is CyberLogix's own (docs/PILOT.md). The five
-    // pills are what a café asks most; signed in, the console's tools answer
-    // them (each change asks first), and on a public page Pilot says where
-    // to look (screen().facts).
+    // Core 1.2.0: the welcome is CyberLogix's own (docs/PILOT.md): the
+    // console's five on the person's own pages, the visitor's five on the
+    // public ones (OWN_PILLS, VISITOR_PILLS above).
     tagline: "Your fridge-alarm helper",
-    welcomePills: [
-      { icon: "bars", label: "Which fridges need me?", action: "Which of my fridges and freezers need me right now, and what should I check first?", send: true },
-      { icon: "help", label: "What does this alert mean?", action: "Explain my latest alert in plain words: what happened, where it stands now, and what I should do.", send: true },
-      { icon: "chat", label: "Is the food still OK?", action: "Is the food still OK in the fridge or freezer that went warm?", send: true },
-      { icon: "bolt", label: "Add a fridge", action: "Help me add a fridge or freezer.", send: true },
-      { icon: "key", label: "Add my AI key", action: "settings" },
-    ],
+    welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS,
     // CyberLogix has no use for making pictures or videos.
     hideKeySections: ["image", "video"],
     // With every corner busy the robot shrinks into its corner, wholly on
@@ -132,6 +146,9 @@
     // own computer.
     compatibleHosts: (d.hosts || "").split(/\s+/).filter(Boolean),
     privacyUrl: "/legal#privacy",
+    // Core 1.3.0: the one line the welcome shows (the full note is its
+    // tooltip, and stays beside the key settings and in help).
+    keyNoteShort: "AI keys are for grown-ups (18+).",
     keyNote: "An AI key is a private code you make on an AI company's website (OpenAI, Anthropic, Google AI Studio), usually under API keys. Your provider bills you for what Pilot uses. AI keys are for grown-ups (the AI companies require 18+).",
     audienceNote: "The people using this run businesses with fridges and freezers to keep cold: restaurants, pharmacies, labs and more. Many read on a phone in a busy kitchen, so keep answers short and practical. If a unit is warm right now, say to check it first. Pilot never makes a food safety decision: when asked if food is OK, give what was measured and the rule of thumb with its note that it is not a ruling, and say their own written food safety plan and local code decide.",
     kidView: () => false,
@@ -147,7 +164,11 @@
       ".kicker", "#add-form button[type=submit]", ".fix-dialog",
       // The Getting started checklist and its buttons (Add a sensor, Add
       // me, Send a test): a new business's first screen.
-      "#first-day", ".checklist-acts", ".btn-go"],
+      "#first-day", ".checklist-acts", ".btn-go",
+      // A fridge's status label ("Too warm", "No signal", "Fine") on its
+      // card, in Problems, on /today and in the demo, and the alert's
+      // own heading: the robot must never hide whether a fridge is OK.
+      ".sensor-top", ".incident-top", ".thing-word", ".demo-word", ".badge"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

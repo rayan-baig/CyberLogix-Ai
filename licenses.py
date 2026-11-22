@@ -865,6 +865,50 @@ def set_alert_rule(
     }
 
 
+class DeviceSerial(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    external_device_sn: Optional[str] = Field(
+        None, max_length=120,
+        description=("The serial or id the device reports under. Empty or "
+                     "null takes it away."))
+
+
+@router.post("/me/sensors/{sensor_id}/serial")
+def set_device_serial(
+    sensor_id: str,
+    payload: DeviceSerial,
+    tenant: Tenant = Depends(require_tenant),
+    _: object = Depends(require_role_or_machine("operator")),
+):
+    """Say which device serial reports for this unit.
+
+    For a unit added without one: a Monnit, SensorPush or logger sends its
+    own serial with every reading, and a reading finds its unit by it. The
+    console's "How to connect it" asks for it here instead of making
+    somebody delete the unit and add it again.
+    """
+    sensor = STORE.get_sensor((sensor_id or "").strip())
+    if sensor is None or sensor.tenant_id != tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sensor '{sensor_id}' is not registered to this tenant.",
+        )
+    try:
+        STORE.set_device_serial(sensor, payload.external_device_sn)
+    except SeatClaimRefused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("That serial is already on another fridge or freezer. "
+                    "Check the number on the device."),
+        ) from None
+    return {
+        "sensor": sensor.public(tenant.temperature_unit),
+        "message": ("Saved. Readings sent under that serial now land on this unit."
+                    if sensor.external_device_sn else "Serial taken away."),
+    }
+
+
 @router.post("/me/sensors/{sensor_id}/rotate-key")
 def rotate_sensor_key(
     sensor_id: str,

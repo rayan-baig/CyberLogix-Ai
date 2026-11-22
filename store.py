@@ -274,6 +274,18 @@ def never_below_zero(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _worse(sensor: Optional[Sensor], reading: float, than: float) -> bool:
+    """Whether `reading` is further out of range than `than`: warmer for a
+    unit that went too warm, colder for one that went too cold. A unit
+    whose limits cannot be read counts warmer as worse."""
+    if sensor is not None:
+        above, below = sensor.bounds()
+        too_cold = below is not None and than < below and (above is None or than <= above)
+        if too_cold:
+            return reading < than
+    return reading > than
+
+
 class HubStore:
     """Thread-safe in-memory persistence shared by every router."""
 
@@ -643,6 +655,7 @@ class HubStore:
         contact_email: str,
         plan: str,
         industry_vertical: Optional[str] = None,
+        business_kind: Optional[str] = None,
     ) -> Tenant:
         with self._lock:
             now = utc_now()
@@ -658,6 +671,7 @@ class HubStore:
                 activated_at=now,
                 expires_at=now + timedelta(days=PLAN_TIERS[plan]["term_days"]),
                 industry_vertical=industry_vertical,
+                business_kind=business_kind,
             )
             self._tenants[tenant.tenant_id] = tenant
             self._keys[tenant.key_hash] = tenant.tenant_id
@@ -1131,6 +1145,31 @@ class HubStore:
         with self._lock:
             return self._sensors.get(sensor_id)
 
+    def set_device_serial(self, sensor: Sensor, serial: Optional[str]) -> Sensor:
+        """Give a unit the serial its device reports under, or take it away.
+
+        The same rule as at registration: a serial already bound to another
+        unit, or that is another unit's id, would capture that unit's
+        readings, so it is refused (SeatClaimRefused, "serial_taken")."""
+        serial = (serial or "").strip() or None
+        with self._lock:
+            if serial == sensor.external_device_sn:
+                return sensor
+            if serial and ((self._devices.get(serial) not in (None, sensor.sensor_id))
+                           or (serial in self._sensors and serial != sensor.sensor_id)):
+                raise SeatClaimRefused(
+                    f"Device serial '{serial}' is already bound to a sensor.",
+                    "serial_taken",
+                )
+            candidate = replace(sensor, external_device_sn=serial)
+            self._db.put("sensor", candidate.sensor_id, candidate.to_row())
+            if sensor.external_device_sn:
+                self._devices.pop(sensor.external_device_sn, None)
+            sensor.external_device_sn = serial
+            if serial:
+                self._devices[serial] = sensor.sensor_id
+            return sensor
+
     def sensor_by_device(self, device_sn: str, tenant_id: Optional[str] = None) -> Optional[Sensor]:
         """Resolve a third-party device serial to its licensed sensor.
 
@@ -1568,6 +1607,11 @@ class HubStore:
                 sms_dispatch_source=sms_dispatch_source,
                 opened_at=opened_at or utc_now(),
             )
+            # Until note_out_since finds the reading that started the
+            # spell, the one that opened it is both the first and the worst.
+            incident.first_out_f = temperature_fahrenheit
+            incident.peak_f = temperature_fahrenheit
+            incident.peak_at = incident.opened_at
             self._incidents[incident.incident_id] = incident
             self._db.put("incident", incident.incident_id, incident.to_row())
             # The lead-up, captured now. The readings that show a freezer
@@ -1583,10 +1627,18 @@ class HubStore:
     def update_incident_breach(
         self, incident: Incident, temperature: float, breach_details: str
     ) -> Incident:
-        """Refresh an open incident from a continuing breach."""
+        """Refresh an open incident from a continuing breach.
+
+        `temperature_fahrenheit` follows the latest reading; the worst one
+        so far is kept apart (`peak_f`, `peak_at`), and the first one out
+        is never touched here."""
         with self._lock:
             incident.temperature_fahrenheit = temperature
             incident.breach_details = breach_details
+            sensor = self._sensors.get(incident.sensor_id)
+            if incident.peak_f is None or _worse(sensor, temperature, incident.peak_f):
+                incident.peak_f = temperature
+                incident.peak_at = utc_now()
             return self._save_incident(incident)
 
     def record_sms_delivery(
@@ -2010,11 +2062,23 @@ class HubStore:
         return max(closed, key=lambda i: i.resolved_at) if closed else None
 
     def note_out_since(self, incident: Incident, at: Optional[datetime]) -> None:
-        """When the unit first went out of range for this alert."""
+        """When the unit first went out of range for this alert, and with it
+        the reading taken then (`first_out_f`) and the worst of the spell so
+        far (`peak_f`): the record says exactly what was read, and when."""
         if at is None:
             return
         with self._lock:
             incident.out_since = at
+            sensor = self._sensors.get(incident.sensor_id)
+            spell = [r for r in self._readings.get(incident.sensor_id, ())
+                     if at <= r.recorded_at <= incident.opened_at]
+            if spell:
+                incident.first_out_f = spell[0].temperature_fahrenheit
+                for reading in spell:
+                    if (incident.peak_f is None
+                            or _worse(sensor, reading.temperature_fahrenheit, incident.peak_f)):
+                        incident.peak_f = reading.temperature_fahrenheit
+                        incident.peak_at = reading.recorded_at
             self._save_incident(incident)
 
     def resolve_back_to_normal(self, incident: Incident, note: str,

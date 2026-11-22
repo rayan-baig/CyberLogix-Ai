@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/pages.css">
 <script src="/static/circuit.js" defer></script>
+<script src="/static/signedin.js" defer></script>
 <script src="/static/pricing.js" defer></script>
 </head>
 <body>
@@ -84,7 +85,9 @@
     <h2 id="calc-title" class="calc-heading">Work out your price</h2>
     <form class="calc" id="calc" data-months-charged="%%MONTHS_CHARGED%%"
           data-months-covered="%%MONTHS_COVERED%%" data-chain="%%CHAIN_DATA%%"
-          data-starter-rate="%%STARTER_RATE%%" data-extra-rate="%%EXTRA_UNIT_RATE%%">
+          data-starter-rate="%%STARTER_RATE%%" data-extra-rate="%%EXTRA_UNIT_RATE%%"
+          data-starter-units="%%STARTER_UNITS%%" data-starter-verticals="%%STARTER_VERTICALS%%"
+          data-card-plans="%%CARD_PLANS%%">
       <div>
         <fieldset class="calc-pay" id="calc-pay">
           <legend>How you pay</legend>
@@ -95,7 +98,9 @@
         </fieldset>
         <fieldset class="calc-plan">
           <legend>Which plan</legend>
-          <label><input type="radio" name="calc-plan" value="card" checked>
+          <label><input type="radio" name="calc-plan" value="auto" checked>
+            The cheapest that fits: we work it out</label>
+          <label><input type="radio" name="calc-plan" value="card">
             The rate card: any trade, any size</label>
           <label><input type="radio" name="calc-plan" value="starter">
             Starter: %%STARTER_PRICE%% a month, one location, up to
@@ -135,6 +140,7 @@
         </details>
       </div>
       <div class="calc-out" aria-live="polite">
+        <p class="calc-fit" id="calc-fit" hidden></p>
         <p class="calc-sub" id="calc-period">Each month</p>
         <p class="calc-total" id="calc-total">—</p>
         <ul class="calc-lines" id="calc-lines"></ul>
