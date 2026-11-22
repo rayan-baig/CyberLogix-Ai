@@ -1,4 +1,4 @@
-// Pilot core 1.3.0 · pilot.js
+// Pilot core 1.4.0 · pilot.js
 // The one Pilot file a page loads. Once the page has finished loading, it
 // fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
 // owner's picture, pilot-robot-128/256.webp) and the app's config, which
@@ -28,7 +28,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -47,6 +47,7 @@
   let fitFull = false; // the next look may move to another corner (not just tuck in place)
   let scrolling = 0; // a timer while the page is being scrolled
   let peekOff = 0; // tapped out of its tucked-away spot until then
+  let quiet = false; // tucked till a scroll (reveal)
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
 
@@ -117,7 +118,7 @@
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
     const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
       corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false,
-      keepIn: Boolean(config.keepInViewport) });
+      keepIn: Boolean(config.keepInViewport), tuck: quiet });
     if (place.corner !== shownCorner) placeAt(place.corner);
     // A tap brings it out for a while, but never onto a box being typed in.
     rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
@@ -140,7 +141,7 @@
     }, { passive: true });
     window.addEventListener("scroll", () => {
       clearTimeout(scrolling);
-      scrolling = setTimeout(() => { scrolling = 0; queueFit(true); }, 160);
+      scrolling = setTimeout(() => { scrolling = 0; quiet = false; queueFit(true); }, 160);
       queueFit(false);
     }, { passive: true, capture: true });
     // A box gets focus (or loses it): out of its way at once, back after.
@@ -159,11 +160,11 @@
 
   const gutter = () => M().sideGutter(document, window, config.gutter === false ? [] : list(config.gutter).length ? list(config.gutter) : ["main"]);
 
-  // Busy elsewhere: no wandering (a pop-up, tucked away, or keeping clear of something).
+  // Busy: no wandering (a pop-up, tucked away, or something to avoid where it strolls).
   const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-peek", "pilot-typing"].some((c) => rootEl.classList.contains(c))
     || scrolling !== 0
     || shownCorner !== store.ui().corner || (list(config.avoid).length + list(config.yieldTo).length > 0
-      && M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window).length > 0);
+      && M().inStroll(M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window), window, launcher));
 
   // Drag the robot to another corner, kept on this device.
   function draggable() {
@@ -204,11 +205,12 @@
     });
   }
 
-  // A visit's first page: a glow for a few seconds. Where it sits follows
-  // the usual rules (1.3.0): a free corner, else tucked away.
+  // A visit's first page: a glow for a few seconds, where placement puts
+  // it; on a small screen (1.4.0) tucked away until the visitor scrolls.
   function reveal() {
     const ms = M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs);
     if (!ms) return;
+    quiet = M().isCompact({ width: window.innerWidth, height: window.innerHeight });
     rootEl.classList.add("pilot-revealing");
     setTimeout(() => { rootEl.classList.remove("pilot-revealing"); queueFit(true); }, ms);
   }

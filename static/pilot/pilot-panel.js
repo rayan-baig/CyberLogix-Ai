@@ -1,4 +1,4 @@
-// Pilot core 1.3.0 · pilot-panel.js
+// Pilot core 1.4.0 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
 // own: config.welcomePills, with config.tagline under the name; with its
@@ -10,13 +10,17 @@
 // in the box and is sent once a key is added. Loaded only when the user
 // first opens Pilot (pilot.js).
 //
+// Core 1.4.0: a pill or a page suggestion can also need no AI at all: a
+// `link` (a page of this site) or an `answer` (the app's own words, shown as
+// Pilot's message at once, with no key and nothing sent anywhere).
+//
 // Every word on screen is placed with textContent or built by
 // pilot-render.js from text nodes: nothing is ever set as HTML. No style
 // attributes either; the look is all classes in pilot-panel.css.
 (function () {
   "use strict";
 
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -122,6 +126,13 @@
   // up to five {icon, label, action}. `action` is one of the built-ins
   // below, or any other words: a prompt put in the box (with `send: true`,
   // sent at once; before there is a key it waits in the box).
+  // Core 1.4.0: instead of `action`, a pill may have
+  //   `link`: a page of this site ("/demo"): pressing it goes there;
+  //   `answer`: the app's own words (text, or a function (ctx) returning
+  //     text or a promise of it), shown as Pilot's message at once, with no
+  //     key and no network call (markdown, rendered safely; links to this
+  //     site work).
+  // Page suggestions (config.chips) take `link` and `answer` too.
 
   const DEFAULT_TAGLINE = "Your AI copilot. Powered by you.";
   const BUILTINS = ["ask", "task", "code", "explain-screen", "summarise-screen", "summarize-screen", "settings", "help"];
@@ -134,30 +145,82 @@
   ];
   const PILL_LABEL_MOST = 40;
   const PROMPT_MOST = 1000;
+  const ANSWER_MOST = 4000;
+  const ANSWER_WAIT = 8000;
+  // The line under an app's own answer while there is no key (core 1.4.0);
+  // config.answerMore changes it, or false leaves it out.
+  const DEFAULT_MORE = "Want more? Add your AI key to ask anything.";
+
+  // A page of this site, as a full address, or "" (core 1.4.0). Only the
+  // same site: "/demo", "pricing", "#faq", or a full address on this site.
+  // base: this page's address.
+  function siteLink(link, base) {
+    if (typeof link !== "string" || !link.trim() || link.length > 500) return "";
+    const where = base || (typeof location !== "undefined" ? location.href : "");
+    try {
+      const url = new URL(link.trim(), where);
+      const here = new URL(where);
+      if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== here.origin) return "";
+      return url.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  // What a pill or a suggestion does, cleaned (core 1.4.0): {link} for a
+  // page of this site, {answer} for the app's own words, or null for an
+  // AI prompt or a built-in.
+  function noAi(p, base) {
+    if (!p || typeof p !== "object") return null;
+    if (p.link !== undefined && p.link !== null) { const link = siteLink(p.link, base); return link ? { link } : { bad: true }; }
+    if (typeof p.answer === "function") return { answer: p.answer };
+    if (typeof p.answer === "string") return p.answer.trim() ? { answer: p.answer.slice(0, ANSWER_MOST) } : { bad: true };
+    return null;
+  }
 
   // The app's own pills, cleaned: words only, a known icon, at most five.
-  // [] when it gives none that work.
-  function ownPills(given) {
+  // [] when it gives none that work. A link to another site, or an empty
+  // answer, is left out (core 1.4.0). base: this page's address.
+  function ownPills(given, base) {
     const out = [];
     for (const p of Array.isArray(given) ? given : []) {
       if (out.length >= 5) break;
       if (!p || typeof p !== "object") continue;
       const label = typeof p.label === "string" ? p.label.replace(/\s+/g, " ").trim().slice(0, PILL_LABEL_MOST) : "";
+      const icon0 = typeof p.icon === "string" && Object.prototype.hasOwnProperty.call(ICONS, p.icon) ? p.icon : "spark";
+      const plain = noAi(p, base);
+      if (plain) {
+        if (label && !plain.bad) out.push({ icon: icon0, label, action: "", builtin: false, send: false, ...plain });
+        continue;
+      }
       // A prompt keeps its words as given (a trailing space leaves the cursor
       // ready after "My idea: "); a built-in's name is matched trimmed.
       const raw = typeof p.action === "string" ? p.action.slice(0, PROMPT_MOST) : "";
       const action = BUILTINS.includes(raw.trim()) ? raw.trim() : raw;
       if (!label || !raw.trim()) continue;
-      const icon = typeof p.icon === "string" && Object.prototype.hasOwnProperty.call(ICONS, p.icon) ? p.icon : "spark";
-      out.push({ icon, label, action, builtin: BUILTINS.includes(action), send: p.send === true });
+      out.push({ icon: icon0, label, action, builtin: BUILTINS.includes(action), send: p.send === true });
+    }
+    return out;
+  }
+
+  // This page's suggestions, cleaned (at most three): {label, prompt} (an AI
+  // prompt, as before), or {label, link} / {label, answer} (core 1.4.0).
+  function cleanChips(list, base) {
+    const out = [];
+    for (const c of Array.isArray(list) ? list : []) {
+      if (out.length >= 3) break;
+      if (!c || typeof c.label !== "string" || !c.label.trim()) continue;
+      const plain = noAi(c, base);
+      if (plain && plain.bad) continue;
+      out.push(plain ? { label: c.label, ...plain } : { label: c.label, prompt: typeof c.prompt === "string" ? c.prompt : "" });
     }
     return out;
   }
 
   // The pills to show: the app's, or, if it gives none that work, the
   // design's five.
-  function welcomePills(given) {
-    const out = ownPills(given);
+  function welcomePills(given, base) {
+    const out = ownPills(given, base);
     return out.length ? out : DEFAULT_PILLS.map((p) => ({ ...p, builtin: true, send: false }));
   }
 
@@ -197,7 +260,7 @@
     // Asked for before there was a key: kept (and left in the box) until a
     // key is added, then sent. {text} or {screen: [prompt, label]}.
     let pending = null;
-    const pills = welcomePills(config.welcomePills);
+    const pills = welcomePills(config.welcomePills, location.href);
     const oneKeyAsk = keyPillGiven(config.welcomePills);
     const words = keyWords(config.welcomePills);
     const hidden = hiddenSections(config.hideKeySections);
@@ -322,9 +385,54 @@
         icon("chevron"));
     }
 
+    // ---------------------------------------------------------------- no AI needed (core 1.4.0)
+
+    // A page of this site: go there (Pilot closes first, so the page shows).
+    function go(link) {
+      try { pilot.close(); } catch (_) { /* fine */ }
+      location.assign(link);
+    }
+
+    // The app's own answer, shown as Pilot's message: no key, nothing sent.
+    // The question shows as the visitor's message (the pill's words). With
+    // no key yet, a line under it offers the key (config.answerMore).
+    let answering = false;
+    async function answerWith(label, answer) {
+      if (answering || state.busy) return;
+      answering = true;
+      let text = "";
+      try {
+        const ctx = { screen: screen(), facts: config.facts, ready: store.ready(), label };
+        const got = typeof answer === "function" ? answer(ctx) : answer;
+        text = await Promise.race([Promise.resolve(got), new Promise((resolve) => setTimeout(() => resolve(""), ANSWER_WAIT))]);
+      } catch (_) {
+        text = "";
+      } finally {
+        answering = false;
+      }
+      text = typeof text === "string" ? text.trim().slice(0, ANSWER_MOST) : "";
+      const more = config.answerMore === false ? "" : (typeof config.answerMore === "string" && config.answerMore.trim()) || DEFAULT_MORE;
+      const add = text ? [{ role: "user", text: label }, { role: "assistant", text, local: true }]
+        : [{ role: "user", text: label }, { role: "note", kind: "error", text: "Pilot couldn't find that answer just now. Try again in a moment." }];
+      if (text && more && !store.ready()) add.push({ role: "note", kind: "more", text: more });
+      engine.replace(state.messages.concat(add));
+      state = { ...state, messages: engine.messages };
+      pilot.post({ type: "chat", messages: state.messages });
+      if (view !== "chat") show("chat");
+      queueDraw();
+    }
+
+    // A suggestion or pill that needs no AI: true if it was one.
+    function plainRun(item, label) {
+      if (item.link) { go(item.link); return true; }
+      if (item.answer !== undefined) { answerWith(label, item.answer); return true; }
+      return false;
+    }
+
     // What a pill does when pressed.
     function runPill(p) {
       const s = screen();
+      if (plainRun(p, p.label)) return;
       if (!p.builtin) { if (p.send) ask(p.action); else fill(p.action); return; }
       if (p.action === "ask") { input.focus(); return; }
       if (p.action === "task") {
@@ -340,12 +448,14 @@
       show("settings");
     }
 
-    // This page's suggestions (config.chips), at most three.
+    // This page's suggestions (config.chips), at most three: a prompt, or
+    // (core 1.4.0) a link or the app's own answer.
     function pageChips() {
       let list = [];
       try { list = (typeof config.chips === "function" ? config.chips(screen()) : config.chips) || []; } catch (_) { list = []; }
-      return (Array.isArray(list) ? list : []).filter((c) => c && typeof c.label === "string" && c.label.trim()).slice(0, 3);
+      return cleanChips(list, location.href);
     }
+    const runChip = (c) => { if (!plainRun(c, c.label)) ask(c.prompt || c.label); };
 
     function drawWelcome() {
       // The page's suggestions are on the welcome too, before a key is
@@ -356,7 +466,7 @@
           el("p", {}, el("span", { text: "Hello! I'm Pilot." }), el("br"), el("span", { text: "How can I help you today?" }))),
         el("div", { class: "pilot-pills" }, ...pills.map((p) => pill(p.icon, p.label, () => runPill(p)))),
         here.length ? el("div", { class: "pilot-chips pilot-chips-welcome", role: "group", "aria-label": "Suggestions for this page" },
-          ...here.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: () => ask(c.prompt || c.label) } }))) : null,
+          ...here.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: () => runChip(c) } }))) : null,
         // The app's own key pill already asks for the key: no card as well.
         store.ready() || oneKeyAsk ? null : keyCard());
       welcome.hidden = state.messages.length > 0;
@@ -430,10 +540,10 @@
       statusLine.setAttribute("title", words);
     }
 
-    function copyButton(text) {
+    function copyButton(text, opts) {
       const b = el("button", { type: "button", class: "pilot-copy", "aria-label": "Copy this answer", title: "Copy" }, icon("copy"));
       b.addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(R.plain(text)); b.classList.add("done"); setTimeout(() => b.classList.remove("done"), 1200); }
+        try { await navigator.clipboard.writeText(R.plain(text, opts)); b.classList.add("done"); setTimeout(() => b.classList.remove("done"), 1200); }
         catch (_) { /* the browser said no */ }
       });
       return b;
@@ -452,8 +562,10 @@
       if (m.role === "assistant") {
         if (!m.text) return null;
         const body = el("div", { class: "pilot-md" });
-        body.append(R.render(m.text, document));
-        return el("li", { class: "pilot-msg pilot-from-pilot" }, body, copyButton(m.text));
+        // The app's own answer (core 1.4.0): its links to this site work.
+        const opts = m.local ? { local: location.href } : undefined;
+        body.append(R.render(m.text, document, opts));
+        return el("li", { class: "pilot-msg pilot-from-pilot" }, body, copyButton(m.text, opts));
       }
       if (m.role === "tool") {
         const shown = m.results.map((r) => r.shown).filter(Boolean);
@@ -463,6 +575,13 @@
         }
         const names = m.results.map((r) => r.name.replace(/_/g, " "));
         return el("li", { class: "pilot-msg pilot-tool", text: `Pilot looked at: ${names.join(", ")}` });
+      }
+      // The line after an app's own answer, offering the key (core 1.4.0):
+      // gone once a key is added.
+      if (m.role === "note" && m.kind === "more") {
+        if (store.ready()) return null;
+        return el("li", { class: "pilot-msg pilot-note pilot-more" }, el("span", { text: m.text }), " ",
+          el("button", { type: "button", class: "pilot-link", text: "Key settings", on: { click: () => show("settings") } }));
       }
       if (m.role === "note") return el("li", { class: `pilot-msg pilot-note${m.kind === "error" ? " bad" : ""}`, text: m.text });
       return null;
@@ -545,7 +664,7 @@
         chips.querySelectorAll("button").forEach((b) => { b.disabled = true; });
         return;
       }
-      const all = pageChips().map((c) => ({ label: c.label, run: () => ask(c.prompt || c.label) }));
+      const all = pageChips().map((c) => ({ label: c.label, run: () => runChip(c) }));
       all.push({ label: "Summarise this", run: () => shareScreen("Summarise what's on this screen in a few short points.", "Summarise this screen") });
       put(chips, ...all.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: c.run } })),
         el("button", { type: "button", class: "pilot-link pilot-clear", text: "Clear chat", on: { click: clearChat } }));
@@ -742,6 +861,15 @@
       });
     }
 
+    // A link to this site in an app's own answer (core 1.4.0) opens in this
+    // tab: Pilot closes first, so the page it goes to shows (on a phone the
+    // window would cover it).
+    log.addEventListener("click", (e) => {
+      const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (a && !a.hasAttribute("target") && !e.defaultPrevented && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+        try { pilot.close(); } catch (_) { /* fine */ }
+      }
+    });
     gear.addEventListener("click", () => show(view === "settings" ? "chat" : "settings"));
     helpBtn.addEventListener("click", () => show(view === "help" ? "chat" : "help"));
     palette.addEventListener("click", () => {
@@ -1019,5 +1147,5 @@
   }
 
   window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, ownPills, keyPillGiven, keyWords, KEY_WORDS, hiddenSections,
-    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS };
+    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE };
 })();

@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.3.0**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.4.0**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -87,25 +87,64 @@ a phone); and since the welcome has this app's own key pill, there is no second 
 key wording says "AI key". The config's `keyNoteShort` is the welcome's one line ("AI keys are
 for grown-ups (18+)."); the full `keyNote` is its tooltip and stays beside the key settings.
 
-**Three visitor pills need no key (3.26.0).** On the public pages **See it live** goes to
-`/demo`, **What does it cost?** to the calculator on `/pricing`, and **What sensors do I need?**
-to `/help/sensors`, key or no key: the page answers them better than a paragraph would. Core
-1.3.0's pills are a built-in or a prompt, with no link kind, so `static/pilot-cyberlogix.js`
-catches the press (`LINK_PILLS`) before the core asks for a key; a link pill in the core is
-asked for in the MTRX Horizyn repository. **Will it work for my café?** and every typed
-question still need a key.
+**Three visitor pills need no key (3.26.0).** On the public pages **See it live**, **What does
+it cost?** and **What sensors do I need?** went to their page, key or no key. Core 1.3.0 had no
+link pill, so the config caught the press itself. Core 1.4.0 has one, and 3.27.0 removed the
+catcher (below).
 
 **Never on the logo (3.26.0).** On a phone the robot sat top-left, on the logo, on a new
-business's first screen, and jumped there after a long scroll on `/help/sensors`. The cause is
-core 1.3.0's last resort when every corner is busy: it picks the corner whose tucked-away robot
-covers least, and a box in `avoid` counts as a million square pixels while the page's words
-count only their area. The Getting started card (`#first-day`) was in `avoid` and, on a phone,
-spans the screen, so both bottom corners "covered" it and a top corner always won; on
-`/help/sensors` the small logo was simply less than the edge of a fold. The config now avoids
-every page's header bar (`.top`, `.demo-top`, the console's `.nav`) and only the Getting started
-card's buttons, not the whole card (the core already keeps off its words). Checked at every
-700px of `/`, `/pricing`, `/help`, `/help/sensors` (every fold open), `/for/restaurant`, `/demo`
-and a new business's console on a 375px phone: never top-left.
+business's first screen, and jumped there after a long scroll on `/help/sensors`: core 1.3.0's
+last resort, when every corner is busy, counted only square pixels, and a small logo was "less"
+than the edge of a fold or the Getting started card. 3.26.0 listed every page's header bar in
+`avoid` and only the Getting started card's buttons, not the whole card. Core 1.4.0 fixes the
+cause, and 3.27.0 took the header bars off the list again (below).
+
+**Core 1.4.0 (3.27.0): useful before a key.** The thirteen files from the MTRX Horizyn site,
+byte for byte. A welcome pill or a page suggestion can now be a `link` (a page of this site:
+Pilot closes and goes there) or an `answer` (Pilot shows it at once as its own message: no key,
+and nothing is sent anywhere). Under an answer, while there is no key, Pilot offers it: "Want
+more? Add your AI key to ask anything." (`answerMore`).
+
+| Pill | Where | What it does now |
+|---|---|---|
+| Which fridges need me? | console, `/today` | answer: every unit out of range, alerting, gone quiet or waiting for its first reading, worst first, in the same words as its card (`CLXWords.condition`); "Nobody has answered" if an alert is open |
+| What does this alert mean? | console, `/today` | answer: the alert at the top of "Needs you now", from its own record: how warm, its limit, when it went out, the worst so far, the wait it passed, who has it ("someone on your team", never a name), what to check |
+| Is the food still OK? | console, `/today` | answer: how long it was out and the worst reading, the rule of thumb, and always its not-a-ruling note |
+| How do I connect a sensor? | console, `/today` | link to `/console#connect`: the console opens "Connect your sensor" (the wizard) once signed in |
+| Will it work for my café? | public pages | answer: a few lines with the real limits, waits, text and call timings, Starter's price and the trial, with links to the sensor guides, prices, the demo and sign-up |
+| What does it cost? | public pages | link to `/pricing` |
+| See it live | public pages | link to `/demo` |
+| What sensors do I need? | public pages | link to `/help/sensors` |
+| Add my AI key | everywhere | key settings (the only welcome pill that needs the AI) |
+
+The answers on the console and `/today` are read from what the page already loaded for the
+person: the overview its cards and "Needs you now" are drawn from, handed over by the page's own
+bridge (`CyberLogixConsole.overview()` in `static/console.js`, `CyberLogixToday.overview()` in
+`static/simple.js`). Nothing is fetched to answer and nothing leaves the browser. A unit's name is
+kept as plain words (no links or bold of its own). Signed out, or before the page has loaded,
+they say where to look instead. The answers become part of the chat like any message, so once a
+key is added the AI sees them too; that is why they carry no person's name, number or email.
+
+Page suggestions that are facts are answers too, from the figures on Pilot's script tag
+(`main.pilot_facts`): "Will a door left open wake us?", "Wi-Fi or power goes off?", "Do you
+phone at night?" / "Do you phone us?", "What's in the trial?", "A fridge is warm: what now?",
+"A log for the inspector", "Set up step by step", and the demo's "What am I seeing?" and "What
+happens next?". "Start a free trial" goes to `/signup`, "I forgot my password" to `/reset`. The
+open questions ("Which plan for a café?", "Easiest way to set up", "How would this work for
+me?", "It's fixed now", "Make a proof report") stay AI prompts.
+
+**The header bars are off the avoid list (3.27.0).** Core 1.4.0 tries a phone's bottom corners
+first, counts a header that stays put as busy, and weighs a link or button it would cover, so
+the robot never parks over the logo or Sign in without this app's help. `.top`, `.demo-top` and
+the console's `.nav` are no longer in `avoid`. Checked in a real browser at 320×640, 375×667,
+375×812 and 1440×900 on `/`, `/pricing`, `/help`, `/help/sensors`, `/for`, `/for/restaurant`,
+`/demo`, the console's sign-in, a new business's console, a console with an open alert and
+`/today`, scrolled from top to bottom: never in a phone's top corner, and never over the logo,
+Sign in or a header link. One spot is left to the core: on a 320px phone, a console with an
+open alert scrolled so that the pinned "Needs you now" bar fills the top and the search box and
+tab row fill the bottom, every corner is busy and the robot tucks bottom-left over the end of
+the search box until the next scroll (both are already in `avoid`; reported to the MTRX
+Horizyn core).
 
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
@@ -123,7 +162,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.3.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.4.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |

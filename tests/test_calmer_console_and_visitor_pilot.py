@@ -210,8 +210,9 @@ def test_the_welcome_buttons_pass_the_cores_own_check_in_node():
 globalThis.window = globalThis; globalThis.document = {{ addEventListener() {{}} }};
 require({json.dumps(str(STATIC / 'pilot' / 'pilot-render.js'))});
 require({json.dumps(str(STATIC / 'pilot' / 'pilot-panel.js'))});
+const cafeAnswer = "An answer.";
 {visitor}
-console.log(JSON.stringify(window.PilotPanel.welcomePills(VISITOR_PILLS)));"""
+console.log(JSON.stringify(window.PilotPanel.welcomePills(VISITOR_PILLS, "https://cyberlogix.example/")));"""
     out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
     if out.returncode != 0:
         pytest.skip(f"the core panel does not load bare in Node here: {out.stderr[:200]}")
@@ -219,6 +220,12 @@ console.log(JSON.stringify(window.PilotPanel.welcomePills(VISITOR_PILLS)));"""
     assert [p["label"] for p in pills][:3] == ["Will it work for my café?",
                                                 "What does it cost?", "See it live"]
     assert pills[-1]["builtin"] is True and pills[-1]["action"] == "settings"
+    # Core 1.4.0 (3.27.0): three go to their page and one is answered at
+    # once, so none of them waits for a key.
+    assert [p.get("link") for p in pills[1:4]] == [
+        "https://cyberlogix.example/pricing", "https://cyberlogix.example/demo",
+        "https://cyberlogix.example/help/sensors"]
+    assert "answer" in pills[0] and "link" not in pills[0]
     assert all(p["icon"] != "spark" or p["label"] == "See it live" for p in pills)
 
 
