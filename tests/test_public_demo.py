@@ -279,20 +279,6 @@ def test_the_builder_has_no_deprecated_escape_sequences():
         compile(source, "build_public_demo.py", "exec")
 
 
-def test_the_calculator_default_is_named_once_and_used_once():
-    """The stub's sentence and the captured grid cannot drift apart.
-
-    The message shown for an uncaptured price combination names the two
-    numbers in prose, and the stub is %-formatted, so those numbers
-    cannot be interpolated into it. This is the thing that keeps the
-    sentence honest when somebody changes the constants.
-    """
-    import build_public_demo as b
-
-    assert f"at {b.CALC_DEFAULT_BRANCHES} branches" in b.STUB
-    assert f"{b.CALC_DEFAULT_UNITS} units each" in b.STUB
-
-
 def test_a_new_card_cannot_ship_pointing_at_nothing():
     """The check that would have caught the Devices-knocking gap.
 
@@ -332,6 +318,8 @@ def test_the_panel_check_reads_urls_built_with_backticks():
         "const d = api(`/api/split/${id}/packet`);\n")
     assert found == {"/api/quoted", "/api/backticked", "/api/split"}
 
-    # And on the real page, the URL that got away the first time.
+    # And on the real page, a URL built the same way. (The price card
+    # whose URL got away the first time left the customer console in
+    # 3.26.0.)
     page = page_source(b.ROOT / "static" / "console.html")
-    assert "/api/v1/enterprise-billing/quote" in b.paths_the_page_asks_for(page)
+    assert "/api/benchmarks" in b.paths_the_page_asks_for(page)

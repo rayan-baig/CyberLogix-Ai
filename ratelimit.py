@@ -20,6 +20,25 @@ from typing import Deque, Dict, List
 
 from fastapi import HTTPException, Request, status
 
+
+def wait_words(seconds: int) -> str:
+    """How long to wait, the way a person says it (3.26.0).
+
+    "Try again in 2832 seconds" was on the sign-up page. Under a minute it
+    is the seconds; after that whole minutes, rounded up, so nobody comes
+    back a moment too soon. The exact figure stays in Retry-After.
+    """
+    s = max(1, int(seconds))
+    if s < 60:
+        return f"{s} second{'' if s == 1 else 's'}"
+    minutes = -(-s // 60)
+    if minutes == 1:
+        return "about a minute"
+    if minutes < 120:
+        return f"about {minutes} minutes"
+    hours = -(-minutes // 60)
+    return f"about {hours} hours"
+
 _ALL: List["Limit"] = []
 
 
@@ -64,7 +83,7 @@ class Limit:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=(f"Too many {self.words} in a short time. Please "
-                            f"try again in {wait} seconds."),
+                            f"try again in {wait_words(wait)}."),
                     headers={"Retry-After": str(wait)},
                 )
             mine.append(now)

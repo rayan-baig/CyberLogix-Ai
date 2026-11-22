@@ -143,9 +143,12 @@ def test_without_the_secret_the_option_is_hidden_and_says_why(api, operator_fact
     owner, _ = _owner(operator_factory)
     seen = api.get("/api/ai-key", headers=owner).json()
     assert seen["available"] is False and seen["saved"] is False
-    assert "CYBERLOGIX_KEY_ENCRYPTION_SECRET is not set" in seen["why_not"]
+    # In words a customer can act on, never the server setting's name
+    # (3.26.0: "CYBERLOGIX_KEY_ENCRYPTION_SECRET is not set" was on Setup).
+    assert seen["why_not"] == "Not switched on for this server yet. Ask your provider to switch this on."
     refused = api.put("/api/ai-key", headers=owner, json={"key": KEY})
-    assert refused.status_code == 503 and "CYBERLOGIX_KEY_ENCRYPTION_SECRET" in refused.text
+    assert refused.status_code == 503 and "Ask your provider to switch this on" in refused.text
+    assert "CYBERLOGIX_" not in refused.text and "CYBERLOGIX_" not in seen["why_not"]
     # The console hides the form and shows the reason instead.
     console = (alertkey.__file__.rsplit("/", 1)[0]) + "/static/console.js"
     js = open(console, encoding="utf-8").read()

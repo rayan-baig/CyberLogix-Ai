@@ -1684,7 +1684,14 @@ def _pricing_markup() -> Dict[str, str]:
         return (f'<td class="num">{money(r["monthly_usd"])}</td>'
                 f'<td class="num">{money(yearly_price(r["monthly_usd"]))}</td>')
 
-    options = "".join(option(r) for r in data["rates"])
+    # The trades with a published price (a café's, a pharmacy's) first;
+    # the niche ones priced by quote under "Other industries" (3.26.0), so a
+    # café owner is not reading superyachts before their own trade.
+    published = [r for r in data["rates"] if not r["custom"]]
+    by_quote = [r for r in data["rates"] if r["custom"]]
+    options = "".join(option(r) for r in published) + (
+        '<optgroup label="Other industries (priced by quote)">'
+        + "".join(option(r) for r in by_quote) + "</optgroup>" if by_quote else "")
     custom_attr = ' data-custom="yes"'
     rate_rows = "".join(
         f'<tr data-vertical="{e(r["vertical"])}"'

@@ -122,6 +122,41 @@
   ];
   const ownPage = onConsole || onToday;
 
+  // Three of the visitor's pills need no AI at all, so they work with no
+  // key (3.26.0): each goes to the page that answers it. Core 1.3.0's pills
+  // are a built-in or a prompt, with no link kind (docs/PILOT.md; asked for
+  // in the core), so this app catches the press itself, before the core
+  // would ask for a key. With a key they go to the page too: the page is a
+  // better answer than a paragraph about it.
+  const LINK_PILLS = {
+    "See it live": "/demo",
+    "What does it cost?": "/pricing#calc-title",
+    "What sensors do I need?": "/help/sensors",
+  };
+
+  function follow(href) {
+    const url = new URL(href, window.location.href);
+    try { window.Pilot.close(); } catch (_) { /* the page still goes */ }
+    if ((url.pathname.replace(/\/+$/, "") || "/") !== path) {
+      window.location.assign(url.pathname + url.hash);
+      return;
+    }
+    const target = url.hash ? document.getElementById(url.hash.slice(1)) : null;
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    else window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  if (!ownPage && typeof document.addEventListener === "function") {
+    document.addEventListener("click", (event) => {
+      const pill = event.target && event.target.closest ? event.target.closest(".pilot-pill") : null;
+      const href = pill ? LINK_PILLS[pill.textContent.replace(/\s+/g, " ").trim()] : null;
+      if (!href) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      follow(href);
+    }, true);
+  }
+
   window.Pilot.mount({
     appName: "CyberLogix AI",
     name: "Pilot",
@@ -162,9 +197,19 @@
       "#needs-bar", ".needs-bar-acts", ".finder", ".f-tab",
       ".incident-actions", "#verdict", ".toast", ".hero-cta", ".cta-row", "#facts", ".facts",
       ".kicker", "#add-form button[type=submit]", ".fix-dialog",
-      // The Getting started checklist and its buttons (Add a sensor, Add
-      // me, Send a test): a new business's first screen.
-      "#first-day", ".checklist-acts", ".btn-go",
+      // The Getting started checklist's buttons (Add a sensor, Add me,
+      // Send a test). Its words are kept clear by the core's own check of
+      // the page's text. Not the whole card (3.26.0): on a phone it spans
+      // the screen, so every bottom corner counted as covering it, and
+      // core 1.3.0's "covers least" fallback (a whole box to avoid outweighs
+      // any amount of words) sent the robot to the top-left, onto the logo.
+      ".checklist-acts", ".btn-go",
+      // The header bar of every page (the logo, the menu, Sign in), so the
+      // robot never sits on the logo or a header button: with all four
+      // corners busy, core 1.3.0 picks the corner whose words it covers
+      // least, and a small logo is "less" than the edge of a fold, so it
+      // went top-left after a long scroll on /help/sensors.
+      ".top", ".demo-top", "#app > .nav",
       // A fridge's status label ("Too warm", "No signal", "Fine") on its
       // card, in Problems, on /today and in the demo, and the alert's
       // own heading: the robot must never hide whether a fridge is OK.

@@ -74,11 +74,6 @@ PATHS = [
 # builds a link to. They are listed rather than guessed at, so that a
 # card added tomorrow with a new GET is a build failure instead of a
 # panel reading "Not captured in this demo".
-# The numbers the calculator card loads with. The demo stub names
-# them in a sentence it cannot interpolate into, so a test ties the
-# two together rather than trusting them to stay in step.
-CALC_DEFAULT_BRANCHES = 10
-CALC_DEFAULT_UNITS = 3
 
 NOT_FETCHED = {
     "/api/accounts/bootstrap", "/api/accounts/login", "/api/accounts/logout",
@@ -136,8 +131,7 @@ def check_every_panel_has_data(page_name: str = "console.html") -> None:
     # Paths with a value substituted into them are captured per-item by
     # the loops in capture(), not by name.
     dynamic = ("/api/console/sensor", "/api/benchmarks", "/api/voice/",
-               "/api/disposition", "/api/vault/verify",
-               "/api/v1/enterprise-billing/quote")
+               "/api/disposition", "/api/vault/verify")
     missing = sorted(
         path for path in asked
         if path not in captured and path not in NOT_FETCHED
@@ -280,17 +274,6 @@ window.fetch = function (input, init) {
   const hit = DEMO[path] || DEMO[url.pathname];
   if (hit) return reply(hit.body, hit.status);
 
-  // The price calculator works out a number from whatever is typed, and
-  // a frozen page cannot. It holds one worked example per industry; any
-  // other combination says so instead of showing a price that belongs to
-  // a different estate.
-  if (url.pathname === "/api/v1/enterprise-billing/quote") {
-    return reply({ detail: "This demo holds one worked price for each "
-                           + "industry with a published price, "
-                           + "at 10 branches and 3 units each. Every other "
-                           + "industry is priced by quote; other numbers "
-                           + "need the live app." }, 404);
-  }
   return reply({ detail: "Not captured in this demo." }, 404);
 };
 %s
@@ -390,24 +373,6 @@ def capture() -> dict:
                                 for s in overview.get("sensors", [])
                                 if s.get("industry_vertical")}):
             path = f"/api/benchmarks/{vertical}"
-            got = client.get(path, headers=head)
-            out[path] = {"status": got.status_code, "body": got.json()}
-
-        # The volume calculator, at the numbers the card itself loads
-        # with, for every industry in its dropdown -- so it shows a real
-        # price on open and when the industry is changed. Typing a
-        # different branch count needs the live server, and the stub
-        # below says so in words rather than answering with a price it
-        # worked out for some other estate.
-        # Only the industries with a published price: this page is public,
-        # and the rest are priced by quote, so their rates are not put in it.
-        for row in client.get("/api/industries", headers=head).json()["industries"]:
-            if row["monthly_usd"] is None:
-                continue
-            key = row["vertical"]
-            path = (f"/api/v1/enterprise-billing/quote?industry_vertical={key}"
-                    f"&total_branch_locations={CALC_DEFAULT_BRANCHES}"
-                    f"&units_per_branch={CALC_DEFAULT_UNITS}")
             got = client.get(path, headers=head)
             out[path] = {"status": got.status_code, "body": got.json()}
 

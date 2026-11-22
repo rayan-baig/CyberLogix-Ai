@@ -338,7 +338,7 @@ What you pay card) reads those values.
 
 - **What is on it:** text alerts to the whole on-call list, the site-wide
   alert when several units warm at once, the inspector's log, the monthly
-  report, tamper-evident readings and claim packets. Safety is never an
+  report, tamper-evident readings and insurance packs. Safety is never an
   upsell.
 - **What moving up adds:** phone calls when a text goes unanswered, the
   forecast, the per-estate extras (the vault, benchmarks, equipment

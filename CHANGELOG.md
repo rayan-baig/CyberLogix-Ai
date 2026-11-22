@@ -4,6 +4,58 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.26.0 — 2026-11-22
+
+A café with one or two fridges gets a simpler console, the alerts say
+plainly what happened, and a closed alert says roughly what it saved. No
+price or plan term has changed.
+
+- **Three tabs for a small café.** Until there are three fridges, the
+  console shows **Fridges**, **Alerts** and **Team** (was People), and
+  **More** for the rest. The search box waits under More too. The first
+  day opens on Fridges (or Alerts if one is open), not on "Everything".
+  On a phone the tabs are one row you can swipe, they no longer stay
+  pinned over the cards, and the top bar is two rows, not three (the TV
+  screen button is for a computer, not a phone).
+- **Pilot stays off the logo.** On a phone the robot sat top-left on the
+  logo on a new business's first screen, and jumped there after a long
+  scroll on the sensor guides. It now keeps off every page's top bar.
+- **Pilot's visitor buttons work without an AI key.** On the public
+  pages **See it live** opens the demo, **What does it cost?** the price
+  calculator, and **What sensors do I need?** the sensor guides. Only
+  typed questions and "Will it work for my café?" need a key.
+- **Out of the customer console:** the "work out a price for a big
+  customer" calculator, "Simulate hardware pulse", and "How you compare"
+  until there are enough businesses to compare with. Server settings are
+  never named to a customer ("Ask your provider to switch this on"
+  instead). The OmniArmor link's monthly price is not shown during the
+  free trial until it is connected. The activity log says "Agreed to the
+  acceptable-use rules, the privacy notice…" instead of codes.
+- **How we reach you** says whether texts are on, and offers "Also send
+  alerts to Slack or Teams (optional)"; it never says "Nothing connected"
+  any more.
+- **Texts off says so.** On a server with texts switched off, **Send a
+  test** says "Recorded, not texted: texts are off on this server." After
+  the connect wizard's **Received!** there is a **Next: send a test**
+  button.
+- **Food protected.** A closed alert that somebody answered, with the food
+  kept, says "Food protected: about $800" (or $3,000 for a walk-in), with
+  "An estimate: what a typical fridge holds" under it. The monthly email
+  adds up the month the same way. The figures are in one file,
+  `food_value.py`, for the owner to change (docs/ALERTS.md).
+- **Even cards.** A tab whose cards are all in one column (Money, Team,
+  Proof) lays them out across the page instead of one narrow column
+  beside an empty one.
+- **Small things.** "Try again in 2832 seconds" says "about 48 minutes".
+  The pricing page says "insurance packs", not "claim packets". A fridge
+  with one reading no longer says "awaiting readings" under it. The TV
+  screen hides Pilot and the "under Advanced" hint, and "Leave TV screen"
+  no longer sits on a tile. A sensor sending a far-too-warm reading gets a
+  real message back instead of nothing. In the price calculator the
+  café and pharmacy trades come first and the rest are under "Other
+  industries".
+
+
 ## 3.25.0 — 2026-11-22
 
 Connecting a sensor is a short wizard, the console is calmer, phone cards

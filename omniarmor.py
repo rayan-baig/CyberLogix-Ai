@@ -1008,8 +1008,8 @@ def save_connection(payload: ConnectionSettings,
     if not credential_key_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=("This server cannot store a connection key yet: "
-                    "CYBERLOGIX_CREDENTIAL_KEY is not set. Ask whoever runs it."))
+            detail=("This server cannot store a connection key yet. "
+                    "Ask your provider to switch this on."))
     try:
         base_url = normalise_address(payload.address)
     except ValueError as exc:

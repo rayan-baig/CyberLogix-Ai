@@ -282,7 +282,7 @@ def send_test_alert(
         write_audit(
             tenant, person, SENT if went else FAILED,
             f"Test alert: {len(went)} of {len(results)} "
-            f"{'composed (dry run)' if dry_run else 'sent'}"
+            f"{'recorded, not texted (texts are off on this server)' if dry_run else 'sent'}"
             + (" including a call" if any(r["channel"] == "voice" for r in results) else "")
             + ". No incident was opened.",
         )
@@ -297,8 +297,7 @@ def send_test_alert(
 
     reached = sum(1 for r in results if r["delivered"])
     if dry_run:
-        message = ("Texts are switched off on this server, so the test was "
-                   "written but not sent. Everything else about it worked.")
+        message = "Recorded, not texted: texts are off on this server."
     elif reached:
         message = (f"Test sent to {reached} of {len(results)}. Ask them "
                    "whether it arrived.")

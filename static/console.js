@@ -549,12 +549,10 @@ async function loadIndustries() {
     .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`)
     .join("");
   $("tx-vertical").innerHTML = plain;
-  $("calc-vertical").innerHTML = plain;
   showUnitKinds($("add-vertical").value);
   // The overview may already have landed; if it has, this is the call
   // that actually sets the sector.
   preferSector(state.data);
-  calculateBilling();
 }
 
 // The order of the add form's list when nothing is known yet.
@@ -705,7 +703,7 @@ function preferSector(overview) {
   const wanted = [stated, dominant].find((v) => v && known.has(v));
   if (!wanted) return;
 
-  ["add-vertical", "tx-vertical", "calc-vertical"].forEach((id) => {
+  ["add-vertical", "tx-vertical"].forEach((id) => {
     const select = $(id);
     if (select) select.value = wanted;
   });
@@ -724,7 +722,6 @@ function preferSector(overview) {
   showSectorExample(wanted);
   showUnitKinds(wanted);
   state.sectorChosen = true;
-  calculateBilling();
 }
 
 /* Panels that are allowed to be missing, and what to say in their place.
@@ -904,9 +901,11 @@ async function refresh(opts = {}) {
   // the account: a trial that grows past a handful of units sees them all.
   const small = smallAccount(overview);
   const firstDay = dayOne(overview);
-  if (state.wasSmall !== small || state.wasDayOne !== firstDay) {
+  const simple = simpleTabs(overview);
+  if (state.wasSmall !== small || state.wasDayOne !== firstDay || state.wasSimple !== simple) {
     state.wasSmall = small;
     state.wasDayOne = firstDay;
+    state.wasSimple = simple;
     applyFinder();
   }
   landOnATab(overview);
@@ -1076,6 +1075,7 @@ function render(d, health) {
   }
 
   const banner = $("delivery-banner");
+  state.textsOff = health.message_delivery !== "twilio";
   if (health.message_delivery !== "twilio") {
     banner.hidden = false;
     // Plain words for the person reading; the settings for whoever runs
@@ -1727,8 +1727,13 @@ async function openRepairQuote(sensorId) {
 function sparkline(sensor) {
   const values = sensor.spark || [];
   if (values.length < 2) {
+    // One reading in: it is shown big above, so the line waits in words
+    // that do not contradict it ("awaiting readings" sat under a live
+    // 39.0°F, 3.26.0).
+    const one = values.length === 1 || (sensor.last_temperature_display !== null
+      && sensor.last_temperature_display !== undefined);
     return `<div class="u-h-40 u-d-grid u-place-center u-c-muted u-fs-11-5">
-              awaiting readings</div>`;
+              ${one ? "the line starts with the next reading" : "waiting for its first reading"}</div>`;
   }
 
   const W = 250, H = 40, PAD = 5;
@@ -2113,6 +2118,9 @@ function renderIncidents(incidents, entitlements, siteWide) {
       ${i.state === "resolved" && (i.peak_display ?? i.peak_fahrenheit) != null
         ? "" : `<div class="card-note">${esc(i.breach_details)}</div>`}
       ${textsFailedNote(i)}
+      ${i.state === "resolved" && i.food_protected
+        ? `<p class="food-saved"><b>${esc(i.food_protected.words)}</b>
+             <span class="sub">${esc(i.food_protected.note)}</span></p>` : ""}
       ${incidentTimeline(i)}
 
       <details class="incident-more">
@@ -2246,9 +2254,37 @@ function renderCosts(report) {
 
 /* "alert.test_sent" -> "Alert test sent": the trail's own codes, read as
    words. */
+const AUDIT_NAMES = { "legal.accepted": "Agreements accepted",
+  "alert.test_sent": "Test alert", "alert.test_failed": "Test alert did not go out" };
+
 function auditWords(action) {
+  if (AUDIT_NAMES[action]) return AUDIT_NAMES[action];
   const words = String(action || "").replace(/[._]+/g, " ").trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
+/* What an activity line says, in words (3.26.0). The record keeps each
+   agreement's fingerprint ("acceptable-use@3b70…"), which is what makes it
+   evidence; the line on the screen says what was agreed to, and the exact
+   record is on hover. */
+const AGREEMENTS = {
+  "acceptable-use": "the acceptable-use rules",
+  privacy: "the privacy notice",
+  sla: "the service levels",
+  terms: "the subscription agreement",
+};
+
+function auditDetail(e) {
+  const detail = String(e.detail || "");
+  if (e.action !== "legal.accepted") return detail;
+  const version = (detail.match(/accepted v([0-9.]+)/) || [])[1];
+  const names = Array.from(detail.matchAll(/([a-z-]+)@[0-9a-f]{6,}/g))
+    .map((m) => AGREEMENTS[m[1]] || m[1].replace(/-/g, " "));
+  if (!names.length) return detail;
+  const list = names.length === 1 ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const when = /at sign-up/.test(detail) ? " at sign-up" : "";
+  return `Agreed to ${list}${version ? ` (version ${version})` : ""}${when}.`;
 }
 
 function renderAudit(trail) {
@@ -2263,7 +2299,8 @@ function renderAudit(trail) {
         <span class="u-fs-12-5 u-fw-500">${esc(auditWords(e.action))}</span>
         <span class="u-fs-11-5 u-c-muted u-ws-nowrap">${esc(when)}</span>
       </div>
-      <div class="u-fs-12 u-c-ink-2 u-mt-2">${esc(e.detail)}</div>
+      <div class="u-fs-12 u-c-ink-2 u-mt-2"${auditDetail(e) !== e.detail
+        ? ` title="${esc(e.detail)}"` : ""}>${esc(auditDetail(e))}</div>
       <div class="u-fs-11-5 u-c-muted" title="${esc(e.actor)}">${esc(CLXWords.person(null, e.actor))}</div>
     </div>`;
   }).join("");
@@ -3767,6 +3804,18 @@ document.addEventListener("click", async (event) => {
 
 let omniSignature = null;
 
+/* What the OmniArmor link costs, said once it is connected (3.26.0). While
+   a business is still setting up on the free trial it is not offered a
+   paid extra: "+$29 a month per location" sat in the middle of Setup on
+   the first day. Connected, or on a paid plan, the price is always shown. */
+function omniPriceLine(seen, price) {
+  const trial = state.data && state.data.tenant && state.data.tenant.plan === "trial";
+  if (!seen.connected && (trial || dayOne())) return "";
+  return `<div class="sub u-mb-8">${esc(price.label)}${price.free_now
+    ? ", free during your trial."
+    : ` · ${money(price.monthly_for_you_usd)} a month for you while connected.`}</div>`;
+}
+
 function renderOmni(seen) {
   const owner = Boolean(seen && !seen.notOwner);
   $("omni-owner").hidden = !owner;
@@ -3798,6 +3847,9 @@ function renderOmni(seen) {
             ${esc(s.name)}</label>`).join("")
       : "";
   }
+  // Nothing to fill in on a server that cannot keep the key (3.26.0): the
+  // card says so in one line instead of offering a form that is refused.
+  $("omni-form").hidden = !seen.credential_key_configured && !seen.connected;
   $("omni-test").disabled = !seen.connected;
   $("omni-remove").disabled = !seen.connected;
   const price = seen.price;
@@ -3819,11 +3871,9 @@ function renderOmni(seen) {
   $("omni-body").innerHTML = `
     <div class="u-fs-12-5 u-mb-8 ${seen.ok ? "s-good" : (seen.connected ? "s-warning" : "u-c-muted")}">${
       esc(seen.connected ? seen.status : "Not connected yet")}</div>
-    ${seen.credential_key_configured ? "" : `<div class="sub u-mb-8">This server
-      cannot store a key yet: CYBERLOGIX_CREDENTIAL_KEY is not set.</div>`}
-    <div class="sub u-mb-8">${esc(price.label)}${price.free_now
-      ? ", free during your trial."
-      : ` · ${money(price.monthly_for_you_usd)} a month for you while connected.`}</div>
+    ${seen.credential_key_configured ? "" : `<div class="sub u-mb-8">Not switched
+      on for this server yet. Ask your provider to switch this on.</div>`}
+    ${omniPriceLine(seen, price)}
     ${days}`;
 }
 
@@ -4897,10 +4947,17 @@ async function loadBenchmarks(overview) {
 }
 
 function renderBenchmark(body) {
+  // Not published yet (too few businesses in the sector to hide each
+  // one's figures): the card is not shown at all (3.26.0). "Only 1
+  // operators in this sector" was the platform's business, not the
+  // café's; the reason stays in the API for the operator.
+  const card = $("find-sector-standing");
+  const was = card.dataset.empty;
+  card.dataset.empty = body.available ? "" : "1";
+  if (was !== card.dataset.empty) applyFinder();
   if (!body.available) {
-    $("bench-note").textContent = "not yet published";
-    $("bench-body").innerHTML =
-      `<div class="card-note">${esc(body.reason)}</div>`;
+    $("bench-note").textContent = "";
+    $("bench-body").innerHTML = "";
     return;
   }
 
@@ -4996,16 +5053,22 @@ function renderSites(d) {
 const HOOK_NAMES = { slack: "Slack", teams: "Teams",
                      pagerduty: "PagerDuty", generic: "JSON" };
 
-function renderHooks(hooks) {
-  $("hook-note").textContent = hooks.count
-    ? `${hooks.count} connected` : "none yet";
+/* The card's first line: whether texts go out from this server. The
+   Slack and Teams copies below it are optional extras, so an empty list
+   of them is not "nothing connected" (3.26.0). */
+function paintReach() {
+  $("hook-note").textContent = state.textsOff ? "texts off on this server" : "texts on";
+  $("reach-texts").textContent = state.textsOff
+    ? "Texts and calls are off on this server, so alerts show here but nobody "
+      + "is texted. Ask your provider to switch them on."
+    : "We text the people under Who gets called within a minute of an alert, "
+      + "and phone them on plans with calls.";
+}
 
+function renderHooks(hooks) {
+  paintReach();
   if (!hooks.webhooks.length) {
-    $("hook-body").innerHTML =
-      `<div class="empty u-p-14">
-         Nothing connected. A breach that only shows up on a dashboard is a
-         breach nobody sees until morning.
-       </div>`;
+    $("hook-body").innerHTML = "";
     return;
   }
 
@@ -5629,7 +5692,9 @@ function goTo(key) {
   if (card.hidden) {
     // On another tab, or behind a search: bring the whole page back first.
     // Folded behind "More" on a short list: show that one card as well.
-    finder.tab = "all";
+    // With the simple tabs (no Everything to go back to) the tab stays and
+    // the card is shown on it.
+    if (!simpleTabs()) finder.tab = "all";
     finder.query = "";
     $("find-q").value = "";
     finder.reveal.add(card.id);
@@ -5665,8 +5730,11 @@ function renderFirstDay(fd) {
     // Finished while it was on screen: say so once, as it goes.
     if (fd && fd.complete && !card.hidden) {
       // Only now: "complete" includes a reading that actually arrived.
-      toast("All done. Readings are arriving and your team will be alerted: "
-            + "your first fridge is protected.", "ok");
+      toast(state.textsOff
+        ? "All done. Readings are arriving and alerts show here. Texts are off "
+          + "on this server, so nobody is texted yet."
+        : "All done. Readings are arriving and your team will be alerted: "
+          + "your first fridge is protected.", "ok");
     }
     card.hidden = true;
     return;
@@ -5757,10 +5825,17 @@ function tabEmptyFor(tab) {
   }
 }
 
+/* A tab whose own card already says the same, with the same button: the
+   fridges list ("Nothing is being watched yet", Add, a simulated one) and
+   What you pay (the trial, nothing to pay, the plans). The sentence above
+   it was the same thing twice (3.26.0). */
+const SAYS_IT_ITSELF = { fridges: "fleet-card", money: "find-subscription" };
+
 function renderTabEmpty() {
   const box = $("tab-empty");
   if (!box) return;
-  const empty = finder.query.trim() ? null : tabEmptyFor(finder.tab);
+  const own = $(SAYS_IT_ITSELF[finder.tab] || "");
+  const empty = finder.query.trim() || (own && !own.hidden) ? null : tabEmptyFor(finder.tab);
   box.hidden = !empty;
   if (!empty) return;
   $("tab-empty-text").textContent = empty.text;
@@ -5942,6 +6017,18 @@ function connectStepsHtml(b, u) {
   return parts.join("");
 }
 
+/* After "Received!", the step that is left (3.26.0): send a test alert,
+   or, with nobody to text yet, add who gets alerts. Gone once the test has
+   been sent. */
+function connectNext() {
+  const steps = ((state.data && state.data.first_day) || {}).steps || [];
+  const done = (key) => steps.some((st) => st.key === key && st.done);
+  if (!state.user || state.user.role === "viewer" || done("test")) return "";
+  const go = done("oncall") ? ["test", "Next: send a test"] : ["oncall", "Next: add who gets alerts"];
+  return `<button class="btn btn-sm btn-primary connect-next" type="button"
+    data-connect-go="${go[0]}">${go[1]}</button>`;
+}
+
 function paintConnectWait() {
   const box = $("connect-wait");
   const u = connect.unit;
@@ -5956,7 +6043,8 @@ function paintConnectWait() {
     box.className = "connect-wait is-in";
     box.innerHTML = `<span class="connect-tick" aria-hidden="true">&#10003;</span>
       <span><b>Received!</b> ${esc(reading.toFixed(1))}°${esc(u.temperature_unit || state.unit)}${
-        u.last_seen ? ` at ${esc(CLXWords.clock(u.last_seen))}` : ""}. ${esc(connectUnitName(u))} is being watched.</span>`;
+        u.last_seen ? ` at ${esc(CLXWords.clock(u.last_seen))}` : ""}. ${esc(connectUnitName(u))} is being watched.</span>
+      ${connectNext()}`;
     return;
   }
   const late = Date.now() > connect.until;
@@ -6100,10 +6188,13 @@ async function sendTestAlert(button) {
                   r.channel === "voice" ? "call" : "text")}
           ${esc(r.name)} <span class="sub">${esc(r.phone)} &middot; ${esc(
             r.delivered ? "handed to the network" : r.status === "not_configured"
-              ? "written, not sent (dry run)" : r.detail || r.status)}</span></li>`).join("")}
+              ? "recorded, not texted" : r.detail || r.status)}</span></li>`).join("")}
         </ul></div>`;
     $("test-alert-out").innerHTML = html;
-    toast("Test sent. It said TEST, and no problem was opened.", "ok");
+    // Texts off on this server: it was recorded, and nobody's phone rang.
+    // "Test sent" said otherwise (3.26.0).
+    toast(out.dry_run ? "Recorded, not texted: texts are off on this server."
+      : "Test sent. It said TEST, and no problem was opened.", out.dry_run ? "warn" : "ok");
     await refresh();
   } catch (err) {
     outs.forEach((box) => {
@@ -6641,99 +6732,6 @@ $("add-form").addEventListener("submit", (event) => {
   }, "Sensor registered.").then(watchForFirstReading);
 });
 
-/* Posts through the real BYOD ingest route, so what the console shows is
-   what a vendor's webhook would actually get back. */
-$("byod-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const btn = event.target.querySelector("button");
-  btn.disabled = true;
-  const serial = $("byod-sn").value.trim();
-  const temp = Number($("byod-temp").value);
-
-  try {
-    const body = await api("/api/v1/bridge/sensor-webhook-ingest", {
-      method: "POST",
-      body: JSON.stringify({
-        device_sn: serial,
-        reading_value: temp,
-        metric_type: "temperature_f",
-      }),
-    });
-
-    $("byod-out").innerHTML = `<div class="readout">
-        <div><span class="k">Bound sensor</span><span class="v">${esc(body.bound_sensor_id)}</span></div>
-        <div><span class="k">Reading</span><span class="v">${esc(body.processed_metric)} °F</span></div>
-        <div><span class="k">Alert</span><span class="v ${body.alert_triggered ? "s-critical" : "s-good"}">
-          ${body.alert_triggered ? "Too warm: alert sent" : "Within its limits"}</span></div>
-      </div>
-      <div class="card-note u-mt-6">${esc(body.action_taken_by_ai)}</div>`;
-    logToConsole(
-      `BYOD ${serial} @ ${temp}°F -> ${body.alert_triggered ? "ALERT" : "nominal"}`,
-      body.alert_triggered ? "err" : "ok"
-    );
-    await refresh();
-  } catch (err) {
-    $("byod-out").innerHTML =
-      `<div class="readout"><div><span class="k">Rejected</span>
-         <span class="v s-warning">${esc(err.message)}</span></div></div>`;
-    logToConsole(`BYOD ${serial}: ${err.message}`, "err");
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-/* Live contract value as the branch count is typed. */
-let calcTimer = null;
-async function calculateBilling() {
-  const branches = Number($("calc-branches").value);
-  const units = Number($("calc-units").value) || 1;
-  const vertical = $("calc-vertical").value;
-  if (!Number.isFinite(branches) || branches < 1) return;
-
-  try {
-    const q = await api(
-      `/api/v1/enterprise-billing/quote?industry_vertical=${encodeURIComponent(vertical)}`
-      + `&total_branch_locations=${branches}&units_per_branch=${units}`
-    );
-    const vol = q.enterprise_volume;
-    const per = q.per_unit;
-    const winner = q.cheaper_model === "enterprise_volume" ? "volume contract" : "rate card";
-
-    $("calc-out").innerHTML = `<div class="readout">
-        <div><span class="k">Tier</span><span class="v">${esc(vol.pricing_tier_applied)}</span></div>
-        <div><span class="k">Monthly</span>
-             <span class="v c-commerce">$${vol.monthly_usd.toLocaleString()}</span></div>
-        <div><span class="k">Annual contract</span>
-             <span class="v c-commerce">$${vol.annual_usd.toLocaleString()}</span></div>
-        <div><span class="k">Per branch</span>
-             <span class="v">$${vol.effective_rate_per_branch.toLocaleString()}</span></div>
-        <div><span class="k">Rate card would be</span>
-             <span class="v">$${per.monthly_usd.toLocaleString()}</span></div>
-        <div><span class="k">Cheaper</span><span class="v">${esc(winner)}</span></div>
-      </div>`
-      + (vol.next_tier
-        ? `<div class="card-note u-mt-6 u-c-warning">
-             ${vol.next_tier.units_until_next_discount} more unit${
-               vol.next_tier.units_until_next_discount === 1 ? "" : "s"} reaches
-             ${esc(vol.next_tier.next_discount_label)} at
-             $${vol.next_tier.next_tier_monthly_usd.toLocaleString()}/mo —
-             a $${vol.next_tier.monthly_increase_usd.toLocaleString()} step.
-           </div>`
-        : `<div class="card-note u-mt-6">
-             Flat enterprise tier — further branches add nothing.
-           </div>`);
-  } catch (err) {
-    $("calc-out").innerHTML =
-      `<div class="card-note u-c-critical">${esc(err.message)}</div>`;
-  }
-}
-
-["calc-branches", "calc-units", "calc-vertical"].forEach((id) => {
-  $(id).addEventListener("input", () => {
-    clearTimeout(calcTimer);
-    calcTimer = setTimeout(calculateBilling, 250);
-  });
-});
 
 $("vault-attest").addEventListener("click", async () => {
   const btn = $("vault-attest");
@@ -7060,7 +7058,8 @@ function maybeLandOnSimple(d) {
    scrolling: pressing People should leave People on the screen, not put
    it somewhere below the fold with everything else still there. */
 
-const finder = { tab: "all", query: "", reveal: new Set() };
+const finder = { tab: "all", query: "", reveal: new Set(), expanded: false };
+try { finder.expanded = sessionStorage.getItem("cyberlogix.tabs") === "all"; } catch (_) { /* storage blocked */ }
 
 /* A small account: a trial or Starter with a handful of units. A café was
    handed a wall of estate and operator tools (a volume price matrix,
@@ -7088,6 +7087,19 @@ const FIRST_CARDS = new Set(["fleet-card", "find-incidents", "find-add-to-the-es
    behind "More". A checklist button that leads to a card shows that card
    too (finder.reveal). */
 const DAY_ONE_CARDS = new Set(["fleet-card"]);
+
+/* Simple tabs (3.26.0): until a small account watches a few fridges, the
+   finder offers three tabs, Fridges, Alerts and Team, and More, with no
+   search box. Nine tabs and a search for one fridge was a control panel
+   for an estate the café does not have. More shows every tab and the
+   search for the rest of the visit. */
+const SIMPLE_TABS_BELOW = 3;
+const SIMPLE_TABS = new Set(["fridges", "alerts", "people"]);
+
+function simpleTabs(d = state.data) {
+  if (!d || !smallAccount(d) || finder.expanded || state.wall) return false;
+  return (d.sensors || []).length < SIMPLE_TABS_BELOW;
+}
 
 function dayOne(d = state.data) {
   return Boolean(d && d.first_day && !d.first_day.complete && smallAccount(d)
@@ -7117,7 +7129,7 @@ function inTab(card, searching) {
   const advanced = card.getAttribute("data-advanced") === "1";
   if (finder.tab === "advanced") return advanced;
   // A card a button just led to is shown, wherever it is filed.
-  if (finder.tab === "all" && finder.reveal.has(card.id)) return true;
+  if ((finder.tab === "all" || simpleTabs()) && finder.reveal.has(card.id)) return true;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
   if (hiddenAsAdvanced) return false;
   if (shortList(searching) && !inShortList(card)) return false;
@@ -7169,13 +7181,33 @@ function applyFinder() {
   $("more-cards").hidden = !short || folded <= 0;
   $("more-cards-btn").textContent = `More (${folded} other things you can do)`;
   const advNote = $("adv-note");
-  if (advNote) advNote.hidden = !smallAccount() || finder.tab !== "all" || Boolean(query) || dayOne();
+  if (advNote) advNote.hidden = !smallAccount() || finder.tab !== "all" || Boolean(query) || dayOne() || state.wall;
   renderTabEmpty();
+  balanceLayout();
+  const simple = simpleTabs();
+  $("finder-search").hidden = simple;
+  $("tabs-more").hidden = !simple;
+  $("finder").classList.toggle("finder-simple", simple);
 
   document.querySelectorAll(".f-tab").forEach((tab) => {
     tab.setAttribute("aria-pressed",
                      String(tab.getAttribute("data-tab") === finder.tab));
   });
+}
+
+/* The page is two columns, the cards' and a side column. A tab that has
+   nothing in one of them gives the other the whole width (theme.css,
+   .layout.solo-main / .solo-side), so it is never one column beside an
+   empty one. */
+function balanceLayout() {
+  const layout = document.querySelector("main .layout");
+  if (!layout) return;
+  const shown = (box) => Boolean(box) && Array.from(box.querySelectorAll("[data-find]"))
+    .some((card) => !card.hidden);
+  const main = shown(layout.querySelector(":scope > div"));
+  const side = shown(layout.querySelector(":scope > aside"));
+  layout.classList.toggle("solo-main", main && !side);
+  layout.classList.toggle("solo-side", side && !main);
 }
 
 /* Which tabs to offer, and the one number worth printing on a tab: how
@@ -7200,7 +7232,8 @@ function countTheTabs() {
     const key = tab.getAttribute("data-tab");
     // A group with nothing in it but Advanced cards (Licences, for a café)
     // is not offered as a tab of its own; Advanced holds them.
-    tab.hidden = small && key !== "all" && key !== "advanced" && !(counts[key] || 0);
+    tab.hidden = (small && key !== "all" && key !== "advanced" && !(counts[key] || 0))
+      || (simpleTabs() && !SIMPLE_TABS.has(key));
     const n = figure[key];
     const show = n !== undefined && n > 0;
     let badge = tab.querySelector(".n");
@@ -7221,7 +7254,7 @@ function countTheTabs() {
    they pressed, a button that led to a card, a search. The first day
    keeps its own short list (dayOne) and is decided when it is done. */
 function landOnATab(d) {
-  if (finder.userTab || finder.landed || state.wall || dayOne(d)) return;
+  if (finder.userTab || finder.landed || state.wall || (dayOne(d) && !simpleTabs(d))) return;
   if (finder.tab !== "all" || finder.query.trim() || finder.reveal.size) return;
   finder.landed = true;
   const live = (d.incidents || []).some((i) => i.state !== "resolved")
@@ -7234,11 +7267,20 @@ document.querySelectorAll(".f-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     finder.userTab = true;
     finder.tab = tab.getAttribute("data-tab");
+    // A card a checklist button brought out goes back where it is filed.
+    finder.reveal.clear();
     applyFinder();
     // Back to the top of the list, or the first card of a short group
     // renders below where the reader is already looking.
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+});
+
+$("tabs-more").addEventListener("click", () => {
+  finder.expanded = true;
+  try { sessionStorage.setItem("cyberlogix.tabs", "all"); } catch (_) { /* this visit only */ }
+  applyFinder();
+  countTheTabs();
 });
 
 $("more-cards-btn").addEventListener("click", () => {
