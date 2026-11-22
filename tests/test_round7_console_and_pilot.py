@@ -9,7 +9,8 @@ value line on a closed alert.
    are never named to a customer; the partner extra is not sold during
    setup; the activity log says what was agreed to in words.
 4. A tab with nothing in one column gives the other the width.
-5. Three visitor pills work without a key (the Node suite).
+5. Three visitor pills work without a key (the Node suite; core links
+   since 3.27.0).
 6. Texts off: a test says it was recorded, not texted; after "Received!"
    the wizard offers the next step.
 7. "Food protected: about $X", an estimate, from food_value.py.
@@ -71,16 +72,15 @@ def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
 
 # --- 1. the robot and the logo ---------------------------------------------------
 
-def test_the_robot_avoids_every_header_bar_and_only_the_checklist_buttons():
+def test_the_robot_avoids_only_the_checklist_buttons_and_no_header_bar():
+    """3.26.0 listed every header bar; core 1.4.0 (3.27.0) keeps the robot
+    out of a phone's top corners and off links itself, so the bars are no
+    longer listed (tests/js/cyberlogix-pilot.test.js runs the placement)."""
     avoid = PILOT_APP[PILOT_APP.index("avoid: ["):PILOT_APP.index("],", PILOT_APP.index("avoid: ["))]
-    for sel in (".top", ".demo-top", "#app > .nav", ".checklist-acts", ".btn-go"):
+    for sel in (".checklist-acts", ".btn-go"):
         assert f'"{sel}"' in avoid, sel
-    assert '"#first-day"' not in avoid
-    # The pages' header bars carry those classes.
-    for page in ("index.html", "pricing.html", "help.html", "help-sensors.html"):
-        assert '<header class="top">' in (STATIC / page).read_text(), page
-    assert '<header class="demo-top">' in (STATIC / "demo.html").read_text()
-    assert '<nav class="nav" aria-label="Account and display">' in CONSOLE_HTML
+    for sel in (".top", ".demo-top", "#app > .nav", "#first-day"):
+        assert f'"{sel}"' not in avoid, sel
 
 
 def test_the_core_stays_untouched():

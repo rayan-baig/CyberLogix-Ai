@@ -416,3 +416,8 @@ async function tick() {
   pollTimer = setTimeout(tick, CLXWords.pollDelay((lastData || {}).sensors, POLL_MS));
 }
 tick();
+
+/* What this page last loaded, for Pilot's answers that need no AI key
+   (3.27.0): "Which fridges need me?" and the like are read from it in the
+   browser, with nothing fetched and nothing sent. */
+window.CyberLogixToday = Object.freeze({ overview: () => lastData });

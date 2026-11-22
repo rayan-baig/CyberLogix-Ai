@@ -34,27 +34,27 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.3.0 as it ships on the MTRX Horizyn site (commit 9f55e67).
+# Pilot core 1.4.0 as it ships on the MTRX Horizyn site (commit 3908422).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "485e0e46777d05ac",
-    "pilot-actor.js": "1761b209061fafcf",
-    "pilot-engine.js": "3d263ff61d5ce77f",
-    "pilot-mascot.js": "aad3c26534592777",
-    "pilot-media.js": "0eb72daafd62b94a",
-    "pilot-motion.js": "6aab493624a95b7e",
-    "pilot-panel.css": "bf8c19c7f76db7e0",
-    "pilot-panel.js": "f486c85f1282a28f",
-    "pilot-providers.js": "74eba88df717d5c8",
-    "pilot-render.js": "c3f2efb873862546",
+    "pilot-actor.css": "9566af637b0d19c9",
+    "pilot-actor.js": "a5f18326230d0b88",
+    "pilot-engine.js": "6288e7cff6baf8ba",
+    "pilot-mascot.js": "e6cb3e84cbe1fbf9",
+    "pilot-media.js": "e0bf06644d2806a0",
+    "pilot-motion.js": "84b420c9a4b9df6c",
+    "pilot-panel.css": "555d7abdb99d743a",
+    "pilot-panel.js": "05483379e52612de",
+    "pilot-providers.js": "3202b5484b5099fb",
+    "pilot-render.js": "02f308052bf31f23",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
     "pilot-rest-eyes.webp": "e7d5c7013b9d82dd",
     "pilot-rest-head.webp": "5eb064f177cffcb3",
     "pilot-robot-128.webp": "05a92f32d99b8076",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "2b31f637cf9e930f",
-    "pilot.css": "3e61aeb55739aa02",
-    "pilot.js": "405662c67747762a",
+    "pilot-store.js": "d35be1ea8751db51",
+    "pilot.css": "4691f2f93a83808c",
+    "pilot.js": "a44494f9b059eb50",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -202,11 +202,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.3.0"}
+    assert versions == {"1.4.0"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.3.0";' in (PILOT / name).read_text(), name
-    assert "core 1.3.0" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.4.0";' in (PILOT / name).read_text(), name
+    assert "core 1.4.0" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():
@@ -419,30 +419,41 @@ def test_cyberlogixs_own_welcome():
     or video key sections; the phone's Menu counts as a pop-up; and the
     suggestions under the welcome don't repeat a pill."""
     config = (ROOT / "static/pilot-cyberlogix.js").read_text()
-    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", action: "([^"]+)"(, send: true)? \}'
+    # 3.27.0 (core 1.4.0): a pill is an AI prompt or built-in (action), a
+    # page of this site (link), or the app's own answer (answer), which
+    # needs no key. tests/js/cyberlogix-pilot.test.js runs the answers.
+    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", (action|link|answer): "?([^",}]+)"? \}'
 
     def pills(name):
         start = config.index(f"const {name} = [")
         return re.findall(pattern, config[start:config.index("];", start)])
 
     own, visitor = pills("OWN_PILLS"), pills("VISITOR_PILLS")
-    assert [(icon, label) for icon, label, _a, _s in own] == [
-        ("bars", "Which fridges need me?"), ("help", "What does this alert mean?"),
-        ("chat", "Is the food still OK?"), ("bolt", "Add a fridge"), ("key", "Add my AI key")]
-    assert [(icon, label) for icon, label, _a, _s in visitor] == [
-        ("chat", "Will it work for my café?"), ("bars", "What does it cost?"),
-        ("spark", "See it live"), ("help", "What sensors do I need?"), ("key", "Add my AI key")]
+    assert own == [
+        ("bars", "Which fridges need me?", "answer", "needsAnswer"),
+        ("help", "What does this alert mean?", "answer", "alertAnswer"),
+        ("chat", "Is the food still OK?", "answer", "foodAnswer"),
+        ("bolt", "How do I connect a sensor?", "link", "/console#connect"),
+        ("key", "Add my AI key", "action", "settings")]
+    assert visitor == [
+        ("chat", "Will it work for my café?", "answer", "cafeAnswer"),
+        ("bars", "What does it cost?", "link", "/pricing"),
+        ("spark", "See it live", "link", "/demo"),
+        ("help", "What sensors do I need?", "link", "/help/sensors"),
+        ("key", "Add my AI key", "action", "settings")]
     for labels in (own, visitor):
-        assert [bool(send) for *_x, send in labels] == [True, True, True, True, False]
-        assert labels[-1][2] == "settings"
-        assert all(len(label) <= 40 for _i, label, _a, _s in labels)
+        assert all(len(label) <= 40 for _i, label, _k, _v in labels)
+        # Only the key pill is left for the AI: nothing on the welcome asks
+        # for a key before it has helped.
+        assert [kind for _i, _l, kind, _v in labels].count("action") == 1
+    assert 'answerMore: "Want more? Add your AI key to ask anything.",' in config
     assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
     assert 'hideKeySections: ["image", "video"],' in config
     assert 'modals: [".menu[open] > nav"],' in config
     live = config[config.index("const LIVE = ["):config.index("];", config.index("const LIVE = ["))]
-    for _i, label, _a, _s in own:
+    for _i, label, _k, _v in own:
         assert f'"{label}"' not in live, label
     front = config[config.index('"/": ['):config.index('"/pricing": [')]
-    for _i, label, _a, _s in visitor:
+    for _i, label, _k, _v in visitor:
         assert f'"{label}"' not in front, label
     assert "Not signed in: Pilot can't see their fridges or alerts here." in config

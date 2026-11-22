@@ -1,4 +1,4 @@
-// Pilot core 1.3.0 · pilot-mascot.js
+// Pilot core 1.4.0 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
@@ -21,7 +21,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -162,6 +162,21 @@
     return [c, flipSide, flipEdge, both];
   }
 
+  // Phones (core 1.4.0): up to this width the top corners are the last
+  // choice. A phone's top corners hold its header (the logo, a "Home" link,
+  // a menu button) and sit under the thumb's least reach.
+  const NARROW_MOST = 720;
+  // How much covering something costs when no corner is free (core 1.4.0).
+  // A link, a button or a box: never, while any corner avoids one (WEIGHT
+  // .control times the share of it covered, at least a tenth: covering most
+  // of a small "Home" link is far worse than a corner of a big card). A
+  // header or bar that stays put (fixed or sticky): a lot. Something the
+  // app asked it to avoid: a lot more than words. A busy top corner on a
+  // phone: more than anything at the bottom, so it tucks there only when
+  // the bottom corners can't be used at all (a box being typed in).
+  // Words and small pictures: their area in square pixels.
+  const WEIGHT = { control: 1e6, block: 1e5, pinned: 5e4, top: 1e7 };
+
   // The robot's box in a corner. view: {width, height}; size: {width, height}.
   function cornerBox(corner, view, size, gap) {
     const g = gap === undefined ? 16 : gap;
@@ -206,6 +221,19 @@
   // words (its hand reaches past its middle).
   const grow = (b, x, y) => ({ left: b.left - x, top: b.top - y, right: b.right + x, bottom: b.bottom + y });
 
+  // Is this view a phone's (core 1.4.0)? Then top corners come last.
+  const isNarrow = (view) => Boolean(view && view.width > 0 && view.width <= NARROW_MOST);
+
+  // The corners in the order to try them, as passes: [[corners], ...]. On a
+  // phone (core 1.4.0) the bottom corners are tried first, whole and then
+  // tucked away, before any top corner, unless the visitor dragged it to a
+  // top corner themselves (then that corner still comes first).
+  function cornerPasses(corner, narrow) {
+    const order = cornerOrder(corner);
+    if (!narrow || order[0][0] === "t") return [order];
+    return [order.filter((c) => c[0] === "b"), order.filter((c) => c[0] === "t")];
+  }
+
   // Where to sit: {corner, peek}.
   //   blocks: boxes to keep clear of (things to avoid, another helper);
   //   busy(box, corner, small): true when the page's words or buttons are
@@ -213,35 +241,62 @@
   //     (small: the tucked-away slice);
   //   hard: boxes never to cover, not even tucked away (the box being typed in).
   //   cost(box, corner): optional (core 1.3.0): how much of the page's words
-  //     and buttons that tucked-away box covers (in square pixels).
+  //     and buttons that tucked-away box covers (core 1.4.0: weighted, so a
+  //     link or button costs far more than words: placeNow's costOf).
+  //   narrow (core 1.4.0): a phone's view (isNarrow): top corners come last,
+  //     and cost WEIGHT.top more when nothing is free.
+  //   tuck (core 1.4.0): don't sit whole anywhere, only tucked away (the first
+  //     look on a small screen).
   // The chosen corner if it's free, else the first free one. If none is
   // free it tucks half away (peek), in the first corner where the slice that
   // still shows covers nothing; failing that, of the corners clear of the
-  // hard boxes, the one whose tucked-away box covers least (with `cost`), or
+  // hard boxes, the one whose tucked-away box costs least (with `cost`), or
   // else the first; failing that, the chosen corner.
   function choosePlace(opts) {
     const o = opts || {};
     const blocks = (o.blocks || []).filter(Boolean);
     const hard = (o.hard || []).filter(Boolean);
     const busy = typeof o.busy === "function" ? o.busy : () => false;
-    const order = cornerOrder(o.corner);
+    const narrow = o.narrow === undefined ? false : Boolean(o.narrow);
+    const passes = cornerPasses(o.corner, narrow);
+    const order = passes.flat();
     const clear = (box, list, pad) => !list.some((b) => overlaps(box, b, pad));
-    for (const c of order) {
-      const box = cornerBox(c, o.view, o.size, o.gap);
-      if (clear(box, hard, 8) && clear(box, blocks, 6) && !busy(box, c)) return { corner: c, peek: false };
-    }
-    for (const c of order) {
-      const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
-      if (clear(slice, hard, 8) && clear(slice, blocks, 2) && !busy(slice, c, true)) return { corner: c, peek: true };
-    }
     const cost = typeof o.cost === "function" ? o.cost : null;
+    for (const pass of passes) {
+      if (!o.tuck) {
+        for (const c of pass) {
+          const box = cornerBox(c, o.view, o.size, o.gap);
+          if (clear(box, hard, 8) && clear(box, blocks, 6) && !busy(box, c)) return { corner: c, peek: false };
+        }
+      }
+      for (const c of pass) {
+        const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
+        if (clear(slice, hard, 8) && clear(slice, blocks, 2) && !busy(slice, c, true)) return { corner: c, peek: true };
+      }
+      // A phone's bottom corners (core 1.4.0): tucked over a few words or a
+      // small picture is still better than any top corner; over a link, a
+      // button, a bar that stays put or something to avoid, it isn't.
+      if (cost && passes.length > 1 && pass === passes[0]) {
+        let light = null;
+        for (const c of pass) {
+          const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
+          if (!clear(slice, hard, 8) || !clear(slice, blocks, 0)) continue;
+          const n = cost(slice, c);
+          if (n < WEIGHT.pinned && (!light || n < light.n)) light = { corner: c, n };
+        }
+        if (light) return { corner: light.corner, peek: true };
+      }
+    }
     if (hard.length || cost) {
       let best = null;
+      const mine = CORNERS.includes(o.corner) ? o.corner : "br";
       for (const c of order) {
         const slice = peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
         if (!clear(slice, hard, 8)) continue;
         if (!cost) return { corner: c, peek: true };
-        const n = cost(slice, c) + blocks.filter((b) => overlaps(slice, b, 0)).length * 1e6;
+        // Something the app asked it to avoid: a lot, and more the more of it.
+        const n = cost(slice, c) + blocks.filter((b) => overlaps(slice, b, 0)).reduce((sum, b) => sum + WEIGHT.block + areaOf(b, slice), 0)
+          + (narrow && c[0] === "t" && c !== mine ? WEIGHT.top : 0);
         if (!best || n < best.n) best = { corner: c, n };
       }
       if (best) return { corner: best.corner, peek: true };
@@ -270,23 +325,64 @@
     return Boolean(el.isContentEditable);
   }
 
-  const toBox = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+  // A box, and (core 1.4.0) what kind of thing it is: "control" (a link, a
+  // button, a box: something pressed), "media" (a small picture), "mark" (a
+  // small thing that means something), "text" (words) or "pinned" (a header
+  // or bar that stays put).
+  const toBox = (r, kind) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom, kind: kind || "text" });
+
+  // The bar that stays put which this element is in (core 1.4.0): its
+  // nearest ancestor (or itself) that is position: fixed or sticky and
+  // smaller than PINNED_MOST of the screen (a header, a tab bar, a cookie
+  // note; never a whole-screen layer, which is a pop-up's backdrop or the
+  // app's own frame), or null. memo: a Map kept for one look, so each
+  // element's style is read once.
+  const PINNED_MOST = 0.4;
+  function pinnedBar(el, own, win, memo) {
+    const w = win || root;
+    if (!w || typeof w.getComputedStyle !== "function") return null;
+    const seen = [];
+    let found = null;
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      if (memo && memo.has(n)) { found = memo.get(n); break; }
+      seen.push(n);
+      const tag = String(n.tagName || "").toUpperCase();
+      if (tag === "BODY" || tag === "HTML" || (own && own.contains(n))) break;
+      const st = w.getComputedStyle(n);
+      if (st && (st.position === "fixed" || st.position === "sticky")) {
+        const r = n.getBoundingClientRect();
+        const screen = Math.max(1, (w.innerWidth || 0) * (w.innerHeight || 0));
+        if (r.width > 0 && r.height > 0 && (r.width * r.height) / screen <= PINNED_MOST) { found = n; break; }
+        if (st.position === "fixed") break; // a whole-screen layer: what's in it isn't a bar
+      }
+    }
+    if (memo) for (const n of seen) memo.set(n, found);
+    return found;
+  }
 
   // The part of one element (the top one at a point) that is something to
-  // read or press inside `area`, or null.
-  function contentBox(el, area, own, doc) {
+  // read or press inside `area`, or null. (Core 1.4.0: with its `kind`; and
+  // the empty part of a header or bar that stays put counts too, as
+  // "pinned".)
+  function contentBox(el, area, own, doc, memo) {
     if (!el || el.nodeType !== 1) return null;
     const tag = String(el.tagName || "").toUpperCase();
     if (tag === "HTML" || tag === "BODY") return null;
     const control = el.closest ? el.closest(INTERACTIVE) : null;
     if (control && !(own && own.contains(control))) {
       const r = control.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r);
+      if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r, "control");
     }
+    const bar = () => {
+      const b = pinnedBar(el, own, (doc && doc.defaultView) || root, memo);
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return overlaps(r, area, 0) ? toBox(r, "pinned") : null;
+    };
     if (MEDIA.test(tag)) {
       const r = el.getBoundingClientRect();
-      if (r.width <= ICON_MOST && r.height <= ICON_MOST && overlaps(r, area, 0)) return toBox(r);
-      return null;
+      if (r.width <= ICON_MOST && r.height <= ICON_MOST && overlaps(r, area, 0)) return toBox(r, "media");
+      return bar();
     }
     // Small things that mean something without words (a row of streak
     // dots, a status light): anything with a tooltip or a picture role,
@@ -294,20 +390,34 @@
     const marked = el.closest ? el.closest(MEANS) : null;
     if (marked && !(own && own.contains(marked))) {
       const r = marked.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0 && r.width <= ICON_MOST * 3 && r.height <= ICON_MOST && overlaps(r, area, 0)) return toBox(r);
+      if (r.width > 0 && r.height > 0 && r.width <= ICON_MOST * 3 && r.height <= ICON_MOST && overlaps(r, area, 0)) return toBox(r, "mark");
     }
     // Words written straight into this element: only the lines that are
     // really there count, not the empty end of a short line.
     const range = doc && doc.createRange ? doc.createRange() : null;
-    if (!range) return null;
-    for (const node of el.childNodes || []) {
-      if (node.nodeType !== 3 || !/\S/.test(node.nodeValue)) continue;
-      range.selectNodeContents(node);
-      for (const r of range.getClientRects()) {
-        if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r);
+    if (range) {
+      for (const node of el.childNodes || []) {
+        if (node.nodeType !== 3 || !/\S/.test(node.nodeValue)) continue;
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width > 0 && r.height > 0 && overlaps(r, area, 0)) return toBox(r, "text");
+        }
       }
     }
-    return null;
+    return bar();
+  }
+
+  // What covering these content boxes costs, from inside `box` (core 1.4.0):
+  // a link, a button or a box WEIGHT.control times the share of it covered
+  // (at least a tenth), a bar that stays put WEIGHT.pinned, words and small
+  // pictures their area.
+  function costOf(hits, box) {
+    return (hits || []).reduce((sum, b) => {
+      const area = areaOf(b, box);
+      const whole = Math.max(1, (b.right - b.left) * (b.bottom - b.top));
+      const extra = b.kind === "control" ? WEIGHT.control * Math.max(0.1, Math.min(1, area / whole)) : b.kind === "pinned" ? WEIGHT.pinned : 0;
+      return sum + extra + area;
+    }, 0);
   }
 
   // What the page shows to read or press under `area` (the robot's box in a
@@ -321,6 +431,7 @@
     const inset = { left: area.left + 3, top: area.top + 3, right: area.right - 3, bottom: area.bottom - 3 };
     const out = [];
     const seen = new Set();
+    const memo = new Map();
     for (let i = 0; i < n; i += 1) {
       for (let j = 0; j < n; j += 1) {
         // From edge to edge, so a line just inside the box is found too.
@@ -331,8 +442,10 @@
         const top = stack.find((el) => !(own && own.contains(el)));
         if (!top || seen.has(top)) continue;
         seen.add(top);
-        const hit = contentBox(top, inset, own, d);
-        if (hit) out.push(hit);
+        const hit = contentBox(top, inset, own, d, memo);
+        // The same thing found at two points counts once (core 1.4.0).
+        const key = hit && `${hit.kind}:${hit.left},${hit.top},${hit.right},${hit.bottom}`;
+        if (hit && !seen.has(key)) { seen.add(key); out.push(hit); }
       }
     }
     return out;
@@ -374,6 +487,11 @@
   // fully on screen (--pilot-peek-scale, --pilot-keep-margin), instead of
   // hanging off the edge. (The first look of a visit plays its glow
   // wherever this puts the robot: whole in a free corner, or tucked away.)
+  // Core 1.4.0: on a phone (isNarrow) the top corners come last; with no
+  // corner free, covering a link or button costs most (costOf), so it never
+  // tucks over one while another corner avoids one; `tuck`: tucked away
+  // only (pilot.js asks for that on a small screen's first look, until the
+  // visitor scrolls).
   function placeNow(o) {
     const blocks = boxesOf(o.doc, o.avoid, o.own, o.win);
     const field = typingIn(o.doc, o.own);
@@ -395,13 +513,15 @@
     const busy = o.text ? (box, c, small) => contentIn(o.doc, small ? box : grow(box, cx, cy), o.own).length > 0 : undefined;
     // With nowhere free, how much of the page the tucked-away robot would
     // cover in a corner: the least is best (core 1.3.0).
-    const cost = o.text ? (box) => contentIn(o.doc, box, o.own).reduce((sum, b) => sum + areaOf(b, box), 0) : undefined;
+    const cost = o.text ? (box) => costOf(contentIn(o.doc, box, o.own), box) : undefined;
+    const narrow = isNarrow(view);
     let place;
     if (o.full || field) {
-      place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, cost, peekShow, keep });
+      place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, cost, peekShow, keep,
+        narrow, tuck: Boolean(o.tuck) });
     } else {
       const spot = cornerBox(o.shown, view, size, gap);
-      place = { corner: o.shown, peek: blocks.some((b) => overlaps(spot, b, 6)) || Boolean(busy && busy(spot)) };
+      place = { corner: o.shown, peek: Boolean(o.tuck) || blocks.some((b) => overlaps(spot, b, 6)) || Boolean(busy && busy(spot)) };
     }
     // The first look (core 1.3.0) follows the same rules: a free corner if
     // there is one, else it glows where it is tucked away. It never sits on
@@ -445,8 +565,26 @@
     }
   }
 
+  // Is any of these boxes where the web robot strolls (core 1.4.0): the
+  // bottom of the screen, two robots tall (and a gap)? pilot.js holds its
+  // wandering only then; before, anything the app asked it to avoid,
+  // anywhere on the page (even far off screen), kept it still for good.
+  function inStroll(boxes, win, launcher) {
+    const w = win || root;
+    const tall = ((launcher && launcher.offsetHeight) || 88) * 2 + 32;
+    const strip = { left: 0, top: (w.innerHeight || 0) - tall, right: w.innerWidth || 0, bottom: w.innerHeight || 0 };
+    return (boxes || []).some((b) => overlaps(b, strip, 0));
+  }
+
+  // A small screen (core 1.4.0): the first look plays tucked away there,
+  // until the visitor scrolls (pilot.js), so a whole robot never lands on a
+  // card the moment the page opens.
+  const COMPACT = { width: 360, height: 700 };
+  const isCompact = (view) => Boolean(view && ((view.width > 0 && view.width <= COMPACT.width) || (view.height > 0 && view.height <= COMPACT.height)));
+
   const api = { VERSION, TAP_LEAST, keepScale, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, covered, coverLayer, cornerOrder, cornerBox, peekBox, overlaps,
-    choosePlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn };
+    choosePlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn,
+    NARROW_MOST, WEIGHT, isNarrow, cornerPasses, pinnedBar, costOf, COMPACT, isCompact, inStroll };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;
 })(typeof window !== "undefined" ? window : globalThis);

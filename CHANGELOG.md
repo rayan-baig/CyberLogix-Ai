@@ -4,6 +4,40 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.27.0 — 2026-11-22
+
+Pilot helps before anyone adds an AI key. No price or plan term has
+changed.
+
+- **Pilot answers the common questions with no AI key.** In the console
+  and the Simple view, **Which fridges need me?** lists the fridges and
+  freezers that are out of range, alerting, quiet or still waiting for a
+  sensor, worst first. **What does this alert mean?** explains the open
+  alert from its own record: how warm it is, its limit, when it went out,
+  the worst so far, and who has it. **Is the food still OK?** gives what
+  was measured and the rule of thumb, always with its note that it is not
+  a ruling. **How do I connect a sensor?** opens the connect wizard.
+  These are read from what the page already shows: nothing is sent
+  anywhere, and no one's name is put in them.
+- **On the public pages,** **Will it work for my café?** is a short answer
+  with the real limits, timings, starting price and trial, and links to
+  the sensor guides, prices, the demo and sign-up. **What does it cost?**,
+  **See it live** and **What sensors do I need?** go straight to their
+  pages, as before. Most suggestions under them are answered at once too
+  (a door left open, the Wi-Fi or power going off, phone calls at night,
+  the trial, the inspector's log, setting up step by step); open
+  questions still use your AI key. Under an answer, while there is no
+  key, Pilot offers one: "Want more? Add your AI key to ask anything."
+- **Pilot core 1.4.0,** the same files as the MTRX Horizyn site. It has
+  link and answer buttons of its own, so CyberLogix's own catcher for the
+  three visitor buttons is gone. It also keeps the robot out of a phone's
+  top corners and off links and buttons, so the extra rule that kept it
+  off every page's top bar is gone too (checked on every page at phone
+  and computer sizes).
+- **`/console#connect`** opens "Connect your sensor" once you are signed
+  in.
+
+
 ## 3.26.0 — 2026-11-22
 
 A café with one or two fridges gets a simpler console, the alerts say

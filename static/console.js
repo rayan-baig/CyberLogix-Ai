@@ -358,6 +358,7 @@ async function enter(token, user) {
     showIssuedKey("this business (master key)", handed, { scroll: false });
   }
   followInspectorLink().catch(() => { /* the estate is the page */ });
+  followConnectLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -4739,9 +4740,20 @@ async function followInspectorLink() {
   if (card) card.scrollIntoView({ block: "center" });
 }
 
+/* "/console#connect" opens "Connect your sensor" (3.27.0): Pilot's "How
+   do I connect a sensor?" goes here, from the console or /today. Followed
+   once, like the inspector's link; signed out, it waits for the sign-in. */
+function followConnectLink() {
+  if (location.hash !== "#connect" || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  openConnect("");
+}
+
 // A link followed while the console is already open changes only the hash.
 window.addEventListener("hashchange", () => {
-  if (state.token) followInspectorLink().catch(() => { /* the estate is the page */ });
+  if (!state.token) return;
+  followConnectLink();
+  followInspectorLink().catch(() => { /* the estate is the page */ });
 });
 
 function dayLabel(day, withYear) {
@@ -7361,6 +7373,10 @@ CLXAnswer.setup({
 window.CyberLogixConsole = Object.freeze({
   signedIn: () => Boolean(state.token),
   api: (path, options) => api(path, options),
+  // What this page last loaded (the overview the cards and "Needs you now"
+  // are drawn from), for Pilot's answers that need no AI key (3.27.0):
+  // read in the browser, nothing fetched and nothing sent.
+  overview: () => (state.token ? state.data : null),
   tab: () => {
     const on = document.querySelector('.f-tab[aria-pressed="true"]');
     return on ? on.textContent.trim() : "";

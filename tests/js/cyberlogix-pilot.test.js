@@ -274,53 +274,239 @@ test("never: plan changes, deleting, the on-call list, texts or calls are refuse
   delete globalThis.window;
 });
 
-// 3.26.0: on a new business's first screen on a phone the robot sat
-// top-left, on the logo. Core 1.3.0's last resort (every corner busy) picks
-// the corner whose tucked-away robot covers least, and a box in `avoid`
-// counts as a million square pixels. With the whole Getting started card in
-// this app's avoid list (it spans a phone's screen) both bottom corners
-// "covered" it, so a top corner won. This runs the core's own choosePlace on
-// that screen, with the avoid list as the config has it now.
-test("the robot never goes onto the logo on a new business's phone screen", () => {
+// 3.26.0 kept the robot off the logo by listing every header bar in this
+// app's avoid list; core 1.4.0 fixes the cause (a phone tries its bottom
+// corners first, a bar that stays put is busy, and a link it would cover
+// is weighed). This runs the core's own choosePlace on a new business's
+// phone screen with the avoid list as the config has it now, with no
+// header bar in it: the robot stays at the bottom.
+test("core 1.4.0: on a new business's phone screen the robot stays at the bottom, with no header bar in the avoid list", () => {
   const fs = require("node:fs");
   const M = require(core("pilot-mascot.js"));
   const config = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
   const list = config.slice(config.indexOf("avoid: ["), config.indexOf("],", config.indexOf("avoid: [")));
   const avoid = new Set(Array.from(list.matchAll(/"([^"]+)"/g), (m) => m[1]));
+  for (const sel of [".top", ".demo-top", "#app > .nav"]) assert.ok(!avoid.has(sel), sel);
   const view = { width: 375, height: 812 };
   const size = { width: 56, height: 54 };
-  // The page: the header bar (logo, Sign in), the Getting started card
-  // filling the screen below it, and its button row; the card's words stop
-  // short of the side room, so the bottom corners have nothing to read.
   const page = [
-    { sel: ".top", box: { left: 0, top: 0, right: 375, bottom: 60 } },
-    { sel: "#app > .nav", box: { left: 0, top: 0, right: 375, bottom: 60 } },
     { sel: "#first-day", box: { left: 30, top: 250, right: 345, bottom: 1400 } },
     { sel: ".checklist-acts", box: { left: 79, top: 690, right: 300, bottom: 726 } },
   ];
-  const words = [{ left: 16, top: 20, right: 42, bottom: 46 }, { left: 290, top: 14, right: 359, bottom: 52 }];
+  // The logo and Sign in (links) at the top; the card's words stop short of
+  // the side room, so the bottom corners have a few words at most.
+  const links = [{ left: 16, top: 20, right: 42, bottom: 46, kind: "control" }, { left: 290, top: 14, right: 359, bottom: 52, kind: "control" }];
   const blocks = page.filter((p) => avoid.has(p.sel)).map((p) => p.box);
-  const busy = (box) => words.some((w) => M.overlaps(box, w, 0));
-  const cost = (box) => words.reduce((n, w) => n + M.areaOf(w, box), 0);
-  const place = M.choosePlace({ corner: "br", view, size, gap: 12, blocks, hard: [], busy, cost,
-    keep: { scale: 0.82, margin: 3 } });
-  assert.equal(place.corner[0], "b", `robot went to ${place.corner}`);
-  // And the old list (the whole card, no header) is what sent it top-left.
-  const old = M.choosePlace({ corner: "br", view, size, gap: 12, hard: [], busy, cost, keep: { scale: 0.82, margin: 3 },
-    blocks: [page[2].box] });
-  assert.equal(old.corner, "tl");
+  const busy = (box) => links.some((w) => M.overlaps(box, w, 0));
+  const cost = (box) => M.costOf(links.filter((w) => M.overlaps(box, w, 0)), box);
+  for (const narrow of [true, undefined]) {
+    const place = M.choosePlace({ corner: "br", view, size, gap: 12, blocks, hard: [], busy, cost, narrow,
+      keep: { scale: 0.82, margin: 3 } });
+    assert.equal(place.corner[0], "b", `robot went to ${place.corner}`);
+  }
+  // Even with every bottom corner busy, a phone never takes a top corner over the logo.
+  const all = M.choosePlace({ corner: "br", view, size, gap: 12, blocks, hard: [], busy: () => true,
+    cost: (box, c) => (c[0] === "t" ? 100 : 2000), narrow: true, keep: { scale: 0.82, margin: 3 } });
+  assert.equal(all.corner[0], "b");
 });
 
-// 3.26.0: the visitor's three pills that need no AI go to their page, key or
-// no key; the core has no link pill, so the config catches the press.
-test("the visitor's link pills go to their pages without a key", () => {
-  const fs = require("node:fs");
-  const config = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
-  for (const [label, href] of [["See it live", "/demo"], ["What does it cost?", "/pricing#calc-title"],
-    ["What sensors do I need?", "/help/sensors"]]) {
-    assert.ok(config.includes(`"${label}": "${href}"`), label);
-    assert.ok(config.includes(`label: "${label}"`), label);
+// ---------------------------------------------------------------- core 1.4.0: useful before a key
+
+const fsx = require("node:fs");
+const vmx = require("node:vm");
+const Words = require(app("words.js"));
+const CONFIG = fsx.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+const PANEL = (() => { const sb = { window: {}, document: {}, URL }; vmx.runInNewContext(fsx.readFileSync(core("pilot-panel.js"), "utf8"), sb); return sb.window.PilotPanel; })();
+const BASE = "https://cyberlogix.example";
+const DATA = { fromPrice: "59", starterUnits: "3", trialDays: "14", trialUnits: "5", trialCalls: "5", fridgeLimit: "41",
+  freezerLimit: "10", offlineMinutes: "30", callAfterMinutes: "10", textWithinSeconds: "60", alertAfterFridge: "20",
+  alertAfterFreezer: "30", alertAtOnceDegrees: "15" };
+
+// A console overview as /api/console/overview gives it, with the server's
+// `condition` on each unit. The people in it must never reach an answer.
+const NOW = Date.parse("2026-11-20T10:20:00Z");
+function overviewWith({ ack = false, fixed = false, none = false, quiet = false, waiting = false } = {}) {
+  const sensors = [
+    { sensor_id: "WALKIN-1", location_name: "Kitchen walk-in", last_temperature_display: 47, temperature_unit: "F",
+      danger_above_display: 41, danger_below_display: null, alert_after_minutes: 20,
+      condition: { state: "alert", too: "warm", out_since: "2026-11-20T09:55:00Z" } },
+    { sensor_id: "FREEZER-1", location_name: "Bar freezer", last_temperature_display: 2, temperature_unit: "F",
+      danger_above_display: 10, condition: { state: "ok" } },
+    { sensor_id: "PREP-1", location_name: "Prep **fridge** [x](/evil)", last_temperature_display: 38, temperature_unit: "F",
+      danger_above_display: 41, condition: { state: "offline" } },
+  ];
+  if (waiting) sensors.push({ sensor_id: "NEW-1", location_name: "Dessert fridge", last_temperature_display: null, condition: { state: "waiting_first" } });
+  const live = { incident_id: "INC-000002", sensor_id: "WALKIN-1", state: ack ? "acknowledged" : "open", temperature_display: 47,
+    peak_display: 48.5, temperature_unit: "F", opened_at: "2026-11-20T10:15:00Z", out_since: "2026-11-20T09:55:00Z",
+    acknowledged_by: ack ? "Dana Reyes <dana@cafe.example>" : null, acknowledged_by_name: ack ? "Dana Reyes" : null,
+    fix_reported_at: fixed ? "2026-11-20T10:18:00Z" : null, fix_reported_by_name: fixed ? "Dana Reyes" : null,
+    breach_details: "Too warm: 47°F (limit 41°F).", sms_fanout: [{ contact_name: "Dana Reyes", to: "+15550100" }],
+    dispatched_sms_text: "ALERT Kitchen walk-in: 47F. Dana Reyes" };
+  const closed = { incident_id: "INC-000001", sensor_id: "PREP-1", state: "resolved", opened_at: "2026-11-19T08:00:00Z",
+    out_since: "2026-11-19T07:40:00Z", out_until: "2026-11-19T08:10:00Z", resolved_at: "2026-11-19T08:10:00Z", peak_display: 44,
+    back_to_normal_on_its_own: true, resolved_by_name: "Dana Reyes" };
+  if (none || quiet) sensors[0].condition = { state: "ok" };
+  return { temperature_unit: "F", sensors: quiet ? sensors.slice(0, 2) : sensors, incidents: none || quiet ? [closed] : [live, closed], site_wide_alerts: [] };
+}
+
+// The config on a page, with what that page's own bridge hands over.
+// fetch is a trap: an answer that touched the network fails the test.
+function mountAt(pathname, { data, signedIn = true, overview } = {}) {
+  let given = null;
+  const fetchTrap = () => { throw new Error("an answer called the network"); };
+  const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
+    localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
+  if (pathname === "/console") win.CyberLogixConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null) };
+  if (pathname === "/today") win.CyberLogixToday = { overview: () => overview };
+  vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL,
+    document: { getElementById: () => ({ dataset: data || DATA }), title: "Restaurants" } });
+  return given;
+}
+const pills = (given, pathname) => PANEL.welcomePills(given.welcomePills, BASE + pathname);
+// Arrays made inside the vm are compared as plain data.
+const J = (x) => JSON.parse(JSON.stringify(x));
+const ask = (pill) => (typeof pill.answer === "function" ? pill.answer({ facts: {}, ready: false, label: pill.label }) : pill.answer);
+const NO_PEOPLE = /Dana|Reyes|dana@|\+1555|\]\(\/evil/;
+
+test("1.4.0: the visitor's link pills are core links now (See it live, What does it cost?, What sensors do I need?); the 3.26.0 click catcher is gone", () => {
+  for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
+    const p = pills(mountAt(pathname), pathname);
+    assert.deepEqual(J(p.map((x) => x.label)), ["Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"], pathname);
+    assert.equal(p[1].link, `${BASE}/pricing`);
+    assert.equal(p[2].link, `${BASE}/demo`);
+    assert.equal(p[3].link, `${BASE}/help/sensors`);
+    assert.equal(p[4].action, "settings");
+    assert.equal(p[4].builtin, true);
   }
-  assert.ok(config.includes("event.stopImmediatePropagation();"));
-  assert.ok(config.includes('closest(".pilot-pill")'));
+  assert.ok(!CONFIG.includes("LINK_PILLS"));
+  assert.ok(!CONFIG.includes("stopImmediatePropagation"));
+  assert.ok(!CONFIG.includes('closest(".pilot-pill")'));
+  assert.equal(mountAt("/").answerMore, "Want more? Add your AI key to ask anything.");
+});
+
+test("1.4.0: 'Will it work for my café?' is a short answer with the real figures and links, no key needed", () => {
+  const text = ask(pills(mountAt("/"), "/")[0]);
+  for (const bit of ["41°F", "10°F", "20 minutes", "60 seconds", "$59 a month", "up to 3 fridges", "14 days, no card",
+    "[See it live](/demo)", "[start a free trial](/signup)", "[See prices](/pricing)", "[which sensors work](/help/sensors)"]) {
+    assert.ok(text.includes(bit), bit);
+  }
+  assert.ok(text.split("\n").length <= 8, "short");
+  // Figures from the server's tag, not written into the config.
+  assert.ok(ask(pills(mountAt("/", { data: { ...DATA, fromPrice: "65", fridgeLimit: "40" } }), "/")[0]).includes("$65 a month"));
+});
+
+test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from the page's own data, worst first, with no names of people", () => {
+  for (const pathname of ["/console", "/today"]) {
+    const p = pills(mountAt(pathname, { overview: overviewWith() }), pathname);
+    assert.deepEqual(J(p.map((x) => x.label)), ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?",
+      "How do I connect a sensor?", "Add my AI key"], pathname);
+    const text = ask(p[0]);
+    assert.match(text, /These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\*/);
+    assert.match(text, /- \*\*Kitchen walk-in\*\* \(47°F\): Too warm for /);
+    assert.match(text, /- \*\*Prep fridge x\(\/evil\)\*\*: No signal|- \*\*Prep fridge x\(\/evil\)\*\*: We have not heard/);
+    assert.ok(!text.includes("Bar freezer"), "a fine unit is not listed");
+    assert.ok(text.indexOf("Kitchen walk-in") < text.indexOf("Prep fridge"), "worst first");
+    assert.match(text, /Nobody has answered an alert yet: press \*\*I'm on it\*\*/);
+    assert.doesNotMatch(text, /\]\(\/evil\)/, "a unit's name can't add a link");
+    assert.doesNotMatch(text, /Dana|Reyes|dana@|\+1555/);
+  }
+  // All fine: says so, with the count.
+  assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ quiet: true }) }), "/console")[0]),
+    /Nothing needs you right now: all 2 fridges and freezers are within their limits\./);
+  // A unit still waiting for its sensor: the wizard.
+  assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ waiting: true }) }), "/console")[0]),
+    /\*\*Dessert fridge\*\* is waiting for a first reading\. \[Connect a sensor\]\(\/console#connect\)/);
+  // No units yet.
+  assert.match(ask(pills(mountAt("/console", { overview: { sensors: [], incidents: [] } }), "/console")[0]),
+    /no fridges or freezers added yet\. \[Connect your first sensor\]\(\/console#connect\)/);
+});
+
+test("1.4.0: 'What does this alert mean?' explains the open alert from its own record", () => {
+  const open = ask(pills(mountAt("/console", { overview: overviewWith() }), "/console")[1]);
+  assert.match(open, /^\*\*Kitchen walk-in\*\* is too warm: 47°F, above its 41°F limit\./);
+  assert.match(open, /It went out of range at .+ and has been out for .+; worst so far 48\.5°F\./);
+  assert.match(open, /It stayed out longer than its 20-minute wait, so we alerted\./);
+  // A reading far past the limit alerts at once: it never claims the wait passed.
+  const fast = overviewWith();
+  fast.incidents[0].opened_at = fast.incidents[0].out_since;
+  assert.match(ask(pills(mountAt("/console", { overview: fast }), "/console")[1]),
+    /It went far enough past its limit to alert at once, without its 20-minute wait\./);
+  assert.match(open, /Nobody has answered yet\. Press \*\*I'm on it\*\* at the top of the page/);
+  assert.match(open, /Check the door is shut/);
+  assert.match(open, /\*\*Is the food still good\?\*\* button/);
+  assert.doesNotMatch(open, NO_PEOPLE);
+  // Someone has it: never their name.
+  const ack = ask(pills(mountAt("/today", { overview: overviewWith({ ack: true }) }), "/today")[1]);
+  assert.match(ack, /Someone on your team is on it\./);
+  assert.doesNotMatch(ack, NO_PEOPLE);
+  const fixed = ask(pills(mountAt("/today", { overview: overviewWith({ ack: true, fixed: true }) }), "/today")[1]);
+  assert.match(fixed, /Someone on your team said it is fixed\. It closes by itself once it is back in range\./);
+  // On /today the buttons are under Needs you now.
+  assert.match(ask(pills(mountAt("/today", { overview: overviewWith() }), "/today")[1]), /\*\*I'm on it\*\* under Needs you now/);
+  // No alert open: says so, and the last one in a line.
+  const none = ask(pills(mountAt("/console", { overview: overviewWith({ none: true }) }), "/console")[1]);
+  assert.match(none, /^No alert is open right now\. The last one: \*\*Prep fridge x\(\/evil\)\*\* was out of range for 30 minutes and came back on its own\. It is closed\./);
+  assert.doesNotMatch(none, NO_PEOPLE);
+});
+
+test("1.4.0: 'Is the food still OK?' gives what was measured and the rule of thumb, always with its not-a-ruling note", () => {
+  const text = ask(pills(mountAt("/console", { overview: overviewWith() }), "/console")[2]);
+  assert.match(text, /\*\*Kitchen walk-in\*\* has been out of range for .+, at worst 48\.5°F, and it is not back yet\./);
+  assert.match(text, /under 2 hours above the limit, cool it back down; 2 to 4 hours, use it straight away/);
+  assert.match(text, /That is guidance, not a ruling: .+ your written food safety plan and local code decide\./);
+  // Signed out: the rule and the note, and where to sign in; never a guess about their food.
+  const out = ask(pills(mountAt("/console", { signedIn: false }), "/console")[2]);
+  assert.match(out, /not a ruling/);
+  assert.match(out, /\[sign in\]\(\/console\)/);
+});
+
+test("1.4.0: signed out, the console's answers say where to look instead of guessing; 'How do I connect a sensor?' opens the wizard", () => {
+  const given = mountAt("/console", { signedIn: false });
+  // The console's sign-in keeps the console's five (the page is the person's own).
+  const p = pills(given, "/console");
+  assert.match(ask(p[0]), /Sign in to see your fridges: \[sign in\]\(\/console\)/);
+  assert.equal(p[3].link, `${BASE}/console#connect`);
+  // Its suggestions need no key either: how to sign in, the reset page, the trial.
+  const chips = PANEL.cleanChips(given.chips(), BASE + "/console");
+  assert.match(ask(chips[0]), /email and password you signed up with, on \[the console\]\(\/console\)/);
+  assert.equal(chips[1].link, `${BASE}/reset`);
+  assert.equal(chips[2].link, `${BASE}/signup`);
+  // The console follows "#connect" to "Connect your sensor", once.
+  const js = fsx.readFileSync(app("console.js"), "utf8");
+  const follow = js.slice(js.indexOf("function followConnectLink"), js.indexOf("// A link followed while the console is already open"));
+  assert.ok(follow.includes('location.hash !== "#connect"'));
+  assert.ok(follow.includes("history.replaceState(null, \"\", location.pathname + location.search);"));
+  assert.ok(follow.includes('openConnect("");'));
+  assert.ok(js.includes("  followConnectLink();\n  followInspectorLink().catch"), "and while the console is open");
+  // The pages hand over what they loaded, and nothing else is fetched for it.
+  assert.ok(js.includes("overview: () => (state.token ? state.data : null),"));
+  const simple = fsx.readFileSync(app("simple.js"), "utf8");
+  assert.ok(simple.includes("window.CyberLogixToday = Object.freeze({ overview: () => lastData });"));
+});
+
+test("1.4.0: page suggestions that are facts are answered at once; open questions stay AI prompts; every answer is local", () => {
+  const kinds = (pathname, opts) => J(PANEL.cleanChips(mountAt(pathname, opts).chips(), BASE + pathname)
+    .map((c) => (c.link ? "link" : c.answer !== undefined ? "answer" : "ai")));
+  assert.deepEqual(kinds("/"), ["answer", "answer", "answer"]);
+  assert.deepEqual(kinds("/pricing"), ["ai", "answer", "answer"]);
+  assert.deepEqual(kinds("/help"), ["answer", "answer", "answer"]);
+  assert.deepEqual(kinds("/help/sensors"), ["ai", "answer", "answer"]);
+  assert.deepEqual(kinds("/for/restaurant"), ["ai", "ai", "answer"]);
+  assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
+  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "ai", "ai"]);
+  const texts = {};
+  for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
+    for (const c of mountAt(pathname).chips()) if (c.answer) texts[c.label] = ask(c);
+  }
+  assert.match(texts["Will a door left open wake us?"], /^No\. A door opened for a minute doesn't alert anybody/);
+  assert.match(texts["Will a door left open wake us?"], /20 minutes for a food fridge, 30 for a freezer/);
+  assert.match(texts["Wi-Fi or power goes off?"], /after 30 minutes with nothing from a sensor everyone on call is texted/);
+  assert.match(texts["Do you phone at night?"], /^Yes, on plans with calls\. If nobody answers the alert text within 10 minutes, CyberLogix phones the people on call/);
+  assert.match(texts["What's in the trial?"], /14 days for up to 5 sensors, needs no card, and includes 5 alert calls/);
+  assert.match(texts["Set up step by step"], /^1\. Buy one sensor/);
+  for (const [label, text] of Object.entries(texts)) {
+    assert.ok(text.length > 40 && text.length < 1200, label);
+    // Links only to this site's own pages.
+    for (const m of text.matchAll(/\]\(([^)]+)\)/g)) assert.match(m[1], /^\/[a-z]/, `${label}: ${m[1]}`);
+  }
 });
