@@ -201,7 +201,10 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
       opened: i.opened_at,
       minutes_open: i.minutes_open,
       people_texted: i.notified_count || 0,
-      phone_call_made: Boolean(i.voice_escalated_at),
+      // True only when a call really went out (3.28.0), not on a server
+      // with calls switched off.
+      phone_call_made: Boolean(i.phoned),
+      calls_off_on_this_server: Boolean(i.calls_off),
       acknowledged: Boolean(i.acknowledged_at),
       fixed: Boolean(i.resolved_at),
     };

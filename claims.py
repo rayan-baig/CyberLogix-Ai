@@ -214,11 +214,14 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         timeline.append(
             {
                 "at": iso(incident.voice_escalated_at),
-                "event": "Escalated to a voice call",
+                "event": ("Escalated to a voice call" if reached or not incident.calls_off
+                          else "Call step reached; no call placed"),
                 "detail": (
                     f"Reached {reached['recipient'] or reached['to']}."
                     if reached
-                    else "No one on the ladder answered."
+                    else "Calls are off on this server, so no call was placed."
+                    if incident.calls_off
+                    else "No call went through to anyone on the ladder."
                 ),
             }
         )

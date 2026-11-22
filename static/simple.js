@@ -112,8 +112,7 @@ function renderNeeds(data, units) {
       ? (i.fix_reported_at
           ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed. It closes by itself once it is back in range.`
           : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
-      : (i.voice_escalated_at ? "Nobody has answered yet, and we have phoned."
-        : "Nobody has answered yet.");
+      : CLXWords.nobodyYet(i);
     return `
     <div class="need ${i.state === "open" ? "need-open" : ""}">
       <p class="need-what"><strong>${esc(whichOne(unit, units))}</strong> is
@@ -266,12 +265,35 @@ function watchWords(entitlements) {
     + "A door opened for a minute is not an alarm.";
 }
 
-/* Open the explanation for somebody new; folded for everyone else. */
+/* Open the explanation for somebody new. For everyone else it folds to
+   one quiet line, "How this works" (3.28.0): the folded box was still a
+   big panel at the foot of a returning owner's screen. */
 function introFor(units) {
   let seen = false;
   try { seen = localStorage.getItem("cyberlogix.today.seen") === "1"; } catch (_) { /* private */ }
-  if (!seen || !units.length) $("intro").open = true;
+  if (!seen || !units.length) {
+    $("intro").open = true;
+  } else {
+    $("intro").classList.add("intro-back");
+    $("intro").querySelector("summary").textContent = "How this works";
+  }
   try { localStorage.setItem("cyberlogix.today.seen", "1"); } catch (_) { /* private */ }
+}
+
+/* "This month: 1 alert, answered in 4 minutes, food kept." (3.28.0), from
+   the server's this_month, by the same rule as each alert's line. */
+function monthLine(data, units) {
+  const m = data.this_month;
+  const box = $("month");
+  if (!m || !units.length || !units.some((u) => u.last_seen)) { box.hidden = true; return; }
+  $("month-line").textContent = m.words;
+  const sub = $("month-sub");
+  sub.hidden = !m.food_usd;
+  if (m.food_usd) {
+    sub.textContent = `About $${Number(m.food_usd).toLocaleString("en-US")} of food protected: `
+      + "an estimate of what a typical fridge or freezer of each kind holds.";
+  }
+  box.hidden = false;
 }
 
 let introDone = false;
@@ -377,6 +399,7 @@ function render(data) {
       the first sensor is added.</p>
       <a class="btn btn-sm" href="/console">Add your first sensor</a>`;
 
+  monthLine(data, units);
   $("when").textContent = "Checked " + howLongAgo(new Date().toISOString());
 }
 

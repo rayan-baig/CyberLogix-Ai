@@ -206,9 +206,14 @@ def console_overview(
 
     # The live alert on each unit, found once rather than once a unit.
     live_by_unit: Dict[str, Any] = {}
+    # And the newest alert on each unit, live or closed, for the repair
+    # offer: a unit somebody marked fixed is not offered a repair (3.28.0).
+    latest_by_unit: Dict[str, Any] = {}
     for incident in STORE.incidents_for(tenant.tenant_id):
         if incident.unresolved and incident.sensor_id not in live_by_unit:
             live_by_unit[incident.sensor_id] = incident
+        if not incident.site_wide and incident.sensor_id not in latest_by_unit:
+            latest_by_unit[incident.sensor_id] = incident
 
     sensors: List[Dict[str, Any]] = []
     for sensor in sorted(STORE.sensors_for(tenant.tenant_id), key=lambda s: s.sensor_id):
@@ -241,7 +246,8 @@ def console_overview(
         # "Get a repair quote", when the forecaster or the pattern check
         # says this unit is failing or drifting warm (repairs.py), or the
         # request already sent for it. On every plan: it costs nothing.
-        row["repair"] = unit_state(tenant, sensor, projection)
+        row["repair"] = unit_state(tenant, sensor, projection,
+                                   latest=latest_by_unit.get(sensor.sensor_id))
         # What every page says about this unit now: waiting for its first
         # reading, fine, watching (out of range, inside its wait), alert,
         # or offline, with the one "out since" and "we text at" they all
@@ -264,8 +270,11 @@ def console_overview(
         row["temperature_unit"] = unit
         # On a closed alert: what the food in it was roughly worth, as an
         # estimate (food_value.py, where the owner tunes the figures).
-        row["food_protected"] = food_value.protected(
-            incident, STORE.get_sensor(incident.sensor_id))
+        # Only when it was caught in time or somebody said the food was
+        # kept; a long one says "Food at risk: check it" instead (3.28.0).
+        unit_sensor = STORE.get_sensor(incident.sensor_id)
+        row["food_protected"] = food_value.protected(incident, unit_sensor)
+        row["food_at_risk"] = food_value.at_risk(incident, unit_sensor)
         incidents.append(row)
     # The possible attack or site-wide failure alerts, apart from the
     # units' own: the console shows them as one banner each, above
@@ -389,8 +398,72 @@ def console_overview(
         "grace_window_minutes": VOICE_ESCALATION_GRACE_MINUTES,
         # The first-day checklist, ticked from what the account holds.
         "first_day": checklist(tenant),
+        # "This month: 1 alert, answered in 4 minutes, food kept." for the
+        # Simple view (3.28.0), by the same rule as each alert's line.
+        "this_month": month_summary(tenant, now),
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
+    }
+
+
+def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
+    """This calendar month so far, in one line a café owner can read.
+
+    {"alerts", "answered", "typical_answer_minutes", "food_kept",
+    "food_usd", "food_at_risk", "words"}. Only the units' own alerts
+    (a site-wide one sits on top of them). "Food kept" by food_value's
+    rule: answered and back in range within two hours, or marked kept.
+    """
+    from statistics import median
+
+    from domain import minutes_words
+
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    alerts = [i for i in STORE.incidents_for(tenant.tenant_id, since=start)
+              if not i.site_wide and i.opened_at >= start]
+    answered = [i for i in alerts if i.acknowledged_at is not None]
+    waits = [max(0.0, (i.acknowledged_at - i.opened_at).total_seconds() / 60.0)
+             for i in answered]
+    typical = round(median(waits), 1) if waits else None
+    kept = risky = usd = 0
+    for i in alerts:
+        sensor = STORE.get_sensor(i.sensor_id)
+        row = food_value.protected(i, sensor)
+        if row:
+            kept += 1
+            usd += row["usd"]
+        elif food_value.at_risk(i, sensor):
+            risky += 1
+
+    n = len(alerts)
+    if not n:
+        words = "This month: no alerts. Every fridge and freezer stayed in range."
+    else:
+        parts = [f"{n} alert{'' if n == 1 else 's'}"]
+        waiting = sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is None)
+        if typical is not None and len(answered) == n:
+            parts.append(f"{'answered' if n == 1 else 'typically answered'} in {minutes_words(typical)}")
+        elif answered:
+            parts.append(f"{len(answered)} answered")
+        elif waiting:
+            parts.append("not answered yet")
+        else:
+            parts.append("none answered")
+        if risky:
+            parts.append(f"food at risk on {risky}: check {'it' if risky == 1 else 'them'}")
+        elif kept == n:
+            parts.append("food kept")
+        elif kept:
+            parts.append(f"food kept on {kept}")
+        words = "This month: " + ", ".join(parts) + "."
+    return {
+        "alerts": n,
+        "answered": len(answered),
+        "typical_answer_minutes": typical,
+        "food_kept": kept,
+        "food_usd": usd,
+        "food_at_risk": risky,
+        "words": words,
     }
 
 

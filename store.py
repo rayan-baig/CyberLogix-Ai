@@ -1961,6 +1961,14 @@ class HubStore:
             self._save_incident(incident)
         return incident
 
+    def record_disposition(self, incident: Incident, disposition: str) -> Incident:
+        """What happened to the product, on its own: "Food kept" or
+        "Thrown away" after "It's fixed" (voice_dispatch.record_food)."""
+        with self._lock:
+            incident.product_disposition = disposition
+            self._save_incident(incident)
+        return incident
+
     def review_incident(self, incident: Incident, actor: str) -> Incident:
         """A manager's sign-off, which principle 7 asks for separately.
 

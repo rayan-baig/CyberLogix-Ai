@@ -229,11 +229,13 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
                     headers=admin).status_code == 200                # repair-declined
     sensor_factory(headers, "BELL-WALKIN", "restaurant", "Walk-in freezer", above=32.0)
     walkin = STORE.get_sensor("BELL-WALKIN")
-    for minutes_ago, temp in enumerate([51.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0,
-                                        38.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]):
+    # Two warm spells (3.28.0: one is not enough to offer a repair).
+    temps = [0.0, 40.0, 41.0, 40.0, 0.0, 0.0, 51.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0,
+             38.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    for minutes_ago, temp in enumerate(temps):
         STORE.record_reading(sensor=walkin, temperature_fahrenheit=temp,
                              humidity_percent=50.0, breached=temp > 32.0,
-                             at=utc_now() - timedelta(minutes=5 * (13 - minutes_ago)))
+                             at=utc_now() - timedelta(minutes=5 * (len(temps) - 1 - minutes_ago)))
     lead = api.post("/api/repairs/quote", headers=owner, json={
         "sensor_id": "BELL-WALKIN", "contact_name": "Ann Bell",
         "contact_phone": "+1-555-0177", "street": "1 Bell St", "city": "Boston",

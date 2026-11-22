@@ -219,10 +219,23 @@ insurer reads.
 A closed alert in the console, and the monthly email, say roughly what the
 food in the unit was worth: "Food protected: about $800", with the words
 "An estimate: what a typical fridge holds, not a count of this one." under
-it. It is counted only for a unit's own alert that is closed, that a
-person answered ("I'm on it" or "It's fixed"), and whose food was not
-recorded as thrown away. An alert that ended on its own, unanswered,
-claims nothing.
+it. It is counted only for a unit's own alert that is closed, whose food
+was not recorded as thrown away, and either
+
+* somebody said the food was kept ("Food kept" after **It's fixed**, or a
+  corrective action that kept it), or
+* a person answered it ("I'm on it" or "It's fixed") and the unit was back
+  in range within two hours of going out (`SAFE_HOURS`).
+
+An alert that ended on its own, unanswered, claims nothing. One that ran
+longer than two hours, or was closed while still out of range, with nobody
+saying the food was kept, says **"Food at risk: check it"** with **Food
+kept** and **Thrown away** buttons, never "Food protected" (3.28.0: eight
+hours at 62.5°F used to claim $3,000). After **It's fixed** closes an
+alert, the page asks once: "Closed. What about the food?" (**Food kept**,
+**Thrown away** or **Not sure yet**). The answer is the alert's product
+disposition in the inspector's log (`POST /api/voice/food/{id}`,
+`{"food": "kept" | "thrown"}`).
 
 The figures are in one place, `food_value.py`, for the owner to tune:
 `STOCK_USD` is what a typical unit of each kind holds (fridge, freezer,
@@ -230,7 +243,18 @@ walk-in fridge, walk-in freezer; a walk-in is any unit whose name says
 "walk-in" or "cold room"), one list for food (restaurants, country clubs)
 and one for vaccines and medicines (pharmacies, labs). `SECTOR_STOCK` says
 which list a sector uses; a sector not in it shows no estimate at all. The
-monthly email adds up the month's alerts the same way.
+monthly email adds up the month's alerts the same way, and says how many
+were "Food at risk". The Simple view shows the month so far in one line:
+"This month: 1 alert, answered in 4 minutes, food kept."
+
+### Calls, said as they happened
+
+No page says "we have phoned" or "Called the list" unless a call really
+went out. An alert's record carries `phoned` (a call reached the phone
+network), `calls_off` (the call step came and this server has calls
+switched off) and `call_words`, the line the timeline shows: "Phoned Dana",
+"Would have phoned the list: calls are off on this server", or "Tried to
+phone the list: no call went through".
 
 ### One clock for every page
 

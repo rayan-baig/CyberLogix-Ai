@@ -302,8 +302,10 @@ def test_the_monthly_email_adds_it_up_as_an_estimate():
               "inspector_log": "", "period_start": "2026-10-01", "period_end": "2026-10-31",
               "caveat": "", "temperature_unit": "F"}
     text = monthly.render_text(report)
-    assert "Food protected: about $3,800 (2 alerts answered and closed with the food kept)." in text
-    assert "An estimate: what a typical fridge or freezer of each kind holds" in text
+    # 3.28.0: the rule is said as it is (food_value.protected).
+    assert ("Food protected: about $3,800 (2 alerts answered and back in range within "
+            "2 hours, or marked Food kept).") in " ".join(text.split())
+    assert "An estimate: what a typical fridge or freezer of each kind holds" in " ".join(text.split())
     report["food_protected_usd"] = 0
     assert "Food protected" not in monthly.render_text(report)
 

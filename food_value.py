@@ -12,11 +12,22 @@ list a sector uses; a sector not in it gets no estimate at all (no figure
 is better than an invented one). docs/ALERTS.md says the same for whoever
 runs the server.
 
-When an alert counts (`protected`): it is a unit's own alert (not a
-site-wide one, which sits on top of its units' alerts), it is closed, a
-person answered it ("I'm on it" or "It's fixed"), and the food was not
-recorded as thrown away. An alert that ended on its own with nobody
-answering is not counted: nobody had to act, so nothing is claimed.
+When an alert counts (`protected`, 3.28.0): it is a unit's own alert (not
+a site-wide one, which sits on top of its units' alerts), it is closed,
+and either
+
+* somebody said the food was kept (the "Food kept" answer after "It's
+  fixed", or a corrective action that kept it: unaffected, moved, sold or
+  used), or
+* a person answered it ("I'm on it" or "It's fixed") and the unit was back
+  in range within `SAFE_HOURS` (two hours) of going out.
+
+It never counts when the food was recorded as thrown away. An alert that
+ended on its own with nobody answering is not counted: nobody had to act,
+so nothing is claimed. A unit out of range for longer than two hours, or
+closed while still out of range, with nobody saying the food was kept, is
+"Food at risk: check it" (`at_risk`), never "protected": eight hours at
+62.5°F used to say "Food protected: about $3,000".
 """
 
 from __future__ import annotations
@@ -53,6 +64,14 @@ SECTOR_STOCK: Dict[str, str] = {
 # The first word of the line, by list.
 LABEL = {"food": "Food protected", "clinical": "Stock protected"}
 
+# How long a unit may be out of range, with somebody answering, and still
+# count as caught in time: the widely taught two-hour rule for food above
+# its limit. Past it, only an explicit "Food kept" counts.
+SAFE_HOURS = 2.0
+
+# What a person can record that means the food was kept.
+KEPT = ("unaffected", "moved", "sold_or_used")
+
 _WALK_IN = ("walk-in", "walk in", "walkin", "cold room", "coldroom")
 
 
@@ -82,19 +101,35 @@ def estimate(sensor) -> Optional[Dict[str, Any]]:
     return {"usd": int(usd), "kind": kind, "label": LABEL[stock]}
 
 
+def _back_in_time(incident) -> bool:
+    """Back in range within SAFE_HOURS of going out. A unit closed while
+    still out of range never was, as far as anybody knows."""
+    if getattr(incident, "closed_out_of_range", False):
+        return False
+    start = getattr(incident, "out_since", None) or incident.opened_at
+    hours = (incident.resolved_at - start).total_seconds() / 3600.0
+    return hours <= SAFE_HOURS
+
+
+def _closed_unit_alert(incident) -> bool:
+    return (incident is not None and incident.resolved_at is not None
+            and getattr(incident, "kind", "unit") == "unit")
+
+
 def protected(incident, sensor) -> Optional[Dict[str, Any]]:
     """What a closed alert protected, as an estimate, or None.
 
     {"usd", "words", "note"}: words is the line itself ("Food protected:
     about $800"), note says it is an estimate and of what.
     """
-    if incident is None or incident.resolved_at is None:
+    if not _closed_unit_alert(incident):
         return None
-    if getattr(incident, "kind", "unit") != "unit":
+    fate = getattr(incident, "product_disposition", "") or ""
+    if fate == "discarded":
         return None
-    if incident.acknowledged_at is None and getattr(incident, "fix_reported_at", None) is None:
-        return None
-    if (getattr(incident, "product_disposition", "") or "") == "discarded":
+    answered = (incident.acknowledged_at is not None
+                or getattr(incident, "fix_reported_at", None) is not None)
+    if fate not in KEPT and not (answered and _back_in_time(incident)):
         return None
     guess = estimate(sensor)
     if guess is None:
@@ -106,13 +141,44 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
     }
 
 
+def at_risk(incident, sensor) -> Optional[Dict[str, Any]]:
+    """"Food at risk: check it", on a closed alert that ran too long.
+
+    Out of range for over SAFE_HOURS (or closed while still out), nobody
+    said the food was kept, and nobody recorded it thrown away. None
+    otherwise, and None where the sector has no estimate.
+    """
+    if not _closed_unit_alert(incident):
+        return None
+    fate = getattr(incident, "product_disposition", "") or ""
+    if fate == "discarded" or fate in KEPT:
+        return None
+    if _back_in_time(incident):
+        return None
+    guess = estimate(sensor)
+    if guess is None:
+        return None
+    word = "Food" if guess["label"].startswith("Food") else "Stock"
+    return {
+        "words": f"{word} at risk: check it",
+        "note": (f"It was out of range for more than {SAFE_HOURS:g} hours"
+                 if not getattr(incident, "closed_out_of_range", False)
+                 else "It was closed while still out of range")
+                + ". Say what happened to it, for the record.",
+    }
+
+
 def month_total(pairs: Iterable) -> Dict[str, Any]:
-    """The month's estimate over (incident, sensor) pairs: {"usd", "alerts"}."""
+    """The month's estimate over (incident, sensor) pairs:
+    {"usd", "alerts", "at_risk"}, by the same rule as each alert's line."""
     usd = 0
     alerts = 0
+    risky = 0
     for incident, sensor in pairs:
         row = protected(incident, sensor)
         if row:
             usd += row["usd"]
             alerts += 1
-    return {"usd": usd, "alerts": alerts}
+        elif at_risk(incident, sensor):
+            risky += 1
+    return {"usd": usd, "alerts": alerts, "at_risk": risky}

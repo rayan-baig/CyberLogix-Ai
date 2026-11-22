@@ -272,6 +272,9 @@ def classify(
     # Everything else: warm, and nothing says it is meant to be.
     return {
         "pattern": "failure",
+        # How many warm spells there were in the window (3.28.0): one
+        # warm spell is not enough to call a unit failing.
+        "events": len(real),
         "confident": bool(rhythm) or current["minutes"] > DOOR_MAX_MINUTES,
         "because": (
             f"Above the line for {current['minutes']:.0f} minutes"

@@ -77,10 +77,19 @@ function logToConsole(message, kind = "info") {
 
 /* A toast for the moment, a terminal line for the record. */
 function toast(message, kind = "") {
+  // One message at a time (3.28.0): "Added you", "Recorded, not texted"
+  // and "All done" stacked three deep over the cards on a phone. A new
+  // one replaces the last, except an error, which stays until it fades
+  // unless another error replaces it.
+  const box = $("toasts");
+  Array.from(box.children).forEach((old) => {
+    if (kind === "err" || !old.classList.contains("err")) old.remove();
+  });
   const el = document.createElement("div");
   el.className = "toast " + kind;
   el.textContent = message;
-  $("toasts").appendChild(el);
+  box.appendChild(el);
+  state.lastToast = { message, kind, at: Date.now() };
   setTimeout(() => el.remove(), 5200);
   logToConsole(message, kind === "err" ? "err" : kind === "ok" ? "ok" : "info");
 }
@@ -1032,6 +1041,9 @@ function render(d, health) {
   checkTerms().catch(() => { /* the estate is the page */ });
 
   $("chip-company").textContent = `${t.company_name} ▾`;
+  // A small account's bar: the business (its menu holds the plan, the
+  // activity log and the TV screen), °F, Simple view, Help, Sign out.
+  document.body.classList.toggle("acct-small", smallAccount(d));
   $("chip-plan").textContent = t.plan_name + " plan";
   $("chip-seats").textContent = `${t.seats_used}/${t.seats_total} units`;
   // The same "from" as the front page and the plans: a trial is free, and
@@ -1090,6 +1102,13 @@ function render(d, health) {
     banner.hidden = true;
   }
 
+  // A small account on a phone (3.28.0): the three tiles that answer "is
+  // my food OK", not six. "Readings in range: shown after 24 hours", "Flat
+  // batteries: 0" and "Readings logged: 4" were filler on a café's first
+  // screen. A flat battery or a day's figure still shows when it has one.
+  let phone = false;
+  try { phone = window.matchMedia("(max-width: 720px)").matches; } catch (_) { phone = false; }
+  const calm = phone && smallAccount(d) && !state.wall;
   $("tiles").innerHTML = [
     tile(`${Noun(2)} online`, `${s.sensors_online}`,
          `of ${s.sensors_total} under watch`),
@@ -1105,12 +1124,15 @@ function render(d, health) {
     // Readings in range, as a share: shown only after a day of readings,
     // because "80%" after five minutes (one warm reading in five) is not
     // a figure anybody should act on.
+    calm && !(s.compliance_ready && s.compliance_percent !== null) ? "" :
     tile("Readings in range",
          s.compliance_ready && s.compliance_percent !== null ? `${s.compliance_percent}%` : "—",
          s.compliance_ready ? `last ${s.compliance_days} days`
            : `shown after ${s.compliance_after_hours || 24} hours of readings`),
+    calm && !s.low_battery ? "" :
     tile("Flat batteries", `${s.low_battery ?? 0}`,
          s.low_battery ? "replace before they go dark" : "all healthy"),
+    calm ? "" :
     tile("Readings logged", `${s.readings_logged}`,
          `${s.readings_breached} out of range`),
   ].join("");
@@ -1213,7 +1235,10 @@ function siteWideReach(a) {
   const called = (a.voice_fanout || []).length;
   const parts = [`Raised ${esc(stamp(a.opened_at))}`];
   if (texted) parts.push(`texted ${texted} ${texted === 1 ? "person" : "people"}`);
-  if (called) parts.push(`called ${called}`);
+  // Only calls that really went out (3.28.0).
+  const phoned = (a.voice_fanout || []).filter((f) => f.delivered).length;
+  if (phoned) parts.push(`phoned ${phoned}`);
+  else if (called && a.calls_off) parts.push("calls are off on this server");
   if (a.acknowledged_by) parts.push(`${esc(CLXWords.person(a.acknowledged_by_name, a.acknowledged_by))} is on it`);
   if (a.group_night) parts.push("at night");
   return parts.join(" · ");
@@ -1611,15 +1636,21 @@ function sensorCard(s) {
    sent, and to how many companies (one). */
 function repairBlock(s) {
   const r = s.repair;
-  if (!r) return "";
+  // Never on the TV screen: it is for looking at, not for asking for a
+  // quote (3.28.0).
+  if (!r || state.wall) return "";
   if (!r.offer) {
     return `<div class="repair-sent">Repair quote sent to ${esc(r.sent_to || "a repair company")}
       on ${esc(shortDate(r.sent_at))}.</div>`;
   }
   const canAsk = Boolean(state.user && state.user.role !== "viewer");
-  const why = r.kind === "failing"
+  // Never "failing" beside a "Fine" label (3.28.0): a unit that is in
+  // range now has gone warm before, which is what it says.
+  const fine = !s.condition || ["ok", "waiting_first"].includes(s.condition.state);
+  const why = r.kind === "failing" && !fine
     ? "This unit looks like it is failing."
-    : "This unit keeps getting warmer.";
+    : r.kind === "drifting" ? "This unit keeps getting warmer."
+      : "This unit keeps going too warm.";
   return `<div class="repair-offer"><span>${esc(why)}</span>${canAsk
     ? `<button class="btn btn-sm btn-primary" type="button"
          data-repair-quote="${esc(s.sensor_id)}">Get a repair quote</button>` : ""}</div>`;
@@ -1934,8 +1965,10 @@ function deliveryLine(record, channel) {
   if (record.delivered) {
     return `<span class="badge s-good"><span class="dot"></span>${name} sent</span>`;
   }
+  const why = channel === "Voice" && String(record.status || "").toLowerCase() === "not_configured"
+    ? "calls are off on this server" : deliveryWords(record.status);
   return `<span class="badge s-warning"><span class="dot"></span>`
-       + `${name} not sent: ${esc(deliveryWords(record.status))}</span>`;
+       + `${name} not sent: ${esc(why)}</span>`;
 }
 
 /* Every alert text failed. Said at the top of the card, because the card
@@ -2008,12 +2041,12 @@ function incidentTimeline(i) {
       text: `Text sent again · ${got} of ${sent} delivered` });
   }
 
+  // The call step as it really went (records.Incident.call_words):
+  // "Would have phoned the list: calls are off on this server" when no
+  // call was placed, never that the list was called (3.28.0).
   if (i.voice_escalated_at) {
-    const reached = (i.voice_fanout || []).find((f) => f.delivered);
-    steps.push({ cls: "call", when: i.voice_escalated_at,
-      text: reached
-        ? `Called ${reached.contact_name || reached.to}`
-        : "Called the list — nobody answered" });
+    steps.push({ cls: i.phoned ? "call" : "", when: i.voice_escalated_at,
+      text: i.call_words || (i.phoned ? "Phoned the list" : "Tried to phone the list: no call went through") });
   }
   if (i.acknowledged_at) {
     steps.push({ cls: "ack", when: i.acknowledged_at,
@@ -2047,6 +2080,20 @@ function incidentTimeline(i) {
     `<li class="${st.cls}">${esc(st.text)}`
     + (st.when ? ` <span class="when">${esc(when(st.when))}</span>` : "")
     + `</li>`).join("")}</ul>`;
+}
+
+/* "Food at risk: check it" (3.28.0): a closed alert that ran over two
+   hours, or was closed still out of range, with nobody saying the food
+   was kept. Never "Food protected" for those. The two answers are here
+   for whoever can act on the alert. */
+function foodAtRisk(i) {
+  const canAct = Boolean(state.user && state.user.role !== "viewer") && !state.wall;
+  const kept = i.food_at_risk.words.startsWith("Stock") ? "Stock kept" : "Food kept";
+  return `<div class="food-risk"><p><b>${esc(i.food_at_risk.words)}</b>
+      <span class="sub">${esc(i.food_at_risk.note)}</span></p>${canAct
+    ? `<div class="food-acts"><button class="btn btn-sm" type="button" data-food-kept="${
+        esc(i.incident_id)}">${kept}</button><button class="btn btn-sm" type="button" data-food-thrown="${
+        esc(i.incident_id)}">Thrown away</button></div>` : ""}</div>`;
 }
 
 /* A unit's name as the kitchen says it, for an alert about it. */
@@ -2122,6 +2169,7 @@ function renderIncidents(incidents, entitlements, siteWide) {
       ${i.state === "resolved" && i.food_protected
         ? `<p class="food-saved"><b>${esc(i.food_protected.words)}</b>
              <span class="sub">${esc(i.food_protected.note)}</span></p>` : ""}
+      ${i.state === "resolved" && i.food_at_risk ? foodAtRisk(i) : ""}
       ${incidentTimeline(i)}
 
       <details class="incident-more">
@@ -2131,7 +2179,8 @@ function renderIncidents(incidents, entitlements, siteWide) {
           ${esc(i.dispatched_sms_text)}
         </div>
         ${i.voice_script ? `<div class="quote">
-          <div class="quote-label">What the phone call said</div>${esc(i.voice_script)}</div>` : ""}
+          <div class="quote-label">${i.phoned ? "What the phone call said"
+            : "What the phone call would have said (no call was placed)"}</div>${esc(i.voice_script)}</div>` : ""}
         <div class="row u-gap-6">
           ${deliveryLine(i.texts_landed && !(i.sms_delivery && i.sms_delivery.delivered)
             ? { delivered: true, provider_sid: "on a re-send" } : i.sms_delivery, "SMS")}
@@ -2191,7 +2240,7 @@ function renderNeedsBar(d) {
     ? (i.fix_reported_at
         ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed; it closes once it is back in range.`
         : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
-    : (i.voice_escalated_at ? "Nobody has answered, and we have phoned." : "Nobody has answered yet.");
+    : CLXWords.nobodyYet(i);
   const more = all.length - 1;
   bar.innerHTML = `<div class="needs-bar-in">
       <span class="needs-bar-kicker">Needs you now</span>
@@ -5256,6 +5305,26 @@ function paintBusinessChip(list) {
     : "";
 }
 
+/* The account bar's extras, in the business menu (3.28.0): your plan, the
+   activity log and the TV screen. On a small account they are not in the
+   bar at all (theme.css, body.acct-small): a café's desktop header had
+   nine chips and buttons. Bigger accounts keep them in the bar too. */
+function thisAccountBox() {
+  const d = state.data || {};
+  const t = d.tenant || {};
+  const plan = $("chip-spend").textContent && $("chip-spend").textContent !== "—"
+    ? $("chip-spend").textContent : `${t.plan_name || ""} plan`;
+  const who = state.user ? `${state.user.full_name} · ${state.user.role}` : "";
+  return `<section class="biz-acct" aria-label="This account">
+      <div class="biz-meta">${esc(who)}${who ? " · " : ""}${esc(plan)}${
+        t.seats_total ? ` · ${esc(`${t.seats_used} of ${t.seats_total} units`)}` : ""}</div>
+      <div class="biz-acct-acts">
+        <button class="btn btn-sm" type="button" id="biz-log">Activity log</button>
+        <button class="btn btn-sm biz-tv" type="button" id="biz-tv">TV screen</button>
+      </div>
+    </section>`;
+}
+
 async function openBusinesses() {
   let list;
   try {
@@ -5342,6 +5411,7 @@ async function openBusinesses() {
     <p class="biz-totals">${list.count} business${list.count === 1 ? "" : "es"}
       · ${t.open_alerts} open alert${t.open_alerts === 1 ? "" : "s"}
       · ${t.sensors_offline} unit${t.sensors_offline === 1 ? "" : "s"} offline</p>
+    ${thisAccountBox()}
     <div class="biz-list">${rows}</div>
     ${addForm}
     ${joinForm}
@@ -5350,6 +5420,12 @@ async function openBusinesses() {
   `;
   showDrawer();
   $("drawer-close").addEventListener("click", closeDrawer);
+  // The nav's extras, folded into this menu on a small account (3.28.0).
+  const fold = { "biz-log": "term-toggle", "biz-tv": "wall-mode" };
+  Object.entries(fold).forEach(([id, target]) => {
+    const b = $(id);
+    if (b) b.addEventListener("click", () => { closeDrawer(); $(target).click(); });
+  });
   $("drawer").querySelectorAll("[data-open-biz]").forEach((btn) => {
     btn.addEventListener("click", () => switchBusiness(btn.dataset.openBiz, btn));
   });
@@ -5742,11 +5818,15 @@ function renderFirstDay(fd) {
     // Finished while it was on screen: say so once, as it goes.
     if (fd && fd.complete && !card.hidden) {
       // Only now: "complete" includes a reading that actually arrived.
-      toast(state.textsOff
-        ? "All done. Readings are arriving and alerts show here. Texts are off "
-          + "on this server, so nobody is texted yet."
+      // The step that finished it (usually "Send a test") said something a
+      // moment ago: one message with both, not two stacked (3.28.0).
+      const last = state.lastToast;
+      const lead = last && last.kind !== "err" && Date.now() - last.at < 6000
+        ? `${last.message.replace(/\s*$/, "")} ` : "";
+      toast(lead + (state.textsOff
+        ? "All done: readings are arriving and alerts show here."
         : "All done. Readings are arriving and your team will be alerted: "
-          + "your first fridge is protected.", "ok");
+          + "your first fridge is protected."), "ok");
     }
     card.hidden = true;
     return;
@@ -6454,6 +6534,10 @@ document.addEventListener("click", (event) => {
     CLXAnswer.fixed(btn.dataset.resolve, btn);
   }
 
+  // What happened to the food, on an alert that says "Food at risk".
+  if (btn.dataset.foodKept) CLXAnswer.food(btn.dataset.foodKept, "kept", btn);
+  if (btn.dataset.foodThrown) CLXAnswer.food(btn.dataset.foodThrown, "thrown", btn);
+
   if (btn.dataset.needsMore) {
     goTo("alerts");
   }
@@ -7136,9 +7220,19 @@ function inShortList(card) {
   return FIRST_CARDS.has(card.id);
 }
 
+/* Advanced for everybody (data-advanced), or for a small account only
+   (data-small-advanced, 3.28.0): "What runs by itself" with its sweep,
+   compliance report and CSV, the AI key for alert wording, and "Set up
+   for your industry" sat in a café's Setup tab. A bigger account keeps
+   them in Setup; a search still finds every one. */
+function isAdvanced(card) {
+  return card.getAttribute("data-advanced") === "1"
+    || (card.getAttribute("data-small-advanced") === "1" && smallAccount());
+}
+
 /* Whether a card belongs in the tab being shown. */
 function inTab(card, searching) {
-  const advanced = card.getAttribute("data-advanced") === "1";
+  const advanced = isAdvanced(card);
   if (finder.tab === "advanced") return advanced;
   // A card a button just led to is shown, wherever it is filed.
   if ((finder.tab === "all" || simpleTabs()) && finder.reveal.has(card.id)) return true;
@@ -7230,9 +7324,8 @@ function countTheTabs() {
   const counts = {};
   const small = smallAccount();
   findableCards().forEach((card) => {
-    const isAdvanced = card.getAttribute("data-advanced") === "1";
     // On a small account an Advanced card is counted under Advanced only.
-    if (isAdvanced && small) return;
+    if (isAdvanced(card) && small) return;
     const group = card.getAttribute("data-group");
     counts[group] = (counts[group] || 0) + 1;
   });

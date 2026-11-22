@@ -488,12 +488,12 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   const kinds = (pathname, opts) => J(PANEL.cleanChips(mountAt(pathname, opts).chips(), BASE + pathname)
     .map((c) => (c.link ? "link" : c.answer !== undefined ? "answer" : "ai")));
   assert.deepEqual(kinds("/"), ["answer", "answer", "answer"]);
-  assert.deepEqual(kinds("/pricing"), ["ai", "answer", "answer"]);
+  assert.deepEqual(kinds("/pricing"), ["answer", "answer", "answer"]);
   assert.deepEqual(kinds("/help"), ["answer", "answer", "answer"]);
   assert.deepEqual(kinds("/help/sensors"), ["ai", "answer", "answer"]);
   assert.deepEqual(kinds("/for/restaurant"), ["ai", "ai", "answer"]);
   assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
-  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "ai", "ai"]);
+  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "answer", "ai"]);
   const texts = {};
   for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
     for (const c of mountAt(pathname).chips()) if (c.answer) texts[c.label] = ask(c);
@@ -508,5 +508,63 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
     assert.ok(text.length > 40 && text.length < 1200, label);
     // Links only to this site's own pages.
     for (const m of text.matchAll(/\]\(([^)]+)\)/g)) assert.match(m[1], /^\/[a-z]/, `${label}: ${m[1]}`);
+  }
+});
+
+test("3.28.0: 'It's fixed now' points at the real button, and never closes anything itself", () => {
+  const fixedChip = (pathname, opts) => J(mountAt(pathname, opts).chips()).find((c) => c.label === "It's fixed now");
+  for (const pathname of ["/console", "/today"]) {
+    const given = mountAt(pathname, { overview: overviewWith() });
+    const chip = given.chips().find((c) => c.label === "It's fixed now");
+    assert.equal(chip.prompt, undefined, "not an AI prompt any more");
+    const text = ask(chip);
+    assert.match(text, /^Press \*\*It's fixed\*\* on \*\*Kitchen walk-in\*\*/);
+    assert.match(text, pathname === "/today" ? /under \*\*Needs you now\*\*/ : /top of the page/);
+    assert.match(text, /was the food kept or thrown away/);
+    assert.doesNotMatch(text, NO_PEOPLE);
+  }
+  assert.equal(ask(mountAt("/today", { overview: overviewWith({ none: true }) }).chips()
+    .find((c) => c.label === "It's fixed now")), "No alert is open right now, so there is nothing to mark fixed.");
+  assert.equal(fixedChip("/console", { overview: overviewWith() }).prompt, undefined);
+});
+
+test("3.28.0: 'Log for the inspector' never offers Sign in to somebody signed in", () => {
+  const log = (pathname, opts) => ask(mountAt(pathname, opts).chips().find((c) => /og for the inspector/.test(c.label)));
+  assert.doesNotMatch(log("/today", { overview: overviewWith() }), /Sign in/);
+  assert.match(log("/today", { overview: overviewWith() }), /\[Open the full console\]\(\/console\?view=full\)/);
+  assert.doesNotMatch(log("/console", { overview: overviewWith() }), /Sign in/);
+  // A visitor still gets the way in.
+  assert.match(ask(mountAt("/help").chips().find((c) => c.label === "A log for the inspector")), /\[Sign in\]\(\/console\)/);
+});
+
+test("3.28.0: 'Which plan for a café?' answers with Starter first, from the server's figures", () => {
+  const chip = mountAt("/pricing").chips().find((c) => c.label === "Which plan for a café?");
+  const text = ask(chip);
+  assert.match(text, /^\*\*One café or shop with up to 3 fridges or freezers: Starter, \$59 a month\.\*\*/);
+  assert.match(text, /Growth, \$149 a month a location/);
+  assert.ok(ask(mountAt("/pricing", { data: { ...DATA, fromPrice: "65", restaurantPrice: "160" } }).chips()
+    .find((c) => c.label === "Which plan for a café?")).includes("$65 a month"));
+});
+
+test("3.28.0: 'What does this alert mean?' says 'we have phoned' only when a call really went out", () => {
+  const meaning = (extra) => {
+    const o = overviewWith();
+    Object.assign(o.incidents[0], extra);
+    const p = pills(mountAt("/console", { overview: o }), "/console");
+    return ask(p.find((x) => x.label === "What does this alert mean?"));
+  };
+  assert.match(meaning({ voice_escalated_at: "2026-11-20T10:25:00Z", phoned: true }), /Nobody has answered yet, and we have phoned\./);
+  const off = meaning({ voice_escalated_at: "2026-11-20T10:25:00Z", phoned: false, calls_off: true });
+  assert.doesNotMatch(off, /we have phoned/);
+  assert.match(off, /We would have phoned the list now, but calls are off on this server/);
+  const failed = meaning({ voice_escalated_at: "2026-11-20T10:25:00Z", phoned: false, calls_off: false });
+  assert.match(failed, /the call did not go through/);
+  assert.doesNotMatch(meaning({}), /phoned/);
+});
+
+test("3.28.0: the robot keeps off /today's fridge rows and temperatures and the demo cards", () => {
+  const avoid = J(mountAt("/today", { overview: overviewWith() }).avoid);
+  for (const sel of [".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need"]) {
+    assert.ok(avoid.includes(sel), sel);
   }
 });

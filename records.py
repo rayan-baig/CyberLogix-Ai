@@ -632,6 +632,43 @@ class Incident:
         step = sum(1 for m in SMS_RETRY_AFTER_MINUTES if age >= m)
         return step if step > self.sms_retry_step else 0
 
+    def _voice_receipts(self) -> List[Dict[str, Any]]:
+        return [a for a in (list(self.voice_fanout) or (
+            [self.voice_delivery] if self.voice_delivery else [])) if a]
+
+    @property
+    def phoned(self) -> bool:
+        """A call really went out: at least one reached the phone network.
+        Never true in dry run, or when every call was refused or failed.
+        The only thing that may say "we have phoned" (3.28.0)."""
+        return any(a.get("delivered") for a in self._voice_receipts())
+
+    @property
+    def calls_off(self) -> bool:
+        """The call step came, and no call was placed because this server
+        has no call service switched on (dry run)."""
+        receipts = self._voice_receipts()
+        return bool(receipts) and all(
+            a.get("status") == "not_configured" for a in receipts)
+
+    def call_words(self) -> Optional[str]:
+        """The call step in words, true to what happened, or None before it.
+
+        "Called the list — nobody answered" was said of calls that were
+        never placed, on a server with calls switched off."""
+        if self.voice_escalated_at is None:
+            return None
+        receipts = self._voice_receipts()
+        if self.calls_off:
+            return "Would have phoned the list: calls are off on this server"
+        reached = next((a for a in receipts if a.get("delivered")), None)
+        if reached is not None:
+            who = reached.get("contact_name") or "the first person on the list"
+            return f"Phoned {who}"
+        if not receipts:
+            return "Time to phone, but there was nobody on the list to call"
+        return "Tried to phone the list: no call went through"
+
     @property
     def calls_failed(self) -> bool:
         """The ladder was called and not one call got through to Twilio."""
@@ -865,6 +902,11 @@ class Incident:
             "texts_landed": self.texts_landed,
             "alert_texts_failed": self.alert_texts_failed,
             "texts_off": self.texts_off,
+            # Whether a call really went out, and the call step in words
+            # (3.28.0): no page says "we have phoned" unless `phoned`.
+            "phoned": self.phoned,
+            "calls_off": self.calls_off,
+            "call_words": self.call_words(),
             "sms_retries": list(self.sms_retries),
             "next_sms_retry_at": iso(self.next_sms_retry_at()),
             "opened_at": iso(self.opened_at),

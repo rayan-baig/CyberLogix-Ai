@@ -281,6 +281,7 @@ def summary(tenant: Tenant, first: date, last: date,
         "credit_waiting_usd": credits.balance(tenant.tenant_id),
         "food_protected_usd": saved["usd"],
         "food_protected_alerts": saved["alerts"],
+        "food_at_risk_alerts": saved["at_risk"],
     }
 
 
@@ -366,9 +367,16 @@ def render_text(report: Dict[str, Any]) -> str:
     if report.get("food_protected_usd"):
         n = report["food_protected_alerts"]
         lines += ["", f"Food protected: about ${report['food_protected_usd']:,} "
-                      f"({n} alert{'' if n == 1 else 's'} answered and closed with the "
-                      "food kept). An estimate: what a typical fridge or freezer of "
-                      "each kind holds, not a count of your stock."]
+                      f"({n} alert{'' if n == 1 else 's'} answered and back in range "
+                      "within 2 hours, or marked Food kept). An estimate: what a "
+                      "typical fridge or freezer of each kind holds, not a count of "
+                      "your stock."]
+    if report.get("food_at_risk_alerts"):
+        n = report["food_at_risk_alerts"]
+        lines += ["", f"Food at risk: {n} alert{'' if n == 1 else 's'} ran over 2 hours "
+                      "with nobody saying the food was kept. Check "
+                      f"{'it' if n == 1 else 'them'} in the console and say what "
+                      "happened to the food, for the record."]
 
     if report.get("site_wide_alerts"):
         count = report["site_wide_count"]

@@ -131,7 +131,17 @@ phone at night?" / "Do you phone us?", "What's in the trial?", "A fridge is warm
 "A log for the inspector", "Set up step by step", and the demo's "What am I seeing?" and "What
 happens next?". "Start a free trial" goes to `/signup`, "I forgot my password" to `/reset`. The
 open questions ("Which plan for a café?", "Easiest way to set up", "How would this work for
-me?", "It's fixed now", "Make a proof report") stay AI prompts.
+me?", "Make a proof report") stay AI prompts.
+
+**"It's fixed now" points at the real button (3.28.0).** It is an answer, not a request to the
+AI: it names the open alert and says where its **It's fixed** button is, which checks the fridge
+is back in range and asks whether the food was kept. Pilot never closes an alert itself from this
+suggestion. Signed in on `/today`, "Log for the inspector" links to the full console, never to
+"Sign in".
+
+**Fridge rows and temperatures are on the avoid list (3.28.0).** `.thing-temp`, `.thing-name`,
+`.demo-unit-temp`, `.demo-unit-top`, `#needs` and `.need`: at 375px the robot waved over a
+62.5° reading on /today's last row and over the demo Freezer card's edge.
 
 **The header bars are off the avoid list (3.27.0).** Core 1.4.0 tries a phone's bottom corners
 first, counts a header that stays put as busy, and weighs a link or button it would cover, so

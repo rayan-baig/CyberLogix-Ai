@@ -52,7 +52,27 @@
 
 <main class="wrap page">
   <p class="kicker">Pricing</p>
-  <h1>From %%STARTER_PRICE%% a month. One flat price for each location.</h1>
+  <h1>Small caf&eacute;? Starter is %%STARTER_PRICE%% a month.</h1>
+  <!-- Which plan is mine, first (3.28.0): a small café read "From $59"
+       beside "$149 a location" and could not tell which it would pay.
+       The three answers below link to the panel or the calculator. -->
+  <nav class="plan-pick" aria-label="Which plan is mine?">
+    <a class="plan-pick-card is-lead" href="#starter">
+      <span class="plan-pick-who">One caf&eacute; or shop, up to %%STARTER_UNITS%% fridges or freezers</span>
+      <span class="plan-pick-plan">Starter &middot; %%STARTER_PRICE%% a month</span>
+      <span class="plan-pick-what">Text alerts, the inspector&rsquo;s log, insurance packs</span>
+    </a>
+    <a class="plan-pick-card" href="#calc-title">
+      <span class="plan-pick-who">A restaurant with more fridges, or you want phone calls</span>
+      <span class="plan-pick-plan">Growth &middot; %%RESTAURANT_PRICE%% a month a location</span>
+      <span class="plan-pick-what">Up to %%UNITS_PER_LOCATION%% units there, phone calls, the forecast</span>
+    </a>
+    <a class="plan-pick-card" href="#calc-title">
+      <span class="plan-pick-who">Several locations, a pharmacy or another trade</span>
+      <span class="plan-pick-plan">Work out your price</span>
+      <span class="plan-pick-what">Chains pay less for each location</span>
+    </a>
+  </nav>
   <!-- Said once each: the chain discount, paying yearly, the plans and
        the extras are in the folds below, not repeated up here. On a phone
        the page was over ten thousand pixels long. -->
