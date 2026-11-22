@@ -1,4 +1,4 @@
-// Pilot core 1.2.0 · pilot-panel.js
+// Pilot core 1.2.1 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
 // own: config.welcomePills, with config.tagline under the name), this
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.2.0";
+  const VERSION = "1.2.1";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;

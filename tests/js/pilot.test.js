@@ -799,7 +799,7 @@ function panelHelpers() {
 
 test("welcome 1.2.0: the design's five pills and tagline unless the app gives its own", () => {
   const P = panelHelpers();
-  assert.equal(P.VERSION, "1.2.0");
+  assert.equal(P.VERSION, "1.2.1");
   assert.equal(P.DEFAULT_TAGLINE, "Your AI copilot. Powered by you.");
   const five = P.welcomePills(undefined);
   assert.deepEqual(five.map((p) => p.label), ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]);
@@ -875,7 +875,15 @@ test("placement 1.2.0: the first look of a visit shows the robot whole, once per
   assert.ok(loader.includes('M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs)'));
   assert.ok(loader.includes("reveal: Date.now() < revealUntil"));
   const css = fs.readFileSync(core("pilot.css"), "utf8");
-  assert.match(css, /\.pilot-hello \.pilot-launcher::before \{ animation:/);
+  assert.match(css, /\.pilot-revealing \.pilot-launcher::before \{ animation:/);
+});
+
+test("placement 1.2.1: the first look's class on the root is its own, never a class the chat window styles", () => {
+  const loader = fs.readFileSync(core("pilot.js"), "utf8");
+  const added = [...loader.matchAll(/rootEl\.classList\.add\("([\w-]+)"\)/g)].map((m) => m[1]);
+  assert.ok(added.includes("pilot-revealing"));
+  const panelCss = fs.readFileSync(core("pilot-panel.css"), "utf8");
+  for (const name of added) assert.ok(!new RegExp(`\\.${name}(?![\\w-])`).test(panelCss), `${name} is styled by the chat window`);
 });
 
 test("placement 1.2.0: keepInViewport: tucked away it shrinks into its corner, never off the edge, and is measured at its own size", () => {

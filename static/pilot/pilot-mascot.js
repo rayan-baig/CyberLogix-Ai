@@ -1,4 +1,4 @@
-// Pilot core 1.2.0 · pilot-mascot.js
+// Pilot core 1.2.1 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
@@ -21,7 +21,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.2.0";
+  const VERSION = "1.2.1";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
