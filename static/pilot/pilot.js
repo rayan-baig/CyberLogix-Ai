@@ -1,34 +1,17 @@
-// Pilot core 1.4.0 · pilot.js
-// The one Pilot file a page loads. Once the page has finished loading, it
-// fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
-// owner's picture, pilot-robot-128/256.webp) and the app's config, which
-// calls Pilot.mount. Everything else (the chat window, the engine, the
-// providers, the renderer and the app's knowledge pack) is fetched only the
-// first time the user opens Pilot, so pages stay fast.
-//
-// When the page is idle, and only if the visitor hasn't asked for less
-// motion, it fetches the moving robot (pilot-motion.js, pilot-actor.js,
-// pilot-actor.css and the robot's layers; pose pictures load when a move
-// first needs them).
-//
-// It keeps the robot out of the way (pilot-mascot.js placeNow), looking
-// again on scroll and resize (once a frame at most), on focus, and when the
-// page or its address changes; with a glow on a visit's first page.
-// Pages can reserve room (docs/PILOT.md).
-//
-// It also keeps Pilot with the user:
-// - from page to page: the chat and whether it's open are in sessionStorage
-//   (pilot-store.js), and the window opens again on the next page;
-// - across tabs of the same site: a BroadcastChannel shares the chat, a key
-//   being added or removed, and which tab is answering. Only one tab sends a
-//   request at a time (a Web Lock where the browser has them).
-//
-// An app uses it with one tag, <script id="pilot-core" data-…> (docs/PILOT.md
-// lists every data-* and the config fields).
+// Pilot core 1.4.1 · pilot.js
+// The one Pilot file a page loads. After the page has loaded it fetches the
+// store, the robot (pilot-mascot.js) and the app's config (which calls
+// Pilot.mount); the chat window, engine, providers, renderer and knowledge
+// pack come the first time Pilot is opened, and the moving robot when the
+// page is idle (never under "reduce motion"). It keeps the robot out of the
+// way (pilot-mascot.js placeNow) on scroll, resize, focus and page changes
+// (1.4.1: .pilot-away when there's no room), keeps the chat from page to
+// page (sessionStorage) and across tabs (BroadcastChannel; one tab answers
+// at a time). One tag: <script id="pilot-core" data-…> (docs/PILOT.md).
 (function () {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -48,6 +31,7 @@
   let scrolling = 0; // a timer while the page is being scrolled
   let peekOff = 0; // tapped out of its tucked-away spot until then
   let quiet = false; // tucked till a scroll (reveal)
+  let scrolledDown = false; // the page is scrolled away from its top (core 1.4.1)
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
 
@@ -115,11 +99,13 @@
     const open = Boolean(panel && panel.isOpen);
     const modal = M().modalOpen(document, rootEl, window, list(config.modals));
     rootEl.classList.toggle("pilot-yield", modal && !open);
+    if (open) rootEl.classList.remove("pilot-away");
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
     const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
       corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false,
-      keepIn: Boolean(config.keepInViewport), tuck: quiet });
+      keepIn: Boolean(config.keepInViewport), tuck: quiet, scrolled: scrolledDown, away: config.hideWhenCrowded !== false });
     if (place.corner !== shownCorner) placeAt(place.corner);
+    rootEl.classList.toggle("pilot-away", Boolean(place.hide));
     // A tap brings it out for a while, but never onto a box being typed in.
     rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
     rootEl.classList.toggle("pilot-typing", place.typing);
@@ -139,7 +125,9 @@
       clearTimeout(resized);
       resized = setTimeout(gutter, 200);
     }, { passive: true });
-    window.addEventListener("scroll", () => {
+    window.addEventListener("scroll", (e) => {
+      const t = e && e.target; // scrolled away from the top (1.4.1; never Pilot's own chat)
+      if (!(t && t.nodeType === 1 && rootEl.contains(t))) scrolledDown = M().scrolledAway(window, document, t);
       clearTimeout(scrolling);
       scrolling = setTimeout(() => { scrolling = 0; quiet = false; queueFit(true); }, 160);
       queueFit(false);
@@ -161,7 +149,7 @@
   const gutter = () => M().sideGutter(document, window, config.gutter === false ? [] : list(config.gutter).length ? list(config.gutter) : ["main"]);
 
   // Busy: no wandering (a pop-up, tucked away, or something to avoid where it strolls).
-  const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-peek", "pilot-typing"].some((c) => rootEl.classList.contains(c))
+  const held = () => Boolean(panel && panel.isOpen) || ["pilot-yield", "pilot-away", "pilot-peek", "pilot-typing"].some((c) => rootEl.classList.contains(c))
     || scrolling !== 0
     || shownCorner !== store.ui().corner || (list(config.avoid).length + list(config.yieldTo).length > 0
       && M().inStroll(M().boxesOf(document, [...list(config.avoid), ...list(config.yieldTo)], rootEl, window), window, launcher));
@@ -225,7 +213,7 @@
     launcher.type = "button";
     launcher.className = "pilot-launcher";
     launcher.setAttribute("aria-expanded", "false");
-    launcher.appendChild(window.PilotMascot.robot(document, { small: assets.robot, large: assets.robot2x }));
+    launcher.appendChild(window.PilotMascot.robot(document, { small: assets.robot, large: assets.robot2x, set: assets.robotSet }));
     dot = document.createElement("span");
     dot.setAttribute("aria-hidden", "true");
     launcher.appendChild(dot);
@@ -235,6 +223,7 @@
     status();
     document.documentElement.classList.add("pilot-on"); // pages may reserve var(--pilot-gutter)
     reveal();
+    scrolledDown = M().scrolledAway(window, document, null); // opened partway down
     watchPage();
     wake();
   }
@@ -249,8 +238,7 @@
       if (i > 0) poses[pair.slice(0, i)] = pair.slice(i + 1);
     }
     const go = () => Promise.all([loadScript(assets.motion), loadScript(assets.actor), loadStyle(assets.actorCss)]).then(() => {
-      life = window.PilotActor.live({ launcher, store, poses, dot,
-        art: { body: assets.restBody, head: assets.restHead, eyes: assets.restEyes },
+      life = window.PilotActor.live({ launcher, store, poses, dot, art: M().restArt(assets),
         corner: () => shownCorner, isOpen: held });
       if (life) life.hello();
     }).catch(() => { /* the robot just sits still */ });
@@ -275,6 +263,7 @@
 
   async function open() {
     if (life) life.settle();
+    rootEl.classList.remove("pilot-away");
     rootEl.classList.add("pilot-loading");
     try {
       await loadPanel();

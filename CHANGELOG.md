@@ -4,6 +4,32 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.29.0 — 2026-11-22
+
+Pilot, the helper robot, moves to the shared Pilot core 1.4.1. It gets out
+of the way on a phone instead of sitting on something, and its own quick
+answers stay on your device. No price or plan term has changed.
+
+- **It hides rather than covers.** On a phone, when every corner would put
+  the robot over a button, a link, the search box, the console's tabs, a
+  temperature or a fridge's status, it fades out and comes back once there
+  is room. On a 320px phone with an open alert it used to tuck over the end
+  of the search box; now it steps aside.
+- **One corner while you scroll.** On a phone the robot stays in one bottom
+  corner while the page scrolls, instead of hopping from corner to corner.
+- **Ask a second question straight away.** After one of Pilot's own answers
+  ("Which fridges need me?", "Will it work for my café?"), the other
+  questions come back underneath as small buttons, so you no longer need
+  Clear chat to ask the next one. "Want more? Add your AI key" shows once
+  per chat, not under every answer.
+- **Its own answers stay on your device.** Answers Pilot builds from your
+  page (which fridges need you, what an alert means) are never sent to an
+  AI company, even after you add an AI key; the AI only learns that Pilot
+  showed one.
+- **A shorter key note.** "AI keys are for grown-ups (18+)." is one line for
+  the whole chat, with More to read the full note.
+- **A sharper robot on phones.** It comes in the sizes a phone draws it at.
+
 ## 3.28.0 — 2026-11-22
 
 "Food protected" and "we have phoned" are only said when they are true,

@@ -1,4 +1,4 @@
-/* Pilot core 1.4.0 · pilot.css
+/* Pilot core 1.4.1 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -112,6 +112,13 @@
 /* While a box of the page is being typed in, the tucked-away robot is
    quieter still. */
 .pilot-typing.pilot-peek .pilot-launcher { opacity: 0.55; }
+/* Nowhere to sit (core 1.4.1): on a phone, or while a box is typed in, when
+   every spot would cover a link, a button, a header that stays put or
+   something to avoid, the robot fades out (pilot-mascot.js: hide) and taps
+   go through, until there is room again. Only the robot: an open chat
+   window stays. */
+.pilot-root.pilot-away .pilot-launcher { opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s; }
 
 /* keepInViewport (the app's config): nothing hangs off the screen's edge.
    Tucked away, the robot shrinks to --pilot-peek-scale in its corner (never
@@ -166,7 +173,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher { transition: none; }
+  .pilot-launcher, .pilot-root, .pilot-root.pilot-yield, .pilot-peek .pilot-launcher, .pilot-root.pilot-away .pilot-launcher { transition: none; }
   .pilot-robot,
   .pilot-revealing .pilot-launcher::before,
   .pilot-thinking .pilot-launcher::before,

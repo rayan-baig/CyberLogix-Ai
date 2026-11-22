@@ -1,4 +1,4 @@
-// Pilot core 1.4.0 · pilot-actor.js
+// Pilot core 1.4.1 · pilot-actor.js
 // Plays the robot's moves on a page (pilot-motion.js makes the plans).
 //
 // The resting robot is the owner's design picture in three layers that stack
@@ -18,7 +18,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const M = () => root.PilotMotion;
 
   function node(doc, tag, cls, attrs) {
@@ -28,9 +28,17 @@
     return n;
   }
 
+  // src: a picture's address, or (core 1.4.1) {src, srcset, sizes}, so the
+  // web robot's layers can come in the size they are drawn at (crisp on
+  // phones). The Mac passes addresses, as before.
   function picture(doc, cls, src) {
     const img = node(doc, "img", cls, { alt: "", draggable: "false", decoding: "async" });
-    if (src) img.setAttribute("src", src);
+    const s = src && typeof src === "object" ? src : { src };
+    if (typeof s.srcset === "string" && s.srcset) {
+      img.setAttribute("srcset", s.srcset);
+      if (typeof s.sizes === "string" && s.sizes) img.setAttribute("sizes", s.sizes);
+    }
+    if (s.src) img.setAttribute("src", s.src);
     return img;
   }
 

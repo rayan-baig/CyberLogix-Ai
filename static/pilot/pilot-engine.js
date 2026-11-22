@@ -1,4 +1,4 @@
-// Pilot core 1.4.0 · pilot-engine.js
+// Pilot core 1.4.1 · pilot-engine.js
 // The chat engine: builds what Pilot is told, talks to the provider, runs the
 // app's tools, and asks the user before anything changes. No DOM here: the
 // web panel (pilot-panel.js) and, later, the desktop app give it a `host`
@@ -15,10 +15,13 @@
 // - Stop works at any point: it cancels the provider's answer and stops a
 //   plan before its next step.
 // - What the page or a tool says is data, never instructions.
+// - An app's own answer (a pill's `answer`, marked `local`) never leaves the
+//   device (core 1.4.1): it stays in the chat on screen, and the provider
+//   gets only LOCAL_STANDIN in its place.
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.4.1";
   const MAX_ROUNDS = 8;
   const MAX_PLAN = 8;
   const PLAN_TOOL = "pilot_plan";
@@ -44,6 +47,9 @@ Actions:
   const NO_TOOLS = "You have no tools right now, so you can't change anything in the app. Explain how the user can do it themselves.";
 
   // ---------------------------------------------------------------- helpers
+
+  // What a provider is sent in place of an app's own answer (core 1.4.1).
+  const LOCAL_STANDIN = "(Pilot showed a built-in answer)";
 
   function cleanArgs(tool, raw) {
     const schema = tool.parameters || { properties: {} };
@@ -311,9 +317,16 @@ Actions:
 
     // The messages a provider sees: Pilot's own notes stay on screen only.
     // "Explain this screen" adds what was shared to the user's words.
+    // Core 1.4.1: an app's own answer (`local`) is built from what the page
+    // holds (counts, chore titles, a check's details) and is shown with no
+    // key; it never goes to the provider. A short stand-in keeps the
+    // conversation's turns in order. (1.4.0 sent its words with the next
+    // question once a key was added.)
     function wire() {
-      return messages.filter((m) => m.role !== "note").map((m) => (m.role === "user" && m.shared
-        ? { role: "user", text: `${m.text}\n\n<screen>\n${m.shared}\n</screen>` } : m));
+      return messages.filter((m) => m.role !== "note").map((m) => {
+        if (m.role === "assistant" && m.local) return { role: "assistant", text: LOCAL_STANDIN };
+        return m.role === "user" && m.shared ? { role: "user", text: `${m.text}\n\n<screen>\n${m.shared}\n</screen>` } : m;
+      });
     }
 
     async function send(text, extra) {
@@ -426,7 +439,7 @@ Actions:
     };
   }
 
-  const api = { VERSION, PLAN_TOOL, FORBIDDEN, create, checkTool, cleanArgs };
+  const api = { VERSION, PLAN_TOOL, FORBIDDEN, LOCAL_STANDIN, create, checkTool, cleanArgs };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotEngine = api;
 })(typeof window !== "undefined" ? window : globalThis);

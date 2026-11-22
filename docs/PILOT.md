@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.4.0**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.4.1**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -33,7 +33,7 @@ text promise.
 
 Core 1.1.1 (and so 1.2.0) looks again for a free corner as the page scrolls, never covers a box being typed
 in, and, once a chat has started, puts the page's suggestions above the conversation. This
-app's `avoid` list adds the console's tabs (`.finder`, `.f-tab`), the pinned "Needs you now"
+app's `avoid` list adds the console's tabs (`.finder`, `.f-tab`, until 3.29.0), the pinned "Needs you now"
 bar and its buttons, the "It's fixed" dialog and the front page's first-screen facts, and its
 `keyNote` says in one sentence what an AI key is and where to get one.
 
@@ -122,8 +122,9 @@ person: the overview its cards and "Needs you now" are drawn from, handed over b
 bridge (`CyberLogixConsole.overview()` in `static/console.js`, `CyberLogixToday.overview()` in
 `static/simple.js`). Nothing is fetched to answer and nothing leaves the browser. A unit's name is
 kept as plain words (no links or bold of its own). Signed out, or before the page has loaded,
-they say where to look instead. The answers become part of the chat like any message, so once a
-key is added the AI sees them too; that is why they carry no person's name, number or email.
+they say where to look instead. They carry no person's name, number or email. Since core 1.4.1
+(3.29.0) they never leave the browser at all, not even once a key is added: the AI is sent the
+stand-in "(Pilot showed a built-in answer)" in their place.
 
 Page suggestions that are facts are answers too, from the figures on Pilot's script tag
 (`main.pilot_facts`): "Will a door left open wake us?", "Wi-Fi or power goes off?", "Do you
@@ -150,11 +151,50 @@ the console's `.nav` are no longer in `avoid`. Checked in a real browser at 320�
 375×812 and 1440×900 on `/`, `/pricing`, `/help`, `/help/sensors`, `/for`, `/for/restaurant`,
 `/demo`, the console's sign-in, a new business's console, a console with an open alert and
 `/today`, scrolled from top to bottom: never in a phone's top corner, and never over the logo,
-Sign in or a header link. One spot is left to the core: on a 320px phone, a console with an
+Sign in or a header link. One spot was left to the core: on a 320px phone, a console with an
 open alert scrolled so that the pinned "Needs you now" bar fills the top and the search box and
-tab row fill the bottom, every corner is busy and the robot tucks bottom-left over the end of
-the search box until the next scroll (both are already in `avoid`; reported to the MTRX
-Horizyn core).
+tab row fill the bottom, every corner is busy and the robot tucked bottom-left over the end of
+the search box until the next scroll. Core 1.4.1 fixes it (below).
+
+**Core 1.4.1 (3.29.0): hide rather than cover.** The thirteen files from the MTRX Horizyn
+site (commit f221ffc), byte for byte, with its new pictures. What changes here:
+
+- **On a phone the robot fades out instead of covering something.** When even the least-bad
+  corner would put it over a link, a button, a box, a header or bar that stays put, or anything in
+  this app's `avoid` list (a temperature, a status label, "Needs you now"), it fades out, taps go
+  through, and it comes back once there is room (after a scroll, or when typing ends). The 320px
+  console with an open alert now hides it there instead of tucking it over the search box.
+  `hideWhenCrowded` is left at its default (on).
+- **Once the page is scrolled, one bottom corner.** The phone robot stays tucked in one bottom
+  corner while words pass under it, instead of changing corner every few hundred pixels.
+- **The welcome stays.** Under an answer of this app's own (Which fridges need me?, Will it work
+  for my café?, a fact suggestion), the welcome's pills come back as a small row, so a second
+  question needs no Clear chat. "Want more? Add your AI key to ask anything." shows once per chat,
+  under the first such answer.
+- **The one-line key note stays for the whole chat.** `keyNoteShort` ("AI keys are for grown-ups
+  (18+).") now shows under every chat, not only the welcome, with **More** to open the full note.
+- **A crisp robot on phones.** The script tag names the robot and its resting layers in the sizes
+  they are drawn at on a phone (`data-robot-set`, `data-rest-body-set`, `data-rest-head-set`,
+  `data-rest-eyes-set`, built in `main.pilot_tag` with every address fingerprinted), so a phone
+  shows a 112px, 168px or 176px file instead of shrinking the big one.
+- **Answers stay on the device** (above).
+
+**The console's search box and tabs are off the `avoid` list (3.29.0).** `.finder` and `.f-tab`
+were this app's stopgap for the robot landing on them; core 1.4.1 hides it rather than cover a box
+or a button, so they go. Measured on the 320px console with an open alert, scrolled 500px (the
+"Needs you now" bar pinned across the top, the search box crossing the bottom): hidden there, and
+the same corner or hiding at every other scroll position, with or without the two entries. The rest
+of the list stays: the temperatures, status labels and "Needs you now" are words, which the core
+lets a tucked robot sit over, and listing them is what makes it hide instead; the other buttons
+(the alert's, the Getting started card's, the front page's) are measured exactly from the list,
+where the core's own look samples a few points, and were not shown to be covered without them.
+Checked in a real browser at 320×640, 375×667, 375×812 and 1440×900 on `/`, `/pricing`, `/help`,
+`/help/sensors`, `/for`, `/for/restaurant`, `/demo`, the console's sign-in, a new business's
+console, a console with an open alert and `/today` with and without one, scrolled top to bottom:
+never over a temperature, a status label, the logo or a header link, never in a phone's top
+corner, hidden rather than over the search box or tabs at 320px. On a phone it is hidden more
+often than before, by design: at the top of `/help`, and on parts of `/pricing` and
+`/help/sensors`, every corner has a link, so it waits for a scroll.
 
 Core 1.1.0 adds the moving robot. The tag names its files (`data-motion`, `data-actor`,
 `data-actor-css`, the three `data-rest-*` layers) and every pose picture in
@@ -172,7 +212,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.4.0, unchanged (thirteen files, the two robot pictures, the three layers and `poses/`) |
+| `static/pilot/*` | Pilot core 1.4.1, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |

@@ -568,3 +568,91 @@ test("3.28.0: the robot keeps off /today's fridge rows and temperatures and the 
     assert.ok(avoid.includes(sel), sel);
   }
 });
+
+// ---------------------------------------------------------------- core 1.4.1 (3.29.0)
+
+test("1.4.1: after one of this app's own answers the welcome's pills come back underneath, without the one just asked", () => {
+  const row = (pathname, asked, keyPill) => {
+    const given = mountAt(pathname, { overview: overviewWith() });
+    const list = PANEL.ownPills(given.welcomePills, BASE + pathname);
+    const msgs = [{ role: "user", text: asked }, { role: "assistant", text: "…", local: true }];
+    return J(PANEL.againPills(msgs, list, keyPill)).map((p) => p.label);
+  };
+  // The console and /today: Which fridges need me? leaves the other three (the key pill
+  // waits while the "Want more?" line right above offers the key).
+  for (const pathname of ["/console", "/today"]) {
+    assert.deepEqual(row(pathname, "Which fridges need me?"), ["What does this alert mean?", "Is the food still OK?", "How do I connect a sensor?"], pathname);
+    // Under a later answer (no "Want more?" there: once per chat), the key pill comes back.
+    assert.deepEqual(row(pathname, "Is the food still OK?", true),
+      ["Which fridges need me?", "What does this alert mean?", "How do I connect a sensor?", "Add my AI key"], pathname);
+  }
+  // A visitor: Will it work for my café? leaves the three links.
+  for (const pathname of ["/", "/pricing", "/help/sensors", "/demo"]) {
+    assert.deepEqual(row(pathname, "Will it work for my café?"), ["What does it cost?", "See it live", "What sensors do I need?"], pathname);
+  }
+});
+
+test("1.4.1: the console's own answers never reach the AI provider once a key is added; the stand-in takes their place", async () => {
+  const given = mountAt("/console", { overview: overviewWith() });
+  const p = pills(given, "/console");
+  const text = ask(p.find((x) => x.label === "What does this alert mean?"));
+  assert.ok(text.includes("Kitchen walk-in"), text);
+  // Shown with no key and kept in the chat, then a key is added and the next question is asked.
+  const store = Store.create({ prefix: "c141", local: memoryStorage(), session: memoryStorage() });
+  store.saveChat([{ role: "user", text: "What does this alert mean?" }, { role: "assistant", text, local: true },
+    { role: "note", kind: "more", text: given.answerMore }]);
+  store.saveSettings({ provider: "anthropic", key: "test-key", model: "test-model", maxTokens: 0 });
+  const sent = [];
+  const providers = { ...Providers, chat: async (st, req) => { sent.push(req); return { raw: {}, toolCalls: [], stop: "done", text: "Sure." }; } };
+  const engine = Engine.create({ store, providers, host: { confirm: async () => false, plan: async () => "cancel" },
+    config: { appName: "CyberLogix AI", tools: () => [], kidView: () => false, screen: () => ({ name: "Console" }) } });
+  await engine.send("And what should I check first?");
+  assert.equal(sent.length, 1);
+  const wire = JSON.stringify(sent[0].messages);
+  assert.ok(!wire.includes("Kitchen walk-in") && !wire.includes("47"), wire);
+  assert.ok(wire.includes(Engine.LOCAL_STANDIN));
+  assert.ok(wire.includes("What does this alert mean?") && wire.includes("And what should I check first?"));
+  // Still on screen, unchanged.
+  assert.equal(store.loadChat().find((m) => m.local).text, text);
+});
+
+test("1.4.1: the config gives the one-line key note, leaves hideWhenCrowded at its default, keeps the temperatures and status labels in avoid, and leaves the search box and tabs to the core", () => {
+  for (const pathname of ["/", "/console", "/today"]) {
+    const given = mountAt(pathname, { overview: overviewWith() });
+    assert.equal(given.keyNoteShort, "AI keys are for grown-ups (18+).");
+    assert.ok(given.keyNote.length > given.keyNoteShort.length);
+    assert.equal("hideWhenCrowded" in given, false, "the core's default: hide rather than cover on a phone");
+    const avoid = J(given.avoid);
+    for (const sel of [".thing-temp", ".thing-word", ".sensor-top", ".demo-unit-temp", ".demo-word", ".badge", "#needs-bar"]) {
+      assert.ok(avoid.includes(sel), sel);
+    }
+    // The console's search box and tabs are left to the core (below).
+    assert.ok(!avoid.includes(".finder") && !avoid.includes(".f-tab"));
+  }
+  assert.ok(!CONFIG.includes("hideWhenCrowded:"));
+});
+
+// At 320px with an open alert, the pinned "Needs you now" bar fills the top
+// and the console's search box crosses the bottom (measured in Chromium at
+// y=500: bar 0,0-320,124, search box 30,562-290,663). Core 1.4.0 tucked the
+// robot over the search box's end; core 1.4.1 with this app's avoid list,
+// which no longer names the search box or tabs, hides it there instead.
+test("1.4.1: the 320px console with an open alert: the robot hides rather than tuck over the search box, with no .finder in avoid", () => {
+  const M = require(core("pilot-mascot.js"));
+  const avoid = J(mountAt("/console", { overview: overviewWith() }).avoid);
+  const view = { width: 320, height: 640 };
+  const size = { width: 56, height: 54 };
+  const keep = { scale: 0.82, margin: 3 };
+  const bar = { left: 0, top: 0, right: 320, bottom: 124 };
+  const finder = { left: 30, top: 562, right: 290, bottom: 663, kind: "control" };
+  // Only what the config lists is a block; the search box is the core's own find (a box: a control).
+  const blocks = avoid.includes("#needs-bar") ? [bar] : [];
+  assert.equal(blocks.length, 1);
+  const found = [{ ...bar, kind: "pinned" }, finder];
+  const under = (box) => found.filter((w) => M.overlaps(box, w, 0));
+  const o = { corner: "bl", view, size, gap: 12, keep, blocks, hard: [], narrow: true,
+    busy: (box) => under(box).length > 0, cost: (box) => M.costOf(under(box), box) };
+  const place = M.choosePlace({ ...o, away: true });
+  assert.equal(place.hide, true, JSON.stringify(place));
+  assert.equal(place.corner[0], "b", "hidden, it keeps a bottom corner");
+});
