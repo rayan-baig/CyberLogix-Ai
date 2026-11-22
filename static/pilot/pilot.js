@@ -1,4 +1,4 @@
-// Pilot core 1.2.1 · pilot.js
+// Pilot core 1.3.0 · pilot.js
 // The one Pilot file a page loads. Once the page has finished loading, it
 // fetches the store (pilot-store.js), the robot (pilot-mascot.js and the
 // owner's picture, pilot-robot-128/256.webp) and the app's config, which
@@ -13,8 +13,8 @@
 //
 // It keeps the robot out of the way (pilot-mascot.js placeNow), looking
 // again on scroll and resize (once a frame at most), on focus, and when the
-// page or its address changes; first showing it whole for a few seconds on
-// a visit's first page. Pages can reserve room (docs/PILOT.md).
+// page or its address changes; with a glow on a visit's first page.
+// Pages can reserve room (docs/PILOT.md).
 //
 // It also keeps Pilot with the user:
 // - from page to page: the chat and whether it's open are in sessionStorage
@@ -28,7 +28,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.2.1";
+  const VERSION = "1.3.0";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};
@@ -47,7 +47,6 @@
   let fitFull = false; // the next look may move to another corner (not just tuck in place)
   let scrolling = 0; // a timer while the page is being scrolled
   let peekOff = 0; // tapped out of its tucked-away spot until then
-  let revealUntil = 0; // the first look of a visit: shown whole until then
   const listeners = new Set();
   const tab = Math.random().toString(36).slice(2, 10);
 
@@ -118,7 +117,7 @@
     if (open || modal || rootEl.classList.contains("pilot-dragging")) return;
     const place = M().placeNow({ doc: document, win: window, own: rootEl, launcher, avoid: [...list(config.avoid), ...list(config.yieldTo)],
       corner: store.ui().corner, shown: shownCorner, full, text: config.keepClearOfText !== false,
-      keepIn: Boolean(config.keepInViewport), reveal: Date.now() < revealUntil });
+      keepIn: Boolean(config.keepInViewport) });
     if (place.corner !== shownCorner) placeAt(place.corner);
     // A tap brings it out for a while, but never onto a box being typed in.
     rootEl.classList.toggle("pilot-peek", place.peek && (Date.now() > peekOff || place.typing));
@@ -205,13 +204,13 @@
     });
   }
 
-  // A visit's first page: shown whole (with a glow) for a few seconds.
+  // A visit's first page: a glow for a few seconds. Where it sits follows
+  // the usual rules (1.3.0): a free corner, else tucked away.
   function reveal() {
     const ms = M().firstLook(storage("sessionStorage"), `${store.prefix}-hello`, config.revealMs);
     if (!ms) return;
-    revealUntil = Date.now() + ms;
     rootEl.classList.add("pilot-revealing");
-    setTimeout(() => { revealUntil = 0; rootEl.classList.remove("pilot-revealing"); queueFit(true); }, ms);
+    setTimeout(() => { rootEl.classList.remove("pilot-revealing"); queueFit(true); }, ms);
   }
 
   function build() {

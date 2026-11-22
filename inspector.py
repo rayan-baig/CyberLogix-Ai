@@ -138,9 +138,14 @@ def _days(hours) -> List[Dict[str, Any]]:
 
 def _breach(incident, readings, unit: str, above, below) -> Dict[str, Any]:
     end = incident.resolved_at or utc_now()
+    # From when it went out of range, not from when the alert opened (the
+    # wait in between is part of the breach), and the worst reading the
+    # alert kept, which may have rolled out of the hourly readings.
     during = [r for r in readings
-              if incident.opened_at <= r["at"] <= end and r["breached"]]
+              if incident.started_at <= r["at"] <= end and r["breached"]]
     temps = [r["f"] for r in during] or [incident.temperature_fahrenheit]
+    if incident.peak_f is not None:
+        temps.append(incident.peak_f)
     # The worst reading is the one furthest past the limit it crossed.
     if above is not None and max(temps) > above:
         worst = max(temps)

@@ -1494,6 +1494,17 @@ def sensor_setup_page(request: Request):
     return _serve_page(SENSORS_HTML, request, markup={"%%GUIDES%%": render_html(base)})
 
 
+@app.get("/api/sensor-guides/wizard", tags=["Sensors"])
+def sensor_wizard(request: Request):
+    """The console's "How to connect it" wizard: each sensor brand's few
+    steps, with this deployment's address in them. Public words, like
+    /help/sensors; the console fills in the unit's key and serial."""
+    from sensor_guides import wizard
+
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return {"brands": wizard(base)}
+
+
 @app.get("/developers", include_in_schema=False)
 def developer_reference(request: Request):
     """The API reference as one plain page, rendered here from the schema.
@@ -1593,6 +1604,12 @@ def _pricing_text() -> Dict[str, str]:
         "%%STARTER_PRICE%%": starter["monthly_label"],
         "%%STARTER_RATE%%": repr(float(starter["monthly_usd"])),
         "%%STARTER_UNITS%%": str(starter["max_units"]),
+        # For the calculator's "cheapest plan that fits": which trades
+        # Starter is for, and the rate-card plans with their unit limits.
+        "%%STARTER_VERTICALS%%": html.escape(",".join(starter["verticals"])),
+        "%%CARD_PLANS%%": html.escape(",".join(
+            f'{key}:{t["name"]}:{t["max_sensors"]}' for key, t in PLAN_TIERS.items()
+            if key not in ("trial", starter["plan"]))),
         "%%BUNDLE_PRICE%%": bundle_price_label(),
         "%%BUNDLE_INCLUDES%%": bundle_includes_label(),
         "%%REFERRAL_DAYS%%": str(REFERRAL_TRIAL_DAYS),

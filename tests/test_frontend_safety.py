@@ -37,9 +37,13 @@ TENANT_CONTROLLED = (
 #                                    parse markup
 #   console.html  badge(...)      -> badge() escapes its own label
 #   console.html  timeline steps  -> incidentTimeline() escapes step.text
+#   console.html  keepWords(...)  -> keepWords() escapes every word it
+#                                    wraps (3.25.0, a unit's name kept
+#                                    whole on a phone)
 ESCAPED_ONE_STEP_LATER = (
     "$(\"chip-user\").textContent",
     "${badge(",
+    "${keepWords(",
     "`Called ${reached.contact_name",
     "`Acknowledged by ${i.acknowledged_by",
 )

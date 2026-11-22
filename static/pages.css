@@ -255,3 +255,6 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
 @media (min-width: 721px) {
   details.fold > summary { font-size: 22px; }
 }
+/* The calculator names the plan its figure is for (pricing.js,
+   cheapestPlan): "Starter fits you: $59 a month". */
+.calc-fit { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--good); }

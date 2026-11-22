@@ -159,18 +159,34 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         and i.opened_at >= incident.opened_at - timedelta(days=90)
     ]
 
+    # The reading taken when it went out of range, at that time; the worst
+    # one apart, at its own time. "Breach detected" used to print the
+    # latest reading beside the time the alert opened.
+    first = incident.first_out_f
     timeline: List[Dict[str, Any]] = [
         {
-            "at": iso(incident.opened_at),
+            "at": iso(incident.started_at),
             "event": "Breach detected",
             "detail": (
-                f"{format_temperature(incident.temperature_fahrenheit, unit)} — "
-                f"{restate_temperatures(incident.breach_details, unit)}"
+                (f"{format_temperature(first, unit)} — " if first is not None else "")
+                + restate_temperatures(incident.breach_details, unit)
             ),
         }
     ]
+    if incident.peak_f is not None and incident.peak_f != first:
+        timeline.append({
+            "at": iso(incident.peak_at),
+            "event": "Worst reading",
+            "detail": format_temperature(incident.peak_f, unit),
+        })
     sms_rows = _delivery_rows(incident.sms_fanout, incident.sms_delivery)
-    if sms_rows:
+    if incident.texts_off:
+        timeline.append({
+            "at": iso(incident.opened_at),
+            "event": "Alert written, not sent",
+            "detail": "Texts are off on this server, so nobody was texted.",
+        })
+    elif sms_rows:
         landed = sum(1 for r in sms_rows if r["delivered"])
         timeline.append(
             {
@@ -263,8 +279,15 @@ def build_packet(tenant: Tenant, incident: Incident) -> Dict[str, Any]:
         "event": {
             "incident_id": incident.incident_id,
             "opened_at": iso(incident.opened_at),
+            # The first reading out of range, and the worst; for an alert
+            # from before both were kept, the latest it held.
             "detected_reading": display_temperature(
-                incident.temperature_fahrenheit, unit
+                incident.first_out_f if incident.first_out_f is not None
+                else incident.temperature_fahrenheit, unit
+            ),
+            "peak_reading": display_temperature(
+                incident.peak_f if incident.peak_f is not None
+                else incident.temperature_fahrenheit, unit
             ),
             "temperature_unit": unit,
             "breach_details": restate_temperatures(incident.breach_details, unit),

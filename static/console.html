@@ -53,10 +53,13 @@
              been standard for years. -->
         <span class="pw-wrap">
           <input id="si-password" type="password" autocomplete="current-password"
-                 placeholder="••••••••••" required>
+                 placeholder="••••••••••" required aria-describedby="si-error">
           <button type="button" class="pw-see" id="si-see"
                   aria-pressed="false" aria-controls="si-password">Show</button>
         </span>
+        <!-- Said here, under the box, not only in a toast that has gone by
+             the time somebody looks up from the keyboard. -->
+        <p class="field-error" id="si-error" role="alert" hidden></p>
       </div>
       <button class="btn btn-primary" type="submit">Sign in</button>
       <!-- The way out of being locked out cannot live behind the thing
@@ -144,7 +147,7 @@
     <button class="btn btn-sm" id="term-toggle" aria-pressed="false"
             title="Show the running activity log">Activity log</button>
     <button class="btn btn-sm" id="wall-mode"
-            title="Full-screen board for a wall display">Wall</button>
+            title="A full-screen board for a TV in the kitchen or office">TV screen</button>
     <!-- For the owner who wants the answer rather than the instrument
          panel. Same data, same session, plain words. -->
     <a class="btn btn-sm" href="/today"
@@ -343,9 +346,9 @@
           </form>
           <div id="proof-report-body"></div>
         </section>
-        <section class="card" id="find-claim-packets" data-group="proof" data-find="claim packets insurance adjuster evidence spoiled food loss paperwork insurer" data-label="Claim packets">
+        <section class="card" id="find-claim-packets" data-group="proof" data-find="insurance packs claim packets insurance adjuster evidence spoiled food loss paperwork insurer" data-label="Insurance packs">
           <div class="card-head">
-            <span class="card-title">Claim packets</span>
+            <span class="card-title">Insurance packs</span>
             <span class="card-note" id="claims-note"></span>
           </div>
           <p class="card-plain">If food spoils, your insurer wants proof of
@@ -710,7 +713,7 @@
               more, which is why it, and not your account key, belongs on
               hardware.
             </div>
-            <a class="offline-help" id="issued-guide" href="/help/sensors" hidden>How to put the key in your sensor, brand by brand</a>
+            <a class="offline-help" id="issued-guide" href="/help/sensors" data-connect-issued="1" hidden>How to put the key in your sensor, brand by brand</a>
           </div>
 
           <form id="add-form">
@@ -1131,7 +1134,7 @@
   <div id="term-body" aria-live="polite"></div>
 </footer>
 
-<button class="btn btn-sm" id="wall-exit">Leave wall mode</button>
+<button class="btn btn-sm" id="wall-exit">Leave TV screen</button>
 
 <div id="scrim" hidden></div>
 <aside id="drawer" hidden role="dialog" aria-modal="true"
@@ -1148,6 +1151,24 @@
     <button class="btn btn-primary" type="button" id="plan-confirm-yes">Yes, move</button>
     <button class="btn" type="button" id="plan-confirm-no">Not now</button>
   </div>
+</dialog>
+
+<!-- "How to connect it": pick the sensor's brand, see only its few steps
+     with this unit's address, key and serial filled in, and watch for the
+     first reading here (console.js, the connect wizard). -->
+<dialog id="connect" class="confirm-dialog connect-dialog" aria-labelledby="connect-title" data-pilot-private>
+  <div class="connect-head">
+    <h2 class="confirm-title" id="connect-title">Connect your sensor</h2>
+    <button class="btn btn-sm" type="button" id="connect-close">Close</button>
+  </div>
+  <div class="connect-unit" id="connect-unit"></div>
+  <p class="connect-wait" id="connect-wait" role="status" aria-live="polite" hidden></p>
+  <div id="connect-pick">
+    <p class="connect-ask">Which sensor is it?</p>
+    <div class="connect-brands" id="connect-brands"></div>
+  </div>
+  <div id="connect-steps" hidden></div>
+  <p class="connect-more"><a href="/help/sensors">Every guide, at length</a></p>
 </dialog>
 
 <div id="tip" hidden></div>

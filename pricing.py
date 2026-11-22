@@ -1059,6 +1059,10 @@ def plural(vertical: str, count: int) -> str:
     unit = PRICE_BOOK[vertical]["unit"]
     if count == 1:
         return unit
+    # "pharmacies", not "pharmacys" (the calculator asked "How many
+    # pharmacys").
+    if unit.endswith("y") and unit[-2:-1] not in ("a", "e", "i", "o", "u"):
+        return unit[:-1] + "ies"
     return unit + ("es" if unit.endswith(("s", "x", "ch")) else "s")
 
 

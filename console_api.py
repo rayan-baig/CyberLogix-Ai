@@ -256,6 +256,10 @@ def console_overview(
         row["temperature_display"] = display_temperature(
             incident.temperature_fahrenheit, unit
         )
+        # The first reading out of range and the worst since, in the
+        # account's scale (None on an alert from before they were kept).
+        row["first_out_display"] = display_temperature(incident.first_out_f, unit)
+        row["peak_display"] = display_temperature(incident.peak_f, unit)
         row["temperature_unit"] = unit
         incidents.append(row)
     # The possible attack or site-wide failure alerts, apart from the

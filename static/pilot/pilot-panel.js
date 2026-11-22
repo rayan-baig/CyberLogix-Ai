@@ -1,7 +1,8 @@
-// Pilot core 1.2.1 · pilot-panel.js
+// Pilot core 1.3.0 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
-// own: config.welcomePills, with config.tagline under the name), this
+// own: config.welcomePills, with config.tagline under the name; with its
+// own key pill there is no key card too), this
 // page's suggestions, the messages, the "Type a message…" box, and the
 // gear, palette and ? buttons at the bottom. Settings (keys, models, image
 // and video keys unless config.hideKeySections hides them, memory) and help
@@ -15,7 +16,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.2.1";
+  const VERSION = "1.3.0";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -134,9 +135,9 @@
   const PILL_LABEL_MOST = 40;
   const PROMPT_MOST = 1000;
 
-  // The pills to show: the app's (cleaned: words only, a known icon, at
-  // most five) or, if it gives none that work, the design's five.
-  function welcomePills(given) {
+  // The app's own pills, cleaned: words only, a known icon, at most five.
+  // [] when it gives none that work.
+  function ownPills(given) {
     const out = [];
     for (const p of Array.isArray(given) ? given : []) {
       if (out.length >= 5) break;
@@ -150,8 +151,31 @@
       const icon = typeof p.icon === "string" && Object.prototype.hasOwnProperty.call(ICONS, p.icon) ? p.icon : "spark";
       out.push({ icon, label, action, builtin: BUILTINS.includes(action), send: p.send === true });
     }
+    return out;
+  }
+
+  // The pills to show: the app's, or, if it gives none that work, the
+  // design's five.
+  function welcomePills(given) {
+    const out = ownPills(given);
     return out.length ? out : DEFAULT_PILLS.map((p) => ({ ...p, builtin: true, send: false }));
   }
+
+  // Does the app's own welcome already have the key pill (the built-in
+  // "settings")? Then the welcome asks for the key once (core 1.3.0): no
+  // key card under the pills. The design's five keep their card.
+  const keyPillGiven = (given) => ownPills(given).some((p) => p.builtin && p.action === "settings");
+
+  // The words about keys. The design's (Pilot for Mac and the default
+  // welcome) say "API key"; a website with its own welcome says "AI key",
+  // the words its visitors know (core 1.3.0).
+  const KEY_WORDS = {
+    design: { title: "Bring Your Own API Key", sub: "Use your OpenAI, Claude, Gemini, or any compatible API key.",
+      paste: "Paste your API key", label: "API key ", first: "Paste your API key first." },
+    site: { title: "Your own AI key", sub: "Use an AI key from OpenAI, Claude, Gemini or a compatible service.",
+      paste: "Paste your AI key", label: "AI key ", first: "Paste your AI key first." },
+  };
+  const keyWords = (given) => (ownPills(given).length ? KEY_WORDS.site : KEY_WORDS.design);
 
   // The key settings an app hides (config.hideKeySections): "image", "video".
   const hiddenSections = (given) => new Set((Array.isArray(given) ? given : []).filter((x) => x === "image" || x === "video"));
@@ -174,6 +198,8 @@
     // key is added, then sent. {text} or {screen: [prompt, label]}.
     let pending = null;
     const pills = welcomePills(config.welcomePills);
+    const oneKeyAsk = keyPillGiven(config.welcomePills);
+    const words = keyWords(config.welcomePills);
     const hidden = hiddenSections(config.hideKeySections);
 
     const screen = () => {
@@ -292,8 +318,7 @@
     function keyCard() {
       return el("button", { type: "button", class: "pilot-keycard", on: { click: () => show("settings") } },
         icon("key"),
-        el("span", { class: "pilot-keycard-words" }, el("b", { text: "Bring Your Own API Key" }),
-          el("small", { text: "Use your OpenAI, Claude, Gemini, or any compatible API key." })),
+        el("span", { class: "pilot-keycard-words" }, el("b", { text: words.title }), el("small", { text: words.sub })),
         icon("chevron"));
     }
 
@@ -332,14 +357,25 @@
         el("div", { class: "pilot-pills" }, ...pills.map((p) => pill(p.icon, p.label, () => runPill(p)))),
         here.length ? el("div", { class: "pilot-chips pilot-chips-welcome", role: "group", "aria-label": "Suggestions for this page" },
           ...here.map((c) => el("button", { type: "button", class: "pilot-chip", text: c.label, on: { click: () => ask(c.prompt || c.label) } }))) : null,
-        store.ready() ? null : keyCard());
+        // The app's own key pill already asks for the key: no card as well.
+        store.ready() || oneKeyAsk ? null : keyCard());
       welcome.hidden = state.messages.length > 0;
     }
 
+    // The grown-ups note above the box, until a key is added. On the
+    // welcome an app may give a one-line version (config.keyNoteShort, core
+    // 1.3.0), so the pills and suggestions keep their room; the full note
+    // is then its tooltip, and beside the key settings.
     function drawFootNote() {
       const want = Boolean(config.keyNote) && !store.ready() && view === "chat";
       footNote.hidden = !want;
-      if (want && footNote.textContent !== config.keyNote) footNote.textContent = config.keyNote;
+      if (!want) return;
+      const short = typeof config.keyNoteShort === "string" && config.keyNoteShort.trim() && !state.messages.length
+        ? config.keyNoteShort.trim() : "";
+      const text = short || config.keyNote;
+      if (footNote.textContent !== text) footNote.textContent = text;
+      footNote.classList.toggle("pilot-foot-note-short", Boolean(short));
+      if (short) footNote.setAttribute("title", config.keyNote); else footNote.removeAttribute("title");
     }
 
     // ---------------------------------------------------------------- before there is a key
@@ -751,7 +787,7 @@
       const baseRow = el("label", { class: "pilot-row" }, el("span", { text: "Base URL (OpenAI-compatible)" }), baseUrl,
         el("small", { text: `This site's security settings let your browser reach: ${hosts.join(", ")}.` }));
       const key = el("input", { class: "pilot-field", type: "password", autocomplete: "off", spellcheck: "false",
-        placeholder: "Paste your API key", "aria-label": "API key", maxlength: "400" });
+        placeholder: words.paste, "aria-label": words.label.trim(), maxlength: "400" });
       key.value = e.key || "";
       const showKey = el("button", { type: "button", class: "pilot-link", text: "Show" });
       showKey.addEventListener("click", () => { key.type = key.type === "password" ? "text" : "password"; showKey.textContent = key.type === "password" ? "Show" : "Hide"; });
@@ -765,7 +801,7 @@
       function drawProvider() {
         const p = P.LIST.find((x) => x.id === provider.value);
         baseRow.hidden = provider.value !== "compatible";
-        key.placeholder = p ? p.keyHint : "Paste your API key";
+        key.placeholder = p ? p.keyHint : words.paste;
         where.textContent = p && p.where ? `Get a key at ${p.where}. A key with a spending limit is safest.` : "";
       }
       provider.addEventListener("change", () => { models = []; modelSelect.hidden = true; drawProvider(); });
@@ -804,7 +840,7 @@
         if (c.provider === "compatible") {
           const bad = P.checkBaseUrl(c.baseUrl, hosts);
           if (bad) { say(bad.message, true); return; }
-        } else if (!c.key) { say("Paste your API key first.", true); return; }
+        } else if (!c.key) { say(words.first, true); return; }
         if (!c.model) { say("Choose or type a model.", true); return; }
         const picked = models.find((m) => m.id === c.model);
         const same = e.provider === c.provider && e.model === c.model;
@@ -817,7 +853,7 @@
       return el("div", { class: "pilot-keyform" },
         el("label", { class: "pilot-row" }, el("span", { text: "Provider" }), provider, where),
         baseRow,
-        el("label", { class: "pilot-row" }, el("span", {}, el("span", { text: "API key " }), showKey), key),
+        el("label", { class: "pilot-row" }, el("span", {}, el("span", { text: words.label }), showKey), key),
         el("div", { class: "pilot-row" }, check),
         el("label", { class: "pilot-row" }, el("span", { text: "Model" }), modelSelect, modelText),
         el("div", { class: "pilot-card-actions" }, save, cancel),
@@ -909,8 +945,7 @@
       put(settingsView,
         backButton(),
         el("div", { class: "pilot-keycard pilot-keycard-head" }, icon("key"),
-          el("span", { class: "pilot-keycard-words" }, el("b", { text: "Bring Your Own API Key" }),
-            el("small", { text: "Use your OpenAI, Claude, Gemini, or any compatible API key." })), icon("chevron")),
+          el("span", { class: "pilot-keycard-words" }, el("b", { text: words.title }), el("small", { text: words.sub })), icon("chevron")),
         config.keyNote ? el("p", { class: "pilot-grownup", text: config.keyNote }) : null,
         pending ? el("p", { class: "pilot-waiting", role: "status",
           text: pending.text ? "Your message is waiting in the box. It sends as soon as you add a key." : "Pilot will look at this screen as soon as you add a key." }) : null,
@@ -983,5 +1018,6 @@
     return api;
   }
 
-  window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, hiddenSections, DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS };
+  window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, ownPills, keyPillGiven, keyWords, KEY_WORDS, hiddenSections,
+    DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS };
 })();

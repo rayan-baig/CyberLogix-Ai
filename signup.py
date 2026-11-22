@@ -260,6 +260,9 @@ def start_trial(payload: SignupRequest, request: Request):
         )
 
     vertical = (payload.industry_vertical or "").strip().lower()
+    # The kind they picked ("shop", "other"), kept beside the sector it is
+    # watched as, so the console can name its limits for them.
+    kind = vertical if vertical in _KIND_TO_SECTOR else None
     vertical = _KIND_TO_SECTOR.get(vertical, vertical)
     if vertical and vertical not in INDUSTRY_PROFILES:
         raise HTTPException(
@@ -300,6 +303,7 @@ def start_trial(payload: SignupRequest, request: Request):
         contact_email=email,
         plan=PUBLIC_PLAN,
         industry_vertical=vertical or None,
+        business_kind=kind,
     )
 
     try:

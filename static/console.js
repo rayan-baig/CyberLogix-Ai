@@ -14,6 +14,9 @@ const state = {
   // render, so a poll landing mid-search does not reset what was typed.
   search: "", filter: "all", site: "all", groupBySite: false,
   unit: "F", drawerSensor: null, wall: false,
+  // Sensor keys shown since this page loaded, by unit: in memory only,
+  // for the connect wizard to fill in. Never stored, never sent anywhere.
+  issuedKeys: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -237,6 +240,16 @@ $("switch-btn").addEventListener("click", () => {
   $("switch-btn").textContent = onboarding ? "Sign in" : "Set up a new business";
 });
 
+/* A refused sign-in, under the password box, with the box marked. */
+function signInError(message) {
+  const box = $("si-error");
+  box.textContent = message || "";
+  box.hidden = !message;
+  $("si-password").setAttribute("aria-invalid", message ? "true" : "false");
+}
+["si-email", "si-password"].forEach((id) =>
+  $(id).addEventListener("input", () => { if (!$("si-error").hidden) signInError(""); }));
+
 $("signin-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const btn = event.target.querySelector("button");
@@ -250,11 +263,15 @@ $("signin-form").addEventListener("submit", async (event) => {
       }),
     });
     rememberEmail($("si-email").value.trim());
+    signInError("");
     // Signing in, not reloading: an open alert sends this to /today.
     state.fromSignIn = true;
     await enter(body.token, body.user);
   } catch (err) {
-    toast(err.message, "err");
+    if (err.offline) toast(err.message, "err");
+    signInError(err.message);
+    $("si-password").focus();
+    $("si-password").select();
   } finally {
     btn.disabled = false;
   }
@@ -696,7 +713,10 @@ function preferSector(overview) {
   // saying which, and "Change" for a unit of another kind.
   const trade = (state.industries || []).find((i) => i.vertical === wanted);
   if (trade && !state.tradeOpened) {
-    $("add-trade-words").textContent = `For ${trade.name.toLowerCase()}.`;
+    // A florist or a shop is watched with a restaurant's food limits, and
+    // is told so in those words, not "For restaurants & cafés".
+    const own = wanted === stated && overview.tenant.limits_words;
+    $("add-trade-words").textContent = own ? `${own}.` : `For ${trade.name.toLowerCase()}.`;
     $("add-trade").hidden = false;
     $("add-vertical-field").hidden = true;
   }
@@ -889,6 +909,7 @@ async function refresh(opts = {}) {
     state.wasDayOne = firstDay;
     applyFinder();
   }
+  landOnATab(overview);
   countTheTabs();
   maybeLandOnSimple(overview);
   // Never a broken panel: without the list the chip is just the name.
@@ -1076,8 +1097,10 @@ function render(d, health) {
            ? `${noun(s.sensors_breaching)} too warm or cold`
            : "all within their limits"),
     tile("Open alerts", `${s.open_incidents}`, openAlertsNote(s)),
-    tile("At-risk forecast", d.entitlements.predictive_forecasting ? `${s.at_risk}` : "—",
-         d.entitlements.predictive_forecasting ? "projected to breach" : "upgrade to unlock"),
+    // Only where the plan has the forecast: a tile saying "upgrade to
+    // unlock" during a trial was an advert in the middle of the figures.
+    d.entitlements.predictive_forecasting
+      ? tile("At-risk forecast", `${s.at_risk}`, "projected to breach") : "",
     // Readings in range, as a share: shown only after a day of readings,
     // because "80%" after five minutes (one warm reading in five) is not
     // a figure anybody should act on.
@@ -1091,6 +1114,10 @@ function render(d, health) {
          `${s.readings_breached} out of range`),
   ].join("");
   animateFigures($("tiles"));
+  // "Heading for trouble" is the forecast's card: not shown at all on a
+  // plan without it, rather than "Not on this plan" (the plans card and
+  // /pricing say what each plan has).
+  $("find-what-breaks-next").dataset.empty = d.entitlements.predictive_forecasting ? "" : "1";
   // The first day: seven tiles of zeros say nothing yet. The checklist
   // and the fridges are the page until it is done.
   $("tiles").hidden = dayOne(d);
@@ -1127,7 +1154,21 @@ function render(d, health) {
   const noUnits = !(d.sensors || []).length;
   $("sim-start").hidden = !owner || noUnits;
   $("toggle-table").hidden = noUnits;
-  document.querySelector("#fleet-card .toolbar").hidden = noUnits;
+  // Search, the status filter and the site controls only once there is
+  // something to sort through: several units for the first two, more
+  // than one site for the others. For one walk-in they were four controls
+  // above one card.
+  const many = (d.sensors || []).length >= FLEET_TOOLS_FROM;
+  const sites = (d.sites || []).length;
+  document.querySelector("#fleet-card .toolbar").hidden = noUnits || (!many && sites < 2);
+  $("fleet-search").hidden = !many;
+  $("fleet-filter").hidden = !many;
+  $("fleet-site").hidden = sites < 2;
+  $("group-sites").hidden = sites < 2;
+  if (sites < 2 && state.groupBySite) {
+    state.groupBySite = false;
+    $("group-sites").setAttribute("aria-pressed", "false");
+  }
   const canTest = Boolean(state.user && state.user.role !== "viewer");
   $("test-alert-box").hidden = !canTest;
   const calls = (d.entitlements && d.entitlements.calls) || { mode: "none", words: "" };
@@ -1350,6 +1391,9 @@ function byUrgency(sensors) {
     .map(([x]) => x);
 }
 
+/* How many units before the fleet's search and status filter appear. */
+const FLEET_TOOLS_FROM = 6;
+
 function renderFleet(sensors) {
   if (state.editing && document.querySelector(
     `.wait-edit[data-wait-for="${CSS.escape(state.editing.id)}"]:not([hidden])`)) return;
@@ -1523,7 +1567,7 @@ function sensorCard(s) {
   return `<article class="sensor ${loud ? "is-breaching" : c.state === "watching" ? "is-watching" : ""}">
       <div class="sensor-top">
         <span class="sensor-name grow clickable" data-detail="${esc(s.sensor_id)}"
-              role="button" tabindex="0">${esc(name)}</span>
+              role="button" tabindex="0">${keepWords(name)}</span>
         ${statePill(c)}
       </div>
       <div class="sensor-loc"><span class="sensor-id">${esc(s.sensor_id)}</span>${
@@ -1554,7 +1598,7 @@ function sensorCard(s) {
         <button class="btn btn-sm" data-tune="${esc(s.sensor_id)}">Change limit</button>
         <button class="btn btn-sm" data-wait="${esc(s.sensor_id)}">Alert wait</button>
         <button class="btn btn-sm" data-rekey="${esc(s.sensor_id)}">New key</button>
-        <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Retire</button>
+        <button class="btn btn-sm" data-retire="${esc(s.sensor_id)}">Remove</button>
       </div>
       <div class="wait-edit" data-wait-for="${esc(s.sensor_id)}" hidden></div>
     </article>`;
@@ -1891,6 +1935,13 @@ function deliveryLine(record, channel) {
 /* Every alert text failed. Said at the top of the card, because the card
    otherwise reads as if the roster has been told. */
 function textsFailedNote(i) {
+  // Texts switched off on this server (dry run) is not a failure: the
+  // alert was written and nobody was meant to get it.
+  if (i.texts_off) {
+    return `<div class="card-note texts-off"><span class="badge s-muted">`
+         + `<span class="dot"></span>Not sent</span> `
+         + "Texts are off on this server, so nobody was texted.</div>";
+  }
   if (!i.alert_texts_failed || i.state === "resolved") return "";
   const next = i.next_sms_retry_at && i.state === "open"
     ? ` Sending again at ${CLXWords.clock(i.next_sms_retry_at)}.`
@@ -1906,15 +1957,37 @@ function textsFailedNote(i) {
 function incidentTimeline(i) {
   const when = (iso) => (iso ? CLXWords.dateTime(iso) : "");
   const steps = [];
-  const deg = `${i.temperature_display ?? i.temperature_fahrenheit}°${i.temperature_unit || state.unit}`;
+  const u = `°${i.temperature_unit || state.unit}`;
+  const first = i.first_out_display ?? i.first_out_fahrenheit;
+  const peak = i.peak_display ?? i.peak_fahrenheit;
 
   // When it went out of range, which with the wait is before the alert
-  // opened: the same "out since" as the unit card and /today.
+  // opened: the same "out since" as the unit card and /today, with the
+  // reading taken then. The worst reading is its own line, at its own
+  // time: "Went out of range: 60.5°F, 1:16 AM" was the peak an hour
+  // later, beside the time of a 47.2°F reading. An alert from before the
+  // two were kept says only when.
   steps.push({ cls: "hit", when: i.out_since || i.opened_at,
-    text: `Went out of range: ${deg}` });
+    text: first !== null && first !== undefined
+      ? `Went out of range: ${first}${u}` : "Went out of range" });
+  const peakAt = i.peak_at && Date.parse(i.peak_at);
+  const firstAt = Date.parse(i.out_since || i.opened_at);
+  if (peak !== null && peak !== undefined && peak !== first) {
+    steps.push({ cls: "hit", when: i.peak_at || null,
+      text: `${i.resolved_at ? "At its worst" : "Worst so far"}: ${peak}${u}`,
+      order: peakAt || firstAt });
+  } else if ((first === null || first === undefined)
+             && (i.temperature_display ?? i.temperature_fahrenheit) != null) {
+    steps.push({ cls: "hit", when: null,
+      text: `Last reading out of range: ${i.temperature_display ?? i.temperature_fahrenheit}${u}`,
+      order: firstAt });
+  }
 
   const texted = (i.sms_fanout || []).length || (i.sms_delivery ? 1 : 0);
-  if (texted) {
+  if (i.texts_off) {
+    steps.push({ cls: "hit", when: i.opened_at,
+      text: "Alert opened. Not sent: texts are off on this server" });
+  } else if (texted) {
     const landed = (i.sms_fanout || []).filter((f) => f.delivered).length
       || (i.sms_delivery && i.sms_delivery.delivered ? 1 : 0);
     steps.push({ cls: "hit", when: i.opened_at,
@@ -1958,6 +2031,12 @@ function incidentTimeline(i) {
       text: `Out of range for ${CLXWords.outFor(i.out_since || i.opened_at)} so far` });
   }
 
+  // In the order things happened: the worst reading can come after the
+  // alert went out, or after somebody said they were on it.
+  const at = (st) => (st.order !== undefined ? st.order
+    : st.when ? Date.parse(st.when) : Infinity);
+  steps.forEach((st, n) => { st.n = n; });
+  steps.sort((a, b) => (at(a) - at(b)) || (a.n - b.n));
   return `<ul class="timeline">${steps.map((st) =>
     `<li class="${st.cls}">${esc(st.text)}`
     + (st.when ? ` <span class="when">${esc(when(st.when))}</span>` : "")
@@ -1965,6 +2044,15 @@ function incidentTimeline(i) {
 }
 
 /* A unit's name as the kitchen says it, for an alert about it. */
+/* A unit's name for a heading, escaped, with each short hyphenated word
+   kept whole: "Walk-in fridge" broke as "Walk- / in / fridge" beside its
+   status label on a phone. */
+function keepWords(name) {
+  return String(name ?? "").split(/(\s+)/).map((word) =>
+    word.includes("-") && word.length <= 24
+      ? `<span class="keep-word">${esc(word)}</span>` : esc(word)).join("");
+}
+
 function unitNameFor(sensorId) {
   const s = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === sensorId);
   return s ? ((s.location_name || "").trim() || s.sensor_id) : sensorId;
@@ -2019,17 +2107,18 @@ function renderIncidents(incidents, entitlements, siteWide) {
     return `<article class="incident st-${esc(i.state)}">
       <div class="incident-top">
         ${statePill(pill)}
-        <span class="incident-title grow">${esc(unitNameFor(i.sensor_id))}</span>
-        <span class="card-note">${i.state === "resolved" ? "was out" : "out"} for ${esc(outWords)}</span>
+        <span class="incident-title grow">${keepWords(unitNameFor(i.sensor_id))}</span>
+        <span class="card-note incident-for">${i.state === "resolved" ? "was out" : "out"} for ${esc(outWords)}</span>
       </div>
-      <div class="card-note">${esc(i.breach_details)}</div>
+      ${i.state === "resolved" && (i.peak_display ?? i.peak_fahrenheit) != null
+        ? "" : `<div class="card-note">${esc(i.breach_details)}</div>`}
       ${textsFailedNote(i)}
       ${incidentTimeline(i)}
 
       <details class="incident-more">
-        <summary>The text we sent${i.voice_script ? " and the call" : ""}</summary>
+        <summary>The text we ${i.texts_off ? "wrote" : "sent"}${i.voice_script ? " and the call" : ""}</summary>
         <div class="quote">
-          <div class="quote-label">The text we sent</div>
+          <div class="quote-label">The text we ${i.texts_off ? "wrote (not sent: texts are off here)" : "sent"}</div>
           ${esc(i.dispatched_sms_text)}
         </div>
         ${i.voice_script ? `<div class="quote">
@@ -2048,7 +2137,7 @@ function renderIncidents(incidents, entitlements, siteWide) {
           ? `<button class="btn btn-sm" data-resolve="${esc(i.incident_id)}">It's fixed</button>` : ""}
         ${canEscalate
           ? `<button class="btn btn-sm" data-escalate="${esc(i.incident_id)}">Call now</button>` : ""}
-        <button class="btn btn-sm" data-packet="${esc(i.incident_id)}">Claim packet</button>
+        <button class="btn btn-sm" data-packet="${esc(i.incident_id)}">Insurance pack</button>
         <!-- The question actually being asked in the kitchen. Everything
              else on this row is about the incident; this one is about
              the food. -->
@@ -4340,7 +4429,7 @@ function renderClaims(eligible) {
   }
   $("claims-body").innerHTML =
     `<div class="sub u-mb-8">${esc(eligible.count)
-      } incident(s) a packet can be produced for:</div>`
+      } alert(s) an insurance pack can be made for:</div>`
     + eligible.incidents.map((i) => `<div class="fc-row">
         <span class="grow">
           <span class="fc-id">${esc(i.sensor_id)}</span>
@@ -4349,7 +4438,7 @@ function renderClaims(eligible) {
             i.readings_available ? "" : " · no readings kept"}</span>
         </span>
         <button class="btn btn-sm" data-packet="${esc(i.incident_id)}"
-                type="button">Packet</button>
+                type="button">Insurance pack</button>
       </div>`).join("");
 }
 
@@ -4428,7 +4517,7 @@ async function openPacket(incidentId) {
   $("drawer").innerHTML = `
     <div class="drawer-head">
       <div class="grow">
-        <div class="doc-kicker">Loss event evidence packet</div>
+        <div class="doc-kicker">Insurance pack: loss event evidence</div>
         <div class="drawer-title" id="drawer-title">${esc(ev.incident_id)}</div>
         <div class="drawer-sub">${esc(packet.insured.company_name)} ·
           issued ${esc(stamp(packet.issued_at))}</div>
@@ -5494,6 +5583,7 @@ const GO = {
   test:   { card: "find-on-call-roster", field: "test-alert" },
   plans:  { card: "find-subscription", field: "" },
   alerts: { card: "find-incidents", field: "" },
+  pollers: { card: "find-vendor-clouds", field: "poller-name" },
 };
 const GO_LABEL = {
   site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",
@@ -5598,7 +5688,7 @@ function renderFirstDay(fd) {
                       data-test-now="1">Send a test</button>`;
     }
     if (step.key === "reading") {
-      return `<a class="btn btn-sm" href="/help/sensors">How to connect it</a>`;
+      return `<button class="btn btn-sm btn-go" type="button" data-connect="1">How to connect it</button>`;
     }
     return `<button class="btn btn-sm btn-go" type="button" data-go="${esc(step.key)}">${
       esc(GO_LABEL[step.key] || "Do it")}</button>`;
@@ -5701,11 +5791,282 @@ function watchForFirstReading() {
         && s.last_temperature_display !== undefined);
       if (landed) {
         await refresh();
-        toast("First reading in.", "ok");
+        // The connect box says it itself, with a tick, when it is open.
+        if (!$("connect").open) toast("First reading in.", "ok");
       }
     } catch (_) { /* the ordinary poll reports trouble */ }
   }, 2500);
 }
+
+/* ---------------- "How to connect it" ----------------
+   Pick the sensor's brand, and see only its few steps with this unit's
+   address, key and serial already in them (sensor_guides.WIZARD, from
+   /api/sensor-guides/wizard). Then it waits for the first reading, here,
+   and ticks the moment it lands. The key is the one shown when the unit
+   was added, kept in this tab's memory only; if it is gone, "Make a new
+   key" issues another (safe: nothing has reported with the old one). */
+const connect = { brands: null, unit: null, brand: null, timer: null, until: 0 };
+
+function connectUnits() {
+  return ((state.data && state.data.sensors) || []);
+}
+
+function waitingUnits() {
+  return connectUnits().filter((s) => s.last_temperature_display === null
+    || s.last_temperature_display === undefined);
+}
+
+async function openConnect(sensorId) {
+  const dialog = $("connect");
+  if (!connect.brands) {
+    try {
+      connect.brands = (await api("/api/sensor-guides/wizard")).brands;
+    } catch (err) {
+      toast(err.message, "err");
+      location.href = "/help/sensors";
+      return;
+    }
+  }
+  const units = connectUnits();
+  const waiting = waitingUnits();
+  connect.unit = (sensorId && units.find((s) => s.sensor_id === sensorId))
+    || waiting[waiting.length - 1] || units[units.length - 1] || null;
+  connect.brand = null;
+  renderConnect();
+  if (typeof dialog.showModal === "function") { if (!dialog.open) dialog.showModal(); }
+  else dialog.setAttribute("open", "");
+  if (connect.unit) watchConnect();
+}
+
+function closeConnect() {
+  clearInterval(connect.timer);
+  connect.timer = null;
+  const dialog = $("connect");
+  if (typeof dialog.close === "function" && dialog.open) dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+$("connect-close").addEventListener("click", closeConnect);
+$("connect").addEventListener("close", () => { clearInterval(connect.timer); connect.timer = null; });
+
+function connectUnitName(s) {
+  return ((s && s.location_name) || "").trim() || (s && s.sensor_id) || "";
+}
+
+function renderConnect() {
+  const u = connect.unit;
+  const units = connectUnits();
+  const unitBox = $("connect-unit");
+  if (!u) {
+    // Nothing to connect yet: the one thing to do first.
+    unitBox.innerHTML = `<p class="connect-ask">Add the ${esc(noun(1))} first: say where it
+        is, and you get the key its sensor needs.</p>
+      <button class="btn btn-primary" type="button" data-connect-add="1">Add a ${esc(noun(1))}</button>`;
+    $("connect-pick").hidden = true;
+    $("connect-steps").hidden = true;
+    $("connect-wait").hidden = true;
+    return;
+  }
+  unitBox.innerHTML = units.length > 1
+    ? `<label class="connect-for">For
+         <select id="connect-which">${units.map((s) => `<option value="${esc(s.sensor_id)}"${
+           s.sensor_id === u.sensor_id ? " selected" : ""}>${esc(connectUnitName(s))}</option>`).join("")}
+         </select></label>`
+    : `<p class="connect-for">For <b>${esc(connectUnitName(u))}</b></p>`;
+  const which = $("connect-which");
+  if (which) {
+    which.addEventListener("change", () => {
+      connect.unit = connectUnits().find((s) => s.sensor_id === which.value) || connect.unit;
+      renderConnect();
+      watchConnect();
+    });
+  }
+  const picking = !connect.brand;
+  $("connect-pick").hidden = !picking;
+  $("connect-steps").hidden = picking;
+  if (picking) {
+    $("connect-brands").innerHTML = connect.brands.map((b) => `
+      <button class="connect-brand" type="button" data-connect-brand="${esc(b.id)}">
+        <b>${esc(b.label)}</b><span>${esc(b.hint)}</span></button>`).join("");
+  } else {
+    $("connect-steps").innerHTML = connectStepsHtml(connect.brand, u);
+  }
+  paintConnectWait();
+}
+
+/* One value to copy: the address, the key, the serial. */
+function connectValue(label, value, id) {
+  return `<div class="connect-val-row"><span class="connect-val-label">${esc(label)}</span>
+      <code class="connect-val" id="${id}">${esc(value)}</code>
+      <button class="btn btn-sm" type="button" data-connect-copy="${id}">Copy</button></div>`;
+}
+
+function connectStepsHtml(b, u) {
+  const key = state.issuedKeys[u.sensor_id] || "";
+  const serial = u.external_device_sn || "";
+  const keyWords = key || "(your sensor key)";
+  const address = b.address.replace("{key}", key || "(your sensor key)");
+  const fill = (text) => esc(text)
+    .replace("{key}", `<code>${esc(keyWords)}</code>`)
+    .replace("{serial}", `<code>${esc(serial || "(its serial)")}</code>`)
+    .replace("{sensor_id}", `<code>${esc(u.sensor_id)}</code>`);
+  const parts = [`<button class="linkish connect-back" type="button" data-connect-back="1">&larr; Another kind of sensor</button>
+    <h3 class="connect-brand-title">${esc(b.label)}</h3>`];
+  if (b.needs_serial) {
+    parts.push(serial
+      ? connectValue("Its serial", serial, "connect-serial-val")
+      : `<form class="connect-serial" id="connect-serial">
+           <label for="connect-serial-in">Its serial <span class="sub">${esc(b.serial)}</span></label>
+           <span class="connect-serial-row">
+             <input id="connect-serial-in" autocomplete="off" maxlength="120" required>
+             <button class="btn btn-sm btn-primary" type="submit">Save</button>
+           </span>
+           <span class="connect-serial-out" id="connect-serial-out" role="status"></span>
+         </form>`);
+  }
+  if (b.needs_key) {
+    // A key that travels in the address (?k=) is copied with it.
+    const inAddress = b.address.includes("{key}");
+    parts.push(key
+      ? (inAddress ? "" : connectValue("Sensor key", key, "connect-key-val"))
+      : `<div class="connect-nokey"><p>Its sensor key was shown once, when it was added.
+           If you no longer have it, make a new one: the old one stops working, and
+           nothing has reported with it yet.</p>
+           <button class="btn btn-sm" type="button" data-connect-newkey="1">Make a new key</button></div>`);
+    if (b.address) parts.push(connectValue("Address", address, "connect-address-val"));
+  }
+  parts.push(`<ol class="steps connect-list">${b.steps.map((st) => `<li>${fill(st)}</li>`).join("")}</ol>`);
+  if (b.id === "cloud") {
+    parts.push(`<button class="btn btn-sm btn-primary" type="button" data-connect-go="pollers">Open Fetch from a sensor cloud</button>`);
+  }
+  return parts.join("");
+}
+
+function paintConnectWait() {
+  const box = $("connect-wait");
+  const u = connect.unit;
+  if (!u || !connect.brand && (u.last_temperature_display === null
+      || u.last_temperature_display === undefined)) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const reading = u.last_temperature_display;
+  if (reading !== null && reading !== undefined) {
+    box.className = "connect-wait is-in";
+    box.innerHTML = `<span class="connect-tick" aria-hidden="true">&#10003;</span>
+      <span><b>Received!</b> ${esc(reading.toFixed(1))}°${esc(u.temperature_unit || state.unit)}${
+        u.last_seen ? ` at ${esc(CLXWords.clock(u.last_seen))}` : ""}. ${esc(connectUnitName(u))} is being watched.</span>`;
+    return;
+  }
+  const late = Date.now() > connect.until;
+  box.className = `connect-wait${late ? " is-late" : ""}`;
+  box.innerHTML = late
+    ? `<span><b>Nothing yet.</b> Check the address and the key, and that the sensor is online.
+       Every message that reached us is listed under <b>Use a sensor you already own</b>
+       in the Advanced tab, with what was missing.</span>`
+    : `<span class="connect-spin" aria-hidden="true"></span>
+       <span><b>Waiting for the first reading…</b> This ticks the moment it arrives, usually
+       within a few minutes.</span>`;
+}
+
+/* Asks only for the overview, every three seconds, while the box is open
+   and for fifteen minutes at most. */
+function watchConnect() {
+  clearInterval(connect.timer);
+  connect.until = Date.now() + 15 * 60 * 1000;
+  const id = connect.unit && connect.unit.sensor_id;
+  if (!id) return;
+  const have = () => connect.unit && connect.unit.last_temperature_display !== null
+    && connect.unit.last_temperature_display !== undefined;
+  if (have()) return;
+  connect.timer = setInterval(async () => {
+    if (!$("connect").open || !state.token || !connect.unit || connect.unit.sensor_id !== id) {
+      clearInterval(connect.timer);
+      return;
+    }
+    try {
+      const fresh = await api("/api/console/overview");
+      const now = (fresh.sensors || []).find((s) => s.sensor_id === id);
+      if (now) connect.unit = now;
+      if (have()) {
+        clearInterval(connect.timer);
+        connect.timer = null;
+        // Said in the box, with a tick; the page's own watch stands down
+        // so it is not said twice.
+        clearInterval(state.firstWatch);
+        await refresh();
+      }
+    } catch (_) { /* the ordinary poll reports trouble */ }
+    paintConnectWait();
+  }, 3000);
+}
+
+$("connect").addEventListener("click", async (event) => {
+  const el = event.target.closest("button, a");
+  if (!el) return;
+  if (el.dataset.connectBrand) {
+    connect.brand = connect.brands.find((b) => b.id === el.dataset.connectBrand) || null;
+    renderConnect();
+    const title = document.querySelector(".connect-brand-title");
+    if (title) title.scrollIntoView({ block: "nearest" });
+  } else if (el.dataset.connectBack) {
+    connect.brand = null;
+    renderConnect();
+  } else if (el.dataset.connectAdd) {
+    closeConnect();
+    goTo("sensor");
+  } else if (el.dataset.connectGo) {
+    closeConnect();
+    goTo(el.dataset.connectGo);
+  } else if (el.dataset.connectCopy) {
+    const value = $(el.dataset.connectCopy);
+    try {
+      await navigator.clipboard.writeText(value.textContent);
+      toast("Copied.", "ok");
+    } catch (_) {
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      toast("Clipboard blocked: it is selected, copy it by hand.", "err");
+    }
+  } else if (el.dataset.connectNewkey) {
+    el.disabled = true;
+    try {
+      const id = connect.unit.sensor_id;
+      const made = await api(`/api/licenses/me/sensors/${encodeURIComponent(id)}/rotate-key`,
+        { method: "POST" });
+      state.issuedKeys[id] = made.ingest_key;
+      renderConnect();
+      toast("New key made. The old one no longer works.", "ok");
+    } catch (err) {
+      el.disabled = false;
+      toast(err.message, "err");
+    }
+  }
+});
+
+$("connect").addEventListener("submit", async (event) => {
+  if (event.target.id !== "connect-serial") return;
+  event.preventDefault();
+  const out = $("connect-serial-out");
+  const value = $("connect-serial-in").value.trim();
+  if (!value) return;
+  try {
+    const id = connect.unit.sensor_id;
+    const res = await api(`/api/licenses/me/sensors/${encodeURIComponent(id)}/serial`, {
+      method: "POST", body: JSON.stringify({ external_device_sn: value }),
+    });
+    connect.unit = Object.assign({}, connect.unit, res.sensor);
+    renderConnect();
+    refresh();
+  } catch (err) {
+    out.textContent = err.message;
+    out.className = "connect-serial-out s-warning";
+  }
+});
 
 /* A name for a unit nobody named: the location, made into an id, with a
    short random tail so two kitchens' walk-ins cannot collide. */
@@ -6035,7 +6396,7 @@ document.addEventListener("click", (event) => {
 
   if (btn.dataset.retire) {
     const id = btn.dataset.retire;
-    if (!confirm(`Retire ${id}? Its readings are deleted and the seat is freed.`)) return;
+    if (!confirm(`Remove ${id}? Its readings are deleted and the seat is freed.`)) return;
     act(() => api(`/api/licenses/me/sensors/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }), `${id} retired.`);
@@ -6157,6 +6518,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (btn.dataset.go) goTo(btn.dataset.go);
+  if (btn.dataset.connect) openConnect(btn.dataset.connect === "1" ? "" : btn.dataset.connect);
   if (btn.dataset.testNow) sendTestAlert(btn);
   if (btn.id === "sim-add") simAdd();
   if (btn.dataset.simBreak) simAct(`/units/${encodeURIComponent(btn.dataset.simBreak)}/break`, "POST",
@@ -6190,6 +6552,8 @@ function showIssuedKey(sensorId, key, options = {}) {
     }
     return;
   }
+  state.issuedKeys[sensorId] = key;
+  $("issued-guide").dataset.connectFor = sensorId;
   $("issued-for").textContent = sensorId;
   $("issued-for").hidden = master;
   $("issued-kind").textContent = master ? "Your business key" : "Sensor key for";
@@ -6201,6 +6565,14 @@ function showIssuedKey(sensorId, key, options = {}) {
   // box half way down the page: the key waits where "Add a sensor" leads.
   $("issued-value").focus({ preventScroll: options.scroll === false });
 }
+
+/* "How to put the key in your sensor": the wizard, for this unit, with
+   the key just shown already in its steps. The link still goes to
+   /help/sensors if the script cannot open it. */
+$("issued-guide").addEventListener("click", (event) => {
+  event.preventDefault();
+  openConnect($("issued-guide").dataset.connectFor || "");
+});
 
 $("issued-copy").addEventListener("click", async () => {
   const key = $("issued-value").textContent;
@@ -6797,7 +7169,7 @@ function applyFinder() {
   $("more-cards").hidden = !short || folded <= 0;
   $("more-cards-btn").textContent = `More (${folded} other things you can do)`;
   const advNote = $("adv-note");
-  if (advNote) advNote.hidden = !smallAccount() || finder.tab === "advanced" || Boolean(query) || dayOne();
+  if (advNote) advNote.hidden = !smallAccount() || finder.tab !== "all" || Boolean(query) || dayOne();
   renderTabEmpty();
 
   document.querySelectorAll(".f-tab").forEach((tab) => {
@@ -6842,8 +7214,25 @@ function countTheTabs() {
   });
 }
 
+/* The full console opens on one tab, not on Everything: Alerts when
+   something is not closed, Fridges otherwise. Everything was every card
+   at once (forty of them on a desktop), and pressing a tab is what people
+   do anyway. Once only, and never over a choice the person made: a tab
+   they pressed, a button that led to a card, a search. The first day
+   keeps its own short list (dayOne) and is decided when it is done. */
+function landOnATab(d) {
+  if (finder.userTab || finder.landed || state.wall || dayOne(d)) return;
+  if (finder.tab !== "all" || finder.query.trim() || finder.reveal.size) return;
+  finder.landed = true;
+  const live = (d.incidents || []).some((i) => i.state !== "resolved")
+    || (d.site_wide_alerts || []).some((i) => i.state !== "resolved");
+  finder.tab = live ? "alerts" : "fridges";
+  applyFinder();
+}
+
 document.querySelectorAll(".f-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
+    finder.userTab = true;
     finder.tab = tab.getAttribute("data-tab");
     applyFinder();
     // Back to the top of the list, or the first card of a short group

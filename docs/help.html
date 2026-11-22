@@ -1808,6 +1808,83 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
    buttons are on a phone. */
 body.wall .needs-bar-acts { display: none; }
 
+/* ---------- "How to connect it" (console.js, the connect wizard) ---------- */
+.connect-dialog { width: min(600px, calc(100vw - 24px)); }
+.connect-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.connect-head .confirm-title { margin: 0; }
+.connect-unit { margin: 10px 0 4px; }
+.connect-for { margin: 0; font-size: 14px; color: var(--ink-2); display: flex; flex-wrap: wrap;
+               align-items: center; gap: 8px; }
+.connect-for select { min-height: 40px; max-width: 100%; }
+.connect-ask { margin: 12px 0 10px; font-size: 15px; color: var(--ink); }
+.connect-brands { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.connect-brand {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; min-height: 64px;
+  padding: 11px 13px; border-radius: 10px; cursor: pointer;
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--border-lit);
+  font: inherit;
+}
+.connect-brand:hover, .connect-brand:focus-visible { border-color: var(--accent); }
+.connect-brand b { font-size: 14.5px; font-weight: 600; }
+.connect-brand span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.connect-back { margin-top: 10px; min-height: 36px; }
+.connect-brand-title { margin: 6px 0 10px; font-size: 16.5px; }
+.connect-val-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0; }
+.connect-val-label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+                     text-transform: uppercase; color: var(--muted); flex: 0 0 100%; }
+.connect-val { flex: 1 1 200px; min-width: 0; padding: 8px 10px; border-radius: 8px;
+               background: var(--sunken); border: 1px solid var(--border);
+               font-size: 12.5px; word-break: break-all; user-select: all; }
+.connect-list { margin: 12px 0 4px; padding-left: 22px; }
+.connect-list li { margin: 6px 0; line-height: 1.55; font-size: 14px; color: var(--ink-2);
+                   overflow-wrap: anywhere; }
+.connect-list code { color: var(--ink); word-break: break-all; }
+.connect-serial { display: grid; gap: 6px; margin: 8px 0; }
+.connect-serial label { font-size: 13.5px; color: var(--ink); }
+.connect-serial label .sub { display: block; color: var(--muted); font-size: 12.5px; }
+.connect-serial-row { display: flex; gap: 8px; }
+.connect-serial-row input { flex: 1 1 auto; min-width: 0; min-height: 40px; }
+.connect-serial-out:empty { display: none; }
+.connect-nokey { margin: 8px 0; padding: 10px 12px; border-radius: 10px;
+                 border: 1px solid var(--border-lit); font-size: 13.5px; color: var(--ink-2); }
+.connect-nokey p { margin: 0 0 8px; }
+.connect-wait { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 0;
+                padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.5;
+                border: 1px solid var(--border-lit); color: var(--ink-2); }
+.connect-wait b { color: var(--ink); }
+.connect-wait.is-in { border-color: color-mix(in srgb, var(--good) 55%, transparent);
+                      background: color-mix(in srgb, var(--good) 10%, transparent); }
+.connect-wait.is-in b { color: var(--good); }
+.connect-wait.is-late { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.connect-tick { flex: 0 0 auto; display: inline-grid; place-items: center; width: 24px; height: 24px;
+                border-radius: 50%; background: var(--good); color: var(--bg); font-weight: 700; }
+.connect-spin { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 2px; border-radius: 50%;
+                border: 2px solid var(--border-lit); border-top-color: var(--accent);
+                animation: connect-spin 1s linear infinite; }
+@keyframes connect-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .connect-spin { animation: none; } }
+.connect-more { margin: 14px 0 0; font-size: 13px; }
+.connect-more a { color: var(--accent); }
+
+/* A short hyphenated word in a unit's name stays whole (console.js,
+   keepWords): "Walk-in", not "Walk- / in". */
+.keep-word { white-space: nowrap; }
+/* Phone cards: the status label on its own row under the unit's name,
+   the name the card's full width; a closed alert's "was out for" on its
+   own line under the name instead of crowding it. */
+@media (max-width: 560px) {
+  .sensor-top { flex-wrap: wrap; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .sensor-top .sensor-name { flex: 0 0 auto; width: 100%; }
+  .incident-top { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .incident-top .incident-title { flex: 0 0 auto; width: 100%; }
+  .incident-top .incident-for { margin: 0; }
+}
+
+/* A refused sign-in, under the password box (console.js, signInError). */
+.field-error { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--critical); }
+.field-error[hidden] { display: none; }
+input[aria-invalid="true"] { border-color: var(--critical); }
+
 </style>
 <style>
 /* The plain public pages: pricing, help, and the error pages.
@@ -2067,6 +2144,9 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
 @media (min-width: 721px) {
   details.fold > summary { font-size: 22px; }
 }
+/* The calculator names the plan its figure is for (pricing.js,
+   cheapestPlan): "Starter fits you: $59 a month". */
+.calc-fit { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--good); }
 
 </style>
 </head>

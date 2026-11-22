@@ -119,9 +119,55 @@ function yearly(monthly, charged, covered) {
   return { full, yearly: paid, saving: Math.round((full - paid) * 100) / 100 };
 }
 
+/* "Growth:Growth:50,enterprise:Enterprise:1000" -> [{key, name, max}],
+   rendered into the page from PLAN_TIERS. */
+function parsePlans(text) {
+  return String(text || "").split(",").filter(Boolean).map((item) => {
+    const [key, name, max] = item.split(":");
+    return { key, name, max: Number(max) };
+  });
+}
+
+/* Units on the rate card: per-location lines count each location's
+   fridges and freezers; anything else counts its units. */
+function cardUnits(lines) {
+  return (lines || []).reduce((n, line) => n + (line.included !== undefined
+    && line.included !== null ? whole(line.count) * whole(line.each) : whole(line.count)), 0);
+}
+
+/* The cheapest plan that fits, and what it costs a month. Starter fits
+   one location of one of its trades (terms.verticals) with no more than
+   terms.units units, and only the extras it carries; it is chosen when it
+   costs no more than the rate card would. Otherwise the smallest rate-card
+   plan (terms.plans) whose unit limit holds them. Prices come from quote(),
+   so nothing is priced here. Returns {plan, name, monthly} (monthly null
+   for a quote). */
+function cheapestPlan(spec, terms) {
+  const lines = (spec.lines || []).filter((line) => whole(line.count) > 0);
+  const extras = spec.addOns || [];
+  const card = quote(Object.assign({}, spec, { starter: null }));
+  const one = lines.length === 1 ? lines[0] : null;
+  const starterFits = Boolean(one) && !one.custom
+    && (terms.verticals || []).includes(one.sector)
+    && whole(one.count) === 1
+    && whole(one.each) <= whole(terms.units)
+    && extras.every((extra) => extra.starter === "yes");
+  if (starterFits) {
+    const flat = quote(Object.assign({}, spec, { starter: terms.starterRate }));
+    if (card === null || flat <= card) {
+      return { plan: "starter", name: terms.starterName || "Starter", monthly: flat };
+    }
+  }
+  const units = cardUnits(lines);
+  const plans = terms.plans || [];
+  const fit = plans.find((plan) => units <= plan.max) || plans[plans.length - 1]
+    || { key: "card", name: "The rate card" };
+  return { plan: fit.key, name: fit.name, monthly: card };
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { monthlyTotal, quote, yearly, extraUnits, chainDiscount,
-                     parseTiers, chainOf };
+                     parseTiers, chainOf, cheapestPlan, parsePlans, cardUnits };
 }
 
 if (typeof document !== "undefined") {
@@ -147,21 +193,29 @@ if (typeof document !== "undefined") {
       !(option && option.dataset.included);
   };
 
-  const onStarter = () => {
+  const planMode = () => {
     const picked = form.querySelector('input[name="calc-plan"]:checked');
-    return Boolean(picked && picked.value === "starter");
+    return picked ? picked.value : "auto";
+  };
+  const terms = {
+    starterRate: form.dataset.starterRate,
+    units: form.dataset.starterUnits,
+    verticals: String(form.dataset.starterVerticals || "").split(",").filter(Boolean),
+    plans: parsePlans(form.dataset.cardPlans),
   };
 
   const paint = () => {
-    const starter = onStarter();
-    // Starter is one location with its own short list of extras: the trade
-    // rows and the estate extras step aside rather than quietly not count.
-    rows.hidden = starter;
-    document.getElementById("calc-add").hidden = starter;
-    document.getElementById("calc-starter-note").hidden = !starter;
-    document.getElementById("calc-locations-field").hidden = starter;
+    const mode = planMode();
+    const chosenStarter = mode === "starter";
+    // Starter chosen by hand is one location with its own short list of
+    // extras: the trade rows and the estate extras step aside rather than
+    // quietly not count. "The cheapest that fits" keeps every row.
+    rows.hidden = chosenStarter;
+    document.getElementById("calc-add").hidden = chosenStarter;
+    document.getElementById("calc-starter-note").hidden = !chosenStarter;
+    document.getElementById("calc-locations-field").hidden = chosenStarter;
     form.querySelectorAll(".calc-addon").forEach((box) => {
-      const allowed = !starter || box.dataset.starter === "yes";
+      const allowed = !chosenStarter || box.dataset.starter === "yes";
       box.disabled = !allowed;
       if (!allowed) box.checked = false;
     });
@@ -169,6 +223,7 @@ if (typeof document !== "undefined") {
       const option = optionOf(row);
       const data = option ? option.dataset : {};
       return {
+        sector: option ? option.value : "",
         name: option ? option.textContent.replace(/ \(custom pricing\)$/, "") : "",
         unit: data.unit || "",
         plural: data.plural || "",
@@ -181,15 +236,23 @@ if (typeof document !== "undefined") {
     });
     const extras = [...form.querySelectorAll(".calc-addon:checked")].map((box) => ({
       name: box.dataset.name, rate: box.dataset.rate, basis: box.dataset.basis,
+      starter: box.dataset.starter,
     }));
     const locations = document.getElementById("calc-locations").value;
-    const starterRate = starter ? form.dataset.starterRate : null;
-
     const extraRate = form.dataset.extraRate;
     const chain = parseTiers(form.dataset.chain);
-    const spec = { starter: starterRate, lines, addOns: extras, locations,
-                   extraRate, chain };
+    const base = { starter: null, lines, addOns: extras, locations, extraRate, chain };
+    // The plan this quote is for: picked by hand, or the cheapest that
+    // fits what was typed in, named above the figure ("Starter fits you").
+    const best = cheapestPlan(base, terms);
+    const starter = chosenStarter || (mode === "auto" && best.plan === "starter");
+    const starterRate = starter ? form.dataset.starterRate : null;
+    const spec = Object.assign({}, base, { starter: starterRate });
     const monthly = quote(spec);
+    const fitLine = document.getElementById("calc-fit");
+    fitLine.hidden = mode !== "auto" || best.monthly === null;
+    fitLine.textContent = fitLine.hidden ? ""
+      : `${best.name} fits you: ${money(best.monthly)} a month`;
     const custom = monthly === null;
     const charged = form.dataset.monthsCharged;
     const covered = form.dataset.monthsCovered;
