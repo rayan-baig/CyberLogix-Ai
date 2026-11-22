@@ -227,7 +227,8 @@ def summary(tenant: Tenant, first: date, last: date,
 
     earned = earned_between(tenant.tenant_id, iso(start) or "", iso(end) or "")
 
-    # What the alerts answered this month protected, as an estimate
+    # What happened to the food, from the saved answers only (3.30.0), and
+    # what the "Food kept" ones were roughly worth, as an estimate
     # (food_value.py: a typical unit's stock, which the owner tunes there).
     import food_value
 
@@ -282,6 +283,8 @@ def summary(tenant: Tenant, first: date, last: date,
         "food_protected_usd": saved["usd"],
         "food_protected_alerts": saved["alerts"],
         "food_at_risk_alerts": saved["at_risk"],
+        "food_thrown_alerts": saved["thrown"],
+        "food_unanswered_alerts": saved["unanswered"],
     }
 
 
@@ -367,16 +370,24 @@ def render_text(report: Dict[str, Any]) -> str:
     if report.get("food_protected_usd"):
         n = report["food_protected_alerts"]
         lines += ["", f"Food protected: about ${report['food_protected_usd']:,} "
-                      f"({n} alert{'' if n == 1 else 's'} answered and back in range "
-                      "within 2 hours, or marked Food kept). An estimate: what a "
-                      "typical fridge or freezer of each kind holds, not a count of "
-                      "your stock."]
+                      f"({n} alert{'' if n == 1 else 's'} marked Food kept). An "
+                      "estimate: what a typical fridge or freezer of each kind "
+                      "holds, not a count of your stock."]
+    if report.get("food_thrown_alerts"):
+        n = report["food_thrown_alerts"]
+        lines += ["", f"Food thrown away: {n} alert{'' if n == 1 else 's'}, as "
+                      "recorded in the log."]
     if report.get("food_at_risk_alerts"):
         n = report["food_at_risk_alerts"]
         lines += ["", f"Food at risk: {n} alert{'' if n == 1 else 's'} ran over 2 hours "
-                      "with nobody saying the food was kept. Check "
+                      "with nobody saying what happened to the food. Check "
                       f"{'it' if n == 1 else 'them'} in the console and say what "
                       "happened to the food, for the record."]
+    if report.get("food_unanswered_alerts"):
+        n = report["food_unanswered_alerts"]
+        lines += ["", f"Food not answered: {n} alert{'' if n == 1 else 's'} came back "
+                      "in range with nobody saying whether the food was kept. "
+                      "One tap on the alert in the console, for the record."]
 
     if report.get("site_wide_alerts"):
         count = report["site_wide_count"]

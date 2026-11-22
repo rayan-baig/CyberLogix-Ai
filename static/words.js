@@ -126,6 +126,13 @@
         return { state: c.state, word, kind: "warm",
           line: `${word} since ${clock(c.out_since)}. Alerts are paused, so nobody is texted.` };
       case "alert":
+        // The alert is still open but the latest reading is back in range
+        // (3.30.0): "Back in range: press It's fixed", never "Too warm"
+        // beside 38°.
+        if (c.back_in_range) {
+          return { state: c.state, word: "Back in range", kind: "watch", back: true,
+            line: "Back in range: press It's fixed." };
+        }
         return { state: c.state, word, kind: "warm",
           line: `${word} for ${outFor(c.out_since)}, since ${clock(c.out_since)}.` };
       case "offline":

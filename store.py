@@ -1958,14 +1958,20 @@ class HubStore:
             incident.corrective_action_at = now
             if disposition.strip():
                 incident.product_disposition = disposition.strip()
+                incident.food_answered_by = actor
+                incident.food_answered_at = now
             self._save_incident(incident)
         return incident
 
-    def record_disposition(self, incident: Incident, disposition: str) -> Incident:
+    def record_disposition(self, incident: Incident, disposition: str,
+                           actor: Optional[str] = None) -> Incident:
         """What happened to the product, on its own: "Food kept" or
-        "Thrown away" after "It's fixed" (voice_dispatch.record_food)."""
+        "Thrown away" after an alert closes (voice_dispatch.record_food),
+        with who said so and when (3.30.0)."""
         with self._lock:
             incident.product_disposition = disposition
+            incident.food_answered_by = actor
+            incident.food_answered_at = utc_now()
             self._save_incident(incident)
         return incident
 
@@ -2393,6 +2399,13 @@ class HubStore:
             user.password_from_owner = from_owner
             self._db.put("user", user.user_id, user.to_row())
             self._cancel_resets({r.user_id for r in self.logins_of(user)})
+            return user
+
+    def set_user_prefs(self, user: User, changes: Dict[str, Any]) -> User:
+        """Save some of a person's screen settings (User.prefs, 3.30.0)."""
+        with self._lock:
+            user.prefs = dict(user.prefs, **changes)
+            self._db.put("user", user.user_id, user.to_row())
             return user
 
     def _cancel_resets(self, user_ids) -> None:

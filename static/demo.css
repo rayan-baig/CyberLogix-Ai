@@ -156,3 +156,7 @@
   .demo-unit-temp { font-size: 27px; }
   .demo-end-acts .btn { width: 100%; }
 }
+/* The food question after "Mark it fixed" (demo.js, foodAsk, 3.30.0). */
+.demo-verdict p.demo-food-q { margin-top: 12px; }
+.demo-food-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-food-acts .btn { flex: 1 1 0; width: auto; min-width: 0; }

@@ -214,28 +214,29 @@ insurer reads.
   its kind's usual wait), even for a reading far past the limit. A new
   spell that starts after the unit came back is alerted on as normal.
 
-### "Food protected": an estimate on a closed alert
+### The food question, and "Food protected"
 
-A closed alert in the console, and the monthly email, say roughly what the
-food in the unit was worth: "Food protected: about $800", with the words
-"An estimate: what a typical fridge holds, not a count of this one." under
-it. It is counted only for a unit's own alert that is closed, whose food
-was not recorded as thrown away, and either
+Every way an alert closes asks what happened to the food (3.30.0): **It's
+fixed** in range, **It's fixed** while still warm and then closed by itself
+once cold, and an alert that came back to normal with nobody answering.
+Until somebody taps **Food kept** or **Thrown away**, the alert is "food
+unanswered": it says how long it took to come back ("Back in range in 12
+minutes"), or **"Food at risk: check it"** if it ran longer than two hours
+(`SAFE_HOURS`) or was closed while still out of range, and offers the two
+buttons. It never says "Food kept" or "Food protected" before an answer.
 
-* somebody said the food was kept ("Food kept" after **It's fixed**, or a
-  corrective action that kept it), or
-* a person answered it ("I'm on it" or "It's fixed") and the unit was back
-  in range within two hours of going out (`SAFE_HOURS`).
+For a week after it closed (`ASK_ON_TODAY_DAYS`), the Simple view's
+headline is "One thing to do: check the food in Walk-in fridge", with the
+two buttons, and the console's "Needs you now" bar asks the same. The
+alert itself keeps asking for as long as it is kept.
 
-An alert that ended on its own, unanswered, claims nothing. One that ran
-longer than two hours, or was closed while still out of range, with nobody
-saying the food was kept, says **"Food at risk: check it"** with **Food
-kept** and **Thrown away** buttons, never "Food protected" (3.28.0: eight
-hours at 62.5°F used to claim $3,000). After **It's fixed** closes an
-alert, the page asks once: "Closed. What about the food?" (**Food kept**,
-**Thrown away** or **Not sure yet**). The answer is the alert's product
-disposition in the inspector's log (`POST /api/voice/food/{id}`,
-`{"food": "kept" | "thrown"}`).
+Once somebody answers, the alert's history says "Thrown away, Rosa" (or
+"Food kept, ...") at the time they tapped, and a kept one says roughly what
+the food was worth: "Food protected: about $800", with "An estimate: what
+a typical fridge holds, not a count of this one." A corrective action with
+a product disposition answers the question too. The answer is the alert's
+product disposition in the inspector's log (`POST /api/voice/food/{id}`,
+`{"food": "kept" | "thrown"}`), with who said it and when.
 
 The figures are in one place, `food_value.py`, for the owner to tune:
 `STOCK_USD` is what a typical unit of each kind holds (fridge, freezer,
@@ -243,9 +244,11 @@ walk-in fridge, walk-in freezer; a walk-in is any unit whose name says
 "walk-in" or "cold room"), one list for food (restaurants, country clubs)
 and one for vaccines and medicines (pharmacies, labs). `SECTOR_STOCK` says
 which list a sector uses; a sector not in it shows no estimate at all. The
-monthly email adds up the month's alerts the same way, and says how many
-were "Food at risk". The Simple view shows the month so far in one line:
-"This month: 1 alert, answered in 4 minutes, food kept."
+monthly email adds up the month's alerts from the saved answers only: food
+kept (with the estimate), thrown away, at risk and not answered. The
+Simple view shows the month so far in one line, "This month: 1 alert,
+answered in 4 minutes, food thrown away.", with who answered and when
+("Thrown away, Rosa, 4:09 PM") under it.
 
 ### Calls, said as they happened
 

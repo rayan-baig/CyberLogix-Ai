@@ -807,6 +807,9 @@ body.has-terminal main { padding-bottom: 148px; }
 #term-body .info { color: var(--accent); }
 
 #toasts { position: fixed; right: 18px; bottom: 96px; z-index: 80; display: grid; gap: 8px; }
+/* Off the sensor key and its instructions (console.js, placeToasts). */
+#toasts.toasts-top, #toasts.toasts-top-left { top: 76px; bottom: auto; }
+#toasts.toasts-left, #toasts.toasts-top-left { right: auto; left: 18px; }
 .toast {
   background: var(--raised); border: 1px solid var(--border-lit);
   border-left: 3px solid var(--accent);
@@ -823,8 +826,12 @@ body.has-terminal main { padding-bottom: 148px; }
 /* "Food at risk: check it" (console.js, foodAtRisk): never "protected"
    for an alert that ran over two hours with nobody saying it was kept. */
 .food-risk { margin: 6px 0 4px; font-size: 13.5px; color: var(--warning); }
-.food-risk p { margin: 0; }
-.food-risk .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+/* The food question on a closed alert nobody has answered yet (3.30.0),
+   and the answer once given ("Thrown away, Jo, 4:09 PM"). */
+.food-ask { margin: 6px 0 4px; font-size: 13.5px; color: var(--ink-2, inherit); }
+.food-said { margin: 6px 0 4px; font-size: 13.5px; }
+.food-risk p, .food-ask p { margin: 0; }
+.food-risk .sub, .food-ask .sub, .food-said .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .food-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -1194,6 +1201,7 @@ body.acct-small .nav .status-line { display: none; }
   /* A phone-sized table has to scroll sideways rather than squash. */
   #fleet-table, .scrollx { overflow-x: auto; }
   #toasts { right: 10px; left: 10px; bottom: 88px; }
+  #toasts.toasts-left, #toasts.toasts-top-left { right: 10px; left: 10px; }
   .toast { max-width: none; }
   /* A title, a note and two buttons do not fit one phone row; the title
      was squeezed into a column a word wide. They wrap instead. */
@@ -2123,6 +2131,10 @@ input[aria-invalid="true"] { border-color: var(--critical); }
   .demo-unit-temp { font-size: 27px; }
   .demo-end-acts .btn { width: 100%; }
 }
+/* The food question after "Mark it fixed" (demo.js, foodAsk, 3.30.0). */
+.demo-verdict p.demo-food-q { margin-top: 12px; }
+.demo-food-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-food-acts .btn { flex: 1 1 0; width: auto; min-width: 0; }
 
 /* One-declaration classes, for the small adjustments a page used to make
    with a style="..." attribute.
@@ -2369,7 +2381,7 @@ input[aria-invalid="true"] { border-color: var(--critical); }
   <p class="demo-small demo-error" id="error" hidden></p>
 </main>
 
-<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 37.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "over_index": 4, "alert_index": 7, "stay_ticks": 3, "real_stay_minutes": 20.0, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "ALERT Walk-in cooler (WALK-IN-1) at Corner Bistro: 44.6F, 3.6F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is CyberLogix AI with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.9 degrees Fahrenheit. That is 5.9 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "CyberLogix: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from CyberLogix: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://cyberlogix.mtrxhorizyn.com/signup?sector=restaurant"}</script>
+<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 37.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "over_index": 4, "alert_index": 7, "stay_ticks": 3, "real_stay_minutes": 20.0, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "ALERT Walk-in cooler (WALK-IN-1) at Corner Bistro: 44.6F, 3.6F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is CyberLogix AI with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.9 degrees Fahrenheit. That is 5.9 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "CyberLogix: thanks, Sam. Walk-in cooler is yours. Nobody else will be called.", "ack_reply_called": "CyberLogix: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from CyberLogix: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://cyberlogix.mtrxhorizyn.com/signup?sector=restaurant"}</script>
 <script>
 /* The background: a field of the mark, breathing.
  *
@@ -2665,6 +2677,7 @@ function fresh() {
     acked: false,
     fixed: false,
     fixedAt: null,
+    food: null,           // "kept" or "thrown", once answered after the fix
     calls: [],            // {who, at, state}
     events: new Set(),    // which timeline lines have been written
     step: "fine",
@@ -2811,9 +2824,13 @@ function acknowledge(how) {
   $("reply-1").disabled = true;
   showCall(false);
   const who = S.people[0].name;
+  // "No more calls for this alert" only once a call really rang (3.30.0);
+  // before one, "Nobody else will be called".
+  const rang = run.events.has("call-0");
   if (how === "text") {
     bubble("me", "1");
-    bubble("them", S.messages.ack_reply);
+    bubble("them", rang && S.messages.ack_reply_called ? S.messages.ack_reply_called
+      : S.messages.ack_reply);
     timeline("ack", "ack", `${who} replied 1. Nobody else is called.`);
   } else {
     timeline("ack", "ack", `${who} pressed 1 on the call. Nobody else is called.`);
@@ -2831,11 +2848,32 @@ function fix() {
   run.fixedAt = run.t;
   $("fix").hidden = true;
   timeline("fixed", "done", "Fixed: the door was left open. It is cooling back down.");
+  timeline("food-asked", "", `Asked ${S.people[0].name}: was the food kept or thrown away?`);
   $("alert-note").textContent = "sorted";
   // Straight away, not on the next tick: the banner kept offering "Mark it
   // fixed" for several seconds after it was pressed, while the walk-in
   // was still above its limit on the way back down.
   draw();
+}
+
+/* The food question after "Mark it fixed" (3.30.0), as the real app asks
+   once an alert closes: one tap, written into the record with a name. */
+function answerFood(fate) {
+  if (!run.fixed || run.food) return;
+  run.food = fate;
+  timeline("food", "done", `${fate === "kept" ? "Food kept" : "Thrown away"}, ${S.people[0].name}.`);
+  draw();
+}
+
+function foodAsk() {
+  return run.fixed && !run.food
+    ? `<p class="demo-food-q"><b>One more thing: what about the food?</b> In real life
+         this is asked once it is cold again, and goes in the record with your name.</p>
+       <div class="demo-food-acts">
+         <button class="btn btn-sm btn-primary demo-jump" type="button" data-act="food-kept">Food kept</button>
+         <button class="btn btn-sm demo-jump" type="button" data-act="food-thrown">Thrown away</button>
+       </div>`
+    : "";
 }
 
 /* ---------------- drawing ---------------- */
@@ -2888,38 +2926,47 @@ function draw() {
   }).join("");
 
   const box = $("verdict");
+  let html = "";
   if (warm && run.fixed) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
+    html = `<h2>Fixed. ${esc(warm.name)} is cooling back down</h2>
       <p>Marked fixed and written down. It will show as fine once it is back
-         under ${esc(fmt(warm.limit_f))}°F.</p>`;
+         under ${esc(fmt(warm.limit_f))}°F.</p>${foodAsk()}`;
   } else if (warm && !run.alertOpen) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(warm.name)} is over its limit</h2>
+    html = `<h2>${esc(warm.name)} is over its limit</h2>
       <p>Nobody is texted yet: we wait to see if it stays over, so a door
          open for a minute wakes nobody.</p>`;
   } else if (warm && !run.acked) {
     box.className = "demo-verdict bad";
-    box.innerHTML = `<h2>${esc(warm.name)} is too warm</h2>
+    html = `<h2>${esc(warm.name)} is too warm</h2>
       <p>${esc(people())} have been texted. Reply 1 on the phone below to say you are on it.</p>
       <button class="btn btn-sm demo-jump" type="button" data-act="phone">See the text</button>`;
   } else if (warm) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(S.people[0].name)} is on it</h2>
-      <p>The calls have stopped. Once the door is shut and the food checked, mark it fixed.</p>
+    html = `<h2>${esc(S.people[0].name)} is on it</h2>
+      <p>${run.events.has("call-0") ? "The calls have stopped."
+        : "Nobody else will be called."} Once the door is shut and the food checked, mark it fixed.</p>
       <button class="btn btn-sm demo-jump" type="button" data-act="fix">Mark it fixed</button>`;
   } else if (soon) {
     box.className = "demo-verdict watch";
-    box.innerHTML = `<h2>${esc(soon.name)} is warming up</h2>
+    html = `<h2>${esc(soon.name)} is warming up</h2>
       <p>Still safe, but rising. If it goes over ${esc(fmt(soon.limit_f))}°F and stays there, an alert goes out.</p>`;
   } else if (run.fixed) {
     box.className = "demo-verdict ok";
-    box.innerHTML = `<h2>Everything is fine again</h2>
-      <p>The alert is closed and written down. That is the whole idea.</p>`;
+    html = `<h2>Everything is fine again</h2>
+      <p>The alert is closed and written down${run.food
+        ? `, with what happened to the food` : ""}. That is the whole idea.</p>${foodAsk()}`;
   } else {
     box.className = "demo-verdict ok";
-    box.innerHTML = `<h2>Everything is fine</h2>
+    html = `<h2>Everything is fine</h2>
       <p>All 4 are the right temperature. Nothing for you to do.</p>`;
+  }
+  // Only when it changed: redrawn every second, the buttons in it were
+  // replaced between a press and its release, and the press was lost.
+  if (box.dataset.drawn !== html) {
+    box.innerHTML = html;
+    box.dataset.drawn = html;
   }
   $("alert-note").textContent = run.fixed ? "sorted"
     : run.alertOpen ? (run.acked ? "acknowledged" : "1 open") : "none";
@@ -3005,6 +3052,8 @@ $("verdict").addEventListener("click", (event) => {
   const act = event.target.closest("[data-act]");
   if (!act) return;
   if (act.getAttribute("data-act") === "fix") fix();
+  if (act.getAttribute("data-act") === "food-kept") answerFood("kept");
+  if (act.getAttribute("data-act") === "food-thrown") answerFood("thrown");
   if (act.getAttribute("data-act") === "phone") {
     $("phone-title").closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
   }

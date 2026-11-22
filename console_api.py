@@ -269,12 +269,14 @@ def console_overview(
         row["peak_display"] = display_temperature(incident.peak_f, unit)
         row["temperature_unit"] = unit
         # On a closed alert: what the food in it was roughly worth, as an
-        # estimate (food_value.py, where the owner tunes the figures).
-        # Only when it was caught in time or somebody said the food was
-        # kept; a long one says "Food at risk: check it" instead (3.28.0).
+        # estimate (food_value.py, where the owner tunes the figures),
+        # only once somebody said it was kept. Until somebody answers, the
+        # food question: "Back in range in 12 minutes" or "Food at risk:
+        # check it", with Food kept / Thrown away (3.30.0).
         unit_sensor = STORE.get_sensor(incident.sensor_id)
         row["food_protected"] = food_value.protected(incident, unit_sensor)
         row["food_at_risk"] = food_value.at_risk(incident, unit_sensor)
+        row["food_question"] = food_value.question(incident, unit_sensor, now)
         incidents.append(row)
     # The possible attack or site-wide failure alerts, apart from the
     # units' own: the console shows them as one banner each, above
@@ -333,7 +335,7 @@ def console_overview(
     from costs import calls_offer
     from firstday import checklist
     from helpdesk import support_address
-    from pricing import build_roi, build_subscription, starter_terms
+    from pricing import build_roi, build_subscription, growth_terms, starter_terms
 
     subscription = build_subscription(tenant)
     roi = build_roi(tenant, 30)
@@ -345,6 +347,9 @@ def console_overview(
         "subscription": subscription,
         # What the plan buttons on What you pay say, from pricing.py.
         "starter": starter_terms(),
+        # Growth as /pricing says it, for the plan buttons (3.30.0): "$149
+        # a month a location, up to 10 units a location".
+        "plan_prices": growth_terms(),
         "roi": roi,
         "entitlements": {
             "voice_escalation": entitlements["voice_escalation"],
@@ -410,13 +415,18 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
     """This calendar month so far, in one line a café owner can read.
 
     {"alerts", "answered", "typical_answer_minutes", "food_kept",
-    "food_usd", "food_at_risk", "words"}. Only the units' own alerts
-    (a site-wide one sits on top of them). "Food kept" by food_value's
-    rule: answered and back in range within two hours, or marked kept.
+    "food_thrown", "food_unanswered", "food_at_risk", "food_usd",
+    "food_answers", "words"}. Only the units' own alerts (a site-wide one
+    sits on top of them). The food follows the saved answers only
+    (food_value.month_total, 3.30.0): "food kept" once somebody tapped
+    Food kept, never because the fridge came back quickly.
+    `food_answers` is who said what and when, newest first, for /today
+    ("Walk-in fridge: Thrown away, Jo, 4:09 PM").
     """
     from statistics import median
 
     from domain import minutes_words
+    from records import food_answer_words
 
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     alerts = [i for i in STORE.incidents_for(tenant.tenant_id, since=start)
@@ -425,15 +435,22 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
     waits = [max(0.0, (i.acknowledged_at - i.opened_at).total_seconds() / 60.0)
              for i in answered]
     typical = round(median(waits), 1) if waits else None
-    kept = risky = usd = 0
-    for i in alerts:
-        sensor = STORE.get_sensor(i.sensor_id)
-        row = food_value.protected(i, sensor)
-        if row:
-            kept += 1
-            usd += row["usd"]
-        elif food_value.at_risk(i, sensor):
-            risky += 1
+    sensors = {i.sensor_id: STORE.get_sensor(i.sensor_id) for i in alerts}
+    food = food_value.month_total((i, sensors[i.sensor_id]) for i in alerts)
+    kept, thrown = food["alerts"], food["thrown"]
+    risky, unanswered = food["at_risk"], food["unanswered"]
+
+    answers = []
+    for i in sorted((i for i in alerts if i.product_disposition and i.food_answered_at),
+                    key=lambda i: i.food_answered_at, reverse=True)[:3]:
+        sensor = sensors[i.sensor_id]
+        answers.append({
+            "incident_id": i.incident_id,
+            "unit": (sensor.location_name if sensor and sensor.location_name else i.sensor_id),
+            "words": food_answer_words(i.product_disposition),
+            "by_name": person_name(i.food_answered_by),
+            "at": iso(i.food_answered_at),
+        })
 
     n = len(alerts)
     if not n:
@@ -449,20 +466,42 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
             parts.append("not answered yet")
         else:
             parts.append("none answered")
-        if risky:
-            parts.append(f"food at risk on {risky}: check {'it' if risky == 1 else 'them'}")
-        elif kept == n:
-            parts.append("food kept")
-        elif kept:
-            parts.append(f"food kept on {kept}")
+        asked = kept + thrown + risky + unanswered
+        if asked:
+            def them(k: int) -> str:
+                return "it" if k == 1 else "them"
+
+            if risky == asked:
+                parts.append(f"food at risk: check {them(risky)}" if n == 1
+                             else f"food at risk on {risky}: check {them(risky)}")
+            elif unanswered == asked and n == 1:
+                parts.append("food not answered yet")
+            elif kept == asked and n == 1 or kept == n:
+                parts.append("food kept")
+            elif thrown == asked and n == 1 or thrown == n:
+                parts.append("food thrown away")
+            else:
+                food_parts = []
+                if kept:
+                    food_parts.append(f"food kept on {kept}")
+                if thrown:
+                    food_parts.append(f"thrown away on {thrown}")
+                if risky:
+                    food_parts.append(f"food at risk on {risky}: check {them(risky)}")
+                if unanswered:
+                    food_parts.append(f"food not answered on {unanswered}")
+                parts.extend(food_parts)
         words = "This month: " + ", ".join(parts) + "."
     return {
         "alerts": n,
         "answered": len(answered),
         "typical_answer_minutes": typical,
         "food_kept": kept,
-        "food_usd": usd,
+        "food_thrown": thrown,
+        "food_unanswered": unanswered,
         "food_at_risk": risky,
+        "food_usd": food["usd"],
+        "food_answers": answers,
         "words": words,
     }
 

@@ -4,6 +4,48 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.30.0 — 2026-11-22
+
+The food question is asked however an alert closes, and nothing says "food
+kept" until somebody says so. A small café's screens are shorter. No price
+or plan term has changed.
+
+- **One thing to do, not "Everything is fine".** While nobody has said what
+  happened to the food after an alert, the Simple view's headline is "One
+  thing to do: check the food in Walk-in fridge", with **Food kept** and
+  **Thrown away** right there. The full console's "Needs you now" bar says
+  the same. It used to say "Everything is fine... nothing for you to do"
+  beside "food at risk on 1: check it".
+- **Asked every way an alert closes.** "It's fixed" in range, "It's fixed"
+  while still warm and then closed by itself once cold, and an alert that
+  came back to normal on its own all ask the same question. Until somebody
+  taps, the alert says "Back in range in 12 minutes", never "food kept" or
+  "$3,000 protected".
+- **Only the saved answer counts.** "Food protected: about $X" and the
+  month line's "food kept" follow what somebody tapped, nothing else. The
+  monthly email counts food kept, thrown away, at risk and not answered.
+- **Who said it, and when.** The alert's history and the month line say
+  "Thrown away, Rosa, 4:09 PM" or "Food kept, ...".
+- **Back in range, said plainly.** An alert still open on a fridge that is
+  cold again says "Back in range: press It's fixed" on the fridge's row and
+  in the bar, instead of "38° Too warm" or "1.5°F, too warm".
+- **No "calls have stopped" when nobody was called.** Replying 1 before
+  any call says "Nobody else will be called"; "No more calls for this
+  alert" only once a call really went out. The demo asks about the food
+  after **Mark it fixed**.
+- **A shorter Setup for a small café.** The OmniArmor connection, "Things
+  to do" from a meeting and the full activity log are under **Advanced**.
+  The Money tab's plan buttons say what the pricing page says ("Growth ·
+  $149 a month a location, up to 10 units a location"). On a desktop, a
+  small account shows three figures, with no empty "Readings in range".
+- **Pilot's "Log for the inspector"** opens the log for the last week.
+- **"What this is" remembers you, not the device.** Folding or opening it
+  on /today is saved on your account, so the phone and the office computer
+  agree.
+- **Messages keep off the sensor key.** "Recorded, not texted" and other
+  short messages move to the top of the screen rather than cover a new
+  sensor key and its instructions.
+
 ## 3.29.0 — 2026-11-22
 
 Pilot, the helper robot, moves to the shared Pilot core 1.4.1. It gets out

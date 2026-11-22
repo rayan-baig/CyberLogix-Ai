@@ -67,7 +67,7 @@ def test_a_reply_from_the_roster_acknowledges_and_stops_the_calls(
     resp = _reply(api, "+15550112", words)  # the roster wrote +1-555-0112
 
     assert resp.status_code == 200
-    assert "<Message>" in resp.text and "No more calls" in resp.text
+    assert "<Message>" in resp.text and "is yours." in resp.text
     incident = STORE.get_incident(incident_id)
     assert incident.acknowledged_at is not None
     assert incident.acknowledged_by == "Cook 2, by text reply (+1-555-0112)"
@@ -137,7 +137,7 @@ def test_a_closed_alert_cannot_be_acknowledged(api, business):
 
 def test_the_second_reply_is_told_who_has_it(api, business):
     _, _, incident_id = business()
-    assert "No more calls" in _reply(api, "+15550111", "1").text
+    assert "is yours." in _reply(api, "+15550111", "1").text
 
     second = _reply(api, "+15550112", "1")
 
@@ -214,7 +214,7 @@ def test_two_open_alerts_ask_which_and_a_number_picks_one(
 
     number = int(second.split("-")[1])
     picked = _reply(api, "+15550111", f"ACK {number}")
-    assert "No more calls" in picked.text
+    assert "is yours." in picked.text
     assert STORE.get_incident(second).acknowledged_at is not None
     assert STORE.get_incident(first).acknowledged_at is None
 

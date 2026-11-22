@@ -77,7 +77,7 @@ PATHS = [
 
 NOT_FETCHED = {
     "/api/accounts/bootstrap", "/api/accounts/login", "/api/accounts/logout",
-    "/api/accounts/me/password", "/api/autopilot/sweep",
+    "/api/accounts/me/password", "/api/accounts/me/prefs", "/api/autopilot/sweep",
     "/api/accounts/businesses/join", "/api/accounts/businesses/join-codes",
     "/api/accounts/business/export", "/api/accounts/business/erase",
     "/api/licenses/me/rotate-key",

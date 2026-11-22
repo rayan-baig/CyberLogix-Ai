@@ -415,10 +415,20 @@ def _on_any_roster(phone: str) -> bool:
     return False
 
 
-def ack_reply_text(who: str, where: str) -> str:
-    """The text sent back to whoever replied 1. The public demo shows it too."""
-    return (f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is "
-            "yours. No more calls for this alert.")
+def ack_reply_text(who: str, where: str, phoned: bool = False,
+                   calls: bool = True) -> str:
+    """The text sent back to whoever replied 1. The public demo shows it too.
+
+    "No more calls for this alert" was said when no call had happened
+    (3.30.0): it says so only once a call really went out (`phoned`). Before
+    one, "Nobody else will be called"; on a plan with no calls, neither.
+    """
+    head = f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is yours."
+    if phoned:
+        return f"{head} No more calls for this alert."
+    if calls:
+        return f"{head} Nobody else will be called."
+    return f"{head} Everyone on the list can see you have it."
 
 
 def _sms_answer(text: Optional[str], tenant_id: Optional[str] = None,
@@ -515,7 +525,11 @@ async def sms_reply(request: Request) -> Response:
     await asyncio.to_thread(_notify_hooks, tenant, incident, "acknowledged",
                             f"Acknowledged by text by {who}.")
     logger.info("Incident %s acknowledged by text reply.", incident.incident_id)
-    return _sms_answer(ack_reply_text(who, where), tenant.tenant_id)
+    from costs import calls_offer
+
+    calls_on = calls_offer(tenant)["mode"] != "none"
+    return _sms_answer(ack_reply_text(who, where, phoned=incident.phoned, calls=calls_on),
+                       tenant.tenant_id)
 
 
 @router.get("/pending")
@@ -991,7 +1005,7 @@ def record_food(
         )
     actor = actor_label(operator, "API key")
     fate = FOOD_ANSWERS[payload.food]
-    STORE.record_disposition(incident, fate)
+    STORE.record_disposition(incident, fate, actor)
     write_audit(tenant, operator, "incident.food",
                 f"{incident_id}: food {'kept' if payload.food == 'kept' else 'thrown away'}.",
                 fallback_actor=actor)

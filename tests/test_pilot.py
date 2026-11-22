@@ -319,7 +319,7 @@ def test_the_console_keeps_keys_away_from_explain_this_screen():
     """"Analyze & explain" never reads a part marked data-pilot-private: the
     box a new sensor or business key is shown in, and the AI key card."""
     console = (ROOT / "static/console.html").read_text()
-    assert '<div id="issued-key" class="banner warn" data-pilot-private hidden' in console
+    assert '<div id="issued-key" class="banner warn" data-pilot-private data-toast-avoid hidden' in console
     assert re.search(r'<section class="card" id="find-ai-key"[^>]*data-pilot-private>', console)
     # The console hands Pilot nothing that changes the plan, the on-call
     # list, or sends a text or a call.

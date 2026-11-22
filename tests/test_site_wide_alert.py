@@ -634,7 +634,7 @@ def test_reply_1_acknowledges_the_site_wide_alert_and_its_units(api, raised):
 def test_the_owner_can_reply_1_too(api, raised):
     _, _, alert, _ = raised
     resp = _reply(api, "+15550100", "ok")
-    assert resp.status_code == 200 and "No more calls" in resp.text
+    assert resp.status_code == 200 and "is yours." in resp.text
     assert alert.acknowledged_at is not None
 
 

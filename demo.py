@@ -165,7 +165,11 @@ def story() -> Dict[str, Any]:
             # Word for word what a real alert would say, from the same code.
             "alert_text": wording.alert_sms(business, walk_in, alert_f, "F"),
             "call_script": wording.voice_script(business, walk_in, incident, "F"),
+            # Before any call ("Nobody else will be called") and after one
+            # ("No more calls for this alert"): the demo picks by whether
+            # its pretend call rang (3.30.0).
             "ack_reply": ack_reply_text(first, walk_in.location_name),
+            "ack_reply_called": ack_reply_text(first, walk_in.location_name, phoned=True),
             "test_text": sms_text(business),
         },
         "signup_href": "/signup?sector=restaurant",

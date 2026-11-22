@@ -34,6 +34,7 @@ UNGATED_BY_DESIGN = {
     "/api/accounts/login": "public by definition",
     "/api/accounts/logout": "ends your own session, nobody else's",
     "/api/accounts/me/password": "changes your own password",
+    "/api/accounts/me/prefs": "saves your own screen settings, nobody else's",
     "/api/accounts/businesses/{tenant_id}/switch": (
         "moves your own session to another business you already hold a "
         "record in, refused for any other. It grants nothing: the role you "

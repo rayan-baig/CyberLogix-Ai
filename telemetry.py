@@ -488,8 +488,16 @@ def unit_condition(tenant: Tenant, sensor, now=None,
         out["state"] = "waiting_first"
         return out
     if incident is not None:
+        # An open alert on a unit whose latest reading is back in range
+        # (3.30.0): every page says "Back in range: press It's fixed", not
+        # "Too warm" beside 38°.
         out.update(state="alert", incident_id=incident.incident_id,
-                   out_since=iso(incident.started_at))
+                   out_since=iso(incident.started_at),
+                   back_in_range=(temp is not None and too is None
+                                  and not sensor.offline(now)),
+                   temperature_display=(display_temperature(temp, tenant.temperature_unit)
+                                        if temp is not None else None),
+                   temperature_unit=tenant.temperature_unit)
         return out
     if sensor.offline(now):
         out["state"] = "offline"
