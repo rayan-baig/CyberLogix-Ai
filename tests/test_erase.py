@@ -10,7 +10,7 @@ import json
 
 from store import STORE
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 PASSWORD = "correct-horse-battery"
 
 

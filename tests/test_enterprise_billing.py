@@ -11,7 +11,7 @@ import pytest
 # The platform operator, who now sets a cluster's terms with the owner. A
 # cluster contract replaces the rate card, so its sector and branch count are
 # the price; an owner alone used to choose both (see the last tests here).
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 def provision(api, headers, name="Harbor Grill Group", vertical="restaurant",

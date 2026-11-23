@@ -2,7 +2,7 @@
 
 Two credentials reach the same endpoints:
 
-* a **tenant API key** in `X-CyberLogix-Key` identifies a machine — sensors,
+* a **tenant API key** in `X-Kryozyn-Key` identifies a machine — sensors,
   webhooks, the autopilot scheduler — and carries no human identity;
 * a **bearer session token** in `Authorization` identifies a signed-in
   person, and is what the console uses.
@@ -134,7 +134,7 @@ PLATFORM_ADMIN_KEY = os.environ.get("CYBERLOGIX_ADMIN_KEY", "").strip()
 
 
 def require_platform_admin(
-    x_cyberlogix_admin: Optional[str] = Header(None, alias="X-CyberLogix-Admin"),
+    x_kryozyn_admin: Optional[str] = Header(None, alias="X-Kryozyn-Admin"),
 ) -> None:
     """Gate a route that acts for the vendor rather than for a customer."""
     if not PLATFORM_ADMIN_KEY:
@@ -147,17 +147,17 @@ def require_platform_admin(
         )
     # compare_digest, because a short-circuiting compare leaks the key's
     # length and prefix to anyone who can time the response.
-    if not x_cyberlogix_admin or not hmac.compare_digest(
-        x_cyberlogix_admin, PLATFORM_ADMIN_KEY
+    if not x_kryozyn_admin or not hmac.compare_digest(
+        x_kryozyn_admin, PLATFORM_ADMIN_KEY
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="A valid X-CyberLogix-Admin header is required.",
+            detail="A valid X-Kryozyn-Admin header is required.",
         )
 
 
 def require_tenant_any_state(
-    x_cyberlogix_key: Optional[str] = Header(
+    x_kryozyn_key: Optional[str] = Header(
         None, description="Tenant API key issued at onboarding."
     ),
     authorization: Optional[str] = Header(None),
@@ -177,7 +177,7 @@ def require_tenant_any_state(
     abuse, fraud, or their own request — and undoing it is a conversation
     rather than a card payment.
     """
-    tenant = _resolve_tenant(x_cyberlogix_key, authorization)
+    tenant = _resolve_tenant(x_kryozyn_key, authorization)
     if tenant.suspended:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -226,7 +226,7 @@ def optional_operator(
 
 
 def require_tenant(
-    x_cyberlogix_key: Optional[str] = Header(
+    x_kryozyn_key: Optional[str] = Header(
         None, description="Tenant API key issued at onboarding."
     ),
     authorization: Optional[str] = Header(
@@ -234,11 +234,11 @@ def require_tenant(
     ),
 ) -> Tenant:
     """Resolve the calling tenant from either credential."""
-    return _reject_inactive(_resolve_tenant(x_cyberlogix_key, authorization))
+    return _reject_inactive(_resolve_tenant(x_kryozyn_key, authorization))
 
 
 def _resolve_tenant(
-    x_cyberlogix_key: Optional[str], authorization: Optional[str]
+    x_kryozyn_key: Optional[str], authorization: Optional[str]
 ) -> Tenant:
     """Credential to tenant. Says nothing about whether they have paid."""
     token = _bearer(authorization)
@@ -263,16 +263,16 @@ def _resolve_tenant(
             )
         return tenant
 
-    if not x_cyberlogix_key:
+    if not x_kryozyn_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=(
-                "Missing credentials. Send X-CyberLogix-Key for machine access "
+                "Missing credentials. Send X-Kryozyn-Key for machine access "
                 "or an Authorization bearer token for an operator."
             ),
         )
 
-    tenant = STORE.tenant_by_key(x_cyberlogix_key)
+    tenant = STORE.tenant_by_key(x_kryozyn_key)
     if tenant is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -309,14 +309,14 @@ class IngestPrincipal:
 
 
 def require_ingest(
-    x_cyberlogix_sensor_key: Optional[str] = Header(
+    x_kryozyn_sensor_key: Optional[str] = Header(
         None,
         description=(
             "Per-sensor ingest key, issued once when the sensor is "
             "registered. Prefer this over the tenant key on the device."
         ),
     ),
-    x_cyberlogix_key: Optional[str] = Header(
+    x_kryozyn_key: Optional[str] = Header(
         None, description="Tenant API key. Speaks for the whole estate."
     ),
     authorization: Optional[str] = Header(None),
@@ -336,8 +336,8 @@ def require_ingest(
     thing and breaking it would push people back to the master key by
     another route — but it is no longer what the hardware should hold.
     """
-    if x_cyberlogix_sensor_key:
-        sensor = STORE.sensor_by_ingest_key(x_cyberlogix_sensor_key.strip())
+    if x_kryozyn_sensor_key:
+        sensor = STORE.sensor_by_ingest_key(x_kryozyn_sensor_key.strip())
         if sensor is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -366,7 +366,7 @@ def require_ingest(
 
     return IngestPrincipal(
         require_tenant(
-            x_cyberlogix_key=x_cyberlogix_key, authorization=authorization
+            x_kryozyn_key=x_kryozyn_key, authorization=authorization
         )
     )
 

@@ -60,7 +60,7 @@ async function api(path, options) {
   const resp = await fetch(path, {
     method: opts.method || "GET",
     headers: Object.assign(
-      { "X-CyberLogix-Admin": key },
+      { "X-Kryozyn-Admin": key },
       opts.body ? { "Content-Type": "application/json" } : {}
     ),
     body: opts.body ? JSON.stringify(opts.body) : undefined,

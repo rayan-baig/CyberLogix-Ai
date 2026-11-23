@@ -143,7 +143,7 @@ def api():
 @pytest.fixture()
 def admin_headers():
     """The platform operator, who acts for the vendor rather than a tenant."""
-    return {"X-CyberLogix-Admin": "test-admin-key"}
+    return {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 @pytest.fixture()
@@ -247,7 +247,7 @@ def tenant_factory(api):
     def _make(plan="enterprise", company_name="Acme Cold Storage"):
         resp = api.post(
             "/api/licenses/tenants",
-            headers={"X-CyberLogix-Provisioning": "test-provisioning-key"},
+            headers={"X-Kryozyn-Provisioning": "test-provisioning-key"},
             json={
                 "company_name": company_name,
                 "contact_name": "Dana Reyes",
@@ -258,7 +258,7 @@ def tenant_factory(api):
         )
         assert resp.status_code == 201, resp.text
         body = resp.json()
-        return {"X-CyberLogix-Key": body["api_key"]}, body["tenant"]
+        return {"X-Kryozyn-Key": body["api_key"]}, body["tenant"]
 
     return _make
 
@@ -419,7 +419,7 @@ def mailbox(monkeypatch):
         sent.append(message)
 
     monkeypatch.setattr(mail, "SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr(mail, "MAIL_FROM", "billing@cyberlogix.example")
+    monkeypatch.setattr(mail, "MAIL_FROM", "billing@kryozyn.example")
     monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://hub.example")
     monkeypatch.setattr(mail, "_transport", _capture)
     return box

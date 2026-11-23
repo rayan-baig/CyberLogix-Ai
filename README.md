@@ -1,6 +1,6 @@
-# CyberLogix AI — Master Enterprise Hub
+# Kryozyn — Master Enterprise Hub
 
-CyberLogix is a product of MTRX Horizyn. It watches the temperature of
+Kryozyn is a product of MTRX Horizyn. It watches the temperature of
 things that must not get warm — walk-in freezers, server racks, vaccine
 fridges, wine cellars, engine bays — and makes sure a person finds out
 in minutes, not hours.
@@ -8,8 +8,14 @@ in minutes, not hours.
 Universal IoT telemetry, license control, autonomous operations, voice
 escalation and predictive forecasting, mounted behind one FastAPI service.
 In production it runs on its own subdomain of MTRX Horizyn's domain,
-`cyberlogix.mtrxhorizyn.com`, beside the company's other products;
+`kryozyn.mtrxhorizyn.com`, beside the company's other products;
 [DEPLOY.md](DEPLOY.md) section 1 sets that up.
+
+Kryozyn was called CyberLogix AI until 3.34.0. The names (product,
+company, domain) live in one place, `brand.py`. The old address, settings
+and API headers keep working, and what the owner does outside the code is
+listed in [DEPLOY.md](DEPLOY.md) ("The rename: what the owner does outside
+the code"). The repository keeps its old name.
 
 Wireless thermal sensors report to the hub. Each reading is scored against
 the threshold profile for its industry. A unit that **stays** out of range
@@ -55,7 +61,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
 | [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, pausing instead and the one-time offer to stay, founding member codes, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
-| [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), the signature that unlocks OmniArmor Pro, retries, corrections, and the price |
+| [docs/AEGIZYN-CONNECTION.md](docs/AEGIZYN-CONNECTION.md) | The Kitchen Safety Bundle: connecting Aegizyn, what the daily report says (roles, never names), the signature that unlocks Aegizyn Pro, retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/PILOT.md](docs/PILOT.md) | Pilot, the MTRX Horizyn assistant on the user's own AI key: where it is, what it knows, the console tools (and what it never does), and a business's own AI key for the alert line |
@@ -115,7 +121,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | API reference | `/developers` | Every customer-facing endpoint, its credential, parameters and an example body, rendered from the schema with no script |
 | Pricing page | `/pricing` | Every rate, the Starter plan and a calculator, rendered from the rate card |
 | Bring a friend | `/api/referrals` | A referral code per business, a longer trial for the friend, a month's credit when they pay |
-| Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to OmniArmor, which fills in its temperature-log check |
+| Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to Aegizyn, which fills in its temperature-log check |
 | Repair partners | `/api/repair-partners`, `/api/repairs` | "Get a repair quote" on a failing unit, one lead to one technician covering the address, a fee per lead billed by hand |
 | Pause or cancel | `/api/leaving` | Pause for 1 to 3 months (no bills, no alerts), a one-time offer to stay, cancel one press away, and the counts |
 | Founding member code | `/api/founder-code` | A launch discount as our own invoice line: a percentage off the first months, once per business, entered at sign-up or before the first paid invoice |
@@ -186,7 +192,7 @@ curl -X POST localhost:8080/api/signup -H 'Content-Type: application/json' -d '{
 
 # 2. Claim a seat for a sensor
 curl -X POST localhost:8080/api/licenses/me/sensors \
-  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' -d '{
+  -H "X-Kryozyn-Key: $KEY" -H 'Content-Type: application/json' -d '{
   "sensor_id": "CLUB-WALKIN-1",
   "industry_vertical": "country_club",
   "location_name": "Clubhouse Kitchen / Walk-In"
@@ -195,14 +201,14 @@ curl -X POST localhost:8080/api/licenses/me/sensors \
 # 3. Pulse it. 28F is inside the limit (a fridge's 41F), so nothing
 #    happens: one reading recorded, no incident, nobody woken.
 curl -X POST localhost:8080/api/sensor-pulse \
-  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
+  -H "X-Kryozyn-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 28.0}'
 
 # 4. Now break it. 61F is 20F past the 41F country-club limit, far enough
 #    to alert at once (a smaller rise waits to see if it stays: 20 minutes
 #    for a fridge), so this opens an incident and texts the roster.
 curl -X POST localhost:8080/api/sensor-pulse \
-  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' \
+  -H "X-Kryozyn-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"sensor_id": "CLUB-WALKIN-1", "temperature_fahrenheit": 61.0}'
 ```
 

@@ -204,7 +204,7 @@ h2.plain {
 .answer-loss { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .answer-loss .btn, .answer-change-to .btn { min-height: 40px; }
 
-/* What CyberLogix did for you (3.32.0): one quiet line until opened, then
+/* What Kryozyn did for you (3.32.0): one quiet line until opened, then
    the week on one screen. */
 .did { margin: 14px 0 0; padding: 14px 18px; border-radius: 12px;
   border: 1px solid var(--border); background: var(--surface-2); }

@@ -1,4 +1,4 @@
-# What CyberLogix does
+# What Kryozyn does
 
 A tour of the product, area by area: the console, the industries it knows,
 units, sites, the paperwork it writes, several businesses, your own
@@ -44,7 +44,7 @@ Seven more trades that keep stock cold have a shorter page each
 (`trades.py`): `/for/florists`, `/for/breweries`, `/for/ice-cream-shops`,
 `/for/butchers`, `/for/school-cafeterias`, `/for/vaccine-clinics` and
 `/for/grocery-stores`. Each is written out on the server with its own
-title and description, says the risk in that trade, what CyberLogix does
+title and description, says the risk in that trade, what Kryozyn does
 and the price that applies, read from pricing.py: the restaurant rate (and
 Starter) for the food trades, the pharmacy rate for a vaccine clinic, and
 "Custom pricing — ask for a quote" for florists and breweries. They are

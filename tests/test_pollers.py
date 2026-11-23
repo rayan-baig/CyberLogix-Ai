@@ -198,7 +198,7 @@ def test_the_credential_never_comes_back_out(api, estate):
 
 def test_only_an_owner_may_add_one(api, estate):
     headers, _ = estate
-    key_only = {"X-CyberLogix-Key": headers["X-CyberLogix-Key"]}
+    key_only = {"X-Kryozyn-Key": headers["X-Kryozyn-Key"]}
 
     refused = source(api, key_only)
 

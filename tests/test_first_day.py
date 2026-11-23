@@ -36,7 +36,7 @@ def _sign_up(api, email="sam@harbour.example", company="Harbour Street Kitchen")
     assert resp.status_code == 201, resp.text
     body = resp.json()
     return ({"Authorization": f"Bearer {body['token']}"},
-            body["tenant"]["tenant_id"], {"X-CyberLogix-Key": body["api_key"]})
+            body["tenant"]["tenant_id"], {"X-Kryozyn-Key": body["api_key"]})
 
 
 def _add_person(api, owner, email, role):
@@ -232,7 +232,7 @@ def test_each_box_ticks_from_what_the_account_holds(api, wire):
     assert steps["test"] is True and steps["reading"] is False
     assert complete is False
 
-    reading_headers = {"X-CyberLogix-Sensor-Key": added.json()["ingest_key"]}
+    reading_headers = {"X-Kryozyn-Sensor-Key": added.json()["ingest_key"]}
     assert api.post("/api/sensor-pulse", headers=reading_headers, json={
         "sensor_id": "WALKIN-1", "temperature_fahrenheit": 37.0}).status_code == 200
     steps, complete = _steps(api, owner)
@@ -284,7 +284,7 @@ def test_the_test_text_goes_to_the_roster_and_says_it_is_a_test(api, wire):
     # One text per number, however many times it is on the roster.
     assert sorted(m["to"] for m in wire["sms"]) == ["+15550111", "+15550122"]
     for message in wire["sms"]:
-        assert message["body"].startswith("TEST from CyberLogix: nothing is wrong")
+        assert message["body"].startswith("TEST from Kryozyn: nothing is wrong")
     assert wire["voice"] == []
 
 
@@ -421,7 +421,7 @@ def test_a_long_company_name_cannot_push_the_reassurance_off_the_text():
     tenant.company_name = "X" * 160
     text = firstday.sms_text(tenant)[:MAX_SMS_CHARACTERS]
 
-    assert text.startswith("TEST from CyberLogix: nothing is wrong, no action needed.")
+    assert text.startswith("TEST from Kryozyn: nothing is wrong, no action needed.")
 
 
 def test_with_texts_switched_off_the_test_is_written_and_the_box_ticks(api):

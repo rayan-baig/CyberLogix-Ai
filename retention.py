@@ -29,6 +29,7 @@ business deleting itself.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import os
 from datetime import datetime, timedelta
@@ -321,7 +322,7 @@ def _remind(tenant: Tenant, row: Dict[str, Any]) -> bool:
                if sub is not None and sub.started_at is not None else "")
     result = send_mail(
         to_address=tenant.contact_email,
-        subject=f"CyberLogix comes back on {_day(resume)}",
+        subject=f"{APP_SHORT} comes back on {_day(resume)}",
         body=(f"{tenant.contact_name},\n\n"
               f"The pause for {tenant.company_name} ends on {_day(resume)}. From "
               "then we watch your fridges and freezers again and text and call your "
@@ -356,7 +357,7 @@ def run_pauses(now: Optional[datetime] = None) -> Dict[str, Any]:
                 row["resumed_noted_at"] = iso(now)
                 STORE._db.put(PAUSE_KIND, str(row["pause_id"]), row)
                 STORE.record_audit(
-                    tenant_id=tenant.tenant_id, actor="CyberLogix", actor_role="system",
+                    tenant_id=tenant.tenant_id, actor=APP_SHORT, actor_role="system",
                     action="pause.ended",
                     detail="The pause ended on its date. Alerts and billing are back on.")
                 resumed += 1

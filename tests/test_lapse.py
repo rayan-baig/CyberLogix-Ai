@@ -33,7 +33,7 @@ def trial(api):
         "email": "sam@example.com", "password": "correct-horse-battery",
         "contact_phone": "+15550100", "industry_vertical": "pharmacy",
     }).json()
-    key = {"X-CyberLogix-Key": body["api_key"]}
+    key = {"X-Kryozyn-Key": body["api_key"]}
     bearer = {"Authorization": f"Bearer {body['token']}"}
     api.post("/api/licenses/me/sensors", headers=key, json={
         "sensor_id": "FRIDGE-1", "industry_vertical": "pharmacy",
@@ -320,7 +320,7 @@ def test_a_third_party_sensor_is_still_watched_in_grace(api, trial):
     _shift_expiry(tenant["tenant_id"], -1)
 
     pushed = api.post("/api/v1/bridge/sensor-webhook-ingest", json={
-        "device_sn": "SP-0001", "api_key_token": key["X-CyberLogix-Key"],
+        "device_sn": "SP-0001", "api_key_token": key["X-Kryozyn-Key"],
         "reading_value": 75.0, "metric_type": "temperature_f"})
     assert pushed.status_code == 200, pushed.text
 
@@ -340,7 +340,7 @@ def test_a_third_party_sensor_stops_once_grace_is_spent(api, trial):
     _shift_expiry(tenant["tenant_id"], -(LICENCE_GRACE_DAYS + 1))
 
     pushed = api.post("/api/v1/bridge/sensor-webhook-ingest", json={
-        "device_sn": "SP-0001", "api_key_token": key["X-CyberLogix-Key"],
+        "device_sn": "SP-0001", "api_key_token": key["X-Kryozyn-Key"],
         "reading_value": 75.0, "metric_type": "temperature_f"})
     assert pushed.status_code == 402
 

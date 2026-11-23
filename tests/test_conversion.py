@@ -239,7 +239,7 @@ def test_a_trial_that_registered_something_is_not_nudged(
     tenant.activated_at = utc_now() - timedelta(days=3)
     STORE._db.put("tenant", tenant.tenant_id, tenant.to_row())
     sensor_factory(
-        {"X-CyberLogix-Key": body["api_key"]}, "FRIDGE-1", "restaurant"
+        {"X-Kryozyn-Key": body["api_key"]}, "FRIDGE-1", "restaurant"
     )
 
     run_trial_conversion()
@@ -259,7 +259,7 @@ def test_the_sales_line_is_built_from_their_own_readings(
     own records rather than a brochure.
     """
     tenant, body = _trial(api)
-    key = {"X-CyberLogix-Key": body["api_key"]}
+    key = {"X-Kryozyn-Key": body["api_key"]}
     sensor_factory(key, "FRIDGE-1", "restaurant")
     api.post("/api/sensor-pulse", headers=key,
              json={"sensor_id": "FRIDGE-1", "temperature_fahrenheit": 38.0})

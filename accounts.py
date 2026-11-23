@@ -16,6 +16,7 @@ Endpoints that record who did something require the person.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import threading
 import time
@@ -473,7 +474,7 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
 
     existing = STORE.user_by_email(str(payload.email))
     if existing is not None:
-        # Somebody who already has a CyberLogix sign-in. This used to link
+        # Somebody who already has a Kryozyn sign-in. This used to link
         # them in on the spot, which let any business attach itself to a
         # stranger's sign-in by knowing their email, told the inviter the
         # person's real name, and (with a sign-in an owner had made up for
@@ -484,7 +485,7 @@ def invite_user(payload: UserCreate, owner: User = Depends(require_role("owner")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "That email already has a CyberLogix sign-in. Make a join code "
+                f"That email already has a {APP_SHORT} sign-in. Make a join code "
                 "and give it to them; they add your business from their own account."
             ),
         )
@@ -573,7 +574,7 @@ def issue_reset(user_id: str, owner: User = Depends(require_role("owner"))):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"{target.email} signs in with their own CyberLogix login, "
+                f"{target.email} signs in with their own {APP_SHORT} login, "
                 "which this business does not manage. They can reset it "
                 "themselves from the sign-in page."
             ),
@@ -684,10 +685,10 @@ def _send_reset(address: str) -> None:
 
     send_mail(
         to_address=user.email,
-        subject="Reset your CyberLogix password",
+        subject=f"Reset your {APP_SHORT} password",
         body=(
             f"{user.full_name},\n\n"
-            "Somebody asked to reset the password on your CyberLogix "
+            f"Somebody asked to reset the password on your {APP_SHORT} "
             f"account{f' for {tenant.company_name}' if tenant else ''}.\n\n"
             f"{where}\n\n"
             "It works once and expires in 24 hours. Using it signs out "

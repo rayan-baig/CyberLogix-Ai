@@ -4,7 +4,7 @@ industries.py has one page per vertical the product is priced for. Many
 trades that need exactly this product are not a vertical of their own: a
 florist, a brewery, an ice-cream shop, a butcher, a school kitchen, a
 vaccine clinic, a grocery store. Each gets a short page here, at
-/for/<slug>, in its own words: the risk in that trade, what CyberLogix
+/for/<slug>, in its own words: the risk in that trade, what Kryozyn
 does about it, and the price that applies.
 
 The price is read from pricing.py, never written here. A food business
@@ -22,6 +22,7 @@ product does or a plain description of the failure.
 
 from __future__ import annotations
 
+from brand import APP_NAME, APP_SHORT
 import html
 from typing import Any, Dict, List, Optional
 
@@ -202,7 +203,7 @@ def render(slug: str) -> Dict[str, str]:
     </section>
 
     <section class="slab" id="fix">
-      <h2>What CyberLogix does</h2>
+      <h2>What {APP_SHORT} does</h2>
       <ol class="does">
         <li><b>We watch every {e(asset)}, all night.</b>
           A small sensor reads the temperature every few minutes and sends it
@@ -234,5 +235,5 @@ def render(slug: str) -> Dict[str, str]:
       <a class="btn btn-sm btn-primary u-w-auto" href="/signup">Start watching</a>
       <a class="btn btn-sm" href="/for">Another trade</a>
     </div>"""
-    return {"title": f"{trade['title']} | CyberLogix AI",
+    return {"title": f"{trade['title']} | {APP_NAME}",
             "description": trade["description"], "body": body}

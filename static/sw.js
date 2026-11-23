@@ -12,7 +12,7 @@
  * loudly, that what it is showing is not live.
  */
 
-const VERSION = "clx-shell-v10";
+const VERSION = "clx-shell-v11";
 const SHELL = [
   "/static/theme.css",
   // The offline page's own stylesheet and script, now that it carries

@@ -66,7 +66,7 @@ async function open_() {
   $("error").hidden = true;
   try {
     const resp = await fetch("/api/insurance-partners/me",
-      { headers: { "X-CyberLogix-Insurance-Partner": key } });
+      { headers: { "X-Kryozyn-Insurance-Partner": key } });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       forget();

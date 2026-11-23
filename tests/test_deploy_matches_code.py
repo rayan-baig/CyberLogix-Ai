@@ -197,7 +197,7 @@ def test_with_the_loop_on_sweep_all_leaves_billing_to_the_loop(
 def test_the_external_scheduler_settings_the_runbook_names_are_honoured(monkeypatch):
     import watchdog
 
-    assert "X-CyberLogix-Admin" in FLAT
+    assert "X-Kryozyn-Admin" in FLAT
     monkeypatch.setenv("CYBERLOGIX_EXTERNAL_SWEEP_SECONDS", "120")
     monkeypatch.setattr("scheduler._interval", lambda: 0)
     assert watchdog.stale_after_seconds() == max(

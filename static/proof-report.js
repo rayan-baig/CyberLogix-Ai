@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 
 /* A proof of monitoring report, drawn from /api/proof-reports/{id} with
    the console's own sign-in. Every value is escaped where it is used. */
@@ -126,7 +135,7 @@ function render(seen) {
   $("fine").textContent = `Made ${stamp(r.issued_at)}. Open the link, or go to `
     + `/verify and type the code, to see that this report is genuine and `
     + `unchanged. The fingerprint there must match the one above. `
-    + `CyberLogix is a monitoring service, not an insurer.`;
+    + `${BRAND.short} is a monitoring service, not an insurer.`;
 
   $("report").hidden = false;
   $("print").hidden = false;

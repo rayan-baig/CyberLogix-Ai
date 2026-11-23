@@ -74,7 +74,7 @@ def test_a_second_fleet_sweep_stands_aside_while_one_is_running(
     # The outside scheduler fires again while the first pass is on the phone.
     started = time.time()
     second = api.post("/api/autopilot/sweep-all",
-                      headers={"X-CyberLogix-Admin": "test-admin-key"})
+                      headers={"X-Kryozyn-Admin": "test-admin-key"})
     assert time.time() - started < 5, "the second sweep waited for the first"
     assert second.status_code == 200, second.text
     assert second.json()["skipped"] == "another sweep is still running"

@@ -59,7 +59,7 @@ def test_registration_issues_a_key_and_shows_it_once(api, estate):
 def test_a_sensor_key_can_report_for_its_own_asset(api, estate):
     resp = api.post(
         "/api/sensor-pulse",
-        headers={"X-CyberLogix-Sensor-Key": estate["a"]["ingest_key"]},
+        headers={"X-Kryozyn-Sensor-Key": estate["a"]["ingest_key"]},
         json={"sensor_id": "FRIDGE-A", "temperature_fahrenheit": 39.0},
     )
     assert resp.status_code == 200, resp.text
@@ -76,7 +76,7 @@ def test_a_sensor_key_cannot_report_for_another_asset(api, estate):
     """
     resp = api.post(
         "/api/sensor-pulse",
-        headers={"X-CyberLogix-Sensor-Key": estate["a"]["ingest_key"]},
+        headers={"X-Kryozyn-Sensor-Key": estate["a"]["ingest_key"]},
         json={"sensor_id": "FRIDGE-B", "temperature_fahrenheit": 39.0},
     )
     assert resp.status_code == 403
@@ -85,7 +85,7 @@ def test_a_sensor_key_cannot_report_for_another_asset(api, estate):
 
 def test_a_sensor_key_cannot_touch_anything_but_readings(api, estate):
     """It reports. That is the entire list."""
-    key = {"X-CyberLogix-Sensor-Key": estate["a"]["ingest_key"]}
+    key = {"X-Kryozyn-Sensor-Key": estate["a"]["ingest_key"]}
     attempts = {
         "suspend the licence": api.post("/api/licenses/me/suspend", headers=key),
         "change the plan": api.post("/api/licenses/me/plan", headers=key,
@@ -133,11 +133,11 @@ def test_rotating_a_key_retires_the_old_one_immediately(api, estate):
     new = rotated.json()["ingest_key"]
     assert new != old
 
-    dead = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": old},
+    dead = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": old},
                     json={"sensor_id": "FRIDGE-A", "temperature_fahrenheit": 39.0})
     assert dead.status_code == 401
 
-    live = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": new},
+    live = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": new},
                     json={"sensor_id": "FRIDGE-A", "temperature_fahrenheit": 39.0})
     assert live.status_code == 200
 
@@ -150,7 +150,7 @@ def test_decommissioning_a_sensor_kills_its_key(api, estate):
                       headers=estate["operator"])
     assert gone.status_code == 200
 
-    resp = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    resp = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                     json={"sensor_id": "FRIDGE-A", "temperature_fahrenheit": 39.0})
     assert resp.status_code == 401
 
@@ -188,7 +188,7 @@ def test_a_key_from_another_tenant_is_not_recognised(api, operator_factory):
 
     crossed = api.post(
         "/api/sensor-pulse",
-        headers={"X-CyberLogix-Sensor-Key": a["ingest_key"]},
+        headers={"X-Kryozyn-Sensor-Key": a["ingest_key"]},
         json={"sensor_id": "B-01", "temperature_fahrenheit": 39.0})
     assert crossed.status_code == 403
 

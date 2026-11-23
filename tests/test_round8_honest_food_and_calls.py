@@ -63,7 +63,7 @@ def _sensor(api, owner, sensor_id="WALK-IN-1", where="Walk-in fridge", kind="fri
 
 
 def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
-    got = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    got = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                    json={"sensor_id": sensor_id, "temperature_fahrenheit": temp})
     assert got.status_code == 200, got.text
     return got.json()
@@ -271,7 +271,7 @@ def test_no_page_says_phoned_or_called_without_checking():
     # The call's script and badge say a call was not placed.
     assert "What the phone call would have said (no call was placed)" in CONSOLE_JS
     assert '"calls are off on this server"' in _function(CONSOLE_JS, "deliveryLine")
-    pack = (STATIC / "pilot-cyberlogix-pack.js").read_text()
+    pack = (STATIC / "pilot-kryozyn-pack.js").read_text()
     assert "phone_call_made: Boolean(i.phoned)" in pack
 
 

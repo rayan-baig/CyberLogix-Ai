@@ -12,7 +12,7 @@ seen through, Pilot's new answers, the front page's picture, plurals.
    leaves the answer's time alone; for a day after a loss /today leads
    with "Food thrown away from Walk-in fridge: make the insurance pack"
    (Node: tests/js/today.test.js).
-3. Pilot (Node: tests/js/cyberlogix-pilot.test.js).
+3. Pilot (Node: tests/js/kryozyn-pilot.test.js).
 4. The front page shows a real /today on a phone beside "See it live".
 5. Plurals everywhere; the Proof list by unit name; no "probably the door"
    after a reading far past the limit.
@@ -64,7 +64,7 @@ def _unit(api, owner, sensor_id="WALK-IN-1", where="Walk-in fridge"):
 
 
 def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
-    got = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    got = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                    json={"sensor_id": sensor_id, "temperature_fahrenheit": temp})
     assert got.status_code == 200, got.text
     return got.json()
@@ -349,10 +349,10 @@ def test_pilot_quotes_the_cancellation_rule_checkout_shows():
     from pricing import CANCELLATION_RULE
 
     assert main.pilot_facts()["cancel-rule"] == CANCELLATION_RULE
-    assert CANCELLATION_RULE in (STATIC / "pilot-cyberlogix.js").read_text()
+    assert CANCELLATION_RULE in (STATIC / "pilot-kryozyn.js").read_text()
 
 
-@pytest.mark.parametrize("suite", ["today.test.js", "cyberlogix-pilot.test.js"])
+@pytest.mark.parametrize("suite", ["today.test.js", "kryozyn-pilot.test.js"])
 def test_the_pages_in_node(suite):
     node = shutil.which("node")
     if node is None:

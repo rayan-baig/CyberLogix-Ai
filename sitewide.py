@@ -7,7 +7,7 @@ somebody tampering with the refrigeration controls themselves. On
 11 October 2026 attackers took over the controllers of hundreds of
 supermarkets' fridges and switched them to defrost overnight. A system
 that asks the fridge's own controller how it is doing hears whatever the
-controller is told to say. CyberLogix reads its own sensors, so it sees
+controller is told to say. Kryozyn reads its own sensors, so it sees
 the warming however the controls were changed, and it only reads: it has
 no way to change a fridge.
 

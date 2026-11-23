@@ -1,9 +1,9 @@
-// Pilot's knowledge pack for CyberLogix AI, and its console tools.
+// Pilot's knowledge pack for Kryozyn, and its console tools.
 // Fetched only when someone first opens Pilot. Written from the real app,
 // its help page and docs: if something here stops being true, change it
 // here (tests/test_pilot.py checks the main facts are present). Every
 // figure (prices, the trial, the alarm limits, the timings) comes from the
-// server through the config (static/pilot-cyberlogix.js, main.pilot_facts),
+// server through the config (static/pilot-kryozyn.js, main.pilot_facts),
 // so the pack never states a number the product doesn't use.
 //
 // The tools work only on the console and the Simple view, for a person who
@@ -23,27 +23,27 @@
 
   function knowledge() {
     const f = F();
-    return `## CyberLogix AI
-Fridge and freezer alarms that call you. A product of MTRX Horizyn. Wireless temperature sensors in each fridge and freezer send readings to CyberLogix over the internet, day and night. When one goes out of range, CyberLogix texts everyone on call, then phones them until someone answers, and keeps a sealed record of every reading for an inspector or an insurer. Built for restaurants and cafés, shops, pharmacies, clinics and labs, and 12 industries in all (also data centers, wine and art storage, growers, cold-chain transport, solar storage, IVF clinics, hangars, yacht engine bays and country clubs).
+    return `## ${f.appName}
+Fridge and freezer alarms that call you. A product of ${f.companyName}. Wireless temperature sensors in each fridge and freezer send readings to ${f.appShort} over the internet, day and night. When one goes out of range, ${f.appShort} texts everyone on call, then phones them until someone answers, and keeps a sealed record of every reading for an inspector or an insurer. Built for restaurants and cafés, shops, pharmacies, clinics and labs, and 12 industries in all (also data centers, wine and art storage, growers, cold-chain transport, solar storage, IVF clinics, hangars, yacht engine bays and country clubs).
 
 ## How alerts and escalation work
 - Every reading is checked against the safe range for the trade, or the one set for that unit. A door opened for a minute does NOT alert anybody: a unit has to STAY out of range for its wait (${f.alertAfterFridge || "20"} minutes for a food fridge, ${f.alertAfterFreezer || "30"} for a freezer, ${f.alertAfterVaccine || "10"} for a vaccine or lab fridge; the owner can change it per unit with "Alert wait" on its card). A reading ${f.alertAtOnceDegrees || "15"}°F or more past the limit alerts at once. Then it opens one alert ("problem") for that unit and texts everyone on call within ${f.textWithinSeconds || "60"} seconds, saying which unit, where, the reading, how far past its limit and what to check first. More readings from the same unit update that alert instead of sending more texts.
 - If the unit comes back to normal before anybody answers, the alert closes on its own with a note ("Back to normal after 3 minutes, probably the door"), the people texted get a short all-clear, and nobody is phoned.
 - Reply 1 to the text, press 1 on the call, or press Acknowledge in the console to say "I'm on it". That stops the escalation.
-- If nobody acknowledges within ${f.callAfterMinutes || "10"} minutes, CyberLogix phones the people on call in the order set, until one answers and presses 1. Phone calls come with the Growth and Enterprise plans; Trial and Starter send texts (the trial includes ${f.trialCalls || "5"} alert calls in all, about a minute each, to hear what a call sounds like). A failed text is tried again 1, 5 and 15 minutes after the alert opened.
+- If nobody acknowledges within ${f.callAfterMinutes || "10"} minutes, ${f.appShort} phones the people on call in the order set, until one answers and presses 1. Phone calls come with the Growth and Enterprise plans; Trial and Starter send texts (the trial includes ${f.trialCalls || "5"} alert calls in all, about a minute each, to hear what a call sounds like). A failed text is tried again 1, 5 and 15 minutes after the alert opened.
 - Copies can also go to Slack, Teams or PagerDuty.
 - Mark it fixed (Resolve) once the fault is sorted. Then record what was done and what happened to the food: that is the record an inspector reads.
 - If several units at one site warm up at about the same time, one urgent site-wide alert goes to everyone on call for that site and the business's own number, quiet hours or not, with calls straight away on plans with calls. It can mean a power cut, a door left open, or someone tampering with the fridge controls.
 - Freezers warm up on a timer to defrost. Once a unit's defrosts are learned, an on-time defrost no warmer than usual is recorded but doesn't wake anyone; a longer or warmer one alerts as normal.
 - A sensor that has sent nothing for ${f.offlineMinutes || "30"} minutes shows as offline, and everyone on call gets one text saying it has gone quiet.
-- CyberLogix reads its own sensors, not the fridge's controls, and never controls a fridge.
+- ${f.appShort} reads its own sensors, not the fridge's controls, and never controls a fridge.
 - "Send a test alert" (Team tab, Who gets called) texts everyone on the list a message starting TEST that says nothing is wrong.
 
 ## Fridge and freezer limits
 When a unit is added, the console asks "Fridge or freezer?". For food (restaurants, cafés, shops, country club kitchens) a fridge alarms over ${deg(f.fridgeLimit)} and a freezer over ${deg(f.freezerLimit)}. Vaccine and specimen units in pharmacies and labs get their own ranges (a fridge between 36°F and 46°F, a freezer between -58°F and 5°F). The limit is saved on the unit, and an owner or operator can change a unit's limits on its card. Temperatures show in °F or °C (the °F button at the top of the console).
 
 ## What you need (sensors)
-CyberLogix does not sell sensors. Buy a wireless temperature sensor for each fridge or freezer from a sensor maker. Two kinds work: a sensor that can send each reading to a web address (a webhook; brands such as Elitech and Dickson, and most devices set up with a URL), or a sensor whose maker's cloud has an API CyberLogix can read every few minutes (Monnit through iMonnit, and SensorPush). Roughly: a basic Wi-Fi sensor costs about $30 to $100, a commercial one with a probe for a walk-in or freezer about $100 to $250; some need a gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Check with the seller. CyberLogix's price doesn't include sensors. Step-by-step guides for each brand: /help/sensors.
+${f.appShort} does not sell sensors. Buy a wireless temperature sensor for each fridge or freezer from a sensor maker. Two kinds work: a sensor that can send each reading to a web address (a webhook; brands such as Elitech and Dickson, and most devices set up with a URL), or a sensor whose maker's cloud has an API ${f.appShort} can read every few minutes (Monnit through iMonnit, and SensorPush). Roughly: a basic Wi-Fi sensor costs about $30 to $100, a commercial one with a probe for a walk-in or freezer about $100 to $250; some need a gateway (about $100 to $300, once per site) and some makers charge a few dollars a month for their cloud. Check with the seller. ${f.appShort}'s price doesn't include sensors. Step-by-step guides for each brand: /help/sensors.
 
 ## Setting up, step by step
 1. Buy one sensor for each fridge or freezer. Check it can send to a web address, or that its maker's cloud has an API.
@@ -70,10 +70,10 @@ An owner can make a proof of monitoring report for one location (or all) and one
 - The console can be installed on a phone's home screen. Each unit's card opens a drawer with its history and an "Is the food still good?" button.
 
 ## If the power or the internet goes off
-Sensors send readings over the site's internet. If the power or the internet goes off, readings stop arriving, and after ${f.offlineMinutes || "30"} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts are sent from CyberLogix's servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but the router or gateway may not unless it's on a backup battery; some sensors store readings and send them when the connection is back. Until a sensor reports again, check that unit by hand with a thermometer and write it down. The installed app never shows old temperatures as if they were current.
+Sensors send readings over the site's internet. If the power or the internet goes off, readings stop arriving, and after ${f.offlineMinutes || "30"} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts are sent from ${f.appShort}'s servers, not from your building, so they still go out. A battery sensor keeps measuring through a power cut, but the router or gateway may not unless it's on a backup battery; some sensors store readings and send them when the connection is back. Until a sensor reports again, check that unit by hand with a thermometer and write it down. The installed app never shows old temperatures as if they were current.
 
 ## Is the food still OK?
-CyberLogix never says food is safe: the sensor reads the air, not the middle of the product. "Is the food still good?" reports how long the unit was above its limit and how warm it got, and quotes the widely taught rule of thumb (under 2 hours: cool it back down; 2 to 4 hours: use it straight away, don't put it back; over 4 hours, or room temperature or warmer: commonly discarded). That's guidance, not a ruling: the business's written food safety plan and local code decide.
+${f.appShort} never says food is safe: the sensor reads the air, not the middle of the product. "Is the food still good?" reports how long the unit was above its limit and how warm it got, and quotes the widely taught rule of thumb (under 2 hours: cool it back down; 2 to 4 hours: use it straight away, don't put it back; over 4 hours, or room temperature or warmer: commonly discarded). That's guidance, not a ruling: the business's written food safety plan and local code decide.
 
 ## Your data
 Owners can download everything or delete everything (Setup tab). Readings: every reading for 30 days, then hourly lows, highs and averages for 13 months, plus the readings around every alert in full. Nothing is sold or used to train anything. The privacy statement is at /legal#privacy.
@@ -82,7 +82,7 @@ Owners can download everything or delete everything (Setup tab). Readings: every
 Each alert has one line saying what to check first, worded by AI when it can and by a plain template when it can't. An owner can save the business's own Google AI Studio (Gemini API) key in the console (Setup, "Your AI key for alert wording"); that line is then written on their key, for their alerts only. It's stored encrypted, only its last four characters are shown, it can be removed, and if a call fails the alert goes out on time with the plain wording. Alerts never wait for AI.
 
 ## Pilot (this assistant)
-Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or any OpenAI-compatible API (including a model on their own computer). The key stays in their browser and goes only to that provider; CyberLogix never sees it, the chat or the answers, and the provider bills the key. On the console and the Simple view, for a signed-in person, Pilot can show which units are warm or out of range, show open alerts, explain an alert, say what the rule of thumb says about the food, and explain the page; and, after they press Allow, acknowledge an alert, mark one fixed, add a fridge or freezer (it asks which) or make a proof report. It can't change the plan, delete anything, change who gets called, or send texts or calls. Settings are behind the gear button.`;
+Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or any OpenAI-compatible API (including a model on their own computer). The key stays in their browser and goes only to that provider; ${f.appShort} never sees it, the chat or the answers, and the provider bills the key. On the console and the Simple view, for a signed-in person, Pilot can show which units are warm or out of range, show open alerts, explain an alert, say what the rule of thumb says about the food, and explain the page; and, after they press Allow, acknowledge an alert, mark one fixed, add a fridge or freezer (it asks which) or make a proof report. It can't change the plan, delete anything, change who gets called, or send texts or calls. Settings are behind the gear button.`;
   }
 
   // Genuine strengths, from the real features. No rival is named and there
@@ -90,7 +90,7 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
   const STRENGTHS = [
     "It doesn't stop at a text: if nobody acknowledges, it phones the people on call in order until one answers and presses 1 (on plans with calls).",
     "It warns about the silence too: a sensor that goes quiet for 30 minutes texts everyone on call, so a power cut or a dead router isn't mistaken for a cold fridge.",
-    "Alerts go out from CyberLogix's servers, not from the building, and never wait for AI: if an AI line is slow, the alert goes with plain wording on time.",
+    `Alerts go out from ${F().appShort}'s servers, not from the building, and never wait for AI: if an AI line is slow, the alert goes with plain wording on time.`,
     "It reads its own sensors, apart from the fridge's controls, and never controls a fridge, so it still sees the warming if those controls fail or are tampered with.",
     "Several units warming at once raise one urgent site-wide alert to everyone, quiet hours or not.",
     "It learns each freezer's defrost cycle, so routine defrosts don't wake anyone, while a longer or warmer one still alerts.",
@@ -107,7 +107,7 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
 
   const SESSION = "cyberlogix.session";
   const where = () => window.location.pathname.replace(/\/+$/, "") || "/";
-  const bridge = () => window.CyberLogixConsole || null;
+  const bridge = () => window.KryozynConsole || null;
   const onConsole = () => where() === "/console";
   const onLive = () => where() === "/console" || where() === "/today";
 
@@ -143,7 +143,7 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
     if (detail && typeof detail.message === "string") return detail.message;
     if (status === 401) return "You're signed out. Sign in to the console again.";
     if (status === 403) return "Your role in this business can't do that.";
-    return `CyberLogix answered ${status}.`;
+    return `${F().appShort} answered ${status}.`;
   }
 
   async function call(path, options) {
@@ -328,7 +328,7 @@ Pilot runs on the person's own AI key from Anthropic, OpenAI, Google Gemini or a
     },
     {
       name: "mark_alert_fixed", kind: "change", available: signedIn,
-      description: "Mark an alert fixed once the fault is sorted. Needs the alert_id. If the unit is still out of range it is not closed: CyberLogix says so and closes it by itself once the unit is back in range; closing it anyway needs a one-line note, which the person gives on the alert's own It's fixed button.",
+      description: `Mark an alert fixed once the fault is sorted. Needs the alert_id. If the unit is still out of range it is not closed: ${F().appShort} says so and closes it by itself once the unit is back in range; closing it anyway needs a one-line note, which the person gives on the alert's own It's fixed button.`,
       parameters: { type: "object", properties: { alert_id: { type: "string", maxLength: 40, description: "The alert_id." } }, required: ["alert_id"] },
       describe: (args) => `mark the alert on “${known.get(args.alert_id) || args.alert_id}” as fixed (it closes)`,
       run: async (args) => {

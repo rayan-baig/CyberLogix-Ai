@@ -36,9 +36,9 @@ def operator_address(monkeypatch):
     afternoon to find and teaches somebody to rerun until it goes green.
     The hour has its own tests, below.
     """
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "founder@cyberlogix.example")
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "founder@kryozyn.example")
     monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 0)
-    return "founder@cyberlogix.example"
+    return "founder@kryozyn.example"
 
 
 def _sign(api, headers, owner, **body):
@@ -201,7 +201,7 @@ def test_the_subject_leads_with_what_is_wrong(
 ):
     """It gets truncated, so the order decides what survives.
 
-    The first version read "CyberLogix: $35,964 booked, 3 need a person
+    The first version read "Kryozyn: $35,964 booked, 3 need a person
     (1 urgent), and something is broken" — folded across two header
     lines and cut off by every client at roughly the point where it
     stopped being reassuring.

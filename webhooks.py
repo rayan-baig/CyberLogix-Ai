@@ -12,6 +12,7 @@ recorded on the hook and the incident continues.
 
 from __future__ import annotations
 
+from brand import APP_NAME, UA_NAME
 import concurrent.futures
 import ipaddress
 import json
@@ -362,7 +363,7 @@ def _post(url: str, body: Dict[str, Any]) -> tuple[bool, str]:
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "CyberLogix-AI/1.0",
+                "User-Agent": f"{UA_NAME}/1.0",
             },
             method="POST",
         )
@@ -709,7 +710,7 @@ def test_webhook(
     event = {
         "event": "webhook.test",
         "state": "opened",
-        "title": f"CyberLogix AI test — {tenant.company_name}",
+        "title": f"{APP_NAME} test — {tenant.company_name}",
         "detail": (
             "This is a test. If you can read it, real breaches will arrive "
             "here too."

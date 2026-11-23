@@ -1,7 +1,7 @@
 """Sensors you already own, sending what they already send.
 
 The bridge accepted third-party hardware, and its docstring said any
-off-the-shelf sensor could "POST its raw JSON straight to CyberLogix".
+off-the-shelf sensor could "POST its raw JSON straight to Kryozyn".
 It could not: the endpoint required device_sn, reading_value and
 metric_type, and no Monnit, SensorPush, Elitech or Dickson device has
 ever sent those. The customer had to build the translator the claim
@@ -148,7 +148,7 @@ def estate(api, tenant_factory, owner_headers):
                           "external_device_sn": "556677"})
     assert made.status_code == 201, made.text
     from store import STORE
-    return {"X-CyberLogix-Key": STORE.get_tenant(tenant["tenant_id"]).api_key}
+    return {"X-Kryozyn-Key": STORE.get_tenant(tenant["tenant_id"]).api_key}
 
 
 def test_a_monnit_device_reaches_the_estate_untranslated(api, estate):

@@ -2,7 +2,7 @@
 
 The bridge already accepted third-party hardware, and the docstring said
 "any off-the-shelf commercial sensor can POST its raw JSON straight to
-CyberLogix". That was not true. The endpoint required *our* field names
+Kryozyn". That was not true. The endpoint required *our* field names
 -- device_sn, reading_value, metric_type -- and no Monnit, SensorPush,
 Elitech or Dickson device has ever sent those. A customer had to stand up
 a translator in the middle, which is the work the claim promised to
@@ -34,6 +34,7 @@ did my sensor not appear" is a fact rather than a theory.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -99,7 +100,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         ),
     },
     "cyberlogix": {
-        "name": "CyberLogix native",
+        "name": f"{APP_SHORT} native",
         "serial": "device_sn",
         "value": "reading_value",
         "time": None,
@@ -284,7 +285,8 @@ def _apply(flat, preset, source) -> Dict[str, Any]:
 # body showed that key to everyone who could open the samples screen,
 # viewers included, and the key opens the whole estate.
 SECRET_FIELDS = {"api_key_token", "key", "api_key", "apikey", "token", "secret",
-                 "password", "authorization", "x-cyberlogix-key"}
+                 "password", "authorization", "x-kryozyn-key",
+                 "x-cyberlogix-key"}
 
 
 def _without_secrets(value: Any) -> Any:

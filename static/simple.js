@@ -484,7 +484,7 @@ function monthLine(data, units) {
   box.hidden = false;
 }
 
-/* What CyberLogix did for you (3.32.0): the week or the month, read once
+/* What Kryozyn did for you (3.32.0): the week or the month, read once
    when the page opens and again when the other is picked. */
 let didPeriod = "week";
 async function loadDid() {
@@ -521,7 +521,7 @@ function renderDid(got) {
     b.setAttribute("aria-pressed", String(b.dataset.did === got.period)));
 }
 
-/* "/today#did" (Pilot's "What CyberLogix did for you") opens it. */
+/* "/today#did" (Pilot's "What Kryozyn did for you") opens it. */
 function followDid() {
   if (location.hash !== "#did" || $("did").hidden) return;
   $("did").open = true;
@@ -697,7 +697,7 @@ tick();
 /* What this page last loaded, for Pilot's answers that need no AI key
    (3.27.0): "Which fridges need me?" and the like are read from it in the
    browser, with nothing fetched and nothing sent. */
-window.CyberLogixToday = Object.freeze({ overview: () => lastData,
-  // What CyberLogix did for you, as last loaded (3.33.0): Pilot quotes its
+window.KryozynToday = Object.freeze({ overview: () => lastData,
+  // What Kryozyn did for you, as last loaded (3.33.0): Pilot quotes its
   // summary line when asked, with nothing fetched.
   did: () => lastDid });

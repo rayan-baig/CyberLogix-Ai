@@ -22,6 +22,7 @@ the same terms, so this is not a back way round sign-up.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import hashlib
 
 import logging
@@ -292,7 +293,7 @@ def add_business(
         actor=f"{record.full_name} <{record.email}>",
         actor_role="owner",
         action="account.business_added",
-        detail=f"{tenant.company_name} added by an existing CyberLogix customer.",
+        detail=f"{tenant.company_name} added by an existing {APP_SHORT} customer.",
     )
     signup.send_welcome(tenant)
 
@@ -320,7 +321,7 @@ def make_join_code(
     payload: JoinCodeRequest,
     owner: User = Depends(require_role("owner")),
 ):
-    """A one-time code for somebody who already has a CyberLogix sign-in.
+    """A one-time code for somebody who already has a Kryozyn sign-in.
 
     Give it to them yourself; they enter it from their own account, and this
     business is added to the ones they can switch between. It works once and

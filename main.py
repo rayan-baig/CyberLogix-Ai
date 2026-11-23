@@ -1,4 +1,4 @@
-"""CyberLogix AI Master Enterprise Hub.
+"""Kryozyn Master Enterprise Hub.
 
 Mounts every subsystem of the suite behind one FastAPI application:
 universal IoT telemetry, corporate license control, the autonomous
@@ -6,6 +6,12 @@ compliance clerk, AI outbound voice escalation, and predictive breakdown
 forecasting.
 """
 
+# First, before any module reads a setting: the KRYOZYN_* names of the
+# settings, and the other names kept from before the rename (formerly.py).
+import formerly
+
+import brand
+from brand import APP_NAME, APP_SHORT
 import html
 import json
 import logging
@@ -91,6 +97,7 @@ import usage
 from licenses import router as license_router
 from pricing import router as billing_router
 from referrals import router as referrals_router
+from omniarmor import old_router as omniarmor_old_router
 from omniarmor import router as omniarmor_router
 from shortcuts import router as shortcuts_router
 from signup import router as signup_router
@@ -130,7 +137,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="CyberLogix AI Master Enterprise Hub",
+    title=f"{APP_NAME} Master Enterprise Hub",
     description=(
         "Universal IoT Telemetry, License Control, Autonomous Operations, "
         "Voice Escalation, and Predictive Forecasting Suite."
@@ -149,7 +156,7 @@ app = FastAPI(
 # none. The console, the sign-up, proof and legal pages are all served from
 # this same origin, which needs no CORS at all, so nothing is lost.
 #
-# CyberLogix runs on a subdomain of MTRX Horizyn's domain, beside the other
+# Kryozyn runs on a subdomain of MTRX Horizyn's domain, beside the other
 # MTRX Horizyn products on their own subdomains. A wildcard default would
 # let any of those siblings -- and every other site -- read what this API
 # answers. Each subdomain is its own origin on purpose; keep it that way.
@@ -256,6 +263,12 @@ app.add_middleware(RequestSizeLimit, limit=MAX_REQUEST_BYTES)
 # and are left alone.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
+# The names from before the rename keep working (formerly.py): the old
+# X-CyberLogix-* request headers, and the old address, whose page visits
+# move to the new one with a 301 while its API calls are answered in place.
+app.add_middleware(formerly.HeaderAliases)
+app.add_middleware(formerly.OldHostRedirect)
+
 # Mount all microservice routers under the central app
 app.include_router(license_router)
 app.include_router(telemetry_router)
@@ -311,6 +324,7 @@ app.include_router(inspector_router)
 app.include_router(payments_router)
 app.include_router(referrals_router)
 app.include_router(omniarmor_router)
+app.include_router(omniarmor_old_router)
 app.include_router(margin_router)
 app.include_router(books_router)
 app.include_router(simulator_router)
@@ -772,7 +786,8 @@ def versioned(page: str) -> str:
             return found.group(0)
         return f"{found.group(1)}{found.group(2)}?v={tag}{found.group(3)}"
 
-    page = page.replace(PILOT_MARK, pilot_tag())
+    # The product's and the company's names, from the one place (brand.py).
+    page = brand.fill(page.replace(PILOT_MARK, pilot_tag()))
     return _STATIC_DATA_REF.sub(tagged, _STATIC_REF.sub(tagged, page))
 
 
@@ -815,6 +830,9 @@ def pilot_facts() -> Dict[str, str]:
         return f"{float(str(amount).strip('$').replace(',', '')):g}"
 
     return {
+        # The names Pilot's answers use (brand.py): app-name, app-short,
+        # company-name.
+        **brand.facts(),
         "hosts": " ".join(PILOT_COMPATIBLE_HOSTS + PILOT_LOCAL_HOSTS),
         "from-price": dollars(landing["%%FROM_PRICE%%"]),
         "starter-units": str(facts["starter_units"]),
@@ -878,7 +896,7 @@ def pilot_tag() -> str:
     if "tag" not in _pilot_tag:
         core = {
             "store": "pilot/pilot-store.js", "mascot": "pilot/pilot-mascot.js",
-            "app": "pilot-cyberlogix.js", "pack": "pilot-cyberlogix-pack.js",
+            "app": "pilot-kryozyn.js", "pack": "pilot-kryozyn-pack.js",
             "css": "pilot/pilot.css", "panel-css": "pilot/pilot-panel.css",
             "robot": "pilot/pilot-robot-128.webp", "robot2x": "pilot/pilot-robot-256.webp",
             "render": "pilot/pilot-render.js", "providers": "pilot/pilot-providers.js",
@@ -1180,12 +1198,12 @@ def industry_page(request: Request, vertical: str = ""):
                             detail="No page for that industry.")
     if vertical:
         name = INDUSTRY_PROFILES[vertical]["name"]
-        title = f"CyberLogix AI for {name}"
+        title = f"{APP_NAME} for {name}"
         description = (f"Temperature alarms for {name}: a text to everyone "
                        "on call when something stays out of range, and "
                        "the record afterwards.")
     else:
-        title = "CyberLogix AI for your industry"
+        title = f"{APP_NAME} for your industry"
         description = ("Temperature alarms for every trade with something "
                        "that must stay cold: find yours.")
     return _serve_page(INDUSTRY_HTML, request, {
@@ -1265,7 +1283,13 @@ def service_worker():
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def web_manifest():
-    return FileResponse(WEB_MANIFEST, media_type="application/manifest+json")
+    """The installable app's manifest, with the names from brand.py."""
+    if "manifest" not in _page_cache:
+        data = json.loads(WEB_MANIFEST.read_text(encoding="utf-8"))
+        data["name"] = data["name"].replace("%%APP_NAME%%", brand.APP_NAME)
+        data["short_name"] = data["short_name"].replace("%%APP_SHORT%%", brand.APP_SHORT)
+        _page_cache["manifest"] = json.dumps(data, indent=2, ensure_ascii=True) + "\n"
+    return Response(_page_cache["manifest"], media_type="application/manifest+json")
 
 
 @app.get("/proof/{token}", include_in_schema=False)
@@ -1449,7 +1473,7 @@ def book_page(request: Request):
     if "sign-in" in request.query_params and PLATFORM_ADMIN_KEY:
         return HTMLResponse(
             "Operators only.", status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="CyberLogix operator", charset="UTF-8"',
+            headers={"WWW-Authenticate": f'Basic realm="{APP_SHORT} operator", charset="UTF-8"',
                      "X-Robots-Tag": "noindex, nofollow"})
     return _error_page(request, 404)
 
@@ -1810,7 +1834,7 @@ def _pricing_markup() -> Dict[str, str]:
 @app.get("/api", status_code=200, tags=["Gateway"])
 def root_gateway():
     return {
-        "system": "CyberLogix AI Master Engine",
+        "system": f"{APP_NAME} Master Engine",
         "status": "fully_operational_stealth_mode",
         "version": app.version,
         "modules_active": MODULES_ACTIVE,
@@ -1825,7 +1849,7 @@ def usage_stats(request: Request):
 
     How many people have a sign-in, and the last 30 days of daily totals
     of what they do (usage.py): numbers only, never who. Off unless
-    STATS_KEY is set (the same value as the console's MTRX_STATS_KEY),
+    STATS_KEY is set (the same value as the company console's stats key),
     and answered only to that key.
     """
     import hmac as _hmac
@@ -1855,7 +1879,7 @@ def health_check():
     """Liveness probe covering every mounted subsystem."""
     return {
         "status": "online",
-        "engine": "CyberLogix Universal Common Catastrophe IoT Engine",
+        "engine": f"{APP_SHORT} Universal Common Catastrophe IoT Engine",
         "version": app.version,
         "modules_active": len(MODULES_ACTIVE),
         "active_profiles": len(INDUSTRY_PROFILES),

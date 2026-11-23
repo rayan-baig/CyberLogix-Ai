@@ -25,6 +25,8 @@ clean checkout with no server running and nothing left behind.
 
 from __future__ import annotations
 
+import brand
+from brand import APP_SHORT, APP_URL
 import base64
 import json
 import os
@@ -62,13 +64,13 @@ PATHS = [
     "/api/simulator",
     "/api/help/sensor-offline",
     "/api/referrals/me",
-    "/api/connections/omniarmor",
+    "/api/connections/aegizyn",
     "/api/ai-key",
     "/api/proof-reports",
     "/api/leaving",
     # "How to connect it": the brands and their steps (sensor_guides.WIZARD).
     "/api/sensor-guides/wizard",
-    # What CyberLogix did for you (3.32.0), on /today; the stub falls back
+    # What Kryozyn did for you (3.32.0), on /today; the stub falls back
     # to the path alone, so this one answers the week and the month.
     "/api/console/did-for-you",
 ]
@@ -92,7 +94,7 @@ NOT_FETCHED = {
     "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
     "/api/contacts/test-alert", "/api/simulator/units",
     "/api/tasks/from-meeting",
-    "/api/connections/omniarmor/test", "/api/ai-key/test",
+    "/api/connections/aegizyn/test", "/api/ai-key/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
     # Pause or cancel, a founding member code and a repair quote: pressed,
@@ -311,7 +313,7 @@ def capture() -> dict:
             json={"company_name": "Harbor Bakery", "industry_vertical": "restaurant"},
         )
         added.raise_for_status()
-        bakery_key = {"X-CyberLogix-Key": added.json()["api_key"]}
+        bakery_key = {"X-Kryozyn-Key": added.json()["api_key"]}
         client.post("/api/licenses/me/sensors", headers=bakery_key, json={
             "sensor_id": "BAKERY-FREEZER", "industry_vertical": "restaurant",
             "location_name": "Pastry freezer"}).raise_for_status()
@@ -411,8 +413,8 @@ def refuse_model_names(data) -> None:
 def _bundle_and_referrals(client, head, home: str) -> None:
     """The two money cards with something on them.
 
-    The OmniArmor connection, with last night's report sent to a stand-in
-    that answers the way OmniArmor's contract says it does (nothing leaves
+    The Aegizyn connection, with last night's report sent to a stand-in
+    that answers the way Aegizyn's contract says it does (nothing leaves
     this build), and two businesses that joined with the referral code,
     one of which has paid its first invoice.
     """
@@ -426,8 +428,8 @@ def _bundle_and_referrals(client, head, home: str) -> None:
     if not omniarmor.CREDENTIAL_KEY:
         # A throwaway, for this build's throwaway database only.
         omniarmor.CREDENTIAL_KEY = secrets.token_urlsafe(32)
-    client.put("/api/connections/omniarmor", headers=head, json={
-        "address": "https://omniarmor.example.com",
+    client.put("/api/connections/aegizyn", headers=head, json={
+        "address": "https://aegizyn.example.com",
         "key": "clx_" + secrets.token_urlsafe(32)[:43].ljust(43, "x"),
         "site_label": "Main kitchen", "timezone": "America/New_York",
     }).raise_for_status()
@@ -505,8 +507,8 @@ def offline_theme() -> str:
 
 def build(data: dict, page_name: str = "console.html",
           extra_stub: str = "", banner: str = "") -> str:
-    console = (ROOT / page_name).read_text() if "/" in page_name else (
-        ROOT / "static" / page_name).read_text()
+    console = brand.fill((ROOT / page_name).read_text() if "/" in page_name else (
+        ROOT / "static" / page_name).read_text())
     # The shipped stylesheet pulls its webfonts from fonts.googleapis.com.
     # On a page whose whole job is to be forwarded to strangers, that
     # means every person who opens it tells Google they opened it, from
@@ -583,7 +585,7 @@ def build(data: dict, page_name: str = "console.html",
         # Said in the page, not left to the host: served without a charset
         # header, every degree sign reads as mojibake.
         '<meta charset="utf-8">\n'
-        "<title>CyberLogix Console</title>\n"
+        f"<title>{APP_SHORT} Console</title>\n"
         # A demo is for whoever is handed the link, not for a search
         # engine: it is the console's private surface, on a public host.
         '<meta name="robots" content="noindex">\n'
@@ -631,7 +633,7 @@ DEMO_PAGES = {"/": "index.html", "/console": "console.html", "/help": "help.html
 # has no sign-up of its own: the live product. Overridable for a staging
 # copy. It travels inside the story (JSON), never as a link the browser
 # loads, so opening the page still reaches nothing.
-LIVE_ADDRESS = os.environ.get("DEMO_LIVE_ADDRESS", "https://cyberlogix.mtrxhorizyn.com")
+LIVE_ADDRESS = os.environ.get("DEMO_LIVE_ADDRESS", APP_URL)
 
 
 def build_kitchen(story: dict) -> str:
@@ -644,7 +646,7 @@ def build_kitchen(story: dict) -> str:
     from pricing import headline
 
     story = dict(story, signup_href=f"{LIVE_ADDRESS}/signup?sector=restaurant")
-    page = (ROOT / "static" / "demo.html").read_text()
+    page = brand.fill((ROOT / "static" / "demo.html").read_text())
     page = (page.replace("%%TRIAL_DAYS%%", str(headline()["trial_days"]))
                 .replace("%%THEME_COLOR%%", "#05070D")
                 .replace("<!--pilot-->\n", ""))
@@ -680,7 +682,7 @@ def build_kitchen(story: dict) -> str:
 # The address the sensor guides show in their steps. The page is rendered
 # on a test client, whose address means nothing to a reader; this one is
 # on a reserved domain and plainly stands for "yours".
-EXAMPLE_ADDRESS = "https://cyberlogix.example.com"
+EXAMPLE_ADDRESS = "https://kryozyn.example.com"
 
 
 def capture_help(route: str = "/help") -> str:

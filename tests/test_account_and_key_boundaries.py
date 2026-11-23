@@ -178,7 +178,7 @@ def test_a_join_code_already_spent_does_not_bring_a_removed_person_back(api):
 @pytest.fixture()
 def admin(monkeypatch):
     monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "root-key")
-    return {"X-CyberLogix-Admin": "root-key"}
+    return {"X-Kryozyn-Admin": "root-key"}
 
 
 def _partner(api, admin, name):
@@ -186,7 +186,7 @@ def _partner(api, admin, name):
                     json={"company_name": name, "contact_name": "Ray",
                           "contact_email": f"{name.split()[0].lower()}@partner.example"})
     assert resp.status_code == 201, resp.text
-    return resp.json()["partner_id"], {"X-CyberLogix-Partner": resp.json()["api_key"]}
+    return resp.json()["partner_id"], {"X-Kryozyn-Partner": resp.json()["api_key"]}
 
 
 def test_a_partner_key_reaches_its_own_accounts_and_nothing_else(
@@ -222,7 +222,7 @@ def test_a_partner_key_reaches_its_own_accounts_and_nothing_else(
                  "/api/voice/incidents"):
         assert api.get(path, headers=mine).status_code in (401, 403), path
     assert api.get("/api/licenses/me",
-                   headers={"X-CyberLogix-Key": mine["X-CyberLogix-Partner"]}
+                   headers={"X-Kryozyn-Key": mine["X-Kryozyn-Partner"]}
                    ).status_code == 401
 
     # Detached from the account, the partner loses it at once.
@@ -240,14 +240,14 @@ def test_a_rotated_business_key_stops_working_everywhere_at_once(
     headers, tenant, _ = operator_factory()
     # The key a script or device holds: the one the business was issued.
     old_key = STORE.rotate_api_key(STORE.get_tenant(tenant["tenant_id"]))
-    sensor_factory({"X-CyberLogix-Key": old_key}, sensor_id="FRZ-1")
+    sensor_factory({"X-Kryozyn-Key": old_key}, sensor_id="FRZ-1")
 
     rotated = api.post("/api/licenses/me/rotate-key", headers=headers)
     assert rotated.status_code == 200, rotated.text
     new_key = rotated.json()["api_key"]
     assert new_key != old_key
 
-    old = {"X-CyberLogix-Key": old_key}
+    old = {"X-Kryozyn-Key": old_key}
     reading = {"sensor_id": "FRZ-1", "temperature_fahrenheit": 38.0}
     assert api.get("/api/licenses/me", headers=old).status_code == 401
     assert api.post("/api/sensor-pulse", headers=old, json=reading).status_code == 401
@@ -258,7 +258,7 @@ def test_a_rotated_business_key_stops_working_everywhere_at_once(
                     json={"sensor": "FRZ-1", "temp_f": 38.0}).status_code == 401
 
     # Still dead after a restart; the new one works before and after.
-    new = {"X-CyberLogix-Key": new_key}
+    new = {"X-Kryozyn-Key": new_key}
     assert api.post("/api/sensor-pulse", headers=new, json=reading).status_code == 200
     STORE._forget_locked()
     STORE.load()
@@ -280,7 +280,7 @@ def test_a_rotated_sensor_key_stops_working_on_every_ingest_route(
     new_key = rotated.json()["ingest_key"]
 
     reading = {"sensor_id": "FRZ-1", "temperature_fahrenheit": 38.0}
-    assert api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": old_key},
+    assert api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": old_key},
                     json=reading).status_code == 401
     assert api.post("/api/v1/bridge/sensor-webhook-ingest", json={
         "api_key_token": old_key, "device_sn": "SN-FRZ-1", "reading_value": 38.0,
@@ -289,9 +289,9 @@ def test_a_rotated_sensor_key_stops_working_on_every_ingest_route(
                     json={"sensor": "SN-FRZ-1", "temp_f": 38.0}).status_code == 401
     STORE._forget_locked()
     STORE.load()
-    assert api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": old_key},
+    assert api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": old_key},
                     json=reading).status_code == 401
-    assert api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": new_key},
+    assert api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": new_key},
                     json=reading).status_code == 200
 
 
@@ -313,7 +313,7 @@ def test_a_sensor_key_cannot_write_another_businesss_sensor(api, operator_factor
     register(theirs, "THEIRS-1", "SN-THEIRS-1")
 
     hot = {"sensor_id": "THEIRS-1", "temperature_fahrenheit": 99.0}
-    resp = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": my_key},
+    resp = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": my_key},
                     json=hot)
     assert resp.status_code in (403, 404), resp.text
 
@@ -365,14 +365,14 @@ def test_password_reset_with_mail_off_is_queued_single_use_expiring_and_signs_ou
 
     # Mail is not set up, so the link is queued, not lost.
     queued = [m for m in STORE.pending_mail() if m.to_address == DANA["email"]
-              and m.subject == "Reset your CyberLogix password"]
+              and m.subject == "Reset your Kryozyn password"]
     assert len(queued) == 1
     found = re.search(r"/reset\?token=(clr_[A-Za-z0-9_-]+)", queued[0].body)
     assert found, queued[0].body
     token = found.group(1)
     # The operator can see that it is waiting, but not read the link.
     log = api.get("/api/mail/log", headers=admin).text
-    assert "Reset your CyberLogix password" in log
+    assert "Reset your Kryozyn password" in log
     assert token not in log
 
     # Once SMTP is configured the queue delivers it.

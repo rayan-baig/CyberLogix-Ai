@@ -1,4 +1,4 @@
-"""Pilot, the MTRX Horizyn assistant, on CyberLogix (static/pilot/, docs/PILOT.md).
+"""Pilot, the MTRX Horizyn assistant, on Kryozyn (static/pilot/, docs/PILOT.md).
 
 These check the promises Pilot makes here: it is on the public pages, the
 console and the Simple view, and on none of the others (a /verify proof
@@ -31,7 +31,7 @@ CORE = ("pilot.js", "pilot-store.js", "pilot-mascot.js", "pilot-engine.js", "pil
         "pilot-render.js", "pilot-panel.js", "pilot.css", "pilot-panel.css", "pilot-motion.js", "pilot-actor.js",
         "pilot-actor.css")
 LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.js", "pilot-render.js",
-        "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
+        "pilot-panel.css", "pilot-kryozyn-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
 # Pilot core 1.4.3 as it ships on the MTRX Horizyn site (commit ea7498b), with
@@ -104,7 +104,7 @@ def test_pilot_is_on_the_public_pages_the_console_and_the_simple_view(api):
         page = resp.text
         pilot = [s for s in _srcs(page) if "pilot" in s]
         assert len(pilot) == 1 and re.fullmatch(r"/static/pilot/pilot\.js\?v=[0-9a-f]{12}", pilot[0]), (path, pilot)
-        for name in ("pilot/pilot-store.js", "pilot/pilot-mascot.js", "pilot-cyberlogix.js", "pilot/pilot.css",
+        for name in ("pilot/pilot-store.js", "pilot/pilot-mascot.js", "pilot-kryozyn.js", "pilot/pilot.css",
                      "pilot/pilot-robot-128.webp", "pilot/pilot-robot-256.webp"):
             assert re.search(rf'data-[a-z0-9-]+="/static/{re.escape(name)}\?v=[0-9a-f]{{12}}"', page), (path, name)
         assert page.count('id="pilot-core"') == 1, path
@@ -256,26 +256,26 @@ MODEL_NAMES = re.compile(r"claude-|gpt-?\d|gemini-\d|\bo[1-9]-|sonnet|opus|haiku
 
 def test_no_model_name_is_written_anywhere():
     files = [PILOT / n for n in CORE] + [
-        ROOT / "static" / n for n in ("pilot-cyberlogix.js", "pilot-cyberlogix-pack.js")] + [
+        ROOT / "static" / n for n in ("pilot-kryozyn.js", "pilot-kryozyn-pack.js")] + [
         ROOT / "docs/PILOT.md", ROOT / "alertkey.py", ROOT / "tests/js/pilot.test.js",
-        ROOT / "tests/js/cyberlogix-pilot.test.js", ROOT / "tests/test_alert_ai_key.py"]
+        ROOT / "tests/js/kryozyn-pilot.test.js", ROOT / "tests/test_alert_ai_key.py"]
     for f in files:
         hits = MODEL_NAMES.findall(f.read_text())
         assert not hits, (f.name, hits)
 
 
 def test_the_window_matches_the_design_words():
-    panel = (PILOT / "pilot-panel.js").read_text() + (ROOT / "static/pilot-cyberlogix.js").read_text()
+    panel = (PILOT / "pilot-panel.js").read_text() + (ROOT / "static/pilot-kryozyn.js").read_text()
     for words in ("Your AI copilot. Powered by you.", "Hello! I'm Pilot.", "How can I help you today?", "Ask anything…",
                   "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key",
                   "Type a message…", "Bring Your Own API Key", "Image generation", "Video generation"):
         assert words in panel, words
-    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
-    # Core 1.2.0: CyberLogix's own tagline and pills (the owner approved
+    config = (ROOT / "static/pilot-kryozyn.js").read_text()
+    # Core 1.2.0: Kryozyn's own tagline and pills (the owner approved
     # app-specific pills on websites); the design's stay the core's default.
     assert 'tagline: "Your fridge-alarm helper",' in config
     assert "Your AI copilot. Powered by you." not in config
-    assert "themeClass" not in config, "the robot and window look exactly as on the MTRX site"
+    assert "themeClass" not in config, "the robot and window look exactly as on the MTRX Horizyn site"
     assert "kidView: () => false" in config and 'storagePrefix: "cyberlogix-pilot"' in config
 
 
@@ -299,7 +299,7 @@ def test_the_packs_figures_are_the_ones_the_product_runs_on():
     assert facts["text-within-seconds"] == str(DISPATCH_SLA_SECONDS)
     assert facts["trial-days"] == str(PLAN_TIERS["trial"]["term_days"])
 
-    pack = (ROOT / "static/pilot-cyberlogix-pack.js").read_text()
+    pack = (ROOT / "static/pilot-kryozyn-pack.js").read_text()
     clinical = {k["kind"]: k for k in UNIT_KINDS["pharmacy"]}
     assert (f"a fridge between {clinical['fridge']['danger_below']:g}°F and {clinical['fridge']['danger_above']:g}°F, "
             f"a freezer between {clinical['freezer']['danger_below']:g}°F and {clinical['freezer']['danger_above']:g}°F") in pack
@@ -324,7 +324,7 @@ def test_the_console_keeps_keys_away_from_explain_this_screen():
     # The console hands Pilot nothing that changes the plan, the on-call
     # list, or sends a text or a call.
     js = (ROOT / "static/console.js").read_text()
-    bridge = js[js.index("window.CyberLogixConsole = Object.freeze({"):js.index("/* ---------------- boot")]
+    bridge = js[js.index("window.KryozynConsole = Object.freeze({"):js.index("/* ---------------- boot")]
     code = re.sub(r"(?m)//.*$", "", re.sub(r"/\*.*?\*/", "", bridge, flags=re.S))
     for word in ("plan", "contacts", "escalate", "test-alert", "DELETE", "erase"):
         assert word not in code, word
@@ -335,10 +335,10 @@ def test_pilot_in_node():
     if node is None:
         pytest.skip("Node is not installed here (CI has it)")
     scripts = [PILOT / n for n in CORE if n.endswith(".js")] + [
-        ROOT / "static" / n for n in ("pilot-cyberlogix.js", "pilot-cyberlogix-pack.js", "console.js")]
+        ROOT / "static" / n for n in ("pilot-kryozyn.js", "pilot-kryozyn-pack.js", "console.js")]
     for script in scripts:
         subprocess.run([node, "--check", str(script)], check=True)
-    for suite in ("pilot.test.js", "cyberlogix-pilot.test.js"):
+    for suite in ("pilot.test.js", "kryozyn-pilot.test.js"):
         result = subprocess.run([node, "--test", "--test-reporter=tap", str(ROOT / "tests/js" / suite)],
                                 capture_output=True, text=True, timeout=120)
         assert result.returncode == 0, result.stdout + result.stderr
@@ -394,7 +394,7 @@ def test_a_new_pose_picture_is_picked_up(tmp_path):
 def test_the_robot_keeps_clear_of_alerts_and_the_page_keeps_clear_of_it():
     """avoid: the console's alert banners and the buttons that answer an
     alert; and on a phone the page's last lines sit above the robot."""
-    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    config = (ROOT / "static/pilot-kryozyn.js").read_text()
     for selector in ("#site-wide-banner", "#account-banner", "#needs-wrap", ".incident-actions"):
         assert f'"{selector}"' in config, selector
     theme = (ROOT / "static/theme.css").read_text()
@@ -415,7 +415,7 @@ def test_the_loader_stays_small_with_the_placement_work_fetched_later():
 def test_the_robot_keeps_clear_of_the_tabs_the_alert_bar_and_the_first_screen():
     """On a phone it sat on "Everything" and on "5 alert calls"; on a desktop
     on "Advanced". And the key settings say what an AI key is."""
-    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    config = (ROOT / "static/pilot-kryozyn.js").read_text()
     avoid = config[config.index("avoid: ["):config.index("],", config.index("avoid: ["))]
     for sel in ("#needs-bar", ".needs-bar-acts", "#facts", ".fix-dialog",
                 ".checklist-acts", ".btn-go"):
@@ -438,7 +438,7 @@ def test_the_robot_is_never_tucked_past_the_screen_edge():
     phone). 3.23.0 fixed that in this app's stylesheet; core 1.2.0 has the
     setting (keepInViewport), so the app's copy of the fix is gone and the
     core's shrink-into-the-corner does it."""
-    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    config = (ROOT / "static/pilot-kryozyn.js").read_text()
     assert "keepInViewport: true," in config
     theme = (ROOT / "static/theme.css").read_text()
     assert "Pilot's robot stays wholly on the screen" not in theme
@@ -458,10 +458,10 @@ def test_cyberlogixs_own_welcome():
     buttons on websites); the last of each is the key settings. No picture
     or video key sections; the phone's Menu counts as a pop-up; and the
     suggestions under the welcome don't repeat a pill."""
-    config = (ROOT / "static/pilot-cyberlogix.js").read_text()
+    config = (ROOT / "static/pilot-kryozyn.js").read_text()
     # 3.27.0 (core 1.4.0): a pill is an AI prompt or built-in (action), a
     # page of this site (link), or the app's own answer (answer), which
-    # needs no key. tests/js/cyberlogix-pilot.test.js runs the answers.
+    # needs no key. tests/js/kryozyn-pilot.test.js runs the answers.
     # 3.31.0 (core 1.4.2): each that needs no key carries its own words for
     # a typed question (`...matching(label)`, the MATCH list).
     # 3.32.0: the pills are built in code (the answers routed to the best
@@ -515,11 +515,11 @@ const sb = {{ window: {{}}, document: {{}}, URL }};
 vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot' / 'pilot-panel.js'))}, "utf8"), sb);
 let given = null;
 const path = {json.dumps(pathname)};
-vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-cyberlogix.js'))}, "utf8"), {{
-  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://cyberlogix.example" + path }},
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-kryozyn.js'))}, "utf8"), {{
+  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://kryozyn.example" + path }},
     localStorage: {{ getItem: () => null }} }},
   document: {{ getElementById: () => ({{ dataset: {{}} }}), title: "" }}, URL }});
-const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://cyberlogix.example" + path);
+const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://kryozyn.example" + path);
 console.log(JSON.stringify(pills.map((p) => [p.icon, p.label, p.link ? "link " + new URL(p.link).pathname + new URL(p.link).hash
   : p.answer !== undefined ? "answer" : p.action, Boolean(p.match && p.match.length)])));"""
     out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)

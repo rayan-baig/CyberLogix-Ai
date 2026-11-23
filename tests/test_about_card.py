@@ -43,9 +43,9 @@ def test_the_overview_carries_the_plan_and_the_address(api, operator_factory, mo
     assert body["tenant"]["plan_name"]
     assert body["support_email"] == ""
 
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "help@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "help@kryozyn.example")
     body = api.get("/api/console/overview", headers=headers).json()
-    assert body["support_email"] == "help@cyberlogix.example"
+    assert body["support_email"] == "help@kryozyn.example"
 
 
 def test_the_version_is_on_health(api):

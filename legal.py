@@ -27,6 +27,7 @@ places most likely to need changing are marked.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import hashlib
 from typing import Any, Dict, List
 
@@ -101,8 +102,10 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 # its wait, or at once when it is far past its limit, and that an alert
 # nobody answered closes itself when the unit is back to normal; and that
 # readings are now kept for 13 months (full detail for the first 30 days).
-TERMS_VERSION = "2.9"
-EFFECTIVE_DATE = "2026-11-20"
+# 2.10 uses the product's new name, Kryozyn (it was CyberLogix AI).
+# Nothing else in any of the four documents changes.
+TERMS_VERSION = "2.10"
+EFFECTIVE_DATE = "2026-11-23"
 
 # The cap on what we can owe. Without one, a single claim about a lost
 # freezer of stock could end the company. Twelve months of fees is the
@@ -146,7 +149,7 @@ def terms_of_service() -> str:
 
 > {DISCLAIMER}
 
-CyberLogix is a product of {COMPANY}. This is the deal between
+{APP_SHORT} is a product of {COMPANY}. This is the deal between
 {issuer_block().get('legal_name')} ("we") and the business that signs up
 ("you").
 
@@ -167,7 +170,7 @@ goods are still in your care.
 networks and the internet, and those sometimes fail. Sensor batteries run
 out. If nobody answers the phone, we can't make them.
 
-**We are not certified.** CyberLogix is not a medical device, not a
+**We are not certified.** {APP_SHORT} is not a medical device, not a
 safety instrumented system, and not a replacement for any check the law
 requires you to run yourself.
 
@@ -324,7 +327,7 @@ def privacy_statement() -> str:
 
 ## Who we are
 
-CyberLogix is a product of {COMPANY}. "We" in this statement means
+{APP_SHORT} is a product of {COMPANY}. "We" in this statement means
 {issuer_block().get('legal_name')}, which decides what happens to the data
 described here and answers for it.
 

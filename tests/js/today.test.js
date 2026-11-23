@@ -63,7 +63,7 @@ async function today(overview, me = { user: { role: "owner" }, prefs: {} }, did 
 }
 
 const NOW = new Date().toISOString();
-// What CyberLogix did for you (3.32.0), as the server says it.
+// What Kryozyn did for you (3.32.0), as the server says it.
 const DID = { period: "week", label: "This week", figures: { readings: 2016, alerts: 1 },
   lines: ["Checked 2,016 readings from 1 fridge or freezer, 100% in range.", "1 alert, 1 answered in 4 minutes."],
   log_link: "/console?view=full#inspector-log?from=2026-11-16&to=2026-11-23&open=1", sample: null };
@@ -206,7 +206,7 @@ test("3.32.0: after 'Thrown away', the insurance pack and the note of what went,
   assert.doesNotMatch(viewer.nodes["month-sub"].innerHTML, /data-loss|data-food/);
 });
 
-test("3.32.0: What CyberLogix did for you, with the log for the same days, and the sample in a trial's first week", async () => {
+test("3.32.0: What Kryozyn did for you, with the log for the same days, and the sample in a trial's first week", async () => {
   const { nodes, calls } = await today(base());
   assert.ok(calls.some((c) => c.url === "/api/console/did-for-you?period=week"));
   assert.equal(nodes.did.hidden, false);

@@ -24,7 +24,7 @@ def estate(api, operator_factory, sensor_factory, units=2, sites=1):
 # so the suite holds the platform credential to exercise them. A customer
 # reaching any of these is the thing test_the_customer_cannot_write_their
 # _own_ledger checks does not happen.
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 def tenant_id_of(api, headers):
@@ -374,7 +374,7 @@ def test_a_wrong_operator_key_is_refused(api, operator_factory, sensor_factory):
     resp = api.post(
         f"/api/invoices/{invoice['invoice_id']}/paid",
         params={"tenant_id": tenant["tenant_id"]},
-        headers={"X-CyberLogix-Admin": "not-the-key"},
+        headers={"X-Kryozyn-Admin": "not-the-key"},
         json={"reference": "nice try"},
     )
     assert resp.status_code == 401

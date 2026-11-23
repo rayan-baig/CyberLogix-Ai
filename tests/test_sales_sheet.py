@@ -124,7 +124,7 @@ def test_the_plans_terms_and_trial_are_the_codes(api):
     for add_on in pricing.ADD_ONS.values():
         assert f"{add_on['name']}: {_money(add_on['monthly_usd'])} a month" in words
     assert ("Kitchen Safety Bundle: $29 a month per location, includes "
-            "OmniArmor Pro for that location") in words
+            "Aegizyn Pro for that location") in words
 
 
 def test_a_per_location_price_says_so_and_a_custom_one_offers_a_quote(api):
@@ -142,10 +142,10 @@ def test_a_per_location_price_says_so_and_a_custom_one_offers_a_quote(api):
 def test_the_quote_link_is_the_support_address_and_can_be_copied(api, monkeypatch):
     import helpdesk
 
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@kryozyn.example")
     page = _sheet(api, "superyacht")
-    assert 'href="mailto:sales@cyberlogix.example?subject=' in page
-    assert '<span class="sheet-mono talk-address">sales@cyberlogix.example</span>' in page
+    assert 'href="mailto:sales@kryozyn.example?subject=' in page
+    assert '<span class="sheet-mono talk-address">sales@kryozyn.example</span>' in page
 
 
 def test_a_changed_price_or_timing_changes_the_sheet(api, monkeypatch):
@@ -165,10 +165,10 @@ def test_a_changed_price_or_timing_changes_the_sheet(api, monkeypatch):
 def test_the_sheet_names_this_deployment_and_the_company(api, monkeypatch):
     import main
 
-    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://cyberlogix.example.com")
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://kryozyn.example.com")
     words = _text(_sheet(api, "logistics"))
-    assert "https://cyberlogix.example.com/signup" in words
-    assert "https://cyberlogix.example.com/for/logistics" in words
+    assert "https://kryozyn.example.com/signup" in words
+    assert "https://kryozyn.example.com/for/logistics" in words
     assert "a product of MTRX Horizyn" in words
     assert f"Version {main.__version__}" in words
 

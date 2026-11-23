@@ -9,6 +9,7 @@ escalates them without waiting to be asked.
 
 from __future__ import annotations
 
+from brand import APP_NAME, APP_SHORT
 import logging
 from datetime import timedelta
 from typing import Any, Dict, List
@@ -84,7 +85,7 @@ def retention_coverage(tenant, since) -> Dict[str, Any]:
             f"{KEEP_READINGS_MONTHS} months (every reading for the last "
             f"{KEEP_DETAIL_DAYS} days, then hourly lows, highs and averages), "
             f"so the figures below start at {iso(kept_from)} rather than "
-            f"{iso(since)}. Set CYBERLOGIX_KEEP_READINGS_MONTHS to keep "
+            f"{iso(since)}. Set KRYOZYN_KEEP_READINGS_MONTHS to keep "
             "more, or download the record on a schedule."
         ),
     }
@@ -222,7 +223,7 @@ def compliance_report(
         "non_compliant_sensors": len(non_compliant),
         "per_sensor": per_sensor,
         "attestation": (
-            "Generated automatically by the CyberLogix AI Autonomous Compliance "
+            f"Generated automatically by the {APP_NAME} Autonomous Compliance "
             "Clerk from continuous sensor telemetry. Figures cover only the "
             "period stated above."
         ),
@@ -248,7 +249,7 @@ def compliance_report(
             f"{len(resolved)} resolved."
         )
         prompt = f"""
-        You are the CyberLogix AI Autonomous Compliance Clerk writing the
+        You are the {APP_NAME} Autonomous Compliance Clerk writing the
         executive summary that opens a temperature compliance report submitted
         to a regulatory inspector.
 
@@ -405,7 +406,7 @@ def _quiet_text(tenant: Tenant, group: list, site_name: str, now) -> str:
         noun = INDUSTRY_PROFILES[sensor.industry_vertical]["asset_noun"]
         minutes = int((now - sensor.last_seen).total_seconds() // 60)
         body = (
-            f"CyberLogix: {noun} {sensor.sensor_id} at {sensor.location_name} "
+            f"{APP_SHORT}: {noun} {sensor.sensor_id} at {sensor.location_name} "
             f"has sent nothing for {minutes} min, so it cannot warn you. "
             "Check its power and gateway."
         )
@@ -414,7 +415,7 @@ def _quiet_text(tenant: Tenant, group: list, site_name: str, now) -> str:
         plural = (INDUSTRY_PROFILES[verticals.pop()]["asset_plural"]
                   if len(verticals) == 1 else "sensors")
         body = (
-            f"CyberLogix: {len(group)} {plural} at {site_name} have sent "
+            f"{APP_SHORT}: {len(group)} {plural} at {site_name} have sent "
             f"nothing for {SENSOR_OFFLINE_AFTER_MINUTES}+ min, so they cannot "
             "warn you. Check power and the gateway: "
             + ", ".join(s.sensor_id for s in group)
@@ -856,7 +857,7 @@ def autopilot_sweep(
 def autopilot_sweep_all():
     """Sweep every business once: the route an external scheduler drives.
 
-    With CYBERLOGIX_SWEEP_SECONDS=0, the built-in loop is off and
+    With the sweep setting at 0 (KRYOZYN_SWEEP_SECONDS=0), the loop is off and
     something outside has to run the sweep.
     POST /api/autopilot/sweep only sweeps the business that calls it, so
     pointing a scheduler at it left every other business unwatched. This

@@ -185,17 +185,17 @@ def test_the_export_and_erase_routes_the_answers_rely_on_exist(api):
 
 
 def test_help_uses_the_support_address_when_one_is_set(monkeypatch):
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "support@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "support@kryozyn.example")
     text = _answer("help")
-    assert 'href="mailto:support@cyberlogix.example"' in text
+    assert 'href="mailto:support@kryozyn.example"' in text
 
 
 def test_help_falls_back_to_the_reply_address_then_the_invoice(monkeypatch):
     import mail
 
     monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "")
-    monkeypatch.setattr(mail, "MAIL_REPLY_TO", "replies@cyberlogix.example")
-    assert "replies@cyberlogix.example" in _answer("help")
+    monkeypatch.setattr(mail, "MAIL_REPLY_TO", "replies@kryozyn.example")
+    assert "replies@kryozyn.example" in _answer("help")
 
     monkeypatch.setattr(mail, "MAIL_REPLY_TO", "")
     text = _answer("help")

@@ -62,7 +62,7 @@ def test_every_route_and_header_in_a_brand_is_its_guides(brand):
     for path in re.findall(r"/api/[a-z0-9/_\-{}]+", words):
         assert path.split("?")[0] in declared_paths, (brand["id"], path)
     declared_headers = {h for hs in guide["headers"].values() for h in hs}
-    for header in re.findall(r"X-CyberLogix-[A-Za-z-]+", words):
+    for header in re.findall(r"X-Kryozyn-[A-Za-z-]+", words):
         assert header in declared_headers, (brand["id"], header)
     for name in re.findall(r"\?(\w+)=", words):
         assert name in {q for qs in guide["query"].values() for q in qs}, (brand["id"], name)
@@ -184,7 +184,7 @@ def test_only_this_business_and_not_a_viewer_can_set_a_serial(api, operator_fact
 # --- the exact record --------------------------------------------------------
 
 def _pulse(api, key, temp):
-    r = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    r = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                  json={"sensor_id": "WALKIN-1", "temperature_fahrenheit": temp})
     assert r.status_code == 200, r.text
     return r.json()

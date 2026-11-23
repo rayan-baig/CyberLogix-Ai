@@ -37,7 +37,7 @@ def _sign(api, headers, owner, **body):
     resp = api.post("/api/contracts", headers={**headers, **owner}, json=payload)
     assert resp.status_code == 201, resp.text
     return STORE.active_subscription(STORE.tenant_by_key(
-        headers["X-CyberLogix-Key"]).tenant_id)
+        headers["X-Kryozyn-Key"]).tenant_id)
 
 
 def _age(invoice, days_overdue):
@@ -483,7 +483,7 @@ def test_the_sales_ledger_keeps_a_deleted_business_by_name(
     assert summary["accrual_basis"]["revenue_usd"] >= invoice.total_usd
     assert summary["cash_basis"]["revenue_usd"] >= invoice.total_usd
     csv_text = api.get("/api/books/ledger.csv", headers={
-        "X-CyberLogix-Admin": "test-admin-key"}).text
+        "X-Kryozyn-Admin": "test-admin-key"}).text
     assert "Gone Bakery Ltd" in csv_text
 
 

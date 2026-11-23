@@ -8,6 +8,7 @@ speech and the response hands it to a telephony provider to place.
 
 from __future__ import annotations
 
+from brand import APP_NAME, APP_SHORT
 import asyncio
 import logging
 import re
@@ -116,7 +117,7 @@ def build_voice_script(incident: Incident, tenant: Tenant,
     if sensor is None:  # pragma: no cover - a retired unit keeps its incidents
         location = "the monitored unit"
         return (
-            f"This is CyberLogix AI with a temperature alarm for "
+            f"This is {APP_NAME} with a temperature alarm for "
             f"{tenant.company_name}. {location} is at "
             f"{spoken_temperature(incident.temperature_fahrenheit, tenant.temperature_unit)}. "
             "Please check it now.", "fallback_template")
@@ -423,7 +424,7 @@ def ack_reply_text(who: str, where: str, phoned: bool = False,
     (3.30.0): it says so only once a call really went out (`phoned`). Before
     one, "Nobody else will be called"; on a plan with no calls, neither.
     """
-    head = f"CyberLogix: thanks, {who}. {where[:1].upper()}{where[1:]} is yours."
+    head = f"{APP_SHORT}: thanks, {who}. {where[:1].upper()}{where[1:]} is yours."
     if phoned:
         return f"{head} No more calls for this alert."
     if calls:
@@ -474,19 +475,19 @@ async def sms_reply(request: Request) -> Response:
 
     if not mine:
         if _on_any_roster(phone):
-            return _sms_answer("CyberLogix: there is no open alert for this "
+            return _sms_answer(f"{APP_SHORT}: there is no open alert for this "
                                "number to acknowledge.")
         logger.info("A text from a number on no roster was ignored.")
         return _sms_answer(None)
 
     first_tenant = mine[0][0].tenant_id
     if not acks:
-        return _sms_answer("CyberLogix: reply 1 to acknowledge the alert and "
+        return _sms_answer(f"{APP_SHORT}: reply 1 to acknowledge the alert and "
                            "stop the calls.", first_tenant)
     if number is not None:
         mine = [row for row in mine if _alert_number(row[1]) == number]
         if not mine:
-            return _sms_answer(f"CyberLogix: no open alert {number} was sent to "
+            return _sms_answer(f"{APP_SHORT}: no open alert {number} was sent to "
                                "this number.", first_tenant)
 
     waiting = [row for row in mine if row[1].acknowledged_at is None]
@@ -501,12 +502,12 @@ async def sms_reply(request: Request) -> Response:
         waiting = site_wide
     if not waiting:
         _, incident, _ = mine[0]
-        return _sms_answer(f"CyberLogix: already acknowledged by "
+        return _sms_answer(f"{APP_SHORT}: already acknowledged by "
                            f"{incident.acknowledged_by}.", first_tenant)
     if len(waiting) > 1:
         listed = "; ".join(
             f"{_alert_number(i)} {_reply_name(i)}" for _, i, _ in waiting[:4])
-        return _sms_answer(f"CyberLogix: {len(waiting)} alerts are open: {listed}. "
+        return _sms_answer(f"{APP_SHORT}: {len(waiting)} alerts are open: {listed}. "
                            f"Reply ACK and the number, e.g. ACK "
                            f"{_alert_number(waiting[0][1])}.", first_tenant)
 
@@ -516,7 +517,7 @@ async def sms_reply(request: Request) -> Response:
         incident, f"{who}, by text reply ({contact.phone})")
     where = _reply_name(incident)
     if not claimed:
-        return _sms_answer(f"CyberLogix: already acknowledged by "
+        return _sms_answer(f"{APP_SHORT}: already acknowledged by "
                            f"{incident.acknowledged_by}.", tenant.tenant_id)
     usage.count("acknowledged_text")
     write_audit(tenant, None, "incident.acknowledged",

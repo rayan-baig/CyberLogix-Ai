@@ -34,6 +34,7 @@ their own estate, so the first thing they see working is the product.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import os
 import threading
@@ -169,7 +170,7 @@ class SignupRequest(BaseModel):
     )
     referral_code: Optional[str] = Field(
         None, max_length=40,
-        description=("A code from a business that already uses CyberLogix, "
+        description=(f"A code from a business that already uses {APP_SHORT}, "
                      "or from an insurance partner, which makes the trial "
                      "longer; or the founding member code, which takes a "
                      "percentage off the first months' bills."),
@@ -520,7 +521,7 @@ def first_steps(
                 "command": (
                     (
                         "curl -X POST $HOST/api/contacts "
-                        f'-H "X-CyberLogix-Key: {api_key}" '
+                        f'-H "X-Kryozyn-Key: {api_key}" '
                         f'-H "Authorization: Bearer {bearer_token}" '
                         '-H "Content-Type: application/json" '
                         '-d \'{"full_name":"You","phone":"+15550100",'
@@ -539,7 +540,7 @@ def first_steps(
                 ),
                 "command": (
                     "curl -X POST $HOST/api/licenses/me/sensors "
-                    f'-H "X-CyberLogix-Key: {api_key}" '
+                    f'-H "X-Kryozyn-Key: {api_key}" '
                     '-H "Content-Type: application/json" '
                     f'-d \'{{"sensor_id":"UNIT-1","industry_vertical":"{vertical}",'
                     '"location_name":"Main site"}\''
@@ -550,7 +551,7 @@ def first_steps(
                 "detail": f"{nominal}\u00b0F is inside the limits, so nothing happens.",
                 "command": (
                     "curl -X POST $HOST/api/sensor-pulse "
-                    f'-H "X-CyberLogix-Key: {api_key}" '
+                    f'-H "X-Kryozyn-Key: {api_key}" '
                     '-H "Content-Type: application/json" '
                     f'-d \'{{"sensor_id":"UNIT-1","temperature_fahrenheit":{nominal}}}\''
                 ),
@@ -563,7 +564,7 @@ def first_steps(
                 ),
                 "command": (
                     "curl -X POST $HOST/api/sensor-pulse "
-                    f'-H "X-CyberLogix-Key: {api_key}" '
+                    f'-H "X-Kryozyn-Key: {api_key}" '
                     '-H "Content-Type: application/json" '
                     f'-d \'{{"sensor_id":"UNIT-1","temperature_fahrenheit":{breaching}}}\''
                 ),

@@ -16,7 +16,7 @@ import scheduler
 import watchdog
 from store import STORE, iso, utc_now
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 @pytest.fixture(autouse=True)

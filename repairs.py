@@ -42,6 +42,7 @@ separate row that names nobody.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import os
 import re
@@ -900,8 +901,8 @@ def _mail_key(row: Dict[str, Any], key: str, first: bool) -> bool:
 
     result = send_mail(
         to_address=str(row.get("contact_email")),
-        subject=("You are a CyberLogix repair partner" if first
-                 else "Your new CyberLogix repair partner key"),
+        subject=(f"You are a {APP_SHORT} repair partner" if first
+                 else f"Your new {APP_SHORT} repair partner key"),
         body=(
             f"{row.get('contact_name')},\n\n"
             + ("Your application has been approved.\n\n" if first else
@@ -969,9 +970,9 @@ def decline(partner_id: str):
     _save(row)
     send_mail(
         to_address=str(row.get("contact_email")),
-        subject="Your CyberLogix repair partner application",
+        subject=f"Your {APP_SHORT} repair partner application",
         body=(f"{row.get('contact_name')},\n\nThank you for applying to be a "
-              "CyberLogix repair partner. We are not able to take it further at "
+              f"{APP_SHORT} repair partner. We are not able to take it further at "
               "the moment. You are welcome to apply again later."),
         dedupe_key=f"repair-declined:{row['partner_id']}",
         klass="transactional",
@@ -1089,7 +1090,7 @@ def send_statement(partner_id: str):
     stamp = utc_now().strftime("%Y-%m-%dT%H%M")
     result = send_mail(
         to_address=str(row.get("contact_email")),
-        subject=f"Your CyberLogix repair leads statement: ${money['owed_usd']:,.2f} to pay",
+        subject=f"Your {APP_SHORT} repair leads statement: ${money['owed_usd']:,.2f} to pay",
         body=(f"{row.get('contact_name')},\n\nHere is your statement for repair "
               f"leads.\n\n{statement_text(row)}\n\n{how_to_pay()}\n\n"
               "Reply to this message if anything on it is wrong."),
@@ -1132,11 +1133,11 @@ class BadLead(BaseModel):
 
 
 def require_repair_partner(
-    x_cyberlogix_repair_partner: Optional[str] = Header(
-        None, alias="X-CyberLogix-Repair-Partner"),
+    x_kryozyn_repair_partner: Optional[str] = Header(
+        None, alias="X-Kryozyn-Repair-Partner"),
 ) -> Dict[str, Any]:
     """The partner making the request, by their dashboard key."""
-    row = partner_by_key(x_cyberlogix_repair_partner)
+    row = partner_by_key(x_kryozyn_repair_partner)
     if row is None or row.get("status") != "approved":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="That partner key was not accepted.")

@@ -23,6 +23,7 @@ a traceback and a count, instead of as a mystery.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import hashlib
 import logging
 import os
@@ -286,7 +287,7 @@ def render_report(row: Dict[str, Any], exc: BaseException, method: str,
     kind = type(exc).__name__
     where = clean(f"{method} {path}")
     seen = int(row.get("seen", 1))
-    subject = f"CyberLogix error {fault_id}: {kind} on {where}"
+    subject = f"{APP_SHORT} error {fault_id}: {kind} on {where}"
     body = "\n".join([
         "The server answered a request with an error (500).",
         "",

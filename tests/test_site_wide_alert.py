@@ -643,7 +643,7 @@ def test_the_button_acknowledges_it(api, raised, tenant_factory):
     key = STORE.rotate_api_key(tenant)
 
     resp = api.post(f"/api/voice/acknowledge/{alert.incident_id}",
-                    headers={"X-CyberLogix-Key": key}, json={"acknowledged_by": "Dana"})
+                    headers={"X-Kryozyn-Key": key}, json={"acknowledged_by": "Dana"})
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "ACKNOWLEDGED"
@@ -743,7 +743,7 @@ def test_the_inspectors_log_lists_it(api, raised):
     key = STORE.rotate_api_key(tenant)
 
     log = api.get("/api/autopilot/inspector-log",
-                  headers={"X-CyberLogix-Key": key}).json()
+                  headers={"X-Kryozyn-Key": key}).json()
 
     (entry,) = log["site_wide_alerts"]
     assert entry["incident_id"] == alert.incident_id

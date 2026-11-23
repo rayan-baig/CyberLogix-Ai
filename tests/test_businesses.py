@@ -130,7 +130,7 @@ def test_one_sign_in_reaches_both(api):
 
 def test_the_overview_counts_what_needs_you_in_each(api):
     first = _signup(api, DANA)
-    key = {"X-CyberLogix-Key": first["api_key"]}
+    key = {"X-Kryozyn-Key": first["api_key"]}
     assert api.post(
         "/api/licenses/me/sensors", headers=key,
         json={"sensor_id": "UNIT-1", "industry_vertical": "country_club",
@@ -176,7 +176,7 @@ def test_a_switch_into_somebody_elses_business_is_refused(api):
 
 def test_data_stays_with_its_business_after_a_switch(api):
     first = _signup(api, DANA)
-    key = {"X-CyberLogix-Key": first["api_key"]}
+    key = {"X-Kryozyn-Key": first["api_key"]}
     api.post(
         "/api/licenses/me/sensors", headers=key,
         json={"sensor_id": "UNIT-1", "industry_vertical": "country_club",
@@ -466,11 +466,11 @@ def test_one_company_cannot_claim_another_companys_sensor_id_as_a_serial(api):
     sam = _signup(api, SAM)
     dana_key = STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key
     sam_key = STORE.get_tenant(sam["tenant"]["tenant_id"]).api_key
-    made = api.post("/api/licenses/me/sensors", headers={"X-CyberLogix-Key": dana_key},
+    made = api.post("/api/licenses/me/sensors", headers={"X-Kryozyn-Key": dana_key},
                     json={"sensor_id": "RACK-01", "industry_vertical": "cybersecurity",
                           "location_name": "Rack"})
     assert made.status_code in (200, 201), made.text
-    claimed = api.post("/api/licenses/me/sensors", headers={"X-CyberLogix-Key": sam_key},
+    claimed = api.post("/api/licenses/me/sensors", headers={"X-Kryozyn-Key": sam_key},
                        json={"sensor_id": "SAM-1", "industry_vertical": "cybersecurity",
                              "location_name": "Shelf", "external_device_sn": "RACK-01"})
     assert claimed.status_code >= 400
@@ -487,8 +487,8 @@ def test_an_owner_can_replace_a_leaked_master_key(api):
     new = resp.json()["api_key"]
     assert new != old
     # The old key opens nothing; the new one does.
-    assert api.get("/api/licenses/me", headers={"X-CyberLogix-Key": old}).status_code == 401
-    assert api.get("/api/licenses/me", headers={"X-CyberLogix-Key": new}).status_code == 200
+    assert api.get("/api/licenses/me", headers={"X-Kryozyn-Key": old}).status_code == 401
+    assert api.get("/api/licenses/me", headers={"X-Kryozyn-Key": new}).status_code == 200
     # And it survives a restart.
     STORE.forget()
     STORE.load()
@@ -499,7 +499,7 @@ def test_the_key_itself_cannot_replace_the_key(api):
     """Whoever leaked it would lock the business out of its own estate."""
     dana = _signup(api, DANA)
     key = STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key
-    resp = api.post("/api/licenses/me/rotate-key", headers={"X-CyberLogix-Key": key})
+    resp = api.post("/api/licenses/me/rotate-key", headers={"X-Kryozyn-Key": key})
     assert resp.status_code in (401, 403)
     assert STORE.get_tenant(dana["tenant"]["tenant_id"]).api_key == key
 

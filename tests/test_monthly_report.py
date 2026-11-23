@@ -133,7 +133,7 @@ def bakery(api, operator_factory, sensor_factory):
 
 @pytest.fixture()
 def public_url(monkeypatch):
-    monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://cyberlogix.example.com")
+    monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://kryozyn.example.com")
 
 
 def _messages(mailbox, address):
@@ -198,7 +198,7 @@ def test_it_links_to_the_inspector_log_for_that_month_and_business(
 ):
     monthly.run_monthly_reports(NOW)
     text = _text(_messages(mailbox, "dana@grill.example")[0])
-    link = (f"https://cyberlogix.example.com/console#inspector-log?business="
+    link = (f"https://kryozyn.example.com/console#inspector-log?business="
             f"{grill['tenant_id']}&from={FIRST.isoformat()}&to={LAST.isoformat()}")
     assert link in text
 
@@ -216,9 +216,9 @@ def test_it_has_a_plain_text_part_an_unsubscribe_link_and_the_footer(
     assert rich.get_content_type() == "text/html"
     for part in (plain.get_content(), rich.get_content()):
         assert "/api/mail/unsubscribe?address=dana%40grill.example" in part
-        assert "CyberLogix is a product of MTRX Horizyn." in part
+        assert "Kryozyn is a product of MTRX Horizyn." in part
     assert message["List-Unsubscribe"].startswith(
-        "<https://cyberlogix.example.com/api/mail/unsubscribe")
+        "<https://kryozyn.example.com/api/mail/unsubscribe")
     assert "Horizon" not in plain.get_content()
 
 
@@ -340,7 +340,7 @@ def test_a_person_who_owns_two_businesses_gets_two_reports(api, grill, mailbox):
                      json={"company_name": "Harbor Deli",
                            "industry_vertical": "restaurant"})
     assert added.status_code == 201, added.text
-    deli = {"X-CyberLogix-Key": added.json()["api_key"]}
+    deli = {"X-Kryozyn-Key": added.json()["api_key"]}
     assert api.post("/api/licenses/me/sensors", headers=deli, json={
         "sensor_id": "HD-1", "industry_vertical": "restaurant",
         "location_name": "Deli counter"}).status_code == 201

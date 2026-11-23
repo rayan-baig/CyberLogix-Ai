@@ -121,7 +121,7 @@ async function main() {
     // The device: one reading with its own key, the moment it is set up.
     const tSend = Date.now();
     const res = await fetch(`${base}/api/sensor-pulse`, { method: "POST",
-      headers: { "Content-Type": "application/json", "X-CyberLogix-Sensor-Key": ingest },
+      headers: { "Content-Type": "application/json", "X-Kryozyn-Sensor-Key": ingest },
       body: JSON.stringify({ sensor_id: sensorId, temperature_fahrenheit: 2.4 }) });
     if (!res.ok) throw new Error("pulse " + res.status + " " + await res.text());
     step("device", "first reading sent");

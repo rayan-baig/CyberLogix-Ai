@@ -25,6 +25,7 @@ adjuster is reading precisely to find out which it is.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -34,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from auth import require_tenant
 from gemini import safe_generate
-from records import person_name
+from records import person_name, renamed
 from store import (
     INDUSTRY_PROFILES,
     STORE,
@@ -125,7 +126,7 @@ def full_name(label: Optional[str]) -> Optional[str]:
     reads. A machine's label is left as it is."""
     if not label:
         return None
-    text = str(label).split("<", 1)[0].strip()
+    text = renamed(str(label).split("<", 1)[0].strip())
     return text or person_name(label)
 
 
@@ -168,7 +169,7 @@ def food_record(incident: Incident) -> Dict[str, Any]:
         history.append({
             "words": words,
             "changed": n > 0,
-            "by": ("CyberLogix, automatically" if row.get("auto")
+            "by": (f"{APP_SHORT}, automatically" if row.get("auto")
                    else full_name(row.get("by"))),
             "at": row.get("at"),
         })
@@ -177,7 +178,7 @@ def food_record(incident: Incident) -> Dict[str, Any]:
         "answer": incident.food_words(),
         "disposition": incident.product_disposition,
         "thrown": incident.product_disposition == "discarded",
-        "by": (("CyberLogix, automatically" if auto else full_name(incident.food_answered_by))
+        "by": ((f"{APP_SHORT}, automatically" if auto else full_name(incident.food_answered_by))
                if incident.product_disposition else None),
         "at": iso(incident.food_answered_at),
         "auto": auto,

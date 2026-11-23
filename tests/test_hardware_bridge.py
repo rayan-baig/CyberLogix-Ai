@@ -38,7 +38,7 @@ def webhook(api, token, serial="ELITECH-AB12", value=28.0, metric="temperature_f
 def test_nominal_webhook_reading(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    body = webhook(api, headers["X-CyberLogix-Key"], value=28.0).json()
+    body = webhook(api, headers["X-Kryozyn-Key"], value=28.0).json()
 
     assert body["status"] == "INGESTION_SUCCESS"
     assert body["alert_triggered"] is False
@@ -49,7 +49,7 @@ def test_nominal_webhook_reading(api, tenant_factory):
 def test_webhook_breach_opens_a_real_incident(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    body = webhook(api, headers["X-CyberLogix-Key"], value=60.0).json()
+    body = webhook(api, headers["X-Kryozyn-Key"], value=60.0).json()
 
     assert body["alert_triggered"] is True
     incident_id = body["telemetry_result"]["incident_id"]
@@ -72,7 +72,7 @@ def test_thresholds_follow_the_industry_not_a_flat_number(api, tenant_factory):
     bind_device(
         api, headers, sensor_id="HANGAR-1", serial="SN-HANGAR", vertical="private_aviation"
     )
-    token = headers["X-CyberLogix-Key"]
+    token = headers["X-Kryozyn-Key"]
 
     assert webhook(api, token, serial="SN-FREEZER", value=60.0).json()["alert_triggered"] is True
     assert webhook(api, token, serial="SN-HANGAR", value=45.0).json()["alert_triggered"] is False
@@ -82,7 +82,7 @@ def test_celsius_is_normalised(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
     body = webhook(
-        api, headers["X-CyberLogix-Key"], value=7.0, metric="temperature_c"
+        api, headers["X-Kryozyn-Key"], value=7.0, metric="temperature_c"
     ).json()
 
     assert body["normalised_temperature_f"] == 44.6
@@ -93,7 +93,7 @@ def test_humidity_is_stored_as_context(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
     body = webhook(
-        api, headers["X-CyberLogix-Key"], value=61.5, metric="humidity_pct"
+        api, headers["X-Kryozyn-Key"], value=61.5, metric="humidity_pct"
     ).json()
 
     assert body["alert_triggered"] is False
@@ -104,7 +104,7 @@ def test_out_of_range_humidity_rejected(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
     resp = webhook(
-        api, headers["X-CyberLogix-Key"], value=140.0, metric="humidity_pct"
+        api, headers["X-Kryozyn-Key"], value=140.0, metric="humidity_pct"
     )
     assert resp.status_code == 400
 
@@ -112,7 +112,7 @@ def test_out_of_range_humidity_rejected(api, tenant_factory):
 def test_unsupported_metric_rejected(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    resp = webhook(api, headers["X-CyberLogix-Key"], metric="pressure_psi")
+    resp = webhook(api, headers["X-Kryozyn-Key"], metric="pressure_psi")
     assert resp.status_code == 400
     assert "Unsupported metric_type" in resp.json()["detail"]
 
@@ -129,14 +129,14 @@ def test_webhook_rejects_a_suspended_license(api, tenant_factory, owner_headers)
     bind_device(api, headers)
     api.post("/api/licenses/me/suspend", headers=owner_headers(headers))
 
-    resp = webhook(api, headers["X-CyberLogix-Key"])
+    resp = webhook(api, headers["X-Kryozyn-Key"])
     assert resp.status_code == 402
 
 
 def test_unbound_device_is_held_not_thrown_away(api, tenant_factory):
     """An unknown serial is a device to adopt, not a reading to bin."""
     headers, _ = tenant_factory()
-    resp = webhook(api, headers["X-CyberLogix-Key"], serial="GHOST-SN")
+    resp = webhook(api, headers["X-Kryozyn-Key"], serial="GHOST-SN")
     assert resp.status_code == 202
     assert "not set up yet" in resp.json()["detail"]
 
@@ -161,7 +161,7 @@ def test_device_cannot_report_into_another_tenant(api, tenant_factory, owner_hea
     bind_device(api, alice, sensor_id="ALICE-1", serial="ALICE-SN")
     assert STORE.get_sensor("ALICE-1").last_seen is None
 
-    resp = webhook(api, bob["X-CyberLogix-Key"], serial="ALICE-SN", value=45.0)
+    resp = webhook(api, bob["X-Kryozyn-Key"], serial="ALICE-SN", value=45.0)
     assert resp.status_code == 202
 
     # Alice's freezer did not record a reading it never took, and a
@@ -212,14 +212,14 @@ def test_serial_falls_back_to_sensor_id(api, tenant_factory, sensor_factory):
     """Hardware registered without an explicit serial still resolves."""
     headers, _ = tenant_factory()
     sensor_factory(headers, sensor_id="RACK-01")
-    body = webhook(api, headers["X-CyberLogix-Key"], serial="RACK-01", value=68.0).json()
+    body = webhook(api, headers["X-Kryozyn-Key"], serial="RACK-01", value=68.0).json()
     assert body["bound_sensor_id"] == "RACK-01"
 
 
 def test_device_label_updates_the_site_tag(api, tenant_factory):
     headers, _ = tenant_factory()
     bind_device(api, headers)
-    webhook(api, headers["X-CyberLogix-Key"], label="Store 118 / Prep Cooler")
+    webhook(api, headers["X-Kryozyn-Key"], label="Store 118 / Prep Cooler")
     assert STORE.get_sensor("FRZ-1").location_name == "Store 118 / Prep Cooler"
 
 

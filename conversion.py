@@ -31,6 +31,7 @@ The whole ladder is commercial mail. Unsubscribing stops it, and should.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import math
 from datetime import datetime, timedelta
@@ -221,7 +222,7 @@ def welcome(tenant: Tenant) -> Dict[str, Any]:
         or tenant.entitlements()['term_days']
     return send_mail(
         to_address=tenant.contact_email,
-        subject=f"{tenant.company_name}: your CyberLogix trial is live",
+        subject=f"{tenant.company_name}: your {APP_SHORT} trial is live",
         body=(
             f"{tenant.contact_name},\n\n"
             "Your trial estate is up. It runs for "

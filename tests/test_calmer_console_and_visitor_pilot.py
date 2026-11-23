@@ -35,7 +35,7 @@ STATIC = ROOT / "static"
 CONSOLE_JS = (STATIC / "console.js").read_text()
 CONSOLE_HTML = (STATIC / "console.html").read_text()
 THEME = (STATIC / "theme.css").read_text()
-PILOT_APP = (STATIC / "pilot-cyberlogix.js").read_text()
+PILOT_APP = (STATIC / "pilot-kryozyn.js").read_text()
 
 
 def _function(source: str, name: str) -> str:
@@ -306,11 +306,11 @@ const sb = {{ window: {{}}, document: {{}}, URL }};
 vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot' / 'pilot-panel.js'))}, "utf8"), sb);
 let given = null;
 const path = {json.dumps(pathname)};
-vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-cyberlogix.js'))}, "utf8"), {{
-  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://cyberlogix.example" + path }},
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-kryozyn.js'))}, "utf8"), {{
+  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://kryozyn.example" + path }},
     localStorage: {{ getItem: () => null }} }},
   document: {{ getElementById: () => ({{ dataset: {{}} }}), title: "" }}, URL }});
-const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://cyberlogix.example" + path);
+const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://kryozyn.example" + path);
 console.log(JSON.stringify(pills.map((p) => [p.icon, p.label, p.link ? "link " + new URL(p.link).pathname + new URL(p.link).hash
   : p.answer !== undefined ? "answer" : p.action, Boolean(p.match && p.match.length)])));"""
     out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)

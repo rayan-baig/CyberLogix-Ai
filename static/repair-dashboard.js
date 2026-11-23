@@ -104,7 +104,7 @@ async function call(path, options) {
   const opts = options || {};
   return fetch(path, {
     method: opts.method || "GET",
-    headers: Object.assign({ "X-CyberLogix-Repair-Partner": storedKey() },
+    headers: Object.assign({ "X-Kryozyn-Repair-Partner": storedKey() },
       opts.body ? { "Content-Type": "application/json" } : {}),
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });

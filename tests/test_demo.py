@@ -107,7 +107,7 @@ def test_the_alert_says_exactly_what_a_real_one_would():
     assert "Reply 1" in text and len(text) <= wording.SMS_LIMIT
     assert "Press 1" in story["messages"]["call_script"]
     assert f"{story['real_wait_minutes']} minutes" in story["messages"]["call_script"]
-    assert story["messages"]["ack_reply"].startswith("CyberLogix: thanks, Sam.")
+    assert story["messages"]["ack_reply"].startswith("Kryozyn: thanks, Sam.")
     # Before the pretend call rings, "Nobody else will be called"; after
     # it, "No more calls for this alert" (3.30.0).
     assert "Nobody else will be called" in story["messages"]["ack_reply"]
@@ -220,7 +220,7 @@ def test_the_static_copy_needs_no_server_and_names_no_model(monkeypatch):
     assert "sentinel-model-7" not in page
     assert not MODEL_ID.search(page)
     # Its sign-up button goes to the live product, from inside the story.
-    assert "https://cyberlogix.mtrxhorizyn.com/signup?sector=restaurant" in page
+    assert "https://kryozyn.mtrxhorizyn.com/signup?sector=restaurant" in page
     assert 'href="/' not in re.sub(r"<script.*?</script>", "", page, flags=re.S)
 
 

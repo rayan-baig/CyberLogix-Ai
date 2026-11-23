@@ -34,6 +34,7 @@ bad afternoon must not stop the company invoicing.
 
 from __future__ import annotations
 
+from brand import APP_NAME, APP_SHORT, CHECKLIST_APP
 import functools
 import hmac
 import html as _html
@@ -84,7 +85,7 @@ SMTP_STARTTLS = os.environ.get("SMTP_STARTTLS", "1").strip() not in ("0", "false
 SMTP_TIMEOUT_SECONDS = float(os.environ.get("SMTP_TIMEOUT_SECONDS", "20"))
 
 MAIL_FROM = os.environ.get("MAIL_FROM", "").strip()
-MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "CyberLogix AI").strip()
+MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", APP_NAME).strip()
 MAIL_REPLY_TO = os.environ.get("MAIL_REPLY_TO", "").strip()
 
 # Where a customer is told to send the money. Without this an invoice is a
@@ -321,7 +322,7 @@ MUST_SEND = (
 MANAGED = {
     "licence-alert:": ("/console", "Change the licences we remind you about"),
     "digest:operator:": ("/book", "The same figures, and the settings behind them"),
-    "omniarmor-failing:": ("/console", "Each day sent to OmniArmor, and the connection"),
+    "omniarmor-failing:": ("/console", f"Each day sent to {CHECKLIST_APP}, and the connection"),
     "insurance-application:": ("/book", "Approve or decline it in the operator console"),
     "repair-application:": ("/book", "Approve or decline it in the operator console"),
     "repair-dispute:": ("/book", "Decide it in the operator console"),
@@ -368,7 +369,7 @@ def _footer(address: str, klass: str, dedupe_key: str = "") -> str:
         )
     # Who is writing. The product's name is on the From line; the company
     # behind it is MTRX Horizyn, the same one the agreements are with.
-    parts.append(f"CyberLogix is a product of {COMPANY}.")
+    parts.append(f"{APP_SHORT} is a product of {COMPANY}.")
     return "\n".join(parts)
 
 

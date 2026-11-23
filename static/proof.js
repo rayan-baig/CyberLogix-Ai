@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[c]));
@@ -54,9 +63,9 @@ function render(r) {
   $("proves").textContent = r.proves;
   $("not").textContent = r.does_not_prove;
   $("foot").innerHTML =
-    "Recorded and published through CyberLogix AI. The verification above "
+    `Recorded and published through ${esc(BRAND.app)}. The verification above `
     + "runs against a public endpoint that needs no account, so neither the "
-    + "operator nor CyberLogix has to be taken at their word. "
+    + `operator nor ${esc(BRAND.short)} has to be taken at their word. `
     + (r.signing && r.signing.counter_signed
        ? "This record also carries a counter-signature."
        : "This deployment has no signing key configured, so the record "

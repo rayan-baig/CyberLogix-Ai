@@ -515,8 +515,8 @@ test("the robot is the owner's picture at the size the screen needs; the P mark 
   assert.ok(made.every((n) => !("style" in n.attrs)));
 });
 
-// The MTRX site's own pack and Ask Genesis tests stay in that repo. This
-// app's pack and console tools are tested in tests/js/cyberlogix-pilot.test.js.
+// The MTRX Horizyn site's own pack and Ask Genesis tests stay in that repo. This
+// app's pack and console tools are tested in tests/js/kryozyn-pilot.test.js.
 
 test("the window never writes the word null: every replaceChildren goes through put()", () => {
   const src = require("node:fs").readFileSync(require("node:path").join(__dirname, "../../static/pilot/pilot-panel.js"), "utf8");
@@ -613,7 +613,7 @@ test("placement: the robot keeps clear of things to avoid and of another helper,
   const size = { width: 56, height: 54 };
   // Nothing in the way: its own corner.
   assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, blocks: [] }), { corner: "br", peek: false });
-  // Another helper (OmniArmor's Armo) in the bottom right: the robot moves to the bottom left.
+  // Another helper (Aegizyn's Armo) in the bottom right: the robot moves to the bottom left.
   const armo = box(300, 690, 80, 100);
   assert.deepEqual(Mascot.choosePlace({ corner: "br", view, size, gap: 12, blocks: [armo] }), { corner: "bl", peek: false });
   // A full-width bar along the bottom: a top corner.
@@ -636,8 +636,8 @@ test("placement: smaller on phones, a gutter pages can reserve, and this app's b
   assert.match(css, /\.pilot-gutter \{ padding-bottom: var\(--pilot-gutter/);
   const loader = fs.readFileSync(core("pilot.js"), "utf8");
   assert.ok(loader.includes("config.avoid") && loader.includes("config.yieldTo"));
-  // This app's own list (the MTRX site checks its Genesis bars here).
-  const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  // This app's own list (the MTRX Horizyn site checks its Genesis bars here).
+  const cfg = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   assert.ok(cfg.includes('avoid: ["#site-wide-banner"'));
 });
 
@@ -753,11 +753,11 @@ test("the chat window 1.1.1: suggestions come first once chatting; the grown-ups
     assert.ok(panel.includes(pill), pill);
   }
   // This app's own note says what an AI key is and where to get one (the
-  // MTRX site checks its own note and its Genesis rows here).
-  const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  // MTRX Horizyn site checks its own note and its Genesis rows here).
+  const cfg = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   assert.ok(cfg.includes(`keyNote: "An AI key is a private code you make on an AI company's website`));
   assert.ok(cfg.includes("AI keys are for grown-ups (the AI companies require 18+)."));
-  // On CyberLogix the Needs you now bar, the front page's first-screen facts
+  // On Kryozyn the Needs you now bar, the front page's first-screen facts
   // and a fridge's status label are kept clear too (the console's search box
   // and tabs since core 1.4.1 by the core itself: it hides rather than cover).
   for (const sel of ["#needs-bar", ".needs-bar-acts", "#facts", ".sensor-top", ".thing-word"]) assert.ok(cfg.includes(`"${sel}"`), sel);
@@ -962,8 +962,8 @@ test("placement 1.2.0: a row of dots with tooltips counts, and line ends just be
   assert.equal(placed.peek, true);
 });
 
-test("CyberLogix's own welcome: its tagline, a visitor's five on the public pages and the console's five on its own pages, no picture or video keys, kept on screen, its phone menu", () => {
-  const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+test("Kryozyn's own welcome: its tagline, a visitor's five on the public pages and the console's five on its own pages, no picture or video keys, kept on screen, its phone menu", () => {
+  const cfg = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   assert.ok(cfg.includes('tagline: "Your fridge-alarm helper",'));
   for (const label of ["Which fridges need me?", "Who gets the texts?", "Is the food still OK?", "How do I connect a sensor?",
     "Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"]) {
@@ -990,8 +990,8 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
   for (const [pathname, want] of [["/", visitor], ["/pricing", visitor], ["/help", visitor], ["/console", own], ["/today", own]]) {
     let given = null;
     vm.runInNewContext(cfg, { window: { Pilot: { mount: (c) => { given = c; } }, location: { pathname }, localStorage: { getItem: () => null } },
-      document: { getElementById: () => ({ dataset: {} }), title: "" } });
-    const pills = sandbox.window.PilotPanel.welcomePills(given.welcomePills, `https://cyberlogix.example${pathname}`);
+      document: { getElementById: () => ({ dataset: { appName: "Kryozyn", appShort: "Kryozyn" } }), title: "" } });
+    const pills = sandbox.window.PilotPanel.welcomePills(given.welcomePills, `https://kryozyn.example${pathname}`);
     assert.deepEqual(JSON.parse(JSON.stringify(pills.map((p) => [p.label, kind(p)]))), want, pathname);
     assert.equal(given.keepInViewport, true);
     assert.deepEqual([...sandbox.window.PilotPanel.hiddenSections(given.hideKeySections)], ["image", "video"]);
@@ -1088,7 +1088,7 @@ test("welcome 1.3.0/1.4.1: a one-line grown-ups note when the app gives one (alw
   assert.match(css, /@media \(min-width: 721px\) and \(max-height: 900px\)/);
   assert.match(css, /@media \(max-width: 720px\) and \(max-height: 760px\)/);
   // This app's short line keeps the meaning: an AI key is for grown-ups.
-  const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  const cfg = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   assert.ok(cfg.includes('keyNoteShort: "AI keys are for grown-ups (18+).",'));
 });
 
@@ -1170,7 +1170,7 @@ function phonePage({ cardAtBottom = false, logo = false, width = 375, height = 8
   return { doc, win, own: { contains: () => false }, launcher, avoid: [], corner: "br", shown: "br", full: true, text: true, keepIn: true };
 }
 
-test("placement 1.4.0: on a phone it never parks top-left over the header (CyberLogix's 3,3), it tucks at the bottom", () => {
+test("placement 1.4.0: on a phone it never parks top-left over the header (Kryozyn's 3,3), it tucks at the bottom", () => {
   const place = Mascot.placeNow(phonePage());
   // Core 1.3.0 put it top-left: the header's empty corner looked free.
   assert.equal(place.corner[0], "b", JSON.stringify(place));
@@ -1352,9 +1352,9 @@ test("store 1.4.0: an app's own answer and the key offer under it survive the tr
   assert.equal(Store.cleanMessage({ role: "note", kind: "html", text: "x" }).kind, "info");
 });
 
-// The MTRX site's own 1.4.0 pills (Genesis's start form, Orbyt, its app
+// The MTRX Horizyn site's own 1.4.0 pills (Genesis's start form, Orbyt, its app
 // list) are tested in that repo. This app's link and answer pills are tested
-// above (CyberLogix's own welcome) and in tests/js/cyberlogix-pilot.test.js.
+// above (Kryozyn's own welcome) and in tests/js/kryozyn-pilot.test.js.
 
 test("wandering 1.4.0: something to avoid holds the robot still only where it strolls, not anywhere on the page", () => {
   const W = { innerWidth: 375, innerHeight: 812 };
@@ -1415,7 +1415,7 @@ test("placement 1.4.1: every corner blocked on a 320 px phone (sticky bar on top
   const view = { width: 320, height: 640 };
   const size = { width: 56, height: 54 };
   const keep = { scale: 0.82, margin: 3 };
-  // CyberLogix's console at y=500: .finder and .f-tab (in `avoid`) fill the bottom strip...
+  // Kryozyn's console at y=500: .finder and .f-tab (in `avoid`) fill the bottom strip...
   const finder = { left: 0, top: 590, right: 200, bottom: 640 };
   const tab = { left: 200, top: 596, right: 320, bottom: 640 };
   // ...and the "Needs you now" bar (sticky, also avoided) the top.
@@ -1667,7 +1667,7 @@ function fakePage({ width = 375, height = 812, items = [], vars = {}, cssBottom,
   return { doc, win, own, launcher, els, avoid: [], corner: "br", shown: "br", full: true, text: true, keepIn: true };
 }
 
-// OmniArmor's signed-in phone page: a fixed tab bar (64 px, with its links) along the bottom; the app raises the
+// Aegizyn's signed-in phone page: a fixed tab bar (64 px, with its links) along the bottom; the app raises the
 // robot's corners above it (--pilot-gap: 76px; bottom: 76px) and keeps the core's 3 px margin and 0.82 scale.
 const PHONE_KEEP = { "--pilot-peek-scale": 0.82, "--pilot-keep-margin": 3, "--pilot-keep-room": 12, "--pilot-peek-show": 20 };
 function tabBarPage({ width = 375, height = 812, raised = true, linksAbove = false } = {}) {
@@ -1691,7 +1691,7 @@ test("placement 1.4.2: a corner raised above a bottom tab bar is measured there 
   assert.equal(Mascot.placeNow(p).hide, undefined);
   assert.equal(Mascot.placeNow({ ...p, scrolled: true, full: false }).hide, undefined);
   // The tucked box: above the tab bar, never nearer the bottom than the corner's raise (76 px less the core's own
-  // 9 px pull: 67 px, where OmniArmor's own CSS draws it), the core's 3 px from the side.
+  // 9 px pull: 67 px, where Aegizyn's own CSS draws it), the core's 3 px from the side.
   const keep = { scale: 0.82, margin: 3, pull: 12 - 3 };
   const box = Mascot.peekBox("br", { width: 375, height: 812 }, { width: 56, height: 54 }, { x: 76, b: 76, t: 76 }, 20, keep);
   assert.equal(box.right, 375 - 3);
@@ -1768,7 +1768,7 @@ test("chips 1.4.2: \"Summarise this\" only once a key is set; an app can leave i
   assert.ok(!draw.includes('all.push({ label: "Summarise this"'));
 });
 
-// CyberLogix's console with an open alert, 320x640, scrolled to 500 (core-issues.md item 4): the sticky "Needs you
+// Kryozyn's console with an open alert, 320x640, scrolled to 500 (core-issues.md item 4): the sticky "Needs you
 // now" bar (avoided) across the top, the search box and the "Everything" tab (both avoided) along the bottom.
 function consolePage() {
   const items = [
@@ -1781,7 +1781,7 @@ function consolePage() {
   return { ...p, avoid: [".needs", ".finder", ".f-tab"] };
 }
 
-test("placement 1.4.2: CyberLogix's 320 px console with every corner busy: hidden, never over the search box or a tab, scrolled or not", () => {
+test("placement 1.4.2: Kryozyn's 320 px console with every corner busy: hidden, never over the search box or a tab, scrolled or not", () => {
   const p = consolePage();
   for (const scrolled of [true, false]) {
     for (const shown of ["br", "bl"]) {
@@ -1907,7 +1907,7 @@ test("handle 1.4.2: the loader asks for it after each look (unless config.handle
 test("typed 1.4.2: with no key, a typed question that clearly fits one of the app's own answers gets it; anything else goes on as before", () => {
   const P = panelHelpers();
   const base = "https://clx.example/console";
-  // CyberLogix-like pills and page suggestions (the reviewer's example).
+  // Kryozyn-like pills and page suggestions (the reviewer's example).
   const pills = P.ownPills([
     { icon: "bars", label: "Which fridges need me?", answer: "Two fridges are warm.", match: ["fridge", "warm", "ok", "Freezers"] },
     { icon: "chat", label: "Is the food still OK?", answer: "Check the times." },
@@ -2043,7 +2043,7 @@ test("typed 1.4.3: stop words are dropped before stemming, so \"does\" and \"thi
   assert.deepEqual(plain(P.wordsOf("What's this? Is it theirs?")), [], "and once stemmed (\"theirs\" -> \"their\")");
   assert.deepEqual(plain(P.wordsOf("What is my walk-in fridge's temperature?")), ["walk", "fridge", "temperature"]);
   const base = "https://omni.example/business";
-  // OmniArmor's business pages (its labels and `match` words).
+  // Aegizyn's business pages (its labels and `match` words).
   const explain = () => "The rule behind this check.";
   const colour = () => "Red means overdue.";
   const omni = P.ownPills([
@@ -2055,7 +2055,7 @@ test("typed 1.4.3: stop words are dropped before stemming, so \"does\" and \"thi
   assert.equal(pick("What does this check mean?", omni), "Explain this check", "1.4.2: a tie with the colour answer, so neither");
   assert.equal(pick("What does this colour mean?", omni), "What does this colour mean?");
   assert.equal(pick("How does Pilot work?", omni), "How does Pilot work?");
-  // CyberLogix's console: an alert answer must not answer questions that share only "does" and "this" with it.
+  // Kryozyn's console: an alert answer must not answer questions that share only "does" and "this" with it.
   const clx = P.ownPills([
     { icon: "bars", label: "What does this alert mean?", answer: "The fridge is warm." },
     { icon: "bolt", label: "What does it cost?", answer: "From 5 a month." },
@@ -2164,7 +2164,7 @@ test("placement 1.4.3: the phone side gutter is 34 px with keepInViewport, and t
   const scale = parseFloat(phone.match(/--pilot-peek-scale: ([\d.]+)/)[1]);
   assert.equal(side, 34);
   assert.ok(size * scale >= 44 - 0.1, "a 44 px tap target");
-  // The tucked robot's drawn ring reaches about 30 px in from its box's outer edge (CyberLogix /for at 375-390 px:
+  // The tucked robot's drawn ring reaches about 30 px in from its box's outer edge (Kryozyn /for at 375-390 px:
   // 3 px over a card's border with 30 px of gutter); the gutter now clears it.
   assert.ok(side >= margin + 30 + 1, `${side} px of gutter for a ring ${margin + 30} px in`);
   assert.equal(Mascot.keepScale(scale, { width: size, height: size * 0.97 }), scale);
@@ -2223,8 +2223,8 @@ test("no key 1.4.3: a typed question nothing fits gets a message in the chat and
 
 test("typed 1.4.3: a pill's or a suggestion's own words, typed, always get that item's answer (live answer functions too)", () => {
   const P = panelHelpers();
-  // The MTRX site checks every one of its own pages here; this app's pages are checked in
-  // tests/js/cyberlogix-pilot.test.js. These are core-generic: pills and suggestions with answers,
+  // The MTRX Horizyn site checks every one of its own pages here; this app's pages are checked in
+  // tests/js/kryozyn-pilot.test.js. These are core-generic: pills and suggestions with answers,
   // a live answer function and links, typed as words (any case, no "?").
   const base = "https://x.example/console";
   const live = () => "Two fridges need you.";

@@ -65,16 +65,16 @@ require_admin = require_platform_admin
 
 
 def require_partner(
-    x_cyberlogix_partner: Optional[str] = Header(
-        None, alias="X-CyberLogix-Partner"
+    x_kryozyn_partner: Optional[str] = Header(
+        None, alias="X-Kryozyn-Partner"
     ),
 ) -> Partner:
     """Identify the reseller making the request."""
-    partner = STORE.partner_by_key((x_cyberlogix_partner or "").strip())
+    partner = STORE.partner_by_key((x_kryozyn_partner or "").strip())
     if partner is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="A valid X-CyberLogix-Partner key is required.",
+            detail="A valid X-Kryozyn-Partner key is required.",
         )
     if not partner.active:
         raise HTTPException(

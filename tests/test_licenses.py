@@ -12,7 +12,7 @@ def test_plan_catalogue_is_public(api):
 
 def test_onboarding_issues_key_once(api, tenant_factory):
     headers, tenant = tenant_factory(plan="growth")
-    assert headers["X-CyberLogix-Key"].startswith("clx_")
+    assert headers["X-Kryozyn-Key"].startswith("clx_")
     assert tenant["seats_total"] == 50
     assert tenant["seats_used"] == 0
 
@@ -39,7 +39,7 @@ def test_unknown_plan_rejected(api):
 def test_missing_and_bad_keys_rejected(api):
     assert api.get("/api/licenses/me").status_code == 401
     assert (
-        api.get("/api/licenses/me", headers={"X-CyberLogix-Key": "nope"}).status_code
+        api.get("/api/licenses/me", headers={"X-Kryozyn-Key": "nope"}).status_code
         == 401
     )
 
@@ -111,7 +111,7 @@ def test_downgrade_blocked_when_seats_would_strand(
     resp = api.post(
         "/api/licenses/me/plan",
         headers={**owner_headers(headers),
-                 "X-CyberLogix-Provisioning": "test-provisioning-key"},
+                 "X-Kryozyn-Provisioning": "test-provisioning-key"},
         json={"plan": "trial"},
     )
     assert resp.status_code == 409
@@ -223,7 +223,7 @@ def test_a_customer_cannot_quietly_drop_a_tier(
 
     allowed = api.post(
         "/api/licenses/me/plan",
-        headers={**owner, "X-CyberLogix-Provisioning": "test-provisioning-key"},
+        headers={**owner, "X-Kryozyn-Provisioning": "test-provisioning-key"},
         json={"plan": "growth", "confirm": True},
     )
     assert allowed.status_code == 200, allowed.text
@@ -250,7 +250,7 @@ def test_a_wrong_provisioning_key_does_not_unlock_a_downgrade(
     owner = owner_headers(headers)
     resp = api.post(
         "/api/licenses/me/plan",
-        headers={**owner, "X-CyberLogix-Provisioning": "guessed-it"},
+        headers={**owner, "X-Kryozyn-Provisioning": "guessed-it"},
         json={"plan": "growth", "confirm": True},
     )
     assert resp.status_code == 409

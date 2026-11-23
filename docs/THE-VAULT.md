@@ -87,7 +87,7 @@ chain of fingerprints plus a statement. That is what we say it is.
 
 If your server has a signing key set up (`CYBERLOGIX_ATTESTATION_KEY`),
 each attestation carries a signature. It shows the attestation was made
-by this CyberLogix server.
+by this Kryozyn server.
 
 Be clear about one limit. The signature uses a secret key that only the
 server holds (HMAC-SHA256). So only the server can check it. Someone you

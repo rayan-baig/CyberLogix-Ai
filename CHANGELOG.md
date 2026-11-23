@@ -1,7 +1,48 @@
 # Changelog
 
-What changed in CyberLogix AI, newest first, in plain words. The number at
-the top must match the `VERSION` file; a test checks that it does.
+What changed in Kryozyn (called CyberLogix AI before 3.34.0), newest
+first, in plain words. The number at the top must match the `VERSION`
+file; a test checks that it does. Entries before 3.34.0 use the names of
+their time.
+
+
+## 3.34.0 — 2026-11-23
+
+Renamed to Kryozyn. The product is now Kryozyn (formerly CyberLogix AI),
+at kryozyn.mtrxhorizyn.com, and the food-safety checklist app it fills in
+is now called Aegizyn (formerly OmniArmor). The company is still MTRX
+Horizyn while its new name is chosen. No price, plan, rule or feature has
+changed.
+
+- **The new name everywhere a person reads.** Every page, the installable
+  app's name, the emails and their "From" name, the alert texts and calls
+  ("Kryozyn: thanks, Rosa..."), Pilot's answers and welcome, the insurance
+  pack, the TV screen, the sales sheets, the help and sensor guides, the
+  API reference and the demo in docs/. The share picture and the front
+  page's phone picture are new, taken from the renamed app.
+- **The new address.** kryozyn.mtrxhorizyn.com, and
+  staging.kryozyn.mtrxhorizyn.com for the staging copy. A page opened at
+  the old cyberlogix.mtrxhorizyn.com address (a bookmark, a proof link in
+  an old email, a printed QR code) moves to the same page at the new one.
+  Sensors, Twilio and Stripe can keep using the old address until they are
+  moved: anything that is not a page visit is answered there as before.
+- **The names in one place.** The product's name, the company's name, its
+  domain, the app's address and the checklist app's name are set once
+  (brand.py, or a setting each), and every page, email, text and Pilot
+  answer takes them from there. A test fails if any of them is spelled
+  anywhere else, so the company's coming rename is a one-line change.
+- **The agreements.** Version 2.10 of the terms, the service level, the
+  privacy statement and the acceptable use policy uses the new name.
+  Nothing else in them changes; as with every new version, each business
+  is asked to accept it once.
+- **Nothing set up breaks.** Settings keep their CYBERLOGIX_ names (each
+  also works as KRYOZYN_..., which wins when both are set). The API's
+  headers are X-Kryozyn-Key, X-Kryozyn-Sensor-Key and so on; devices that
+  send the old X-CyberLogix- names keep working. The daily report to
+  Aegizyn carries its signature under both names. Sign-ins, the database
+  and backups are untouched.
+- **For the owner.** DEPLOY.md lists what has to be done outside the code:
+  DNS, Render, mail, Stripe, Twilio.
 
 
 ## 3.33.0 — 2026-11-23

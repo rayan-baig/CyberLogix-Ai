@@ -93,7 +93,7 @@ def test_a_review_cannot_be_signed_by_a_machine(api, excursion,
     headers, incident = excursion
     api.post(f"/api/voice/corrective-action/{incident.incident_id}",
              headers=headers, json={"action": "Door closed"})
-    machine = {"X-CyberLogix-Key": headers["X-CyberLogix-Key"]}
+    machine = {"X-Kryozyn-Key": headers["X-Kryozyn-Key"]}
 
     refused = api.post(f"/api/voice/review/{incident.incident_id}",
                        headers=machine)

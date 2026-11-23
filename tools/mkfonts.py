@@ -56,7 +56,7 @@ header = (
     " * most of the bytes and none of the characters.\n"
     " */\n\n")
 
-path = pathlib.Path("/home/user/CyberLogix-Ai/static/fonts-embedded.css")
+path = pathlib.Path(__file__).resolve().parent.parent / "static" / "fonts-embedded.css"
 path.write_text(header + "\n".join(out) + "\n")
 print(f"{kept} face(s) from {len(fetched)} file(s) -> {path} "
       f"({path.stat().st_size // 1024} KB)")

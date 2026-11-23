@@ -35,6 +35,7 @@ nothing else: never the person who signed up.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import re
 import secrets
@@ -189,7 +190,7 @@ def record_signup(referred: Tenant, referrer: Tenant, code: str) -> Dict[str, An
     }
     STORE._db.put(KIND, referred.tenant_id, row)
     STORE.record_audit(
-        tenant_id=referrer.tenant_id, actor="CyberLogix", actor_role="system",
+        tenant_id=referrer.tenant_id, actor=APP_SHORT, actor_role="system",
         action="referral.joined",
         detail=f"{referred.company_name} started a trial with your referral code.",
     )
@@ -277,7 +278,7 @@ def _decide(tenant: Tenant, invoice: Invoice) -> Optional[str]:
         STORE._db.put(KIND, tenant.tenant_id, row)
     if outcome == "rewarded" and referrer is not None:
         STORE.record_audit(
-            tenant_id=referrer.tenant_id, actor="CyberLogix", actor_role="system",
+            tenant_id=referrer.tenant_id, actor=APP_SHORT, actor_role="system",
             action="referral.rewarded",
             detail=(f"{row.get('referred_name')} paid its first invoice: a month "
                     "free on one location comes off your next invoice."),

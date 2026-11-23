@@ -39,7 +39,10 @@ def own_files(source: str) -> list:
 
 
 def page_source(path) -> str:
-    source = Path(path).read_text(encoding="utf-8")
+    import brand
+
+    # The names go in as the server puts them in (brand.py).
+    source = brand.fill(Path(path).read_text(encoding="utf-8"))
     for name in own_files(source):
         body = (STATIC / name).read_text(encoding="utf-8")
         if name.endswith(".js"):

@@ -34,7 +34,7 @@ def referrer(api, operator_factory, sensor_factory, tenant_factory):
 def _key_for(api, owner):
     rotated = api.post("/api/licenses/me/rotate-key", headers=owner)
     assert rotated.status_code == 200, rotated.text
-    return {"X-CyberLogix-Key": rotated.json()["api_key"]}
+    return {"X-Kryozyn-Key": rotated.json()["api_key"]}
 
 
 def _join(api, code, company="Corner Cafe", email="sam@cornercafe.example",
@@ -49,7 +49,7 @@ def _join(api, code, company="Corner Cafe", email="sam@cornercafe.example",
 def _pay_first_invoice(api, admin_headers, settle, joined, amount=None, reference="WIRE-1"):
     """The referred business moves onto Starter, is invoiced, and pays."""
     token = {"Authorization": f"Bearer {joined['token']}"}
-    key = {"X-CyberLogix-Key": joined["api_key"]}
+    key = {"X-Kryozyn-Key": joined["api_key"]}
     tenant_id = joined["tenant"]["tenant_id"]
     if not STORE.sensors_for(tenant_id):
         assert api.post("/api/licenses/me/sensors", headers=key, json={
@@ -210,7 +210,7 @@ def test_a_payment_through_stripe_earns_it_too(api, referrer, admin_headers):
 
     joined = _join(api, referrer["code"]).json()
     tenant_id = joined["tenant"]["tenant_id"]
-    key = {"X-CyberLogix-Key": joined["api_key"]}
+    key = {"X-Kryozyn-Key": joined["api_key"]}
     api.post("/api/licenses/me/sensors", headers=key, json={
         "sensor_id": "CC-1", "industry_vertical": "restaurant", "location_name": "Fridge"})
     api.post("/api/licenses/me/plan", headers={"Authorization": f"Bearer {joined['token']}"},
@@ -318,7 +318,7 @@ def test_cancelled_before_paying_earns_nothing(api, referrer, admin_headers, set
     joined = _join(api, referrer["code"]).json()
     tenant_id = joined["tenant"]["tenant_id"]
     token = {"Authorization": f"Bearer {joined['token']}"}
-    key = {"X-CyberLogix-Key": joined["api_key"]}
+    key = {"X-Kryozyn-Key": joined["api_key"]}
     api.post("/api/licenses/me/sensors", headers=key, json={
         "sensor_id": "CX-1", "industry_vertical": "restaurant", "location_name": "Fridge"})
     api.post("/api/licenses/me/plan", headers=token, json={"plan": "starter", "confirm": True})
@@ -378,7 +378,7 @@ def test_a_partner_managed_business_earns_its_partner_not_a_referral(
     assert STORE._db.get(referrals.KIND, tenant_id)["status"] == "no_reward_partner"
     assert credits.for_tenant(referrer["tenant"]["tenant_id"]) == []
     statement = api.get("/api/partners/me/statement",
-                        headers={"X-CyberLogix-Partner": partner["api_key"]}).json()
+                        headers={"X-Kryozyn-Partner": partner["api_key"]}).json()
     assert statement["commission_usd"] > 0           # the partner is paid instead
     seen = api.get("/api/referrals/me", headers=referrer["owner"]).json()
     assert "partners" in seen["joined"][0]["status_words"]

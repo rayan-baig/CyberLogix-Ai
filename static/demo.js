@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 
 /* See it live: a pretend kitchen, run entirely in this browser.
 
@@ -82,7 +91,7 @@ function bubble(from, text) {
   $("phone-empty").hidden = true;
   const div = document.createElement("div");
   div.className = `msg ${from === "me" ? "msg-me" : "msg-them"}`;
-  div.innerHTML = `<span class="msg-from">${from === "me" ? "You" : "CyberLogix"}</span>${esc(text)}`;
+  div.innerHTML = `<span class="msg-from">${from === "me" ? "You" : esc(BRAND.short)}</span>${esc(text)}`;
   $("thread").appendChild(div);
   $("thread").scrollTop = $("thread").scrollHeight;
 }
@@ -167,7 +176,7 @@ function showCall(on, missed) {
   box.hidden = true;
   if (missed && !run.events.has("missed")) {
     run.events.add("missed");
-    bubble("them", "Missed call from CyberLogix.");
+    bubble("them", `Missed call from ${BRAND.short}.`);
   }
 }
 

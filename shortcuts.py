@@ -13,6 +13,7 @@ the period — never invented — and says so when there is no data to draw on.
 
 from __future__ import annotations
 
+from brand import APP_NAME
 import logging
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
@@ -166,7 +167,7 @@ def _fallback(profile: Dict[str, Any], evidence: Dict[str, Any], days: int) -> s
 
     lines.append("")
     lines.append(
-        "Compiled automatically by CyberLogix AI from continuous sensor "
+        f"Compiled automatically by {APP_NAME} from continuous sensor "
         "telemetry. Figures cover only the period stated."
     )
     return "\n".join(lines)
@@ -222,7 +223,7 @@ def run_shortcut(
         )
 
     prompt = f"""
-    You are the CyberLogix AI compliance clerk producing a document titled
+    You are the {APP_NAME} compliance clerk producing a document titled
     "{profile['shortcut_name']}" for a {profile['name']} operator.
 
     Purpose of this document: {profile['shortcut_description']}

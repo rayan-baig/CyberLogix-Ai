@@ -23,6 +23,7 @@ the one failure a monitoring product cannot warn you about by itself.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -398,7 +399,7 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
     urgent = sum(1 for r in digest["rows"] if r["urgency"] == "high")
 
     # Ordered worst-first and kept short. The first version read
-    # "CyberLogix: $35,964 booked, 3 need a person (1 urgent), and
+    # "Kryozyn: $35,964 booked, 3 need a person (1 urgent), and
     # something is broken" — folded across two header lines and truncated
     # by every mail client at about the point where it stopped being
     # reassuring. What is wrong goes first, because that is the half that
@@ -411,7 +412,7 @@ def send_operator_digest(now: Optional[datetime] = None) -> Dict[str, Any]:
     elif digest["needs_a_person"]:
         parts.append(f"{digest['needs_a_person']} to call")
     parts.append(f"${digest['arr_usd']:,.0f} booked")
-    subject = "CyberLogix: " + ", ".join(parts)
+    subject = f"{APP_SHORT}: " + ", ".join(parts)
 
     return send_mail(
         to_address=OPERATOR_EMAIL,

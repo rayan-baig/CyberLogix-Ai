@@ -2,7 +2,7 @@
 
 The company site's early-access list promises founding members a launch
 discount by a code. Elsewhere that code is a card processor's promotion
-code at checkout. CyberLogix bills from its own invoices (contracts.py),
+code at checkout. Kryozyn bills from its own invoices (contracts.py),
 with payment links for each invoice, so a processor's promotion code has
 nothing to attach to here. The discount is one of our own invoice lines
 instead, worked out exactly like the offer to stay (retention.py).
@@ -30,6 +30,7 @@ operator's numbers on /book.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import os
 import re
@@ -204,7 +205,7 @@ def apply(tenant: Tenant, code: str, via: str,
         STORE._db.put(FOUNDER_KIND, tenant.tenant_id, row)
     record_event("founder", int(row["months"]))
     STORE.record_audit(
-        tenant_id=tenant.tenant_id, actor="CyberLogix", actor_role="system",
+        tenant_id=tenant.tenant_id, actor=APP_SHORT, actor_role="system",
         action="founder_code.used",
         detail=f"Founding member code entered ({via}): {words(row['percent'], row['months'])}.")
     logger.info("Business %s entered the founding member code (%s).", tenant.tenant_id, via)

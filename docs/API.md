@@ -13,12 +13,12 @@ through it.
 
 Three credentials reach the API:
 
-* a **per-sensor ingest key** in `X-CyberLogix-Sensor-Key` (or as
+* a **per-sensor ingest key** in `X-Kryozyn-Sensor-Key` (or as
   `api_key_token` for third-party hardware) belongs to one asset and does
   one thing: report readings, for that asset. Issued once when the sensor
   is registered, never echoed again, rotatable per sensor, and dies with
   the sensor. **This is what belongs on the hardware.**
-* a **tenant API key** in `X-CyberLogix-Key` identifies a machine — a
+* a **tenant API key** in `X-Kryozyn-Key` identifies a machine — a
   provisioning script, the autopilot scheduler — and carries no human
   identity. Returned exactly once, at onboarding, and never echoed again;
 * a **bearer session token** in `Authorization` identifies a signed-in person,
@@ -95,7 +95,7 @@ Bootstrap the first owner with the tenant API key, then invite the rest:
 
 ```bash
 curl -X POST localhost:8080/api/accounts/bootstrap \
-  -H "X-CyberLogix-Key: $KEY" -H 'Content-Type: application/json' -d '{
+  -H "X-Kryozyn-Key: $KEY" -H 'Content-Type: application/json' -d '{
   "email": "dana@blueharbor.example",
   "full_name": "Dana Reyes",
   "password": "a-long-passphrase"
@@ -126,14 +126,14 @@ compliance report is only as good as its provenance.
 
 **Provisioning a paid account is different.** `POST /api/licenses/tenants`
 still exists for it, and anything above a trial needs
-`X-CyberLogix-Provisioning` matching `CYBERLOGIX_PROVISIONING_KEY`. With
+`X-Kryozyn-Provisioning` matching `CYBERLOGIX_PROVISIONING_KEY`. With
 that variable unset no paid account can be created at all, which is the
 right default: a deployment nobody has configured should refuse to hand
 out Enterprise licences rather than hand them to everybody.
 
 ```bash
 curl -X POST localhost:8080/api/licenses/tenants \
-  -H "X-CyberLogix-Provisioning: $PROVISIONING_KEY" \
+  -H "X-Kryozyn-Provisioning: $PROVISIONING_KEY" \
   -H 'Content-Type: application/json' -d '{
   "company_name": "Blue Harbor Yacht Club",
   "contact_name": "Dana Reyes",

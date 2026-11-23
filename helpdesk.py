@@ -15,8 +15,9 @@ keeps in step with this list.
 
 from __future__ import annotations
 
+from brand import APP_SHORT, CHECKLIST_APP, CONTACT_EMAIL
+from urllib.parse import quote
 import html
-import os
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter
@@ -26,7 +27,8 @@ router = APIRouter(prefix="/api/help", tags=["Help"])
 # Where a customer writes for help. Unset, the page falls back to the
 # reply-to address on our mail, and failing that says where else to look
 # rather than inventing an address.
-SUPPORT_EMAIL = os.environ.get("CYBERLOGIX_SUPPORT_EMAIL", "").strip()
+# The setting is CYBERLOGIX_SUPPORT_EMAIL, read in brand.py with the names.
+SUPPORT_EMAIL = CONTACT_EMAIL
 
 
 def support_address() -> str:
@@ -56,7 +58,7 @@ def talk_to_us() -> Dict[str, str]:
     """
     address = support_address()
     if address:
-        return {"href": f"mailto:{address}?subject=A%20quote%20for%20CyberLogix",
+        return {"href": f"mailto:{address}?subject=" + quote(f"A quote for {APP_SHORT}"),
                 "address": address}
     return {"href": "/help#help", "address": ""}
 
@@ -353,10 +355,10 @@ def faq() -> List[Dict[str, Any]]:
                 "Never a share of savings. The optional extras are flat "
                 f"monthly fees: {add_on_names}.",
                 *([f"The {e(bundle['name'])} sends each day's fridge and "
-                   "freezer record to OmniArmor, which fills in its "
+                   f"freezer record to {CHECKLIST_APP}, which fills in its "
                    "temperature-log checks, and includes "
                    f"{e(bundle['includes'])}. Connect it under Setup, "
-                   "OmniArmor connection. It is free during the trial and "
+                   f"{CHECKLIST_APP} connection. It is free during the trial and "
                    "billed while it is connected."] if bundle else []),
                 f"Paying yearly makes the extras {e(yearly_label())} too, "
                 "like everything else on the bill.",

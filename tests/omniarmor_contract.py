@@ -1,6 +1,6 @@
-"""OmniArmor's side of the Kitchen Safety Bundle, ported, for the tests.
+"""Aegizyn's side of the Kitchen Safety Bundle, ported, for the tests.
 
-`validate` below is OmniArmor's own `validate` from
+`validate` below is Aegizyn's own `validate` from
 omniarmor_app/connections.py, copied with its limits and lists, minus the
 Flask parts. The fake server answers the way that module's
 `cyberlogix_daily` answers: the key, the content type, the body size,
@@ -9,9 +9,9 @@ report twice. Every report the tests send goes through it, so a field
 this app builds wrong fails here.
 
 Drift is caught two ways: tests/test_omniarmor_bundle.py checks that this
-copy's lists and limits are omniarmor.py's, and, where OmniArmor's code
+copy's lists and limits are omniarmor.py's, and, where Aegizyn's code
 sits beside this repository (a developer machine with both checked out),
-that they are still OmniArmor's own.
+that they are still Aegizyn's own.
 """
 
 import hashlib
@@ -121,7 +121,7 @@ def _log_url(value, problems):
 
 
 def validate(body, today):
-    """OmniArmor's validate, unchanged in substance."""
+    """Aegizyn's validate, unchanged in substance."""
     if not isinstance(body, dict):
         raise PayloadError([("body", "a JSON object")])
     problems = []
@@ -214,22 +214,22 @@ def fingerprint(report):
     return hashlib.sha256(json.dumps(report, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-class FakeOmniArmor:
-    """POST /api/connect/cyberlogix/daily, as OmniArmor answers it.
+class FakeAegizyn:
+    """POST /api/connect/cyberlogix/daily, as Aegizyn answers it.
 
     Use it as omniarmor.TRANSPORT. `script` is a list of (status, headers)
     to answer with before answering properly, for retries; `today` is the
     workspace's date.
     """
 
-    def __init__(self, key, today, script=None, host="https://omniarmor.example.com"):
+    def __init__(self, key, today, script=None, host="https://aegizyn.example.com"):
         self.key = key
         self.today = today
         self.script = list(script or [])
         self.host = host
         self.calls = []          # every request, as received
         self.accepted = []       # the validated reports that changed something
-        self.reports = {}        # date -> fingerprint, as OmniArmor keeps them
+        self.reports = {}        # date -> fingerprint, as Aegizyn keeps them
 
     def __call__(self, url, key, body, headers=None):
         self.calls.append({"url": url, "key": key, "body": body,

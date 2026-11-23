@@ -1,6 +1,6 @@
-"""CyberLogix on a subdomain of MTRX Horizyn's domain, beside its siblings.
+"""Kryozyn on a subdomain of MTRX Horizyn's domain, beside its siblings.
 
-MTRX Horizyn owns the one domain. CyberLogix, OmniArmor and RankUp are its
+MTRX Horizyn owns the one domain. Kryozyn, Aegizyn and RankUp are its
 products, each on a subdomain of it, and the company's own site is on the
 apex. Separate subdomains are separate origins, and that is the point: one
 app's sign-in, storage and service worker never reach another.
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+import brand
 import invoicing
 import legal
 import mail
@@ -31,7 +32,7 @@ OTHER_ORIGINS = (
     "https://example.com",
     "https://www.example.com",
     "https://rankup.example.com",
-    "https://omniarmor.example.com",
+    "https://aegizyn.example.com",
     "https://evil.example",
 )
 
@@ -145,7 +146,7 @@ def test_the_issuer_defaults_to_mtrx_horizyn(monkeypatch):
 
 def test_the_agreements_name_mtrx_horizyn():
     for text in (legal.terms_of_service(), legal.privacy_statement()):
-        assert "CyberLogix is a product of MTRX Horizyn" in " ".join(text.split())
+        assert "Kryozyn is a product of MTRX Horizyn" in " ".join(text.split())
 
 
 def test_the_registered_name_still_reaches_the_agreements(monkeypatch):
@@ -159,12 +160,12 @@ def test_every_mail_says_whose_product_it_is(mailbox, klass):
     message = mail.compose(
         to_address="ops@example.com", subject="Hello", body="Body.", klass=klass
     )
-    assert "CyberLogix is a product of MTRX Horizyn." in message.get_body(preferencelist=("plain",)).get_content()
+    assert "Kryozyn is a product of MTRX Horizyn." in message.get_body(preferencelist=("plain",)).get_content()
 
 
 def test_the_public_pages_name_the_parent_company():
     for page in ("index.html", "signup.html", "legal.html"):
-        text = (ROOT / "static" / page).read_text()
+        text = brand.fill((ROOT / "static" / page).read_text())
         assert "MTRX Horizyn" in text, page
         assert "Cybersalus" not in text, page
 

@@ -213,7 +213,7 @@ def test_removing_them_from_the_roster_clears_it(api, kitchen, dana):
 def test_a_departure_needs_an_owner(api, kitchen, dana, tenant_factory):
     """It starts obligations that cost money."""
     headers, _ = kitchen
-    machine = {"X-CyberLogix-Key": headers["X-CyberLogix-Key"]}
+    machine = {"X-Kryozyn-Key": headers["X-Kryozyn-Key"]}
 
     refused = api.post("/api/people/departures", headers=machine, json={
         "staff_id": dana["staff_id"], "left_on": day(0)})
@@ -842,7 +842,7 @@ def test_the_nag_settles_to_one_email_per_seven_days(api, kitchen, dana):
 # is money -- that it is billed exactly once, only on refunds, never on a
 # trial, and never inflated by the terms that apply to the subscription.
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 def _refund(api, headers, off_id, amount, label="Health cover"):
