@@ -1,4 +1,4 @@
-/* Pilot core 1.4.2 · pilot-panel.css
+/* Pilot core 1.4.3 · pilot-panel.css
    The chat window that opens from the robot: dark navy-to-indigo glass with
    a blue and violet glow edge, the Pilot header, the greeting, the five
    pills, the "Type a message…" box and the round buttons at the bottom.
@@ -125,6 +125,9 @@
 .pilot-pills.pilot-pills-row { flex-direction: row; flex-wrap: wrap; gap: 6px; margin-left: 0; }
 .pilot-pills-row .pilot-pill { width: auto; gap: 8px; padding: 6px 13px; font-size: 13.5px; }
 .pilot-pills-row .pilot-pill .pilot-icon { width: 16px; height: 16px; }
+/* Under "I need an AI key to answer that one" (core 1.4.3): the same row,
+   and a quiet line saying the typed words wait in the box. */
+.pilot-nokey-row .pilot-waiting-line { margin: 8px 2px 0; }
 
 .pilot-keycard {
   display: flex; align-items: center; gap: 14px; width: 100%; margin: 16px 0 6px; padding: 14px 16px;
@@ -397,6 +400,21 @@
   .pilot-pill { padding: 6px 16px; }
   .pilot-chips-welcome { margin-top: 8px; }
   .pilot-bottom { margin-top: 8px; }
+}
+
+/* Typing on a short screen (core 1.4.3): with the keyboard open the visible
+   height drops under 500 px (320 px wide, 375 x 667) and only a line or two
+   of the answer showed. While the message box has focus (.pilot-typing) and
+   the visible height is short (.pilot-short, from the visual viewport; or a
+   short window), the tagline, the grown-ups line and the round buttons step
+   aside. Back as soon as the box loses focus. */
+.pilot-panel.pilot-typing.pilot-short .pilot-tagline,
+.pilot-panel.pilot-typing.pilot-short .pilot-foot-note,
+.pilot-panel.pilot-typing.pilot-short .pilot-bottom { display: none; }
+@media (max-height: 500px) {
+  .pilot-panel.pilot-typing .pilot-tagline,
+  .pilot-panel.pilot-typing .pilot-foot-note,
+  .pilot-panel.pilot-typing .pilot-bottom { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

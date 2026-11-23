@@ -34,20 +34,20 @@ LAZY = ("pilot-panel.js", "pilot-engine.js", "pilot-providers.js", "pilot-media.
         "pilot-panel.css", "pilot-cyberlogix-pack.js", "pilot-motion.js", "pilot-actor.js", "pilot-actor.css")
 MOUNTED = ("/", "/pricing", "/help", "/help/sensors", "/for", "/for/restaurant", "/for/florists", "/demo",
            "/console", "/today")
-# Pilot core 1.4.2 as it ships on the MTRX Horizyn site (commit a1c9253), with
+# Pilot core 1.4.3 as it ships on the MTRX Horizyn site (commit ea7498b), with
 # its phone-size pictures of the robot and the resting layers (unchanged since 1.4.1).
 # A newer core is copied into every app together, and these change with it.
 CORE_SHA256 = {
-    "pilot-actor.css": "2af8e3b6eb5c5602",
-    "pilot-actor.js": "b5615a34ab14badf",
-    "pilot-engine.js": "117d3e616162c14e",
-    "pilot-mascot.js": "70137849a3a8ae3e",
-    "pilot-media.js": "ff6d67924334ca68",
-    "pilot-motion.js": "8f120150bcec155b",
-    "pilot-panel.css": "34d975d7821c9cbf",
-    "pilot-panel.js": "ecb25a6450b46555",
-    "pilot-providers.js": "2ec1a989f9ec833d",
-    "pilot-render.js": "d4f6fcd3d64a63f6",
+    "pilot-actor.css": "cd0523dd7bff7fca",
+    "pilot-actor.js": "cc21acae5f4b18e4",
+    "pilot-engine.js": "d88fc32f0a22f7ba",
+    "pilot-mascot.js": "83119ad55911c85f",
+    "pilot-media.js": "83d0736833050b9d",
+    "pilot-motion.js": "ab67ffb8472c8399",
+    "pilot-panel.css": "e59ea964fa06988a",
+    "pilot-panel.js": "239399d3ec2dab68",
+    "pilot-providers.js": "aa9b3eea5f1ea447",
+    "pilot-render.js": "ba06dd770948b38c",
     "pilot-rest-body-112.webp": "0bc7a049f517a89a",
     "pilot-rest-body-168.webp": "f71583ad3933cd37",
     "pilot-rest-body.webp": "121ef0b2da9fd734",
@@ -62,9 +62,9 @@ CORE_SHA256 = {
     "pilot-robot-168.webp": "adb6cede3ad959b8",
     "pilot-robot-176.webp": "6bbae2f53510e257",
     "pilot-robot-256.webp": "7f4c60546b37759e",
-    "pilot-store.js": "7b1f93b7569eea47",
-    "pilot.css": "d421e8108a3be1d3",
-    "pilot.js": "b42d370592e27541",
+    "pilot-store.js": "8493e43b6f41c0c0",
+    "pilot.css": "b93ee7d118aa24ae",
+    "pilot.js": "9aabc8b0a7782e6c",
 }
 # The moving robot's pose pictures (static/pilot/poses/), copied with the core.
 POSES_SHA256 = {
@@ -212,11 +212,11 @@ def test_the_core_is_the_shared_core_unchanged():
         match = re.fullmatch(r"(?://|/\*) Pilot core (\d+\.\d+\.\d+) · " + re.escape(name) + r"(?: \*/)?", first)
         assert match, (name, first)
         versions.add(match.group(1))
-    assert versions == {"1.4.2"}
+    assert versions == {"1.4.3"}
     for name in CORE:
         if name.endswith(".js"):
-            assert 'const VERSION = "1.4.2";' in (PILOT / name).read_text(), name
-    assert "core 1.4.2" in (ROOT / "docs/PILOT.md").read_text()
+            assert 'const VERSION = "1.4.3";' in (PILOT / name).read_text(), name
+    assert "core 1.4.3" in (ROOT / "docs/PILOT.md").read_text()
 
 
 def test_the_robot_is_the_owners_picture_small_enough():

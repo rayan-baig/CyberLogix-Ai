@@ -1,4 +1,4 @@
-/* Pilot core 1.4.2 · pilot.css
+/* Pilot core 1.4.3 · pilot.css
    The robot in the corner (the owner's picture): its place, size, status
    dot, a gentle float and a glow while thinking, and the moving robot. Loaded by pilot.js without holding up the page. The chat
    window's own look is in pilot-panel.css, fetched only when it opens.
@@ -197,8 +197,9 @@
   /* --pilot-peek-scale 0.82: the tucked-away robot stays a 44 px tap target (56 px x 0.82). */
   :root.pilot-on { --pilot-gutter: calc(56px * 0.97 + 24px); --pilot-side: 24px; }
   /* keepInViewport: room at the side for the tucked-away robot's edge (it is 46 px, 3 px in; placement keeps it off the
-     page's words, and it is see-through a little where it has to tuck over them). */
-  :root.pilot-on.pilot-keep-in { --pilot-side: 30px; }
+     page's words, and it is see-through a little where it has to tuck over them). Core 1.4.3: 34 px (was 30), so the
+     tip of its ring clears a full-width card's border at 320-390 px; it stays a 44 px tap target. */
+  :root.pilot-on.pilot-keep-in { --pilot-side: 34px; }
   :root.pilot-on .pilot-gutter-side {
     padding-right: max(var(--pilot-side), env(safe-area-inset-right, 0px));
     padding-left: max(var(--pilot-side), env(safe-area-inset-left, 0px));

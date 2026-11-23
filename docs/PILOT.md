@@ -5,7 +5,7 @@ It runs on **the person's own AI key**, from their browser, with the provider th
 (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
-The shared core is **Pilot core 1.4.2**, the same files as on the MTRX Horizyn site, copied
+The shared core is **Pilot core 1.4.3**, the same files as on the MTRX Horizyn site, copied
 unchanged into `static/pilot/`. How the core works (the robot, the window, keys and providers,
 memory, voice, pictures and videos, tabs, safe rendering, what is sent and to whom) is written
 once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is copied into every
@@ -198,6 +198,46 @@ corner, hidden rather than over the search box or tabs at 320px. On a phone it i
 often than before, by design: at the top of `/help`, and on parts of `/pricing` and
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
+**Core 1.4.3 (3.32.1): no dead end without a key.** The thirteen files from the MTRX Horizyn
+site (commit ea7498b), byte for byte; the pictures are unchanged. What changes here:
+
+- **A question nothing fits, with no key, gets an answer in the chat.** Before, key settings
+  opened. Now the core's note ("I need an AI key to answer that one. Here's what I can help with
+  right now:") shows in the chat with a row of this page's answers and links, then the welcome's
+  (each once, at most six), then "Add my AI key"; the words wait in the box and send once a key is
+  added. On the console signed in: "Log for the inspector", "It's fixed now", "What CyberLogix did
+  for you", "Which fridges need me?", "What does this alert mean?", "Is the food still OK?".
+  `noKeyReply` is left at its default (the core's words). Nothing typed is sent.
+- **The "does/this" workaround is gone.** Core 1.4.3 drops "does", "this" and the other little
+  words before it takes a plural "s" off, so they never count. "does" and "this" are off
+  "Which fridges need me?" and "It's fixed now" in `MATCH`, and "doe"/"thi" off the config's
+  own list of little words. "Does this work with my sensor?", "What does this button do?" and
+  "How does this work?" get the in-chat note on the console and `/today`; "What does this alert
+  mean?" still gets the alert's answer.
+- **A button's own words, typed, are a press.** The core now takes a pill's or a suggestion's
+  label typed whole (any case, punctuation aside) as that item. This app's routed answers do the
+  same (`sameLabel`, accents aside too), so "which fridges need me" gives exactly what pressing the
+  pill gives, not the closest of the other answers. Checked for every item on every page.
+- Also from the core, with nothing to set: the same answer is offered once under an answer, and
+  not the item a typed question just matched; 34 px of side room on a phone (the tucked robot's
+  3 px over `/for`'s link cards is gone); the window drops its tagline, the 18+ line and the round
+  buttons while typing with a phone's keyboard open; near a page's end the scrolled robot moves off
+  dense words to a wholly clear bottom corner.
+- Nothing else to remove: `screenChip` ("Sum up my fridges") and the `MATCH`/`CARRY` words stay
+  (they are this app's answers, not stopgaps); the handle and typed matching stay on; no
+  `hideWhenCrowded` or `--pilot-keep-d` here.
+
+Checked in a real browser at 320×640, 375×667, 375×812, 390×844 and 1440×900 on `/`, `/pricing`,
+`/help`, `/help/sensors`, `/for`, `/for/restaurant`, `/demo`, the console's sign-in, a new
+business's console, a console with an open alert and `/today` with and without one, scrolled top
+to bottom: the robot or the handle on every first screen, and once settled never over a link, a
+button, a box, a temperature or a status label (`/for`'s 3 px on link cards is gone). The one touch
+measured is mid-move: at the end of `/pricing` at 320px the robot, moving off the footer's words to
+the bottom-left corner, crosses 4 px of the footer's "Home" link for about a tenth of a second
+before it settles clear (reported for the core). Typed questions got this app's answers or the
+in-chat note with no request carrying the words; the window went compact while typing under 500 px;
+Pilot is still absent from `/signup`, `/legal`, a proof page, an error page and `/book`.
+
 **3.32.0: built-in answers on every page, the closest one wins.** Still core 1.4.2 (1.4.3 is
 not out yet); all of it is in `static/pilot-cyberlogix.js`.
 
@@ -300,7 +340,7 @@ written for a café or small restaurant first.
 
 | File | What it is |
 |---|---|
-| `static/pilot/*` | Pilot core 1.4.2, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
+| `static/pilot/*` | Pilot core 1.4.3, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
 | `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
 | `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
 | `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
