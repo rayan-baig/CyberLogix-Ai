@@ -1957,11 +1957,35 @@ class HubStore:
             incident.corrective_action_by = actor
             incident.corrective_action_at = now
             if disposition.strip():
-                incident.product_disposition = disposition.strip()
-                incident.food_answered_by = actor
-                incident.food_answered_at = now
+                self._set_food(incident, disposition.strip(), actor, now)
             self._save_incident(incident)
         return incident
+
+    @staticmethod
+    def _set_food(incident: Incident, disposition: str, actor: Optional[str],
+                  now: datetime, auto_minutes: Optional[float] = None) -> None:
+        """What happened to the food, and the row it adds to the alert's
+        food history (3.32.0): a change never rubs out what was said."""
+        incident.product_disposition = disposition
+        incident.food_answered_by = actor
+        incident.food_answered_at = now
+        incident.food_auto_minutes = auto_minutes
+        incident.food_history = list(incident.food_history) + [{
+            "disposition": disposition, "by": actor, "at": iso(now),
+            "auto": auto_minutes is not None, "auto_minutes": auto_minutes}]
+
+    def _food_default(self, incident: Incident) -> None:
+        """A short blip's food, recorded safe by itself as it closes
+        (3.32.0, food_value.auto_safe_minutes): "Food safe: out for 4
+        minutes", with Change, and nobody asked. Long or severe alerts keep
+        the question. Called under the lock, before the save."""
+        import food_value
+
+        minutes = food_value.auto_safe_minutes(incident, self._sensors.get(incident.sensor_id))
+        if minutes is None:
+            return
+        self._set_food(incident, "unaffected", "CyberLogix (automatic)",
+                       incident.resolved_at or utc_now(), auto_minutes=minutes)
 
     def record_disposition(self, incident: Incident, disposition: str,
                            actor: Optional[str] = None) -> Incident:
@@ -1969,9 +1993,7 @@ class HubStore:
         "Thrown away" after an alert closes (voice_dispatch.record_food),
         with who said so and when (3.30.0)."""
         with self._lock:
-            incident.product_disposition = disposition
-            incident.food_answered_by = actor
-            incident.food_answered_at = utc_now()
+            self._set_food(incident, disposition, actor, utc_now())
             self._save_incident(incident)
         return incident
 
@@ -2010,6 +2032,7 @@ class HubStore:
                 incident.close_note = (note or "").strip() or None
                 incident.closed_out_of_range = bool(out_of_range)
                 incident.close_temperature_f = temperature_f
+                self._food_default(incident)
                 self._save_incident(incident)
                 # The recovery is evidence too: an adjuster asks how long
                 # it was out of band and when it came back.
@@ -2115,11 +2138,15 @@ class HubStore:
                 return False
             live.resolved_at = utc_now()
             live.resolved_note = note
+            self._food_default(live)
             self._save_incident(live)
             self.preserve_evidence(live)
             if live is not incident:
                 incident.resolved_at = live.resolved_at
                 incident.resolved_note = note
+                for name in ("product_disposition", "food_answered_by", "food_answered_at",
+                             "food_auto_minutes", "food_history"):
+                    setattr(incident, name, getattr(live, name))
             return True
 
     def get_incident(self, incident_id: str) -> Optional[Incident]:

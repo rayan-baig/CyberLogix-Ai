@@ -118,7 +118,7 @@ def test_answered_and_back_within_two_hours_asks_rather_than_counts(api):
     row = _row(api, owner, incident_id)
     assert row["food_protected"] is None
     assert row["food_at_risk"] is None
-    assert row["food_question"]["words"] == "Back in range in about 2 hours"
+    assert row["food_question"]["words"] == "Cold again after about 2 hours out"
     assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
                     json={"food": "kept"}).status_code == 200
     row = _row(api, owner, incident_id)
@@ -192,7 +192,7 @@ def test_the_monthly_email_uses_the_same_rule_and_names_the_risk(operator_factor
     kept.product_disposition = "unaffected"
     total = food_value.month_total([(kept, sensor), (closed(8.0), sensor), (closed(1.0), sensor)])
     assert total == {"usd": food_value.STOCK_USD["food"]["fridge"], "alerts": 1, "at_risk": 1,
-                     "thrown": 0, "unanswered": 1}
+                     "thrown": 0, "unanswered": 1, "auto_safe": 0}
     report = {"company_name": "Rosa's Cafe", "month_label": "October 2026", "units": 1,
               "readings": 100, "in_range_percent": 99.0, "breach_count": 0,
               "food_protected_usd": 800, "food_protected_alerts": 1, "food_at_risk_alerts": 1,
@@ -396,13 +396,13 @@ def test_this_month_says_the_alerts_how_fast_and_the_food(api):
     assert api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={}).status_code == 200
     # Until somebody says, "food not answered yet", never "food kept" (3.30.0).
     month = api.get("/api/console/overview", headers=owner).json()["this_month"]
-    assert month["words"] == "This month: 1 alert, answered in 10 minutes, food not answered yet."
+    assert month["words"] == "This month: 1 alert · answered in 10 minutes · 1 food answer missing"
     assert month["food_kept"] == 0 and month["food_usd"] == 0
     assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
                     json={"food": "kept"}).status_code == 200
     month = api.get("/api/console/overview", headers=owner).json()["this_month"]
     assert month["alerts"] == 1 and month["food_kept"] == 1
-    assert month["words"] == "This month: 1 alert, answered in 10 minutes, food kept."
+    assert month["words"] == "This month: 1 alert · answered in 10 minutes · food kept"
     assert month["food_usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
     assert "monthLine(data, units);" in SIMPLE_JS
     assert 'id="month-line"' in (STATIC / "simple.html").read_text()

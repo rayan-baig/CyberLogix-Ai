@@ -171,12 +171,28 @@
     return "Nobody has answered yet, and the call did not go through.";
   }
 
+  /* The food question's first line (3.32.0): "Cold again after 2 minutes
+     out (since 9:10 PM)", the clock in the reader's own time. "Food at
+     risk: check it" as it is. The same on /today, the console and Pilot. */
+  function foodBack(q) {
+    if (!q) return "";
+    const since = !q.at_risk && q.out_since ? clock(q.out_since) : "";
+    return since ? `${q.words} (since ${since})` : String(q.words || "");
+  }
+
+  /* "Change" shows until this answer's change_until (24 hours, 3.32.0). */
+  function changeable(untilIso) {
+    const until = at(untilIso);
+    return Boolean(until) && until.getTime() >= now();
+  }
+
   let clockNow = () => Date.now();
   function now() { return clockNow(); }
   /* For the tests: read the time from here instead of the computer. */
   function setNow(fn) { clockNow = typeof fn === "function" ? fn : () => Date.now(); }
 
-  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet };
+  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet,
+    foodBack, changeable };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CLXWords = Object.freeze(api);
 })(typeof window !== "undefined" ? window : globalThis);

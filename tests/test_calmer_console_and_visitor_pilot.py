@@ -189,44 +189,30 @@ def test_no_price_moved():
 def test_pilot_greets_a_visitor_on_the_public_pages():
     assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in PILOT_APP
     assert "const ownPage = onConsole || onToday;" in PILOT_APP
-    visitor = PILOT_APP[PILOT_APP.index("const VISITOR_PILLS"):PILOT_APP.index("const ownPage")]
-    for label in ("Will it work for my café?", "What does it cost?", "See it live",
-                  "What sensors do I need?", "Add my AI key"):
-        assert f'label: "{label}"' in visitor
-    assert "Which fridges need me?" not in visitor
-    own = PILOT_APP[PILOT_APP.index("const OWN_PILLS"):PILOT_APP.index("const VISITOR_PILLS")]
-    assert 'label: "Which fridges need me?"' in own
+    # Run, not read (3.32.0): a visitor's five on a public page, the
+    # console's five on the person's own pages.
+    for pathname in ("/", "/pricing", "/help"):
+        assert _welcome_in_node(pathname) == [("chat", "Will it work for my café?", "answer", True), ("bars", "What does it cost?", "answer", True),
+        ("spark", "See it live", "link /demo", True), ("help", "What sensors do I need?", "answer", True),
+        ("key", "Add my AI key", "settings", False)], pathname
+    for pathname in ("/console", "/today"):
+        assert _welcome_in_node(pathname) == [("bars", "Which fridges need me?", "answer", True), ("help", "What does this alert mean?", "answer", True),
+        ("chat", "Is the food still OK?", "answer", True), ("bolt", "How do I connect a sensor?", "answer", True),
+        ("key", "Add my AI key", "settings", False)], pathname
     # The front page's own chips no longer repeat the welcome.
     front = PILOT_APP[PILOT_APP.index('"/": ['):PILOT_APP.index('"/pricing": [')]
     assert "Will it work for my café?" not in front and "What would it cost me?" not in front
 
 
 def test_the_welcome_buttons_pass_the_cores_own_check_in_node():
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is not installed")
-    visitor = PILOT_APP[PILOT_APP.index("const VISITOR_PILLS"):PILOT_APP.index("const ownPage")]
-    script = f"""
-globalThis.window = globalThis; globalThis.document = {{ addEventListener() {{}} }};
-require({json.dumps(str(STATIC / 'pilot' / 'pilot-render.js'))});
-require({json.dumps(str(STATIC / 'pilot' / 'pilot-panel.js'))});
-const cafeAnswer = "An answer.";
-{visitor}
-console.log(JSON.stringify(window.PilotPanel.welcomePills(VISITOR_PILLS, "https://cyberlogix.example/")));"""
-    out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
-    if out.returncode != 0:
-        pytest.skip(f"the core panel does not load bare in Node here: {out.stderr[:200]}")
-    pills = json.loads(out.stdout)
-    assert [p["label"] for p in pills][:3] == ["Will it work for my café?",
-                                                "What does it cost?", "See it live"]
-    assert pills[-1]["builtin"] is True and pills[-1]["action"] == "settings"
-    # Core 1.4.0 (3.27.0): three go to their page and one is answered at
-    # once, so none of them waits for a key.
-    assert [p.get("link") for p in pills[1:4]] == [
-        "https://cyberlogix.example/pricing", "https://cyberlogix.example/demo",
-        "https://cyberlogix.example/help/sensors"]
-    assert "answer" in pills[0] and "link" not in pills[0]
-    assert all(p["icon"] != "spark" or p["label"] == "See it live" for p in pills)
+    """Core 1.4.0, 3.32.0: every visitor pill but the key is answered at
+    once (the price and the sensors from the real figures) or is a page of
+    this site, so none of them waits for a key."""
+    pills = _welcome_in_node("/")
+    assert [p[1] for p in pills][:3] == ["Will it work for my café?", "What does it cost?", "See it live"]
+    assert pills[-1][2] == "settings"
+    assert all(kind != "settings" for _i, _l, kind, _m in pills[:-1])
+    assert all(icon != "spark" or label == "See it live" for icon, label, _k, _m in pills)
 
 
 def test_status_labels_are_on_the_avoid_list():
@@ -298,3 +284,35 @@ console.log(JSON.stringify([link.textContent, other.textContent]));"""
 
     assert run("cls_abc") == ["Your console", "Open the console"]
     assert run(None) == ["Sign in", "Open the console"]
+
+
+def _welcome_in_node(pathname):
+    """The config mounted at `pathname` in Node, its welcome pills through
+    the core's own cleaning: [(icon, label, kind)], kind "answer", "link
+    /path" or the built-in's action (3.32.0: the pills are built in code,
+    so they are read by running it, not by pattern)."""
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent.parent
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    script = f"""
+const vm = require("node:vm"), fs = require("node:fs");
+const sb = {{ window: {{}}, document: {{}}, URL }};
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot' / 'pilot-panel.js'))}, "utf8"), sb);
+let given = null;
+const path = {json.dumps(pathname)};
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-cyberlogix.js'))}, "utf8"), {{
+  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://cyberlogix.example" + path }},
+    localStorage: {{ getItem: () => null }} }},
+  document: {{ getElementById: () => ({{ dataset: {{}} }}), title: "" }}, URL }});
+const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://cyberlogix.example" + path);
+console.log(JSON.stringify(pills.map((p) => [p.icon, p.label, p.link ? "link " + new URL(p.link).pathname + new URL(p.link).hash
+  : p.answer !== undefined ? "answer" : p.action, Boolean(p.match && p.match.length)])));"""
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr[-1500:]
+    return [tuple(row) for row in json.loads(out.stdout)]

@@ -68,6 +68,9 @@ PATHS = [
     "/api/leaving",
     # "How to connect it": the brands and their steps (sensor_guides.WIZARD).
     "/api/sensor-guides/wizard",
+    # What CyberLogix did for you (3.32.0), on /today; the stub falls back
+    # to the path alone, so this one answers the week and the month.
+    "/api/console/did-for-you",
 ]
 
 # Paths the console names but never GETs: things it posts, deletes, or

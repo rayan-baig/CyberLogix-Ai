@@ -1187,9 +1187,11 @@ body.acct-small .nav .status-line { display: none; }
   .nav .btn-sm { padding: 6px 10px; }
   .card { padding: 14px; }
   /* The seven summary tiles as a compact two-column grid: about a third
-     of a phone's screen, not most of it. The odd one out spans the row. */
+     of a phone's screen, not most of it. With an odd count the first one
+     spans the row (3.32.0), so three read 1 + 2 and seven 1 + 2 + 2 + 2,
+     never two side by side over one left on its own. */
   .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px; }
-  .tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .tiles > .tile:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
   .tile {
     display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 7px;
     align-content: start; padding: 8px 10px 9px; border-radius: 10px; box-shadow: none;
@@ -1218,6 +1220,10 @@ body.acct-small .nav .status-line { display: none; }
   #fleet-card .card-head .card-title { flex: 1 1 100%; }
   #fleet-card .card-head .nav-spacer { display: none; }
 }
+/* Simulate and Table view start where the title does (3.32.0): the empty
+   note beside the title took a gap of its own, so on a phone the buttons
+   sat 12px in from it. */
+#fleet-card .card-head .card-note:empty { display: none; }
 
 
 /* ==========================================================================
@@ -1974,6 +1980,46 @@ body.wall .needs-bar-acts { display: none; }
 .field-error { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--critical); }
 .field-error[hidden] { display: none; }
 input[aria-invalid="true"] { border-color: var(--critical); }
+
+/* After "Thrown away" (static/answer.js, 3.32.0): the insurance pack and
+   the note of what went, and the note's own box, prefilled. */
+.loss-write label { display: block; margin: 4px 0 8px; }
+#loss-text {
+  width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--ink); font: inherit; resize: vertical; min-height: 84px;
+}
+.loss-dialog .food-acts .btn { flex: 1 1 auto; }
+/* The food on an alert (console.js, 3.32.0): who said it, "Change" for 24
+   hours, and after "Thrown away" the two next steps. */
+.food-change { font-size: 12.5px; margin-left: 6px; }
+.food-change-to { display: none; }
+.food-said.changing .food-change-to, .food-saved.changing .food-change-to { display: flex; }
+.food-said.changing .food-change, .food-saved.changing .food-change { display: none; }
+.food-loss { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* The TV screen's bar (3.32.0): for looking at, so no buttons on it, and
+   "Leave TV screen" sits inside its right end instead of straddling its
+   lower edge. The bar starts at the very top (the nav is hidden there). */
+body.wall .needs-bar { top: 0; }
+body.wall .needs-bar-acts { display: none !important; }
+body.wall .needs-bar-in { min-height: 56px; padding-right: 190px; max-width: none; }
+body.wall #wall-exit { top: 9px; }
+body.wall .needs-bar:not([hidden]) ~ main { padding-top: 22px; }
+
+/* The Advanced tab's sections (console.js, advSections, 3.32.0): four
+   headings that open their own cards, not fourteen cards in a column. */
+.adv-sections { display: grid; gap: 8px; margin: 0 0 16px; }
+.adv-sec {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--ink); font: inherit;
+}
+.adv-sec:hover { border-color: var(--border-lit); }
+.adv-sec.open { border-color: var(--accent); }
+.adv-sec-title { display: block; font-weight: 600; font-size: 15px; }
+.adv-sec-title::after { content: " ▸"; color: var(--muted); }
+.adv-sec.open .adv-sec-title::after { content: " ▾"; }
+.adv-sec-n { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+.adv-sec-say { display: block; margin-top: 3px; font-size: 13px; color: var(--muted); line-height: 1.45; }
 
 </style>
 <style>

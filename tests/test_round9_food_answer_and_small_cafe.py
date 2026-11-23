@@ -97,7 +97,7 @@ def _assert_unanswered(row, minutes_words="12 minutes"):
     assert row["state"] == "resolved"
     assert row["food_protected"] is None, "no claim before an answer"
     assert row["food_answer_words"] is None
-    assert row["food_question"]["words"] == f"Back in range in {minutes_words}"
+    assert row["food_question"]["words"] == f"Cold again after {minutes_words} out"
     assert row["food_question"]["at_risk"] is False
     assert row["food_question"]["ask_on_today"] is True
 
@@ -116,7 +116,7 @@ def test_its_fixed_while_warm_then_closing_by_itself_asks_and_never_says_kept(ap
     _pulse(api, key, 38.0)                      # closes by itself, on Rosa's word
     _assert_unanswered(_row(api, owner, incident_id))
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 1 alert, answered in 12 minutes, food not answered yet."
+    assert month["words"] == "This month: 1 alert · answered in 12 minutes · 1 food answer missing"
     assert month["food_usd"] == 0 and month["food_kept"] == 0
     assert "food kept" not in month["words"]
 
@@ -156,7 +156,7 @@ def test_its_fixed_in_range_asks_and_the_answer_is_saved_with_who_and_when(api):
     again = STORE.get_incident(incident_id)
     assert again.food_answered_by and again.food_answered_at is not None
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 1 alert, answered in 12 minutes, food thrown away."
+    assert month["words"] == "This month: 1 alert · answered in 12 minutes · food thrown away"
     assert month["food_answers"][0]["words"] == "Thrown away"
     assert month["food_answers"][0]["by_name"] == "Rosa"
     assert month["food_answers"][0]["unit"] == "Walk-in fridge"
@@ -175,7 +175,7 @@ def test_its_fixed_in_range_asks_and_the_answer_is_saved_with_who_and_when(api):
     assert row["food_answer_words"] == "Food kept"
     assert row["food_protected"]["words"] == "Food protected: about $3,000"
     month = _overview(api, owner)["this_month"]
-    assert month["words"].endswith("food kept.")
+    assert month["words"].endswith("· food kept")
     assert month["food_usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
 
 
@@ -211,7 +211,7 @@ def test_a_long_one_is_at_risk_and_the_rule_is_the_saved_answer_only(operator_fa
 
     quick = closed(0.2)
     assert food_value.protected(quick, sensor) is None, "answered and quick is not kept"
-    assert food_value.question(quick, sensor)["words"] == "Back in range in 12 minutes"
+    assert food_value.question(quick, sensor)["words"] == "Cold again after 12 minutes out"
     long = closed(8.0)
     q = food_value.question(long, sensor)
     assert q["at_risk"] is True and q["words"] == "Food at risk: check it"
@@ -226,7 +226,7 @@ def test_a_long_one_is_at_risk_and_the_rule_is_the_saved_answer_only(operator_fa
     assert food_value.question(old, sensor)["ask_on_today"] is False
     total = food_value.month_total([(quick, sensor), (long, sensor), (thrown, sensor), (kept, sensor)])
     assert total == {"usd": food_value.STOCK_USD["food"]["fridge"], "alerts": 1, "thrown": 1,
-                     "at_risk": 1, "unanswered": 1}
+                     "at_risk": 1, "unanswered": 1, "auto_safe": 0}
 
 
 def test_the_monthly_email_follows_the_saved_answers():
@@ -247,10 +247,11 @@ def test_the_console_shows_the_question_the_answer_and_the_history():
     ask = _function(CONSOLE_JS, "foodAtRisk")
     assert "i.food_question" in ask and "data-food-kept" in ask and "data-food-thrown" in ask
     said = _function(CONSOLE_JS, "foodAnswered")
-    assert "i.food_answer_words, i.food_answered_by_name" in said
+    assert "i.food_answer_words, i.food_auto ? \"recorded automatically\" : i.food_answered_by_name" in said
     assert "i.food_protected ?" in said, "the estimate only beside food kept"
     timeline = _function(CONSOLE_JS, "incidentTimeline")
-    assert "${i.food_answer_words}, ${by}" in timeline
+    # 3.32.0: every answer in the history, a change said as one.
+    assert "i.food_history" in timeline and "Changed to ${row.words}" in timeline
     # "Needs you now" asks about the food once nothing is live.
     bar = _function(CONSOLE_JS, "renderNeedsBar")
     assert "One thing to do: check the ${esc(q.word)} in" in bar

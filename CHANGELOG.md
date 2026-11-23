@@ -4,6 +4,45 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.32.0 — 2026-11-23
+
+Short blips look after themselves, losing food takes two taps to record
+properly, and a new screen shows what CyberLogix did for you. No price or
+plan term has changed.
+
+- **A short blip doesn't ask you anything.** If a fridge or freezer comes
+  back in range after less than 30 minutes and never got far too warm,
+  CyberLogix records "Food safe: out for 12 minutes" by itself, well inside
+  the 2-hour rule. No "One thing to do", no red bar, and no dollars counted
+  for it. A "Change" link is right beside it. Longer or hotter alerts, and
+  vaccine and medicine fridges, still ask. Whoever runs the server can
+  change the 30 minutes (CYBERLOGIX_FOOD_SAFE_MINUTES), or turn it off.
+- **Clearer words for a closed alert.** "Back in range in 2 minutes" is now
+  "Cold again after 2 minutes out (since 9:10 PM)", on the Simple view, the
+  console, its bar and in Pilot. The month is one short line: "3 alerts ·
+  all answered · 1 food answer missing".
+- **After "Thrown away".** You're offered "Make the insurance pack" and
+  "Add what was thrown away", with the note already started ("Thrown away
+  from Walk-in fridge after 2 hours out (worst 52°F): "). Any food answer
+  can be changed for 24 hours, and every change is kept in the alert's
+  history.
+- **What CyberLogix did for you.** The week or the month on one screen:
+  readings checked, alerts and how fast someone answered, what happened to
+  the food, any sensor gone quiet, and the printable log for the same days.
+  During the first week of a trial it also shows a sample of a full week,
+  marked as a sample.
+- **Pilot answers more without a key, on every page.** "How much does it
+  cost?" gives the real prices ("Starter $59 a month, up to 3 fridges or
+  freezers"), "Do you sell sensors?" says we don't and which ones work, and
+  "Which plan for my café?" works everywhere. "Is my walk-in fridge OK?"
+  answers with its temperature, and "How is the freezer?" says when you
+  haven't added one. When two answers fit, Pilot picks the closer one.
+- **Tidier screens.** The TV screen's bar has no buttons and "Leave TV
+  screen" sits inside it. Three figures on a phone read one wide, then two.
+  The Advanced tab is four sections you open one at a time. The "What this
+  is" heading changes as you open and close it. The bring-a-friend reward
+  is described in your own plan's terms (no "$149 off" on Starter).
+
 ## 3.31.0 — 2026-11-22
 
 Pilot, the helper robot, moves to the shared Pilot core 1.4.2. You can type

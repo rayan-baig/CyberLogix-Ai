@@ -368,13 +368,17 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 const ask = (pill) => (typeof pill.answer === "function" ? pill.answer({ facts: {}, ready: false, label: pill.label }) : pill.answer);
 const NO_PEOPLE = /Dana|Reyes|dana@|\+1555|\]\(\/evil/;
 
-test("1.4.0: the visitor's link pills are core links now (See it live, What does it cost?, What sensors do I need?); the 3.26.0 click catcher is gone", () => {
+test("3.32.0: the visitor's pills: the price and the sensors answered from the real figures (with their pages linked), See it live a core link; the 3.26.0 click catcher is gone", () => {
   for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
     const p = pills(mountAt(pathname), pathname);
     assert.deepEqual(J(p.map((x) => x.label)), ["Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"], pathname);
-    assert.equal(p[1].link, `${BASE}/pricing`);
+    const price = ask(p[1]);
+    assert.ok(price.includes("**Starter $59 a month, up to 3 fridges or freezers**"), price);
+    assert.ok(price.includes("**Growth $149 a month a location**") && price.includes("[See all prices](/pricing)"), price);
     assert.equal(p[2].link, `${BASE}/demo`);
-    assert.equal(p[3].link, `${BASE}/help/sensors`);
+    const sensors = ask(p[3]);
+    assert.ok(sensors.startsWith("We don't sell sensors."), sensors);
+    assert.ok(sensors.includes("[Which sensors work, brand by brand](/help/sensors)"), sensors);
     assert.equal(p[4].action, "settings");
     assert.equal(p[4].builtin, true);
   }
@@ -404,7 +408,9 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
     assert.match(text, /These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\*/);
     assert.match(text, /- \*\*Kitchen walk-in\*\* \(47°F\): Too warm for /);
     assert.match(text, /- \*\*Prep fridge x\(\/evil\)\*\*: No signal|- \*\*Prep fridge x\(\/evil\)\*\*: We have not heard/);
-    assert.ok(!text.includes("Bar freezer"), "a fine unit is not listed");
+    // 3.32.0: a fine unit is not in the list, but its temperature is under it.
+    assert.ok(!/- \*\*Bar freezer/.test(text), "a fine unit is not listed");
+    assert.ok(text.includes("The rest are fine: Bar freezer 2°F."), text);
     assert.ok(text.indexOf("Kitchen walk-in") < text.indexOf("Prep fridge"), "worst first");
     assert.match(text, /Nobody has answered an alert yet: press \*\*I'm on it\*\*/);
     assert.doesNotMatch(text, /\]\(\/evil\)/, "a unit's name can't add a link");
@@ -412,7 +418,7 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
   }
   // All fine: says so, with the count.
   assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ quiet: true }) }), "/console")[0]),
-    /Nothing needs you right now: all 2 fridges and freezers are within their limits\./);
+    /Nothing needs you right now\. All 2 are within their limits:\n- \*\*Kitchen walk-in\*\* 47°F, fine\n- \*\*Bar freezer\*\* 2°F, fine/);
   // A unit still waiting for its sensor: the wizard.
   assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ waiting: true }) }), "/console")[0]),
     /\*\*Dessert fridge\*\* is waiting for a first reading\. \[Connect a sensor\]\(\/console#connect\)/);
@@ -465,7 +471,8 @@ test("1.4.0: signed out, the console's answers say where to look instead of gues
   // The console's sign-in keeps the console's five (the page is the person's own).
   const p = pills(given, "/console");
   assert.match(ask(p[0]), /Sign in to see your fridges: \[sign in\]\(\/console\)/);
-  assert.equal(p[3].link, `${BASE}/console#connect`);
+  // 3.32.0: an answer with the link, so a typed sensor question gets the right one too.
+  assert.match(ask(p[3]), /\[Open Connect your sensor\]\(\/console#connect\)/);
   // Its suggestions need no key either: how to sign in, the reset page, the trial.
   const chips = PANEL.cleanChips(given.chips(), BASE + "/console");
   assert.match(ask(chips[0]), /email and password you signed up with, on \[the console\]\(\/console\)/);
@@ -477,7 +484,7 @@ test("1.4.0: signed out, the console's answers say where to look instead of gues
   assert.ok(follow.includes('location.hash !== "#connect"'));
   assert.ok(follow.includes("history.replaceState(null, \"\", location.pathname + location.search);"));
   assert.ok(follow.includes('openConnect("");'));
-  assert.ok(js.includes("  followConnectLink();\n  followInspectorLink().catch"), "and while the console is open");
+  assert.ok(js.includes("  followConnectLink();\n  followPacketLink();\n  followInspectorLink().catch"), "and while the console is open");
   // The pages hand over what they loaded, and nothing else is fetched for it.
   assert.ok(js.includes("overview: () => (state.token ? state.data : null),"));
   const simple = fsx.readFileSync(app("simple.js"), "utf8");
@@ -494,7 +501,8 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   assert.deepEqual(kinds("/for/restaurant"), ["ai", "ai", "answer"]);
   assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
   // "Log for the inspector" goes straight to the log once signed in (3.30.0).
-  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["link", "answer", "ai"]);
+  // 3.32.0: "What CyberLogix did for you" in place of the proof report, which needed a key.
+  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["link", "answer", "link"]);
   const texts = {};
   for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
     for (const c of mountAt(pathname).chips()) if (c.answer) texts[c.label] = ask(c);
@@ -773,4 +781,70 @@ test("1.4.2: the config leaves the handle and typed matching on and sets no core
     assert.equal("hideWhenCrowded" in given, false);
   }
   assert.ok(!CONFIG.includes("--pilot-keep-d"));
+});
+
+// ---------------------------------------------------------------- 3.32.0: built-in answers on every page
+
+const typedAnswer = (pathname, words, opts) => {
+  const given = mountAt(pathname, { overview: overviewWith(), ...opts });
+  const hit = PANEL.matchTyped(words, typedItems(given, pathname));
+  if (!hit) return null;
+  return hit.link ? `LINK ${hit.link}` : String(typeof hit.answer === "function" ? hit.answer({ facts: {}, ready: false, label: words }) : hit.answer);
+};
+const EVERY = ["/console", "/today", "/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"];
+
+test("3.32.0: the price, the sensors and the café plan are answered on every page, from the real figures, with no key", () => {
+  for (const pathname of EVERY) {
+    const price = typedAnswer(pathname, "How much does it cost?");
+    assert.ok(price && price.includes("Starter $59 a month, up to 3 fridges or freezers"), `${pathname}: ${price}`);
+    assert.ok(typedAnswer(pathname, "how much is starter").includes("Starter $59 a month"), pathname);
+    const sensors = typedAnswer(pathname, "Do you sell sensors?");
+    assert.ok(sensors && sensors.startsWith("We don't sell sensors."), `${pathname}: ${sensors}`);
+    assert.ok(typedAnswer(pathname, "What sensor should I buy?").startsWith("We don't sell sensors."), pathname);
+    const plan = typedAnswer(pathname, "Which plan for my café?");
+    assert.ok(plan && plan.includes("Starter, $59 a month"), `${pathname}: ${plan}`);
+  }
+  // The figures are the server's, not written into the config.
+  const given = mountAt("/console", { data: { ...DATA, fromPrice: "65", starterUnits: "4" }, overview: overviewWith() });
+  const hit = PANEL.matchTyped("How much does it cost?", typedItems(given, "/console"));
+  assert.ok(hit.answer({ label: "How much does it cost?" }).includes("Starter $65 a month, up to 4 fridges or freezers"));
+});
+
+test("3.32.0: 'is my fridge OK' gives temperatures, the unit asked about first, and says which kind isn't there", () => {
+  const ok = { temperature_unit: "F", incidents: [], site_wide_alerts: [], sensors: [
+    { sensor_id: "W-1", location_name: "Walk-in fridge", unit_kind: "fridge", last_temperature_display: 37.9, temperature_unit: "F", condition: { state: "ok" } },
+    { sensor_id: "P-1", location_name: "Prep fridge", unit_kind: "fridge", last_temperature_display: 38.4, temperature_unit: "F", condition: { state: "ok" } }] };
+  for (const pathname of ["/console", "/today"]) {
+    const walk = typedAnswer(pathname, "Is my walk-in fridge OK?", { overview: ok });
+    assert.ok(walk.startsWith("**Walk-in fridge** 37.9°F, fine."), walk);
+    assert.ok(walk.includes("- **Prep fridge** 38.4°F, fine"), walk);
+    const freezer = typedAnswer(pathname, "How is the freezer?", { overview: ok });
+    assert.ok(freezer.startsWith("You haven't added a freezer. [Connect one](/console#connect)"), freezer);
+    // Pressed, the pill lists every unit with its temperature.
+    const pressed = ask(pills(mountAt(pathname, { overview: ok }), pathname)[0]);
+    assert.ok(pressed.includes("- **Walk-in fridge** 37.9°F, fine\n- **Prep fridge** 38.4°F, fine"), pressed);
+    assert.ok(!pressed.includes("haven't added"), pressed);
+  }
+});
+
+test("3.32.0: a typed question gets the closest answer, whichever pill the core matched; the misses still miss", () => {
+  // Matched to "It's fixed now" (it carries the words), answered by the closest: calls, power.
+  assert.match(typedAnswer("/console", "Do you call at night?"), /^Yes, on plans with calls/);
+  assert.match(typedAnswer("/today", "What if the wifi goes down?"), /^Sensors send their readings over your internet/);
+  // On the person's own pages a warm fridge is theirs, not the visitor's explainer.
+  assert.match(typedAnswer("/console", "My fridge is too warm, what do I do?"), /need you|within their limits/);
+  assert.match(typedAnswer("/help", "My fridge is too warm, what do I do?"), /^When a fridge stays out of range/);
+  for (const pathname of EVERY) {
+    for (const words of ["Write me a poem about fridges", "What's the weather like?", "What does this button do?", "Tell me a joke"]) {
+      assert.equal(typedAnswer(pathname, words), null, `${pathname}: ${words}`);
+    }
+  }
+});
+
+test("3.32.0: the food question's line says when it went out, in the reader's clock", () => {
+  const ov = overviewWith({ quiet: true });
+  ov.incidents = [{ incident_id: "INC-3", sensor_id: "WALKIN-1", state: "resolved", resolved_at: "2026-11-20T10:00:00Z",
+    food_question: { word: "food", at_risk: false, words: "Cold again after 2 minutes out", out_since: "2026-11-20T09:58:00Z", ask_on_today: true } }];
+  const text = ask(pills(mountAt("/today", { overview: ov }), "/today")[0]);
+  assert.ok(text.includes(`Cold again after 2 minutes out (since ${Words.clock("2026-11-20T09:58:00Z")})`), text);
 });

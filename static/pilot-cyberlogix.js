@@ -130,40 +130,99 @@
   const CONNECT = onConsole || onToday ? "/console#connect" : "/help/sensors";
   const ON_IT = onToday ? "**I'm on it** under Needs you now" : "**I'm on it** at the top of the page";
 
+  // The words in a question that count, for this file's own matching
+  // (3.32.0): lower case, a plural "s" off, and the little words left out
+  // before and after (core 1.4.2 checks them only after, so it counts
+  // "does" and "this").
+  const SMALL = new Set(("a an and any are am at be can could did do does for from get give got has have help how i if in "
+    + "into is it its just know let like me my need of on or our please show should so some tell than that the their them "
+    + "then there these they this those to up us want was we what whats when where which who why will with would you your "
+    + "doe thi").split(" "));
+  function stemWord(w) {
+    let x = String(w || "").toLowerCase().replace(/['’]s$/, "").replace(/[^a-z0-9]/g, "");
+    if (x.length > 4 && x.endsWith("ies")) x = `${x.slice(0, -3)}y`;
+    else if (x.length > 3 && x.endsWith("s") && !x.endsWith("ss")) x = x.slice(0, -1);
+    return x;
+  }
+  const wordsIn = (text) => [...new Set(String(text || "").split(/[^A-Za-z0-9'’]+/)
+    .filter((w) => !SMALL.has(w.toLowerCase())).map(stemWord).filter((w) => w.length > 1 && !SMALL.has(w)))];
+
+  // Fridge or freezer, as the add form saved it (or its name says).
+  function kindOf(u) {
+    if (u && (u.unit_kind === "fridge" || u.unit_kind === "freezer")) return u.unit_kind;
+    const name = `${(u && u.location_name) || ""} ${(u && u.sensor_id) || ""}`.toLowerCase();
+    if (/freez/.test(name)) return "freezer";
+    const limit = Number(u && u.danger_above_display);
+    if (Number.isFinite(limit) && (u.temperature_unit || "F") === "F" && limit <= 20) return "freezer";
+    return "fridge";
+  }
+  const GENERIC = new Set(["fridge", "freezer", "unit", "cooler", "refrigerator", "the", "my", "in"]);
+
+  // One unit in a line: "**Walk-in fridge** 37.9°F, fine" (3.32.0), or
+  // one that needs you as before: "**Walk-in fridge** (47°F): Too warm
+  // for 12 minutes".
+  function unitLine(u, dd) {
+    const s = stateOf(u);
+    const now = s.state === "offline" || s.state === "waiting_first" ? "" : degrees(u.last_temperature_display, u, dd);
+    if (s.state in URGENCY) return `**${unitName(u)}**${now ? ` (${now})` : ""}: ${words(s.line) || s.word}`;
+    return `**${unitName(u)}**${now ? ` ${now}` : ""}, fine`;
+  }
+
   // "Which fridges need me?": every unit out of range, alerting, quiet or
-  // still waiting for its sensor, worst first, from the page's own list.
-  function needsAnswer() {
+  // still waiting for its sensor, worst first, from the page's own list,
+  // each with its temperature, and the rest with theirs (3.32.0). Typed
+  // ("Is my walk-in fridge OK?", "How is the freezer?"), the unit asked
+  // about comes first, and a kind the business hasn't added says so:
+  // "You haven't added a freezer".
+  function needsAnswer(ctx) {
     const dd = overview();
     if (!dd) return NOT_LOADED;
     const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const typed = ctx && typeof ctx.label === "string" && ctx.label !== "Which fridges need me?" ? wordsIn(ctx.label) : [];
+    const wantKind = typed.includes("freezer") ? "freezer" : (typed.includes("fridge") || typed.includes("refrigerator") || typed.includes("cooler")) ? "fridge" : "";
     if (!units.length) {
       return `You have no fridges or freezers added yet. [Connect your first sensor](${CONNECT}): say where it is, and the wizard shows the few steps for your brand.`;
     }
+    const lines = [];
+    if (wantKind && !units.some((u) => kindOf(u) === wantKind)) {
+      lines.push(`You haven't added a ${wantKind}. [Connect one](${CONNECT}): say where it is, and the wizard shows the few steps for your brand.`);
+    }
+    // The unit named in the question ("walk-in", "prep", "bar"), first.
+    const named = typed.length ? units.filter((u) => wordsIn(u.location_name || "").some((w) => !GENERIC.has(w) && typed.includes(w))) : [];
+    const asked = named.length ? named : (wantKind ? units.filter((u) => kindOf(u) === wantKind) : []);
+    const first = asked.length && asked.length < units.length ? asked : [];
+    if (first.length) lines.push(first.map((u) => `${unitLine(u, dd)}.`).join("\n"));
     const rows = units.map((u) => ({ u, s: stateOf(u) })).filter((r) => r.s.state in URGENCY)
       .sort((a, b) => URGENCY[a.s.state] - URGENCY[b.s.state]);
     const live = liveAlerts(dd);
     const wide = live.filter((i) => i.site_wide);
-    const lines = [];
     if (wide.length) lines.push("**Several fridges are warming at once.** That can mean a power cut, a door left open, or someone at the controls: check the site now.");
     const urgent = rows.filter((r) => r.s.state !== "waiting_first");
     // The food on a closed alert nobody has answered (3.30.0): never
     // "Nothing needs you right now" beside it.
     const food = (dd.incidents || []).filter((i) => i && i.state === "resolved" && !i.site_wide
       && i.food_question && i.food_question.ask_on_today);
+    // The unit asked about is said once, above.
+    const fine = units.filter((u) => !(stateOf(u).state in URGENCY) && !first.includes(u));
     if (!urgent.length && !wide.length && !food.length) {
       const total = units.length;
-      lines.push(total === 1 ? "Nothing needs you right now: your one unit is within its limits."
-        : `Nothing needs you right now: all ${total} fridges and freezers are within their limits.`);
+      if (first.length) {
+        lines.push(`Nothing needs you right now.${fine.length ? ` The others:\n${fine.map((u) => `- ${unitLine(u, dd)}`).join("\n")}` : ""}`);
+      } else {
+        lines.push(total === 1 ? `Nothing needs you right now: ${unitLine(units[0], dd)}.`
+          : `Nothing needs you right now. All ${total} are within their limits:\n${fine.map((u) => `- ${unitLine(u, dd)}`).join("\n")}`);
+      }
     } else if (urgent.length) {
-      const list = urgent.map(({ u, s }) => {
-        const now = degrees(u.last_temperature_display, u, dd);
-        return `- **${unitName(u)}**${now && s.state !== "offline" ? ` (${now})` : ""}: ${words(s.line) || s.word}`;
-      });
+      const list = urgent.map(({ u }) => `- ${unitLine(u, dd)}`);
       lines.push(`${urgent.length === 1 ? "This one needs you:" : `These ${urgent.length} need you, worst first:`}\n${list.join("\n")}`);
+      if (fine.length) lines.push(`The rest are fine: ${fine.map((u) => `${unitName(u)} ${degrees(u.last_temperature_display, u, dd)}`.trim()).join(", ")}.`);
+    } else if (fine.length) {
+      lines.push(`${first.length ? "The others are" : "Every unit is"} within ${first.length ? "their" : "its"} limits: ${fine.map((u) => `${unitName(u)} ${degrees(u.last_temperature_display, u, dd)}`.trim()).join(", ")}.`);
     }
     food.forEach((i) => {
       const u = units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
-      lines.push(`Check the ${i.food_question.word} in **${unitName(u)}**: ${words(i.food_question.words)}. Nobody has said yet whether it was kept. Press **${i.food_question.word === "stock" ? "Stock kept" : "Food kept"}** or **Thrown away**${onToday ? " at the top of the page" : " on the alert"}, for the record.`);
+      const back = W() ? W().foodBack(i.food_question) : i.food_question.words;
+      lines.push(`Check the ${i.food_question.word} in **${unitName(u)}**: ${words(back)}. Nobody has said yet whether it was kept. Press **${i.food_question.word === "stock" ? "Stock kept" : "Food kept"}** or **Thrown away**${onToday ? " at the top of the page" : " on the alert"}, for the record.`);
     });
     const waiting = rows.filter((r) => r.s.state === "waiting_first");
     if (waiting.length) {
@@ -296,7 +355,7 @@
   // Signed in on /today, the console is a link to open, never "Sign in"
   // (3.28.0): that was offered to somebody already signed in.
   const LOG = () => `In the console, open **Log for an inspector** on the **Proof** tab (on a small account, under **More**). Pick the dates, and print it or save it as a PDF. It has every unit's temperatures, each time one went out of range, and who answered it.${
-    onConsole ? "" : onToday && signedIn() ? " [Open the full console](/console?view=full)" : " [Sign in](/console)"}`;
+    (onConsole || onToday) && signedIn() ? ` [Open the log for the last 7 days](${LOG_HERE})` : " [Sign in](/console)"}`;
 
   // "It's fixed now" (3.28.0): Pilot does not close an alert for anybody.
   // It points at the real **It's fixed** button on the alert, which checks
@@ -366,6 +425,35 @@
     return lines.join("\n\n");
   }
 
+  // ---------------------------------------------------------------- built-in answers on every page (3.32.0)
+  //
+  // The price from the real plan figures, what sensors to buy, and which
+  // plan suits a café, with no key, whatever page Pilot is on.
+  const PRICE = () => [
+    `**Starter $${fig(F.fromPrice, "59")} a month, up to ${fig(F.starterUnits, "3")} fridges or freezers**: one café or shop, text alerts to everyone on call, the inspector's log and insurance packs.`,
+    `**Growth $${fig(F.restaurantPrice, "149")} a month a location** for a restaurant, up to ${fig(F.unitsPerLocation, "10")} units there, with a phone call when a text goes unanswered.`,
+    `Sensors are bought separately. Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [See all prices](/pricing)`,
+  ].join("\n\n");
+  // The knowledge pack's own words on sensors (pilot-cyberlogix-pack.js),
+  // short.
+  const SENSORS = () => [
+    "We don't sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at CyberLogix.",
+    "- One that sends each reading to a web address (Elitech, Dickson and most devices set up with a URL), or",
+    "- One whose maker's cloud we read every few minutes (Monnit through iMonnit, SensorPush).",
+    "A basic Wi-Fi sensor is about $30 to $100; a commercial one with a probe for a walk-in about $100 to $250. CyberLogix's price doesn't include them.",
+    "[Which sensors work, brand by brand](/help/sensors)",
+  ].join("\n");
+  // "How do I connect a sensor?" (3.32.0: an answer with the link, so a
+  // typed sensor question on the console gets the right answer too).
+  const CONNECT_HOW = () => (onConsole || onToday
+    ? `**Connect your sensor** walks you through it: say where it is, copy the key it shows once, and it shows your brand's few steps with the key filled in. It ticks when the first reading lands.\n\n[Open Connect your sensor](${CONNECT})`
+    : `Start a free trial, then **Add a fridge or freezer** in the console: it gives you a sensor key and shows your brand's few steps with it filled in. [Step-by-step guides](/help/sensors) · [Start a free trial](/signup)`);
+  const DEMO_LINK = () => `${DEMO_WHAT}\n\n[See it live](/demo)`;
+  const PASSWORD = () => "On [the sign-in page](/console) press **Forgot your password?**, or [reset it here](/reset): we email you a link.";
+  const DID = () => (onConsole || onToday
+    ? "**What CyberLogix did for you** shows this week or this month on one screen: readings checked, alerts and how fast someone answered, what happened to the food, and the printable log for the same days. [Open it](/today#did)"
+    : "Once your fridges are watched, **What CyberLogix did for you** shows each week on one screen: readings checked, alerts and how fast someone answered, and the printable log. [See it live](/demo)");
+
   // Words a typed question may use for each answer or link that needs no
   // key (core 1.4.2, matchTyped). With no key, "Is my walk-in fridge OK?"
   // gets "Which fridges need me?" and "How much is it?" the prices, at
@@ -381,19 +469,21 @@
   // with no key, "Does this work with my sensor?" or "What does this button
   // do?" got the alert's answer on the console. Listed on "Which fridges
   // need me?" (and "this" on "It's fixed now") too, they can never pick
-  // the alert's answer on their own. (Reported for the core.)
+  // the alert's answer on their own. (Reported for the core; fixed in 1.4.3.)
   const MATCH = {
     "Which fridges need me?": ["fridge", "freezer", "unit", "warm", "cold", "ok", "fine", "temperature", "temp", "problem", "wrong", "status",
-      "does", "this"],
+      "does", "this", "walk", "hot", "reading"],
     "What does this alert mean?": ["alert", "alarm", "mean", "warning", "happened", "happening", "text", "message", "going"],
     "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "bin", "spoiled", "spoilt", "bad", "good", "discard", "stock"],
     "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "wire", "hook", "probe", "device", "new"],
     "Will it work for my café?": ["cafe", "café", "restaurant", "bakery", "kitchen", "coffee", "shop", "bar", "diner", "pub", "deli", "small", "business", "suit", "right"],
-    "What does it cost?": ["cost", "price", "pricing", "much", "plan", "pay", "fee", "month", "monthly", "expensive", "cheap", "subscription"],
+    "What does it cost?": ["cost", "price", "pricing", "much", "pay", "fee", "month", "monthly", "expensive", "cheap", "subscription", "dollar", "charge",
+      "starter", "growth"],
     "See it live": ["demo", "live", "try", "example", "preview", "tour", "sample", "pretend", "watch"],
-    "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "compatible", "kind", "type", "work"],
+    "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "sell", "compatible", "kind", "type", "work"],
     "Log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
     "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert", "this"],
+    "What CyberLogix did for you": ["cyberlogix", "did", "summary", "week", "weekly", "worth", "value"],
     "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute", "short", "quick", "delay", "wait"],
     "Wi-Fi or power goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
     "Do you phone at night?": ["phone", "call", "night", "ring", "voice", "escalate", "sleep", "weekend"],
@@ -410,7 +500,92 @@
     "How do I sign in?": ["sign", "signin", "login", "log", "account", "email", "enter"],
     "I forgot my password": ["forgot", "forgotten", "password", "reset", "lost", "change"],
   };
-  const matching = (label) => (MATCH[label] ? { match: MATCH[label] } : {});
+
+  // The built-in answers on every page (3.32.0), each with its words: the
+  // ones its labels carry above, and a few more. A typed question gets the
+  // best of all of them, whichever of the page's pills or suggestions the
+  // core matched it to, so "Do you sell sensors?" on the console gets the
+  // sensors answer and a tie between two goes to the closer answer rather
+  // than to key settings. Read in the browser; nothing is sent.
+  const TOPICS = [
+    { id: "fixed", labels: ["It's fixed now"], answer: fixedAnswer },
+    { id: "status", labels: ["Which fridges need me?"], also: ["refrigerator", "cooler", "degree"], answer: needsAnswer },
+    { id: "alert", labels: ["What does this alert mean?"], answer: alertAnswer },
+    { id: "food", labels: ["Is the food still OK?"], answer: foodAnswer },
+    { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model"], answer: SENSORS },
+    { id: "price", labels: ["What does it cost?"], also: ["afford", "subscribe"], answer: PRICE },
+    { id: "plan", labels: ["Which plan for a café?"], also: ["tier", "option", "upgrade"], answer: PLAN },
+    { id: "cafe", labels: ["Will it work for my café?"], answer: cafeAnswer },
+    { id: "connect", labels: ["How do I connect a sensor?"], also: ["pair"], answer: CONNECT_HOW },
+    { id: "steps", labels: ["Set up step by step"], answer: STEPS },
+    { id: "trial", labels: ["What's in the trial?", "Start a free trial"], also: ["credit"], answer: TRIAL },
+    { id: "door", labels: ["Will a door left open wake us?"], answer: DOOR },
+    { id: "power", labels: ["Wi-Fi or power goes off?", "Power or Wi-Fi goes off?"], also: ["battery"], answer: POWER },
+    { id: "calls", labels: ["Do you phone at night?", "Do you phone us?"], answer: CALLS },
+    { id: "log", labels: ["Log for the inspector", "A log for the inspector"], answer: LOG },
+    // What happens when a fridge is warm, for a visitor: on the person's
+    // own pages "which fridges need me" says it with their own fridges.
+    { id: "warm", labels: ["A fridge is warm: what now?", "What happens next?"], answer: WARM, only: () => !ownPage },
+    { id: "did", labels: ["What CyberLogix did for you"], answer: DID },
+    { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
+    { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
+    { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
+    { id: "password", labels: ["I forgot my password"], answer: PASSWORD, only: () => !signedIn() },
+  ].map((t) => ({ ...t, words: [...new Set([].concat(...t.labels.map((l) => wordsIn(l).concat((MATCH[l] || []).map(stemWord))),
+    (t.also || []).map(stemWord)).filter((w) => w.length > 1 && !SMALL.has(w)))] }));
+  const TOPIC_OF = {};
+  TOPICS.forEach((t) => t.labels.forEach((l) => { TOPIC_OF[l] = t; }));
+  // How common each word is across the answers: a word only one answer has
+  // counts for more than one three share.
+  const SHARED = {};
+  TOPICS.forEach((t) => t.words.forEach((w) => { SHARED[w] = (SHARED[w] || 0) + 1; }));
+
+  // The answer that best fits typed words, or null. `own` wins a tie: the
+  // item the core matched was the right one.
+  function bestTopic(text, own) {
+    const asked = wordsIn(text);
+    let best = null;
+    let top = 0;
+    const score = (t) => asked.reduce((n, w) => n + (t.words.includes(w) ? 1 / SHARED[w] : 0), 0);
+    TOPICS.forEach((t) => {
+      if (t.only && !t.only()) return;
+      const n = score(t);
+      if (n > top + 1e-9) { best = t; top = n; }
+    });
+    if (own && best && score(own) >= top - 1e-9) return own;
+    return best;
+  }
+  // An item's answer, routed: pressed (the label itself), its own; typed,
+  // the best of every built-in answer.
+  function routed(label, own) {
+    return (ctx) => {
+      const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+      if (!typed || typed === label) return own(ctx);
+      const pick = bestTopic(typed, TOPIC_OF[label] || null);
+      return (pick ? pick.answer : own)(ctx);
+    };
+  }
+
+  // A few words of the answers every page should reach, on an item that has
+  // room (3.32.0): the price on the console's alert pill, the café plan on
+  // the food pill and the visitor's café pill, sensors on the connect pill.
+  // Never a word another item on the same page already uses (in its label
+  // or its own words), so the two never tie on it.
+  const CARRY = {
+    "What does this alert mean?": ["cost", "price", "pricing", "much", "pay", "month", "monthly", "expensive", "starter", "growth"],
+    "Is the food still OK?": ["plan", "best", "cafe", "café"],
+    "It's fixed now": ["door", "wifi", "power", "outage", "down", "phone", "call", "night", "trial"],
+    "Will it work for my café?": ["plan", "starter", "growth", "best", "choose"],
+    "How do I connect a sensor?": ["sell", "buy", "hardware", "brand", "thermometer", "compatible"],
+  };
+  let PAGE_WORDS = new Set();
+  function matching(label) {
+    const own = MATCH[label] || [];
+    if (!own.length) return {};
+    const others = new Set([...PAGE_WORDS].filter((w) => !wordsIn(label).includes(w) && !own.map(stemWord).includes(w)));
+    const extra = (CARRY[label] || []).filter((w) => !others.has(stemWord(w)));
+    return { match: [...new Set(own.concat(extra))].slice(0, 20) };
+  }
 
   // Each a label and what it does: words for the AI, or a {link} / {answer}
   // that needs no key (core 1.4.0).
@@ -419,11 +594,13 @@
   // Signed in, under the welcome's own five (so none says the same thing).
   // Signed in: straight to the log for the last seven days (3.30.0), not
   // an answer that says where it is. On the console it only changes the
-  // page's #, so nothing reloads.
+  // page's #, so nothing reloads. 3.32.0: "What CyberLogix did for you" in
+  // place of "Make a proof report", which needed an AI key.
   const LOG_HERE = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#inspector-log?open=1`;
+  const DID_HERE = onToday ? "#did" : "/today#did";
   const LIVE = [["Log for the inspector", link(LOG_HERE)],
     ["It's fixed now", answer(fixedAnswer)],
-    ["Make a proof report", "Make a proof of monitoring report for last month."]];
+    ["What CyberLogix did for you", link(DID_HERE)]];
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
@@ -448,6 +625,9 @@
     "/console-out": [["How do I sign in?", answer(() => SIGN_IN)],
       ["I forgot my password", link("/reset")],
       ["Start a free trial", link("/signup")]],
+    "/for/*": [["How would this work for me?", "How would CyberLogix work for a business like mine?"],
+      ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
+      ["A log for the inspector", answer(LOG)]],
   };
 
   const TASKS = {
@@ -457,38 +637,63 @@
     "/help/sensors": "Help me set up this sensor: ",
   };
 
+  // Every list of suggestions this page can show (the console's changes
+  // when somebody signs in), for the words the pills must leave alone.
+  function pageLists() {
+    if (onConsole) return [LIVE, CHIPS["/console-out"]];
+    if (onToday) return [LIVE];
+    if (path.startsWith("/for/")) return [CHIPS["/for/*"]];
+    return [CHIPS[path] || []];
+  }
+
   function chips() {
     let list;
     if ((onConsole || onToday) && signedIn()) list = LIVE;
     else if (onConsole) list = CHIPS["/console-out"];
-    else if (path.startsWith("/for/")) list = [["How would this work for me?", "How would CyberLogix work for a business like mine?"],
-      ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
-      ["A log for the inspector", answer(LOG)]];
+    else if (path.startsWith("/for/")) list = CHIPS["/for/*"];
     else list = CHIPS[path] || [];
-    return list.map(([label, what]) => (typeof what === "string" ? { label, prompt: what } : { label, ...what, ...matching(label) }));
+    return list.map(([label, what]) => {
+      if (typeof what === "string") return { label, prompt: what };
+      const plain = what.answer ? { answer: routed(label, what.answer) } : what;
+      return { label, ...plain, ...matching(label) };
+    });
   }
 
   // The welcome's five. In the console and on /today (the person's own
   // fridges) they are what a café asks about its fridges, answered from the
   // page with no key (core 1.4.0); on the public pages, where Pilot can see
   // nobody's fridges, what a visitor deciding asks: will it work for me,
-  // what it costs, can I see it. Only the key pill and typed questions need
-  // the AI.
-  const OWN_PILLS = [
-    { icon: "bars", label: "Which fridges need me?", answer: needsAnswer, ...matching("Which fridges need me?") },
-    { icon: "help", label: "What does this alert mean?", answer: alertAnswer, ...matching("What does this alert mean?") },
-    { icon: "chat", label: "Is the food still OK?", answer: foodAnswer, ...matching("Is the food still OK?") },
-    { icon: "bolt", label: "How do I connect a sensor?", link: "/console#connect", ...matching("How do I connect a sensor?") },
-    { icon: "key", label: "Add my AI key", action: "settings" },
+  // what it costs (the real plan figures, 3.32.0), can I see it, which
+  // sensors. Only the key pill and typed questions the answers don't cover
+  // need the AI.
+  const pill = (icon, label, fn) => ({ icon, label, answer: routed(label, fn) });
+  const OWN = [
+    ["bars", "Which fridges need me?", needsAnswer],
+    ["help", "What does this alert mean?", alertAnswer],
+    ["chat", "Is the food still OK?", foodAnswer],
+    ["bolt", "How do I connect a sensor?", CONNECT_HOW],
   ];
-  const VISITOR_PILLS = [
-    { icon: "chat", label: "Will it work for my café?", answer: cafeAnswer, ...matching("Will it work for my café?") },
-    { icon: "bars", label: "What does it cost?", link: "/pricing", ...matching("What does it cost?") },
-    { icon: "spark", label: "See it live", link: "/demo", ...matching("See it live") },
-    { icon: "help", label: "What sensors do I need?", link: "/help/sensors", ...matching("What sensors do I need?") },
-    { icon: "key", label: "Add my AI key", action: "settings" },
+  const VISITOR = [
+    ["chat", "Will it work for my café?", cafeAnswer],
+    ["bars", "What does it cost?", PRICE],
+    ["spark", "See it live", null],
+    ["help", "What sensors do I need?", SENSORS],
   ];
+  function pillsFor(list) {
+    // The words every suggestion on this page uses, labels included.
+    PAGE_WORDS = new Set();
+    pageLists().forEach((l) => l.forEach(([label]) => {
+      wordsIn(label).forEach((w) => PAGE_WORDS.add(w));
+      (MATCH[label] || []).forEach((w) => PAGE_WORDS.add(stemWord(w)));
+    }));
+    list.forEach(([, label]) => { wordsIn(label).forEach((w) => PAGE_WORDS.add(w)); (MATCH[label] || []).forEach((w) => PAGE_WORDS.add(stemWord(w))); });
+    return list.map(([icon, label, fn]) => (fn ? { ...pill(icon, label, fn), ...matching(label) }
+      : { icon, label, link: "/demo", ...matching(label) }))
+      .concat([{ icon: "key", label: "Add my AI key", action: "settings" }]);
+  }
   const ownPage = onConsole || onToday;
+  const OWN_PILLS = ownPage ? pillsFor(OWN) : [];
+  const VISITOR_PILLS = ownPage ? [] : pillsFor(VISITOR);
 
   window.Pilot.mount({
     appName: "CyberLogix AI",

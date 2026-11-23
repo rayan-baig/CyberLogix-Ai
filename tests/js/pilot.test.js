@@ -964,7 +964,7 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
   assert.ok(cfg.includes('tagline: "Your fridge-alarm helper",'));
   for (const label of ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "How do I connect a sensor?",
     "Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"]) {
-    assert.ok(cfg.includes(`label: "${label}"`), label);
+    assert.ok(cfg.includes(`"${label}"`), label);
   }
   assert.ok(cfg.includes('hideKeySections: ["image", "video"],'));
   assert.ok(cfg.includes("keepInViewport: true,"));
@@ -977,9 +977,11 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
   vm.runInNewContext(fs.readFileSync(core("pilot-panel.js"), "utf8"), sandbox);
   const kind = (p) => (p.link ? `link ${new URL(p.link).pathname}${new URL(p.link).hash}` : p.answer !== undefined ? "answer" : p.builtin ? p.action : "ai");
   const own = [["Which fridges need me?", "answer"], ["What does this alert mean?", "answer"],
-    ["Is the food still OK?", "answer"], ["How do I connect a sensor?", "link /console#connect"], ["Add my AI key", "settings"]];
-  const visitor = [["Will it work for my café?", "answer"], ["What does it cost?", "link /pricing"],
-    ["See it live", "link /demo"], ["What sensors do I need?", "link /help/sensors"], ["Add my AI key", "settings"]];
+    ["Is the food still OK?", "answer"], ["How do I connect a sensor?", "answer"], ["Add my AI key", "settings"]];
+  // 3.32.0: the price and the sensors are answered from the real figures,
+  // with their pages linked in the answer.
+  const visitor = [["Will it work for my café?", "answer"], ["What does it cost?", "answer"],
+    ["See it live", "link /demo"], ["What sensors do I need?", "answer"], ["Add my AI key", "settings"]];
   for (const [pathname, want] of [["/", visitor], ["/pricing", visitor], ["/help", visitor], ["/console", own], ["/today", own]]) {
     let given = null;
     vm.runInNewContext(cfg, { window: { Pilot: { mount: (c) => { given = c; } }, location: { pathname }, localStorage: { getItem: () => null } },

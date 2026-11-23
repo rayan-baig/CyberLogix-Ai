@@ -51,8 +51,29 @@
        somebody answered, and whether the food was kept, in one line. -->
   <section class="month" id="month" hidden aria-label="This month">
     <p class="month-line" id="month-line"></p>
-    <p class="month-sub" id="month-sub" hidden></p>
+    <!-- Who said what about the food, with "Change" for 24 hours, and
+         after "Thrown away" the insurance pack and the discard note
+         (3.32.0). -->
+    <div class="month-sub" id="month-sub" hidden></div>
   </section>
+
+  <!-- What CyberLogix did for you (3.32.0): the week or the month on one
+       screen, with the printable log for the same days. A trial's first
+       week shows a sample beside its own first figures. -->
+  <details class="did" id="did" hidden>
+    <summary class="did-h"><span class="did-title">What CyberLogix did for you</span>
+      <span class="did-teaser" id="did-teaser"></span></summary>
+    <div class="did-tabs" role="group" aria-label="Which days">
+      <button class="f-tab" type="button" data-did="week" aria-pressed="true">This week</button>
+      <button class="f-tab" type="button" data-did="month" aria-pressed="false">This month</button>
+    </div>
+    <ul class="did-lines" id="did-lines"></ul>
+    <div class="did-sample" id="did-sample" hidden>
+      <p class="did-note" id="did-note"></p>
+      <ul class="did-lines" id="did-sample-lines"></ul>
+    </div>
+    <a class="btn btn-sm" id="did-log" href="/console?view=full#inspector-log?open=1">Print the log for these days</a>
+  </details>
 
   <!-- Below the answer, folded for anyone who has read it. Somebody opening this for the first time has been handed a link and
        no explanation. Four sentences, no jargon, before any number. It

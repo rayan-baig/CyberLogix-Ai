@@ -112,7 +112,10 @@ def test_the_summary_tiles_are_a_compact_two_column_grid_on_a_phone():
     phone = css[css.index("/* ---------- narrow screens ---------- */"):]
     phone = phone[:phone.index("\n}\n")]
     assert ".tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;" in phone
-    assert ".tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }" in phone
+    # 3.32.0: with an odd count the first one spans the row (1 + 2), never
+    # two over an orphan.
+    assert ".tiles > .tile:first-child:nth-last-child(odd) { grid-column: 1 / -1; }" in phone
+    assert ".tiles > .tile:last-child:nth-child(odd)" not in phone
     assert "display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline;" in phone
     assert ".tile-label { grid-column: 1 / -1; font-size: 9.5px;" in phone
     assert ".tiles > .tile { flex: 1 1 132px; }" not in phone

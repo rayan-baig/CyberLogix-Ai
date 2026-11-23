@@ -42,6 +42,7 @@ from businesses import router as businesses_router
 from erase import router as erase_router
 from claims import router as claims_router
 from console_api import router as console_router
+from didforyou import router as didforyou_router
 from contracts import router as contracts_router
 from enterprise_billing import router as enterprise_router
 from contacts import router as contacts_router
@@ -263,6 +264,7 @@ app.include_router(voice_router)
 app.include_router(forecaster_router)
 app.include_router(bridge_router)
 app.include_router(console_router)
+app.include_router(didforyou_router)
 app.include_router(accounts_router)
 app.include_router(businesses_router)
 app.include_router(erase_router)

@@ -198,6 +198,36 @@ corner, hidden rather than over the search box or tabs at 320px. On a phone it i
 often than before, by design: at the top of `/help`, and on parts of `/pricing` and
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
+**3.32.0: built-in answers on every page, the closest one wins.** Still core 1.4.2 (1.4.3 is
+not out yet); all of it is in `static/pilot-cyberlogix.js`.
+
+- **The answers every page should reach.** The price from the real plan figures ("**Starter $59
+  a month, up to 3 fridges or freezers**", Growth's location price, the trial, a link to
+  `/pricing`), sensors ("We don't sell sensors", the two kinds that work and what they cost,
+  from the knowledge pack's own words, a link to `/help/sensors`) and the café plan are answered
+  on the console, `/today` and every public page. The visitor's "What does it cost?" and "What
+  sensors do I need?" pills answer with those (with the page linked) instead of only linking;
+  the console's "How do I connect a sensor?" answers with a link to the wizard.
+- **Routed to the closest answer.** Every built-in answer is listed once in `TOPICS`, with the
+  words of its labels (`MATCH`) and a few more. The core still decides whether a typed question
+  fits one of the page's pills or suggestions (it needs two of its words, and no tie); whichever
+  it matched, that item's answer looks at the typed words and gives the closest of all the
+  answers (a word only one answer has counts for more), the matched item's own winning a tie.
+  So "Do you sell sensors?" on the console (matched to the connect pill) gets the sensors answer,
+  and "Do you call at night?" (matched to "It's fixed now", which carries the words) the calls
+  answer. To make the core match them anywhere, a few pills carry extra words (`CARRY`): the
+  price on "What does this alert mean?", the café plan on "Is the food still OK?" and the
+  visitor's café pill, sensors on the connect pill, calls/power/trial on "It's fixed now"; never
+  a word another item on the same page already uses. The visitor's explainers ("A fridge is
+  warm: what now?", "What am I seeing?", sign-in) only on their own kind of page.
+- **The fridges with their temperatures.** "Which fridges need me?" lists what needs you as
+  before and the rest with their temperatures ("**Walk-in fridge** 37.9°F, fine"); typed, the
+  unit named comes first ("Is my walk-in fridge OK?"), and a kind the business hasn't added says
+  so ("You haven't added a freezer").
+- **"What CyberLogix did for you"** (a link to `/today#did`, which opens the week's summary)
+  takes the place of "Make a proof report", which needed an AI key.
+- Questions that fit nothing still open key settings (core 1.4.3 will answer them in the chat).
+
 **Core 1.4.2 (3.31.0): typed questions without a key, and always findable.** The thirteen files
 from the MTRX Horizyn site (commit a1c9253), byte for byte; the pictures are unchanged. What
 changes here:
