@@ -406,6 +406,9 @@ def console_overview(
         # "This month: 1 alert, answered in 4 minutes, food kept." for the
         # Simple view (3.28.0), by the same rule as each alert's line.
         "this_month": month_summary(tenant, now),
+        # A short blip's food is recorded safe by itself under this many
+        # minutes out (food_value.SHORT_MINUTES, 3.32.0); 0 when it is off.
+        "food_safe_minutes": food_value.SHORT_MINUTES,
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
     }
@@ -421,12 +424,13 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
     (food_value.month_total, 3.30.0): "food kept" once somebody tapped
     Food kept, never because the fridge came back quickly.
     `food_answers` is who said what and when, newest first, for /today
-    ("Walk-in fridge: Thrown away, Jo, 4:09 PM").
+    ("Walk-in fridge: Thrown away, Jo, 4:09 PM"), with "Change" for 24
+    hours (3.32.0). `words` is one short line since 3.32.0: "This month: 3
+    alerts · all answered · 1 food answer missing".
     """
     from statistics import median
 
     from domain import minutes_words
-    from records import food_answer_words
 
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     alerts = [i for i in STORE.incidents_for(tenant.tenant_id, since=start)
@@ -444,54 +448,52 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
     for i in sorted((i for i in alerts if i.product_disposition and i.food_answered_at),
                     key=lambda i: i.food_answered_at, reverse=True)[:3]:
         sensor = sensors[i.sensor_id]
+        until = i.food_change_until()
         answers.append({
             "incident_id": i.incident_id,
             "unit": (sensor.location_name if sensor and sensor.location_name else i.sensor_id),
-            "words": food_answer_words(i.product_disposition),
-            "by_name": person_name(i.food_answered_by),
+            "words": i.food_words(),
+            "by_name": None if i.food_auto_minutes is not None else person_name(i.food_answered_by),
             "at": iso(i.food_answered_at),
+            # 3.32.0: recorded by itself for a short blip; thrown away (the
+            # page offers the insurance pack and a note of what went); and
+            # whether "Change" still shows (24 hours).
+            "auto": i.food_auto_minutes is not None,
+            "thrown": i.product_disposition == "discarded",
+            "disposition": i.product_disposition,
+            "change_until": iso(until),
+            "changeable": until is not None and now <= until,
+            "has_note": bool(i.corrective_action),
         })
 
+    # One short line (3.32.0): "3 alerts · all answered · 1 food answer
+    # missing". The figures behind it are below, for the weekly summary.
     n = len(alerts)
     if not n:
         words = "This month: no alerts. Every fridge and freezer stayed in range."
     else:
         parts = [f"{n} alert{'' if n == 1 else 's'}"]
         waiting = sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is None)
-        if typical is not None and len(answered) == n:
-            parts.append(f"{'answered' if n == 1 else 'typically answered'} in {minutes_words(typical)}")
-        elif answered:
-            parts.append(f"{len(answered)} answered")
-        elif waiting:
-            parts.append("not answered yet")
+        by_itself = sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is not None)
+        if len(answered) == n:
+            parts.append(f"answered in {minutes_words(typical)}" if n == 1 and typical is not None
+                         else "all answered")
         else:
-            parts.append("none answered")
-        asked = kept + thrown + risky + unanswered
-        if asked:
-            def them(k: int) -> str:
-                return "it" if k == 1 else "them"
-
-            if risky == asked:
-                parts.append(f"food at risk: check {them(risky)}" if n == 1
-                             else f"food at risk on {risky}: check {them(risky)}")
-            elif unanswered == asked and n == 1:
-                parts.append("food not answered yet")
-            elif kept == asked and n == 1 or kept == n:
-                parts.append("food kept")
-            elif thrown == asked and n == 1 or thrown == n:
-                parts.append("food thrown away")
-            else:
-                food_parts = []
-                if kept:
-                    food_parts.append(f"food kept on {kept}")
-                if thrown:
-                    food_parts.append(f"thrown away on {thrown}")
-                if risky:
-                    food_parts.append(f"food at risk on {risky}: check {them(risky)}")
-                if unanswered:
-                    food_parts.append(f"food not answered on {unanswered}")
-                parts.extend(food_parts)
-        words = "This month: " + ", ".join(parts) + "."
+            if answered:
+                parts.append(f"{len(answered)} answered")
+            if by_itself:
+                parts.append(f"{by_itself} cold again by itself" if by_itself < n
+                             else ("cold again by itself" if n == 1 else "all cold again by themselves"))
+            if waiting:
+                parts.append("not answered yet" if waiting == n else f"{waiting} not answered yet")
+        missing = risky + unanswered
+        if missing:
+            parts.append(f"{missing} food answer{'' if missing == 1 else 's'} missing")
+        if thrown:
+            parts.append("food thrown away" if thrown == n else f"thrown away on {thrown}")
+        if not missing and not thrown and (kept or food["auto_safe"]):
+            parts.append("food kept" if not food["auto_safe"] else "food safe")
+        words = "This month: " + " · ".join(parts)
     return {
         "alerts": n,
         "answered": len(answered),
@@ -501,6 +503,7 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
         "food_unanswered": unanswered,
         "food_at_risk": risky,
         "food_usd": food["usd"],
+        "food_auto_safe": food["auto_safe"],
         "food_answers": answers,
         "words": words,
     }

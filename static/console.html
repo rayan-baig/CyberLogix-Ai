@@ -238,6 +238,10 @@
     <!-- On a small account the estate and operator tools wait here. -->
     <p class="adv-note" id="adv-note" hidden>The OmniArmor connection, things to do from a meeting, the full
       activity log and tools for bigger estates are under <b>Advanced</b>.</p>
+    <!-- The Advanced tab in four folded sections (3.32.0), not one long
+         column of fourteen cards: open one, and only its cards show. A
+         search still finds every card. Filled by advSections(). -->
+    <div class="adv-sections" id="adv-sections" hidden></div>
     <!-- A tab a new business has nothing on yet says, in one sentence, what
          will appear there, and offers the next thing to do. Never a blank
          page. Filled by renderTabEmpty() in console.js. -->

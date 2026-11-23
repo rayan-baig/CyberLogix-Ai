@@ -23,6 +23,11 @@ range in 12 minutes") and asks, and never "Food kept" or "$800 protected".
 so an alert closed by itself after "It's fixed" said "Food protected:
 about $3,000" while nobody had said a word about the food.
 
+A short blip (3.32.0, `auto_safe_minutes`): a food unit back in range
+after less than SHORT_MINUTES out, never far past its limit, is recorded
+"Food safe: out for 12 minutes" by itself as it closes, with Change for
+CHANGE_HOURS, and counts no dollars. Long or severe alerts keep asking.
+
 It never counts when the food was recorded as thrown away. A unit out of
 range for longer than two hours, or closed while still out of range, with
 nobody saying what happened to the food, is "Food at risk: check it"
@@ -32,6 +37,7 @@ $3,000".
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Iterable, Optional
 
 # What a typical unit holds, in US dollars, by kind. A walk-in is any unit
@@ -71,6 +77,37 @@ SAFE_HOURS = 2.0
 
 # What a person can record that means the food was kept.
 KEPT = ("unaffected", "moved", "sold_or_used")
+
+# Short blips (3.32.0). A food unit's alert that closes back in range
+# after less than this many minutes out, and never went far past its
+# limit, records "Food safe: out for 12 minutes" by itself, with a Change
+# link: well inside the two-hour rule above, so nobody is asked, nothing
+# says "One thing to do", and no dollars are counted for it. Long or
+# severe alerts (and stock in a pharmacy or a lab, where a vaccine's own
+# rules apply) keep the question. The owner sets it for the whole server
+# with CYBERLOGIX_FOOD_SAFE_MINUTES (docs/ALERTS.md); 0 turns it off.
+def _short_minutes() -> float:
+    raw = os.environ.get("CYBERLOGIX_FOOD_SAFE_MINUTES", "").strip()
+    try:
+        value = float(raw) if raw else 30.0
+    except ValueError:
+        value = 30.0
+    # Never past the two-hour rule it sits inside.
+    return max(0.0, min(value, SAFE_HOURS * 60.0))
+
+
+SHORT_MINUTES = _short_minutes()
+
+# How far past its upper limit a unit may have gone and still count as a
+# blip: the same 15°F that alerts at once (domain.ALERT_AT_ONCE_DEGREES_F),
+# and never at room temperature (disposition.DANGEROUSLY_WARM_F).
+SEVERE_PAST_LIMIT_F = 15.0
+SEVERE_AT_F = 70.0
+
+# How long an answer about the food can be changed after it was given
+# (3.32.0): "Change" shows for 24 hours, and every change is kept in the
+# alert's history.
+CHANGE_HOURS = 24
 
 _WALK_IN = ("walk-in", "walk in", "walkin", "cold room", "coldroom")
 
@@ -127,6 +164,10 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
     fate = getattr(incident, "product_disposition", "") or ""
     if fate not in KEPT:
         return None
+    # Recorded by itself for a short blip: nothing was at stake, so no
+    # dollars (3.32.0). A person's own "Food kept" counts again.
+    if getattr(incident, "food_auto_minutes", None) is not None:
+        return None
     guess = estimate(sensor)
     if guess is None:
         return None
@@ -169,6 +210,63 @@ def _minutes_words(minutes: float) -> str:
     return minutes_words(minutes)
 
 
+def _too_cold(incident, sensor) -> bool:
+    """The alert was for a unit too cold, not too warm."""
+    if sensor is None or not hasattr(sensor, "bounds"):
+        return False
+    above, below = sensor.bounds()
+    worst = getattr(incident, "peak_f", None)
+    if worst is None:
+        worst = getattr(incident, "temperature_fahrenheit", None)
+    if worst is None or below is None:
+        return False
+    return worst < below and (above is None or worst <= above)
+
+
+def back_words(incident, sensor, minutes: float) -> str:
+    """"Cold again after 12 minutes out" (3.32.0), or "Back in range after
+    12 minutes out" for a unit that was too cold. The page adds "(since
+    9:10 PM)" from `out_since`, in the reader's own clock."""
+    head = "Back in range" if _too_cold(incident, sensor) else "Cold again"
+    return f"{head} after {_minutes_words(minutes)} out"
+
+
+def auto_safe_minutes(incident, sensor) -> Optional[float]:
+    """Minutes out, when this closed alert is a short blip whose food is
+    recorded safe by itself (3.32.0), else None.
+
+    A unit's own alert in a food sector, closed back in range (not "Close
+    anyway" while still out), nobody has said anything about the food yet,
+    out for less than SHORT_MINUTES, and never SEVERE_PAST_LIMIT_F past its
+    upper limit or at SEVERE_AT_F.
+    """
+    if not _closed_unit_alert(incident) or SHORT_MINUTES <= 0:
+        return None
+    if getattr(incident, "product_disposition", "") or "":
+        return None
+    if getattr(incident, "closed_out_of_range", False):
+        return None
+    if sensor is None or SECTOR_STOCK.get(getattr(sensor, "industry_vertical", "")) != "food":
+        return None
+    start = getattr(incident, "out_since", None) or incident.opened_at
+    minutes = max(0.0, (incident.resolved_at - start).total_seconds() / 60.0)
+    if minutes >= SHORT_MINUTES:
+        return None
+    worst = getattr(incident, "peak_f", None)
+    if worst is None:
+        worst = getattr(incident, "temperature_fahrenheit", None)
+    above = sensor.bounds()[0] if hasattr(sensor, "bounds") else None
+    if worst is not None and (worst >= SEVERE_AT_F
+                              or (above is not None and worst - above >= SEVERE_PAST_LIMIT_F)):
+        return None
+    return round(minutes, 1)
+
+
+def auto_words(minutes: float, word: str = "food") -> str:
+    """"Food safe: out for 12 minutes"."""
+    return f"{word.capitalize()} safe: out for {_minutes_words(minutes)}"
+
+
 # How long /today and the console's "Needs you now" keep asking about the
 # food on a closed alert nobody has answered. The alert itself asks for as
 # long as it is kept.
@@ -179,8 +277,9 @@ def question(incident, sensor, now=None) -> Optional[Dict[str, Any]]:
     """The food question on a closed alert nobody has answered (3.30.0).
 
     {"word": "food" | "stock", "at_risk", "words", "note", "back_minutes",
-    "ask_on_today"}: words is "Back in range in 12 minutes" when it came
-    back within SAFE_HOURS, else "Food at risk: check it". None once
+    "out_since", "ask_on_today"}: words is "Cold again after 12 minutes
+    out" when it came back within SAFE_HOURS (the page adds "(since 9:10
+    PM)"), else "Food at risk: check it". None once
     somebody answered, on a live alert, and where the sector has no
     estimate (nothing to ask about).
     """
@@ -203,7 +302,7 @@ def question(incident, sensor, now=None) -> Optional[Dict[str, Any]]:
     if risky:
         words, note = risky["words"], risky["note"]
     else:
-        words = f"Back in range in {_minutes_words(back)}"
+        words = back_words(incident, sensor, back)
         note = f"Nobody has said yet whether the {word} was kept. One tap, for the record."
     return {
         "word": word,
@@ -211,6 +310,7 @@ def question(incident, sensor, now=None) -> Optional[Dict[str, Any]]:
         "words": words,
         "note": note,
         "back_minutes": round(back, 1),
+        "out_since": start.isoformat() if start else None,
         "ask_on_today": incident.resolved_at >= now - timedelta(days=ASK_ON_TODAY_DAYS),
     }
 
@@ -218,9 +318,10 @@ def question(incident, sensor, now=None) -> Optional[Dict[str, Any]]:
 def month_total(pairs: Iterable) -> Dict[str, Any]:
     """The month's estimate over (incident, sensor) pairs, from the saved
     answers only: {"usd", "alerts" (marked kept), "thrown", "at_risk",
-    "unanswered" (closed, nobody said, back within two hours)}."""
+    "unanswered" (closed, nobody said, back within two hours), "auto_safe"
+    (short blips recorded safe by themselves, no dollars: 3.32.0)}."""
     usd = 0
-    alerts = thrown = risky = unanswered = 0
+    alerts = thrown = risky = unanswered = auto = 0
     for incident, sensor in pairs:
         row = protected(incident, sensor)
         if row:
@@ -230,7 +331,9 @@ def month_total(pairs: Iterable) -> Dict[str, Any]:
         if not _closed_unit_alert(incident) or estimate(sensor) is None:
             continue
         fate = getattr(incident, "product_disposition", "") or ""
-        if fate == "discarded":
+        if fate in KEPT and getattr(incident, "food_auto_minutes", None) is not None:
+            auto += 1
+        elif fate == "discarded":
             thrown += 1
         elif not fate:
             if at_risk(incident, sensor):
@@ -238,4 +341,4 @@ def month_total(pairs: Iterable) -> Dict[str, Any]:
             else:
                 unanswered += 1
     return {"usd": usd, "alerts": alerts, "thrown": thrown, "at_risk": risky,
-            "unanswered": unanswered}
+            "unanswered": unanswered, "auto_safe": auto}

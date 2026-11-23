@@ -30,23 +30,27 @@ function element(id) {
 
 /* Runs /today once against `overview` (and `me` for /api/accounts/me).
    Returns the page's elements and the requests it made. */
-async function today(overview, me = { user: { role: "owner" }, prefs: {} }) {
+async function today(overview, me = { user: { role: "owner" }, prefs: {} }, did = DID) {
   const nodes = {};
   const calls = [];
   const document = {
     getElementById: (id) => nodes[id] || (nodes[id] = element(id)),
     createElement: () => element("made"),
     body: { appendChild() {} },
+    querySelectorAll: () => [],
   };
   const fetch = async (url, init) => {
     calls.push({ url, init });
     if (url === "/api/accounts/me") return { ok: !!me, status: me ? 200 : 401, json: async () => me };
     if (url === "/api/console/overview") return { ok: true, status: 200, json: async () => overview };
+    if (url.startsWith("/api/console/did-for-you")) return { ok: true, status: 200, json: async () => did };
     return { ok: true, status: 200, json: async () => ({}) };
   };
   const context = {
     document, fetch, console, Date, Math, JSON, Object, Array, Number, String, Set, Promise, Error, isNaN,
-    location: { href: "/today" },
+    location: { href: "/today", hash: "", pathname: "/today", search: "" },
+    history: { replaceState() {} },
+    addEventListener() {},
     localStorage: { getItem: () => "session-token", setItem() {} },
     setTimeout: () => 0, clearTimeout() {},
   };
@@ -59,6 +63,10 @@ async function today(overview, me = { user: { role: "owner" }, prefs: {} }) {
 }
 
 const NOW = new Date().toISOString();
+// What CyberLogix did for you (3.32.0), as the server says it.
+const DID = { period: "week", label: "This week", figures: { readings: 2016, alerts: 1 },
+  lines: ["Checked 2,016 readings from 1 fridge or freezer, 100% in range.", "1 alert, 1 answered in 4 minutes."],
+  log_link: "/console?view=full#inspector-log?from=2026-11-16&to=2026-11-23&open=1", sample: null };
 const fridge = (condition = { state: "ok" }, temp = 38) => ({
   sensor_id: "WALK-1", location_name: "Walk-in fridge", last_temperature_display: temp,
   temperature_unit: "F", last_seen: NOW, online: true, condition,
@@ -87,10 +95,14 @@ test("3.30.0: never 'Everything is fine' while food is at risk: one thing to do,
 
 test("3.30.0: a closed alert back in time but unanswered still asks, and says how long it took", async () => {
   const { nodes } = await today(base({ incidents: [closedAlert({ at_risk: false,
-    words: "Back in range in 12 minutes", note: "Nobody has said yet whether the food was kept. One tap, for the record." })] }));
+    words: "Cold again after 12 minutes out", out_since: "2026-11-22T21:10:00Z",
+    note: "Nobody has said yet whether the food was kept. One tap, for the record." })] }));
   const v = nodes.verdict.innerHTML;
   assert.match(v, /check the food in Walk-in fridge/);
-  assert.match(v, /Back in range in 12 minutes/);
+  // 3.32.0: "Cold again after 12 minutes out (since 9:10 PM)", in the reader's clock.
+  const W = require(path.join(__dirname, "..", "..", "static", "words.js"));
+  assert.ok(v.includes(`Cold again after 12 minutes out (since ${W.clock("2026-11-22T21:10:00Z")})`), v);
+  assert.doesNotMatch(v, /Back in range in/);
   // The "Food kept" button is there; no claim that it was.
   assert.doesNotMatch(v, /Everything is fine|protected|\$/i);
 });
@@ -126,11 +138,12 @@ test("3.30.0: an open alert whose reading is back in range says 'Back in range: 
 test("3.30.0: the month line says who answered the food and when", async () => {
   const at = "2026-11-22T16:09:00Z";
   const { nodes, CLXWords } = await today(base({ this_month: {
-    alerts: 1, words: "This month: 1 alert, answered in 4 minutes, food thrown away.",
-    food_answers: [{ unit: "Walk-in fridge", words: "Thrown away", by_name: "Jo", at }], food_usd: 0 } }));
-  assert.equal(nodes["month-sub"].textContent, `Thrown away, Jo, ${CLXWords.clock(at)}.`);
+    alerts: 1, words: "This month: 1 alert · answered in 4 minutes · food thrown away",
+    food_answers: [{ incident_id: "INC-1", unit: "Walk-in fridge", words: "Thrown away", by_name: "Jo", at,
+      thrown: true, disposition: "discarded", changeable: false }], food_usd: 0 } }));
+  assert.match(nodes["month-sub"].innerHTML, new RegExp(`Thrown away, Jo, ${CLXWords.clock(at)}\\.`));
   assert.equal(nodes["month-sub"].hidden, false);
-  assert.doesNotMatch(nodes["month-sub"].textContent, /protected|\$/);
+  assert.doesNotMatch(nodes["month-sub"].innerHTML, /protected|\$|Change/, "past 24 hours: no Change");
 });
 
 test("3.30.0: 'What this is' follows the person's saved choice, not the device", async () => {
@@ -154,4 +167,66 @@ test("3.30.0: 'What this is' follows the person's saved choice, not the device",
   first.nodes.intro.listeners.toggle.forEach((fn) => fn());
   const last = first.calls.filter((c) => c.url === "/api/accounts/me/prefs").pop();
   assert.deepEqual(JSON.parse(last.init.body), { today_intro: "closed" });
+});
+
+// ---------------------------------------------------------------- 3.32.0
+
+const LATER = new Date(Date.now() + 20 * 3600 * 1000).toISOString();
+
+test("3.32.0: a short blip recorded safe by itself: no 'one thing to do', the month line says so, with Change", async () => {
+  const { nodes } = await today(base({ this_month: {
+    alerts: 1, words: "This month: 1 alert · cold again by itself · food safe", food_usd: 0,
+    food_answers: [{ incident_id: "INC-9", unit: "Walk-in fridge", words: "Food safe: out for 4 minutes", by_name: null,
+      at: NOW, auto: true, thrown: false, disposition: "unaffected", changeable: true, change_until: LATER }] } }));
+  assert.match(nodes.verdict.innerHTML, /Everything is fine/);
+  assert.equal(nodes.verdict.className, "verdict ok", "no red or amber");
+  const sub = nodes["month-sub"].innerHTML;
+  assert.match(sub, /Food safe: out for 4 minutes, recorded automatically/);
+  assert.match(sub, /data-food-change="INC-9"[^>]*>Change</);
+  assert.match(sub, /data-food-kept="INC-9"/);
+  assert.match(sub, /data-food-thrown="INC-9"/);
+  assert.doesNotMatch(sub, /insurance pack|\$/);
+});
+
+test("3.32.0: after 'Thrown away', the insurance pack and the note of what went, and Change, for 24 hours", async () => {
+  const answer = { incident_id: "INC-5", unit: "Walk-in fridge", words: "Thrown away", by_name: "Jo", at: NOW,
+    auto: false, thrown: true, disposition: "discarded", changeable: true, change_until: LATER, has_note: false };
+  const { nodes } = await today(base({ this_month: { alerts: 1, words: "This month: 1 alert", food_usd: 0, food_answers: [answer] } }));
+  const sub = nodes["month-sub"].innerHTML;
+  assert.match(sub, /data-loss-pack="INC-5"[^>]*>Make the insurance pack</);
+  assert.match(sub, /data-loss-note="INC-5"[^>]*>Add what was thrown away</);
+  assert.match(sub, /data-food-change="INC-5"/);
+  // A note already written: only the pack is offered.
+  const noted = await today(base({ this_month: { alerts: 1, words: "x", food_usd: 0, food_answers: [{ ...answer, has_note: true }] } }));
+  assert.doesNotMatch(noted.nodes["month-sub"].innerHTML, /data-loss-note/);
+  assert.match(noted.nodes["month-sub"].innerHTML, /data-loss-pack/);
+  // A viewer: no buttons at all.
+  const viewer = await today(base({ this_month: { alerts: 1, words: "x", food_usd: 0, food_answers: [answer] } }),
+    { user: { role: "viewer" }, prefs: {} });
+  assert.doesNotMatch(viewer.nodes["month-sub"].innerHTML, /data-loss|data-food/);
+});
+
+test("3.32.0: What CyberLogix did for you, with the log for the same days, and the sample in a trial's first week", async () => {
+  const { nodes, calls } = await today(base());
+  assert.ok(calls.some((c) => c.url === "/api/console/did-for-you?period=week"));
+  assert.equal(nodes.did.hidden, false);
+  assert.equal(nodes["did-teaser"].textContent, "This week: 2,016 readings checked, 1 alert.");
+  assert.match(nodes["did-lines"].innerHTML, /Checked 2,016 readings/);
+  assert.equal(nodes["did-log"].href, DID.log_link);
+  assert.equal(nodes["did-sample"].hidden, true);
+  const trial = await today(base(), undefined, { ...DID, sample: { note: "A sample of what this shows.", lines: ["Checked 6,048 readings."] } });
+  assert.equal(trial.nodes["did-sample"].hidden, false);
+  assert.match(trial.nodes["did-sample-lines"].innerHTML, /6,048/);
+});
+
+test("3.32.0: the 'What this is' label follows the toggle", async () => {
+  const first = await today(base(), { user: { role: "owner" }, prefs: { today_intro: "closed" } });
+  const summary = first.nodes.intro.querySelector("summary");
+  assert.equal(summary.textContent, "How this works");
+  first.nodes.intro.open = true;
+  first.nodes.intro.listeners.toggle.forEach((fn) => fn());
+  assert.equal(summary.textContent, "What this is, and how it works");
+  first.nodes.intro.open = false;
+  first.nodes.intro.listeners.toggle.forEach((fn) => fn());
+  assert.equal(summary.textContent, "How this works");
 });

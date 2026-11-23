@@ -15,7 +15,11 @@
    under the page's strict policy. Each page hands over how to read its
    session and what to do once something changed. */
 (function (root) {
-  let cfg = { token: () => null, done: () => {}, say: () => {} };
+  let cfg = { token: () => null, done: () => {}, say: () => {},
+    // The loss flow (3.32.0): what the discard note starts with for an
+    // alert, and how this page opens its insurance pack.
+    discardNote: () => "Thrown away: ",
+    packet: (id) => { location.href = `/console?view=full#packet=${encodeURIComponent(id)}`; } };
   let dialog = null;
 
   function el(tag, attrs, kids) {
@@ -146,7 +150,10 @@
 
   function afterClose(id, body, closedWords) {
     const ask = body && body.ask_food;
-    if (!ask) { cfg.say(closedWords, "ok"); cfg.done(); return; }
+    // A short blip (3.32.0): the food is recorded safe by itself, and the
+    // server's message says so, with where to change it.
+    const auto = Boolean(body && body.incident && body.incident.food_auto);
+    if (!ask) { cfg.say(auto ? body.message : closedWords, "ok"); cfg.done(); return; }
     const d = buildFood();
     d.dataset.id = id;
     d.dataset.closed = closedWords;
@@ -176,7 +183,83 @@
     const closed = fromDialog && foodDialog ? `${foodDialog.dataset.closed || "Closed."} ` : "";
     cfg.say(closed + ((got.body && got.body.message) || "Noted."), "ok");
     cfg.done();
+    // Thrown away (3.32.0): the two things that come next, right away.
+    if (answerWord === "thrown") lossNext(id);
     return true;
+  }
+
+  /* After "Thrown away" (3.32.0): "Make the insurance pack" and "Add what
+     was thrown away", the note started for them. "Later" leaves both on
+     the alert for 24 hours. */
+  let lossDialog = null;
+  function buildLoss() {
+    if (lossDialog) return lossDialog;
+    const pack = el("button", { class: "btn btn-primary", type: "button", id: "loss-pack",
+      text: "Make the insurance pack" });
+    const note = el("button", { class: "btn", type: "button", id: "loss-note",
+      text: "Add what was thrown away" });
+    const later = el("button", { class: "btn linkish", type: "button", id: "loss-later", text: "Later" });
+    const box = el("textarea", { id: "loss-text", rows: "3", maxlength: "500",
+      "aria-label": "What was thrown away" });
+    const save = el("button", { class: "btn btn-primary", type: "button", id: "loss-save",
+      text: "Save to the record" });
+    lossDialog = el("dialog", { class: "confirm-dialog food-dialog loss-dialog", id: "loss-dialog",
+      "aria-labelledby": "loss-title" }, [
+      el("h2", { class: "confirm-title", id: "loss-title", text: "Thrown away. What next?" }),
+      el("p", { class: "fix-sub", id: "loss-sub", text: "If you claim on insurance, the pack has "
+        + "the readings and who did what. A line saying what went in the bin makes it complete." }),
+      el("div", { class: "confirm-acts food-acts", id: "loss-acts" }, [pack, note, later]),
+      el("div", { class: "loss-write", id: "loss-write", hidden: true }, [
+        el("label", { class: "fix-sub", for: "loss-text", text: "What was thrown away (what, how much):" }),
+        box,
+        el("div", { class: "confirm-acts" }, [save]),
+      ]),
+      el("p", { class: "confirm-out", id: "loss-out", role: "status" }),
+    ]);
+    document.body.appendChild(lossDialog);
+    pack.addEventListener("click", () => { lossDialog.close(); cfg.packet(lossDialog.dataset.id); });
+    later.addEventListener("click", () => lossDialog.close());
+    note.addEventListener("click", () => openNote());
+    save.addEventListener("click", async () => {
+      const text = box.value.trim();
+      const out = lossDialog.querySelector("#loss-out");
+      if (text.length < 3) { out.textContent = "Write a few words first."; return; }
+      save.disabled = true;
+      const got = await post(`/api/voice/corrective-action/${encodeURIComponent(lossDialog.dataset.id)}`,
+        { action: text, product_disposition: "discarded" }).catch(() => null);
+      save.disabled = false;
+      if (!got || !got.ok) {
+        out.textContent = got ? words(got.body, "That did not go through. Try again.")
+          : "No connection. Nothing was saved.";
+        return;
+      }
+      lossDialog.close();
+      cfg.say("Saved to the record: what was thrown away.", "ok");
+      cfg.done();
+    });
+    return lossDialog;
+  }
+
+  function openNote() {
+    const d = buildLoss();
+    d.querySelector("#loss-write").hidden = false;
+    d.querySelector("#loss-acts").hidden = true;
+    d.querySelector("#loss-title").textContent = "Add what was thrown away";
+    const box = d.querySelector("#loss-text");
+    box.value = cfg.discardNote(d.dataset.id) || "Thrown away: ";
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }
+
+  function lossNext(id, writeNow) {
+    const d = buildLoss();
+    d.dataset.id = id;
+    d.querySelector("#loss-out").textContent = "";
+    d.querySelector("#loss-write").hidden = true;
+    d.querySelector("#loss-acts").hidden = false;
+    d.querySelector("#loss-title").textContent = "Thrown away. What next?";
+    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+    if (writeNow) openNote();
   }
 
   function showStillOut(id, detail) {
@@ -222,5 +305,9 @@
     onIt: (id, button) => answer("ack", id, button),
     fixed: (id, button) => answer("fix", id, button),
     food: (id, answerWord, button) => food(id, answerWord, button, false),
+    // "Add what was thrown away" and "Make the insurance pack" from an
+    // alert's own row, for 24 hours after "Thrown away" (3.32.0).
+    lossNote: (id) => lossNext(id, true),
+    packet: (id) => cfg.packet(id),
   });
 })(typeof window !== "undefined" ? window : globalThis);

@@ -464,32 +464,22 @@ def test_cyberlogixs_own_welcome():
     # needs no key. tests/js/cyberlogix-pilot.test.js runs the answers.
     # 3.31.0 (core 1.4.2): each that needs no key carries its own words for
     # a typed question (`...matching(label)`, the MATCH list).
-    pattern = r'\{ icon: "([a-z]+)", label: "([^"]+)", (action|link|answer): "?([^",}]+)"?(?:, \.\.\.matching\("\2"\))? \}'
-
-    def pills(name):
-        start = config.index(f"const {name} = [")
-        return re.findall(pattern, config[start:config.index("];", start)])
-
-    own, visitor = pills("OWN_PILLS"), pills("VISITOR_PILLS")
-    assert own == [
-        ("bars", "Which fridges need me?", "answer", "needsAnswer"),
-        ("help", "What does this alert mean?", "answer", "alertAnswer"),
-        ("chat", "Is the food still OK?", "answer", "foodAnswer"),
-        ("bolt", "How do I connect a sensor?", "link", "/console#connect"),
-        ("key", "Add my AI key", "action", "settings")]
-    assert visitor == [
-        ("chat", "Will it work for my café?", "answer", "cafeAnswer"),
-        ("bars", "What does it cost?", "link", "/pricing"),
-        ("spark", "See it live", "link", "/demo"),
-        ("help", "What sensors do I need?", "link", "/help/sensors"),
-        ("key", "Add my AI key", "action", "settings")]
+    # 3.32.0: the pills are built in code (the answers routed to the best
+    # built-in one for a typed question), so they are read by running it.
+    own, visitor = _welcome_in_node("/console"), _welcome_in_node("/")
+    assert own == [("bars", "Which fridges need me?", "answer", True), ("help", "What does this alert mean?", "answer", True),
+        ("chat", "Is the food still OK?", "answer", True), ("bolt", "How do I connect a sensor?", "answer", True),
+        ("key", "Add my AI key", "settings", False)]
+    assert visitor == [("chat", "Will it work for my café?", "answer", True), ("bars", "What does it cost?", "answer", True),
+        ("spark", "See it live", "link /demo", True), ("help", "What sensors do I need?", "answer", True),
+        ("key", "Add my AI key", "settings", False)]
     for labels in (own, visitor):
-        assert all(len(label) <= 40 for _i, label, _k, _v in labels)
+        assert all(len(label) <= 40 for _i, label, _k, _m in labels)
         # Only the key pill is left for the AI: nothing on the welcome asks
         # for a key before it has helped.
-        assert [kind for _i, _l, kind, _v in labels].count("action") == 1
-    for _i, label, kind, _v in own + visitor:
-        assert (f'...matching("{label}")' in config) == (kind != "action"), label
+        assert [kind for _i, _l, kind, _m in labels].count("settings") == 1
+        # Each that needs no key carries its own words for a typed question.
+        assert all(has == (kind != "settings") for _i, _l, kind, has in labels)
     assert 'answerMore: "Want more? Add your AI key to ask anything.",' in config
     assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
     assert 'hideKeySections: ["image", "video"],' in config
@@ -501,3 +491,35 @@ def test_cyberlogixs_own_welcome():
     for _i, label, _k, _v in visitor:
         assert f'"{label}"' not in front, label
     assert "Not signed in: Pilot can't see their fridges or alerts here." in config
+
+
+def _welcome_in_node(pathname):
+    """The config mounted at `pathname` in Node, its welcome pills through
+    the core's own cleaning: [(icon, label, kind)], kind "answer", "link
+    /path" or the built-in's action (3.32.0: the pills are built in code,
+    so they are read by running it, not by pattern)."""
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent.parent
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    script = f"""
+const vm = require("node:vm"), fs = require("node:fs");
+const sb = {{ window: {{}}, document: {{}}, URL }};
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot' / 'pilot-panel.js'))}, "utf8"), sb);
+let given = null;
+const path = {json.dumps(pathname)};
+vm.runInNewContext(fs.readFileSync({json.dumps(str(here / 'static' / 'pilot-cyberlogix.js'))}, "utf8"), {{
+  window: {{ Pilot: {{ mount: (c) => {{ given = c; }} }}, location: {{ pathname: path, href: "https://cyberlogix.example" + path }},
+    localStorage: {{ getItem: () => null }} }},
+  document: {{ getElementById: () => ({{ dataset: {{}} }}), title: "" }}, URL }});
+const pills = sb.window.PilotPanel.welcomePills(given.welcomePills, "https://cyberlogix.example" + path);
+console.log(JSON.stringify(pills.map((p) => [p.icon, p.label, p.link ? "link " + new URL(p.link).pathname + new URL(p.link).hash
+  : p.answer !== undefined ? "answer" : p.action, Boolean(p.match && p.match.length)])));"""
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr[-1500:]
+    return [tuple(row) for row in json.loads(out.stdout)]

@@ -79,10 +79,21 @@ FOOD_ANSWER_WORDS = {
 }
 
 
-def food_answer_words(disposition: Optional[str]) -> Optional[str]:
-    """"Food kept", "Thrown away" and so on, or None before any answer."""
+# How long an answer about the food can be changed (food_value.CHANGE_HOURS).
+FOOD_CHANGE_HOURS = 24
+
+
+def food_answer_words(disposition: Optional[str],
+                      auto_minutes: Optional[float] = None) -> Optional[str]:
+    """"Food kept", "Thrown away" and so on, or None before any answer.
+    "Food safe: out for 4 minutes" when CyberLogix recorded it by itself
+    for a short blip (3.32.0)."""
     if not disposition:
         return None
+    if auto_minutes is not None:
+        from domain import minutes_words
+
+        return f"Food safe: out for {minutes_words(auto_minutes)}"
     return FOOD_ANSWER_WORDS.get(disposition, disposition.replace("_", " ").capitalize())
 
 
@@ -550,6 +561,14 @@ class Incident:
     # Jo, 4:09 PM" in the alert's history and on /today's month line.
     food_answered_by: Optional[str] = None
     food_answered_at: Optional[datetime] = None
+    # A short blip whose food CyberLogix recorded safe by itself (3.32.0,
+    # food_value.auto_safe_minutes): the minutes it was out. None for an
+    # answer a person gave. Cleared when somebody changes it.
+    food_auto_minutes: Optional[float] = None
+    # Every answer about the food, in order, the automatic one included:
+    # {"disposition", "by", "at", "auto"}. A change within 24 hours
+    # (food_value.CHANGE_HOURS) adds a row; nothing is ever taken out.
+    food_history: List[Dict[str, Any]] = field(default_factory=list)
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     # The readings that prove this event, copied onto the incident when it
@@ -783,6 +802,18 @@ class Incident:
         """When the unit went out of range for this alert."""
         return self.out_since or self.opened_at
 
+    def food_words(self) -> Optional[str]:
+        """"Food kept", "Thrown away", or "Food safe: out for 4 minutes"
+        when CyberLogix recorded it by itself (3.32.0); None before."""
+        return food_answer_words(self.product_disposition, self.food_auto_minutes)
+
+    def food_change_until(self) -> Optional[datetime]:
+        """Until when the answer about the food can be changed (24 hours
+        after it was given, 3.32.0), or None before any answer."""
+        if not self.product_disposition or self.food_answered_at is None:
+            return None
+        return self.food_answered_at + timedelta(hours=FOOD_CHANGE_HOURS)
+
     def out_minutes(self, now: Optional[datetime] = None) -> float:
         """How long the unit was out of range: from `started_at` to when
         the alert closed, or to now while it is open. Never negative."""
@@ -826,6 +857,8 @@ class Incident:
             "product_disposition": self.product_disposition,
             "food_answered_by": self.food_answered_by,
             "food_answered_at": iso(self.food_answered_at),
+            "food_auto_minutes": self.food_auto_minutes,
+            "food_history": list(self.food_history),
             "reviewed_by": self.reviewed_by,
             "reviewed_at": iso(self.reviewed_at),
             "evidence_readings": list(self.evidence_readings),
@@ -885,6 +918,8 @@ class Incident:
             # Defaulted: answers before 3.30.0 kept no name or time.
             food_answered_by=row.get("food_answered_by"),
             food_answered_at=_parse(row.get("food_answered_at")),
+            food_auto_minutes=row.get("food_auto_minutes"),
+            food_history=list(row.get("food_history") or []),
             reviewed_by=row.get("reviewed_by"),
             reviewed_at=_parse(row.get("reviewed_at")),
             # Defaulted, so incidents written before evidence was
@@ -978,7 +1013,17 @@ class Incident:
             "food_answered_by": self.food_answered_by,
             "food_answered_by_name": person_name(self.food_answered_by),
             "food_answered_at": iso(self.food_answered_at),
-            "food_answer_words": food_answer_words(self.product_disposition),
+            "food_answer_words": self.food_words(),
+            # Recorded by itself for a short blip (3.32.0), and until when
+            # the answer can still be changed ("Change", for 24 hours).
+            "food_auto": self.food_auto_minutes is not None,
+            "food_auto_minutes": self.food_auto_minutes,
+            "food_change_until": iso(self.food_change_until()),
+            "food_history": [
+                {"words": food_answer_words(row.get("disposition"), row.get("auto_minutes")),
+                 "by_name": None if row.get("auto") else person_name(row.get("by")),
+                 "auto": bool(row.get("auto")), "at": row.get("at")}
+                for row in self.food_history],
             "reviewed_by": self.reviewed_by,
             "reviewed_at": iso(self.reviewed_at),
             # What an inspector is actually checking. A cold fridge with

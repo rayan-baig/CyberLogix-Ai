@@ -400,6 +400,7 @@ async function enter(token, user) {
   }
   followInspectorLink().catch(() => { /* the estate is the page */ });
   followConnectLink();
+  followPacketLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -1944,6 +1945,7 @@ function setWall(on) {
   }
   applyFinder();
   reapplyFleet();
+  if (state.data) renderNeedsBar(state.data);
 }
 $("wall-mode").addEventListener("click", () => setWall(true));
 $("wall-exit").addEventListener("click", () => setWall(false));
@@ -2098,14 +2100,19 @@ function incidentTimeline(i) {
     steps.push({ cls: "done", when: i.resolved_at, text });
   }
   // What happened to the food, who said so and when (3.30.0): "Thrown
-  // away, Jo" at 4:09 PM.
-  if (i.food_answer_words) {
-    const by = i.food_answered_by_name || (i.food_answered_by
-      ? CLXWords.person(null, i.food_answered_by) : "");
-    steps.push({ cls: "done", when: i.food_answered_at || null,
-      text: by ? `${i.food_answer_words}, ${by}` : i.food_answer_words,
-      order: i.food_answered_at ? undefined : Infinity });
-  }
+  // away, Jo" at 4:09 PM. Every answer, in order (3.32.0): "Food safe: out
+  // for 4 minutes, recorded automatically", then "Changed to Thrown away,
+  // Jo" if somebody changed it within the 24 hours.
+  const history = (i.food_history || []).length ? i.food_history
+    : (i.food_answer_words ? [{ words: i.food_answer_words, at: i.food_answered_at,
+      by_name: i.food_answered_by_name || (i.food_answered_by ? CLXWords.person(null, i.food_answered_by) : ""),
+      auto: Boolean(i.food_auto) }] : []);
+  history.forEach((row, n) => {
+    const who = row.auto ? "recorded automatically" : row.by_name;
+    const said = n ? `Changed to ${row.words}` : row.words;
+    steps.push({ cls: "done", when: row.at || null,
+      text: who ? `${said}, ${who}` : said, order: row.at ? undefined : Infinity });
+  });
   if (!i.resolved_at) {
     const unit = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === i.sensor_id);
     const back = Boolean(unit && unit.condition && unit.condition.back_in_range);
@@ -2137,7 +2144,7 @@ function foodAtRisk(i) {
   const q = i.food_question;
   const canAct = Boolean(state.user && state.user.role !== "viewer") && !state.wall;
   const kept = q.word === "stock" ? "Stock kept" : "Food kept";
-  return `<div class="${q.at_risk ? "food-risk" : "food-ask"}"><p><b>${esc(q.words)}</b>
+  return `<div class="${q.at_risk ? "food-risk" : "food-ask"}"><p><b>${esc(CLXWords.foodBack(q))}</b>
       <span class="sub">${esc(q.note)}</span></p>${canAct
     ? `<div class="food-acts"><button class="btn btn-sm" type="button" data-food-kept="${
         esc(i.incident_id)}">${kept}</button><button class="btn btn-sm" type="button" data-food-thrown="${
@@ -2146,11 +2153,22 @@ function foodAtRisk(i) {
 
 function foodAnswered(i) {
   if (!i.food_answer_words) return "";
-  const who = [i.food_answer_words, i.food_answered_by_name,
+  const who = [i.food_answer_words, i.food_auto ? "recorded automatically" : i.food_answered_by_name,
     i.food_answered_at ? CLXWords.clock(i.food_answered_at) : ""].filter(Boolean).join(", ");
-  return `<p class="${i.food_protected ? "food-saved" : "food-said"}"><b>${esc(who)}</b>${
+  // "Change" for 24 hours, each change kept in the history, and after
+  // "Thrown away" the insurance pack and the note of what went (3.32.0).
+  const canAct = Boolean(state.user && state.user.role !== "viewer") && !state.wall;
+  const open = canAct && CLXWords.changeable(i.food_change_until);
+  const id = esc(i.incident_id);
+  const thrown = i.product_disposition === "discarded";
+  return `<div class="${i.food_protected ? "food-saved" : "food-said"}"><p class="u-m-0"><b>${esc(who)}</b>${
+    open ? `<button class="linkish food-change" type="button" data-food-change="${id}">Change</button>` : ""}${
     i.food_protected ? `<span class="sub">${esc(i.food_protected.words)}. ${
-      esc(i.food_protected.note)}</span>` : ""}</p>`;
+      esc(i.food_protected.note)}</span>` : ""}${
+    i.food_auto ? `<span class="sub">Out for under ${esc((state.data && state.data.food_safe_minutes) || 30)} minutes and never far past its limit: well inside the 2-hour rule, so nobody was asked.</span>` : ""}</p>${
+    open ? `<div class="food-acts food-change-to"><button class="btn btn-sm" type="button" data-food-kept="${id}">Food kept</button><button class="btn btn-sm" type="button" data-food-thrown="${id}">Thrown away</button></div>` : ""}${
+    open && thrown ? `<div class="food-loss"><button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>${
+      i.corrective_action ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}</div>` : ""}</div>`;
 }
 
 /* A unit's name as the kitchen says it, for an alert about it. */
@@ -2294,7 +2312,7 @@ function renderNeedsBar(d) {
     bar.innerHTML = `<div class="needs-bar-in">
         <span class="needs-bar-kicker">Needs you now</span>
         <p class="needs-bar-what"><b>One thing to do: check the ${esc(q.word)} in ${
-          esc(unitNameFor(f.sensor_id))}.</b> <span class="needs-bar-who">${esc(q.words)}. ${
+          esc(unitNameFor(f.sensor_id))}.</b> <span class="needs-bar-who">${esc(CLXWords.foodBack(q))}. ${
           esc(q.note)}</span></p>
         <span class="needs-bar-acts">
           ${canAct ? `<button class="btn btn-sm btn-primary" type="button" data-food-kept="${
@@ -3780,6 +3798,24 @@ $("poller-form").addEventListener("submit", async (event) => {
    sentence rather than an error). The business that joined is shown by
    its name and nothing else. */
 
+/* What the referrer gets, in the words of their own plan (3.32.0): a
+   Starter café was told "$149 off", the restaurant location price of a
+   plan it does not have. The amounts are the server's; only the words
+   follow the plan. */
+function referralReward(seen) {
+  const plan = (state.data && state.data.tenant && state.data.tenant.plan) || "";
+  const starter = (state.data && state.data.starter) || {};
+  const price = starter.monthly_label || money(starter.monthly_usd || seen.reward_usd);
+  if (plan === "starter") {
+    return `You get a month of Starter free (${price} off) when they pay their first invoice.`;
+  }
+  if (plan === "trial") {
+    return `You get a month of your plan free when they pay their first invoice: ${price} off on Starter, `
+      + "or a month on one location on Growth.";
+  }
+  return `You get ${money(seen.reward_usd)} off, one month on one location, when they pay their first invoice.`;
+}
+
 function renderReferrals(seen) {
   const body = $("referral-body");
   if (!seen || seen.notOwner) {
@@ -3821,8 +3857,7 @@ function renderReferrals(seen) {
     </div>
     <div class="u-fs-12 u-c-muted u-wb-break-all u-mb-8">${esc(link)}</div>
     <div class="u-fs-12 u-c-ink-2 u-mb-8">They get a ${esc(seen.trial_days)}-day
-      trial. You get ${money(seen.reward_usd)} off, one month on one location,
-      when they pay their first invoice. ${esc(seen.rewards_left)} of
+      trial. ${esc(referralReward(seen))} ${esc(seen.rewards_left)} of
       ${esc(seen.rewards_per_year)} rewards left this year.</div>
     <div class="u-fs-12-5 u-c-ink-2 u-mt-10 u-mb-3">Who joined</div>${joined}
     ${earned ? `<div class="u-fs-12-5 u-c-ink-2 u-mt-10 u-mb-3">What you earned</div>${earned}` : ""}
@@ -4896,6 +4931,16 @@ async function followInspectorLink() {
   if (link.open) openInspectorLog(link.from, link.to, false);
 }
 
+/* "/console#packet=INC-..." opens that alert's insurance pack (3.32.0):
+   /today's "Make the insurance pack" after "Thrown away" comes here.
+   Followed once, like the inspector's link. */
+function followPacketLink() {
+  const found = /^#packet=([A-Za-z0-9_-]{1,64})$/.exec(location.hash || "");
+  if (!found || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  openPacket(found[1]);
+}
+
 /* "/console#connect" opens "Connect your sensor" (3.27.0): Pilot's "How
    do I connect a sensor?" goes here, from the console or /today. Followed
    once, like the inspector's link; signed out, it waits for the sign-in. */
@@ -4909,6 +4954,7 @@ function followConnectLink() {
 window.addEventListener("hashchange", () => {
   if (!state.token) return;
   followConnectLink();
+  followPacketLink();
   followInspectorLink().catch(() => { /* the estate is the page */ });
 });
 
@@ -6646,6 +6692,14 @@ document.addEventListener("click", (event) => {
   // What happened to the food, on an alert that says "Food at risk".
   if (btn.dataset.foodKept) CLXAnswer.food(btn.dataset.foodKept, "kept", btn);
   if (btn.dataset.foodThrown) CLXAnswer.food(btn.dataset.foodThrown, "thrown", btn);
+  // "Change" opens the two answers in place; after "Thrown away", the
+  // insurance pack and the note of what went (3.32.0).
+  if (btn.dataset.foodChange) {
+    const box = btn.closest(".food-said, .food-saved");
+    if (box) box.classList.add("changing");
+  }
+  if (btn.dataset.lossPack) CLXAnswer.packet(btn.dataset.lossPack);
+  if (btn.dataset.lossNote) CLXAnswer.lossNote(btn.dataset.lossNote);
 
   if (btn.dataset.needsMore) {
     goTo("alerts");
@@ -7339,10 +7393,35 @@ function isAdvanced(card) {
     || (card.getAttribute("data-small-advanced") === "1" && smallAccount());
 }
 
+/* The Advanced tab's sections (3.32.0): a phone page of fourteen cards
+   one under another, now four headings, each opening its own cards. */
+const ADV_SECTIONS = [
+  { id: "records", title: "Records and proof",
+    say: "Your sealed safety records, how you compare, and who did what.",
+    cards: ["find-compliance-vault", "find-sector-standing", "find-audit-trail"] },
+  { id: "connect", title: "Sensors and connections",
+    say: "A sensor cloud, a sensor you already own, OmniArmor, an AI key, your industry's settings.",
+    cards: ["find-vendor-clouds", "find-byod-sensor-webhook", "find-omniarmor", "find-ai-key", "find-sector-shortcuts"] },
+  { id: "jobs", title: "Jobs and staff",
+    say: "Things to do, notes from a meeting, staff licences, your crew.",
+    cards: ["find-tasks", "find-meeting-intelligence", "find-licences", "find-people"] },
+  { id: "running", title: "Automatic checks and costs",
+    say: "The checks that run on their own, and spending limits.",
+    cards: ["find-autopilot", "find-spend-controls"] },
+];
+const ADV_OF = {};
+ADV_SECTIONS.forEach((sec) => sec.cards.forEach((id) => { ADV_OF[id] = sec.id; }));
+const advOpen = new Set();
+
 /* Whether a card belongs in the tab being shown. */
 function inTab(card, searching) {
   const advanced = isAdvanced(card);
-  if (finder.tab === "advanced") return advanced;
+  if (finder.tab === "advanced") {
+    if (!advanced) return false;
+    // In a folded section, only once it is opened (a search shows all).
+    const sec = ADV_OF[card.id];
+    return searching || !sec || advOpen.has(sec);
+  }
   // A card a button just led to is shown, wherever it is filed.
   if ((finder.tab === "all" || simpleTabs()) && finder.reveal.has(card.id)) return true;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
@@ -7377,7 +7456,8 @@ function applyFinder() {
   });
 
   const none = $("find-none");
-  none.hidden = showing > 0;
+  // Advanced with its sections folded shows the headings, not "nothing".
+  none.hidden = showing > 0 || (finder.tab === "advanced" && !query && !state.wall);
   if (!showing) {
     none.textContent = query
       ? `Nothing here matches “${query}”.`
@@ -7397,6 +7477,7 @@ function applyFinder() {
   $("more-cards-btn").textContent = `More (${folded} other things you can do)`;
   const advNote = $("adv-note");
   if (advNote) advNote.hidden = !smallAccount() || finder.tab !== "all" || Boolean(query) || dayOne() || state.wall;
+  advSections(Boolean(query));
   renderTabEmpty();
   balanceLayout();
   const simple = simpleTabs();
@@ -7409,6 +7490,39 @@ function applyFinder() {
                      String(tab.getAttribute("data-tab") === finder.tab));
   });
 }
+
+/* The Advanced tab's four headings, each with how many cards it holds and
+   a line saying what they are; pressing one opens it (and closes it). */
+function advSections(searching) {
+  const box = $("adv-sections");
+  if (!box) return;
+  const show = finder.tab === "advanced" && !searching && !state.wall;
+  box.hidden = !show;
+  if (!show) return;
+  const cards = findableCards().filter((card) => isAdvanced(card) && card.dataset.empty !== "1");
+  box.innerHTML = ADV_SECTIONS.map((sec) => {
+    const n = cards.filter((card) => ADV_OF[card.id] === sec.id).length;
+    if (!n) return "";
+    const open = advOpen.has(sec.id);
+    return `<button class="adv-sec${open ? " open" : ""}" type="button" data-adv-sec="${sec.id}"
+        aria-expanded="${open}"><span class="adv-sec-title">${esc(sec.title)} <span class="adv-sec-n">${n}</span></span>
+      <span class="adv-sec-say">${esc(sec.say)}</span></button>`;
+  }).join("");
+}
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-adv-sec]");
+  if (!b) return;
+  const id = b.dataset.advSec;
+  // One at a time, so the cards under the headings are the open one's.
+  const was = advOpen.has(id);
+  advOpen.clear();
+  if (!was) advOpen.add(id);
+  applyFinder();
+  // The cards it opened come next, under its heading.
+  const next = document.querySelector(`[data-adv-sec="${id}"]`);
+  if (next) next.focus();
+});
 
 /* The page is two columns, the cards' and a side column. A tab that has
    nothing in one of them gives the other the whole width (theme.css,
@@ -7561,7 +7675,22 @@ CLXAnswer.setup({
   token: () => state.token,
   say: (message, kind) => toast(message, kind || ""),
   done: () => refresh().catch(() => { /* the next poll tries again */ }),
+  // After "Thrown away" (3.32.0): the note starts with the unit, how long
+  // it was out and how warm; the insurance pack opens right here.
+  discardNote: (id) => discardNote(id),
+  packet: (id) => openPacket(id),
 });
+
+/* "Thrown away from Walk-in fridge after 2 hours out (worst 52°F): ",
+   for the person to finish with what went in the bin (3.32.0). */
+function discardNote(id) {
+  const i = ((state.data && state.data.incidents) || []).find((x) => x.incident_id === id);
+  if (!i) return "Thrown away: ";
+  const long = CLXWords.outFor(i.out_since || i.opened_at, i.out_until || i.resolved_at);
+  const worst = i.peak_display != null ? ` (worst ${i.peak_display}°${i.temperature_unit || state.unit})` : "";
+  // A plain string for a text box, never markup.
+  return "Thrown away from " + unitNameFor(i.sensor_id) + (long ? " after " + long + " out" : "") + worst + ": ";
+}
 
 /* ---------------- Pilot ----------------
    What Pilot, the assistant (static/pilot-cyberlogix-pack.js, docs/PILOT.md),

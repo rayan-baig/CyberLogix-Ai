@@ -791,6 +791,10 @@ def resolve_incident(
     )
 
     message = "Closed."
+    if incident.food_auto_minutes is not None:
+        # A short blip (3.32.0): nobody is asked about the food.
+        message = (f"Closed. {incident.food_words()}, well inside the 2-hour rule, so "
+                   "that is recorded. Change it on the alert if the food was not kept.")
     if out is not None and sensor is not None:
         from telemetry import alert_clock
 
@@ -1005,13 +1009,34 @@ def record_food(
         )
     actor = actor_label(operator, "API key")
     fate = FOOD_ANSWERS[payload.food]
+    # An answer can be changed for 24 hours (3.32.0), each change kept in
+    # the alert's history. After that it stands: an inspector's log whose
+    # answers move weeks later is worth nothing. A corrective action can
+    # still say what happened since.
+    until = incident.food_change_until()
+    changing = bool(incident.product_disposition)
+    if changing and until is not None and utc_now() > until:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("The answer about the food can be changed for 24 hours after it "
+                    "was given, and that has passed. Write what happened in the "
+                    "alert's corrective action instead."),
+        )
+    before = incident.food_words() if changing else None
     STORE.record_disposition(incident, fate, actor)
+    said = "kept" if payload.food == "kept" else "thrown away"
     write_audit(tenant, operator, "incident.food",
-                f"{incident_id}: food {'kept' if payload.food == 'kept' else 'thrown away'}.",
+                f"{incident_id}: food {said}"
+                + (f" (changed from {before})." if before else "."),
                 fallback_actor=actor)
+    if payload.food == "kept":
+        message = "Changed: food kept." if changing else "Noted: food kept."
+    else:
+        message = ("Changed: food thrown away. That goes in the record." if changing
+                   else "Noted: food thrown away. That goes in the record.")
     return {
-        "message": ("Noted: food kept." if payload.food == "kept"
-                    else "Noted: food thrown away. That goes in the record."),
+        "message": message,
+        "changed": changing,
         "incident": incident.public(),
     }
 

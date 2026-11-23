@@ -220,10 +220,34 @@ Every way an alert closes asks what happened to the food (3.30.0): **It's
 fixed** in range, **It's fixed** while still warm and then closed by itself
 once cold, and an alert that came back to normal with nobody answering.
 Until somebody taps **Food kept** or **Thrown away**, the alert is "food
-unanswered": it says how long it took to come back ("Back in range in 12
-minutes"), or **"Food at risk: check it"** if it ran longer than two hours
+unanswered": it says how long it was out and since when ("Cold again after
+12 minutes out (since 9:10 PM)", 3.32.0; "Back in range after ..." for a
+unit that was too cold), or **"Food at risk: check it"** if it ran longer than two hours
 (`SAFE_HOURS`) or was closed while still out of range, and offers the two
 buttons. It never says "Food kept" or "Food protected" before an answer.
+
+**Short blips are recorded by themselves (3.32.0).** A food unit's alert
+that closes back in range after less than `CYBERLOGIX_FOOD_SAFE_MINUTES`
+minutes out (30 by default, never more than the two-hour rule it sits
+inside; 0 turns it off), and never went 15°F past its upper limit or
+reached 70°F, records "Food safe: out for 12 minutes" as it closes, as
+"CyberLogix (automatic)", and nobody is asked: no "One thing to do", no
+red bar, and no dollars counted for it (`food_value.auto_safe_minutes`,
+`SHORT_MINUTES`). "Change" beside it opens **Food kept** / **Thrown away**.
+A longer or a severe alert, one closed while still out of range, and
+stock in a pharmacy or a lab (a vaccine's own rules apply) keep the
+question. The console's overview carries the figure as
+`food_safe_minutes`.
+
+**Any answer can be changed for 24 hours** (`CHANGE_HOURS`, 3.32.0):
+"Change" shows until then, and each change adds a row to the alert's
+food history ("Food safe: out for 4 minutes, recorded automatically",
+then "Changed to Thrown away, Jo"), with an audit entry saying what it was
+changed from. After 24 hours `POST /api/voice/food/{id}` refuses a change
+(409); a corrective action can still say what happened. After **Thrown
+away** the page offers **Make the insurance pack** and **Add what was
+thrown away**, a corrective action started for them ("Thrown away from
+Walk-in fridge after 2 hours out (worst 52°F): ").
 
 For a week after it closed (`ASK_ON_TODAY_DAYS`), the Simple view's
 headline is "One thing to do: check the food in Walk-in fridge", with the
@@ -246,9 +270,21 @@ and one for vaccines and medicines (pharmacies, labs). `SECTOR_STOCK` says
 which list a sector uses; a sector not in it shows no estimate at all. The
 monthly email adds up the month's alerts from the saved answers only: food
 kept (with the estimate), thrown away, at risk and not answered. The
-Simple view shows the month so far in one line, "This month: 1 alert,
-answered in 4 minutes, food thrown away.", with who answered and when
-("Thrown away, Rosa, 4:09 PM") under it.
+Simple view shows the month so far in one short line (3.32.0), "This
+month: 3 alerts · all answered · 1 food answer missing", with who
+answered and when ("Thrown away, Rosa, 4:09 PM") under it.
+
+### What CyberLogix did for you
+
+`GET /api/console/did-for-you?period=week|month` (`didforyou.py`, 3.32.0)
+is the week (the last seven days) or the month so far on one screen:
+readings checked and the share in range, the alerts and how fast somebody
+answered (typical and fastest), how many came back by themselves, texts
+delivered and calls placed, what happened to the food, any sensor gone
+quiet, and a link to the printable inspector's log for the same days. The
+Simple view shows it folded under the month line. During a free trial's
+first week it also carries a sample, labelled as one, of a week with three
+fridges and freezers.
 
 ### Calls, said as they happened
 

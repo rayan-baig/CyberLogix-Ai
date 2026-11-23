@@ -143,8 +143,24 @@ function needButtons(i) {
 CLXAnswer.setup({
   token,
   say: (message) => { $("when").textContent = message; },
-  done: () => load(),
+  done: () => { load().then(() => { if (didAsked) loadDid(); }); },
+  // After "Thrown away" (3.32.0): the note starts with which unit and how
+  // long it was out, and the insurance pack opens in the full console.
+  discardNote: (id) => discardNote(id),
 });
+
+/* "Thrown away from Walk-in fridge after 2 hours out (worst 52°F): ",
+   for the person to finish with what went in the bin (3.32.0). */
+function discardNote(id) {
+  const data = lastData || {};
+  const i = (data.incidents || []).find((x) => x.incident_id === id);
+  if (!i) return "Thrown away: ";
+  const unit = (data.sensors || []).find((u) => u.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
+  const long = CLXWords.outFor(i.out_since || i.opened_at, i.out_until || i.resolved_at);
+  const worst = i.peak_display != null ? ` (worst ${i.peak_display}°${i.temperature_unit || ""})` : "";
+  // A plain string for a text box, never markup.
+  return "Thrown away from " + nameOf(unit) + (long ? " after " + long + " out" : "") + worst + ": ";
+}
 
 function onAnswerClick(event) {
   const button = event.target.closest("button");
@@ -153,8 +169,14 @@ function onAnswerClick(event) {
   else if (button.dataset.fixed) CLXAnswer.fixed(button.dataset.fixed, button);
   else if (button.dataset.foodKept) CLXAnswer.food(button.dataset.foodKept, "kept", button);
   else if (button.dataset.foodThrown) CLXAnswer.food(button.dataset.foodThrown, "thrown", button);
+  else if (button.dataset.foodChange) {
+    // "Change" (3.32.0): the two answers, in place of the link.
+    const row = button.closest(".answer-row");
+    if (row) row.classList.add("changing");
+  } else if (button.dataset.lossPack) CLXAnswer.packet(button.dataset.lossPack);
+  else if (button.dataset.lossNote) CLXAnswer.lossNote(button.dataset.lossNote);
 }
-["needs", "verdict", "todo"].forEach((id) => $(id).addEventListener("click", onAnswerClick));
+["needs", "verdict", "todo", "month"].forEach((id) => $(id).addEventListener("click", onAnswerClick));
 
 /* The food question (3.30.0): a closed alert nobody has said the food
    was kept or thrown away for, in the last week (food_value.question).
@@ -177,7 +199,7 @@ function foodButtons(i, viewer) {
 }
 
 function foodWhy(i) {
-  return `${i.food_question.words}. ${i.food_question.note}`;
+  return `${CLXWords.foodBack(i.food_question)}. ${i.food_question.note}`;
 }
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
@@ -391,35 +413,106 @@ $("intro").addEventListener("toggle", () => {
   // The page folding it on load fires this too: only a change counts.
   if (open === introState) return;
   introState = open;
-  $("intro").classList.toggle("intro-back", !open);
+  // The label follows (3.32.0): "How this works" folded, "What this is,
+  // and how it works" open, whichever way it was toggled.
+  foldIntro(open);
   savePref("today_intro", open ? "open" : "closed");
   if (me) me.prefs = Object.assign({}, me.prefs || {}, { today_intro: open ? "open" : "closed" });
 });
 
-/* "This month: 1 alert, answered in 4 minutes, food kept." (3.28.0), from
-   the server's this_month, by the same rule as each alert's line. */
+/* "This month: 3 alerts · all answered · 1 food answer missing" (3.32.0),
+   from the server's this_month, by the same rule as each alert's line. */
 function monthLine(data, units) {
   const m = data.this_month;
   const box = $("month");
   if (!m || !units.length || !units.some((u) => u.last_seen)) { box.hidden = true; return; }
   $("month-line").textContent = m.words;
   // Who said what about the food, and when (3.30.0): "Walk-in fridge:
-  // Thrown away, Jo, 4:09 PM." The dollar figure only for food somebody
-  // said was kept, never because the fridge came back quickly.
+  // Thrown away, Jo, 4:09 PM." With "Change" for 24 hours, and after
+  // "Thrown away" the insurance pack and the note of what went (3.32.0).
+  // The dollar figure only for food somebody said was kept, never for a
+  // short blip and never because the fridge came back quickly.
   const answers = m.food_answers || [];
-  const lines = answers.map((a) => {
-    const who = [a.words, a.by_name, CLXWords.clock(a.at)].filter(Boolean).join(", ");
-    return (m.alerts > 1 || answers.length > 1) ? `${a.unit}: ${who}.` : `${who}.`;
+  const many = m.alerts > 1 || answers.length > 1;
+  const viewer = viewerOnly();
+  const rows = answers.map((a) => {
+    const who = [a.words, a.auto ? "recorded automatically" : a.by_name, CLXWords.clock(a.at)]
+      .filter(Boolean).join(", ");
+    const open = !viewer && a.changeable && CLXWords.changeable(a.change_until);
+    const id = esc(a.incident_id);
+    return `<div class="answer-row">
+      <p class="answer-what">${esc(many ? `${a.unit}: ${who}.` : `${who}.`)}${open
+        ? ` <button class="linkish answer-change" type="button" data-food-change="${id}">Change</button>` : ""}</p>
+      ${open ? `<div class="answer-change-to food-acts">
+        <button class="btn btn-sm" type="button" data-food-kept="${id}"${a.disposition === "unaffected" && !a.auto ? ' aria-pressed="true"' : ""}>${a.disposition === "unaffected" && !a.auto ? "✓ " : ""}Food kept</button>
+        <button class="btn btn-sm" type="button" data-food-thrown="${id}"${a.thrown ? ' aria-pressed="true"' : ""}>${a.thrown ? "✓ " : ""}Thrown away</button>
+      </div>` : ""}
+      ${open && a.thrown ? `<div class="answer-loss">
+        <button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>
+        ${a.has_note ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}
+      </div>` : ""}
+    </div>`;
   });
   if (m.food_usd) {
-    lines.push(`About $${Number(m.food_usd).toLocaleString("en-US")} of food kept: `
-      + "an estimate of what a typical fridge or freezer of each kind holds.");
+    rows.push(`<p class="answer-what">${esc(`About $${Number(m.food_usd).toLocaleString("en-US")} of food kept: `
+      + "an estimate of what a typical fridge or freezer of each kind holds.")}</p>`);
   }
   const sub = $("month-sub");
-  sub.hidden = !lines.length;
-  sub.textContent = lines.join(" ");
+  sub.hidden = !rows.length;
+  sub.innerHTML = rows.join("");
   box.hidden = false;
 }
+
+/* What CyberLogix did for you (3.32.0): the week or the month, read once
+   when the page opens and again when the other is picked. */
+let didPeriod = "week";
+async function loadDid() {
+  const key = token();
+  const box = $("did");
+  if (!key || !lastData || !(lastData.sensors || []).length) { box.hidden = true; return; }
+  let got = null;
+  try {
+    const res = await fetch(`/api/console/did-for-you?period=${didPeriod}`,
+      { headers: { Authorization: "Bearer " + key } });
+    if (res.ok) got = await res.json();
+  } catch (_) { got = null; }
+  if (!got) { box.hidden = true; return; }
+  renderDid(got);
+  box.hidden = false;
+  followDid();
+}
+
+function renderDid(got) {
+  const f = got.figures || {};
+  $("did-teaser").textContent = `${got.label}: ${Number(f.readings || 0).toLocaleString("en-US")} readings checked, ${
+    f.alerts ? `${f.alerts} alert${f.alerts === 1 ? "" : "s"}` : "no alerts"}.`;
+  $("did-lines").innerHTML = (got.lines || []).map((line) => `<li>${esc(line)}</li>`).join("");
+  const sample = got.sample;
+  $("did-sample").hidden = !sample;
+  if (sample) {
+    $("did-note").textContent = sample.note;
+    $("did-sample-lines").innerHTML = (sample.lines || []).map((line) => `<li>${esc(line)}</li>`).join("");
+  }
+  $("did-log").href = got.log_link;
+  document.querySelectorAll("[data-did]").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.did === got.period)));
+}
+
+/* "/today#did" (Pilot's "What CyberLogix did for you") opens it. */
+function followDid() {
+  if (location.hash !== "#did" || $("did").hidden) return;
+  $("did").open = true;
+  $("did").scrollIntoView({ block: "start" });
+  history.replaceState(null, "", location.pathname + location.search);
+}
+window.addEventListener("hashchange", followDid);
+
+$("did").addEventListener("click", (event) => {
+  const b = event.target.closest("[data-did]");
+  if (!b || b.dataset.did === didPeriod) return;
+  didPeriod = b.dataset.did;
+  loadDid();
+});
 
 let introDone = false;
 
@@ -568,10 +661,12 @@ const POLL_MS = 30000;
 let pollTimer = null;
 let lastData = null;
 let meAsked = false;
+let didAsked = false;
 async function tick() {
   clearTimeout(pollTimer);
   if (!meAsked) { meAsked = true; await loadMe(); }
   await load();
+  if (!didAsked && lastData) { didAsked = true; loadDid(); }
   pollTimer = setTimeout(tick, CLXWords.pollDelay((lastData || {}).sensors, POLL_MS));
 }
 tick();
