@@ -196,8 +196,8 @@ def test_pilot_greets_a_visitor_on_the_public_pages():
         ("spark", "See it live", "link /demo", True), ("help", "What sensors do I need?", "answer", True),
         ("key", "Add my AI key", "settings", False)], pathname
     for pathname in ("/console", "/today"):
-        assert _welcome_in_node(pathname) == [("bars", "Which fridges need me?", "answer", True), ("help", "What does this alert mean?", "answer", True),
-        ("chat", "Is the food still OK?", "answer", True), ("bolt", "How do I connect a sensor?", "answer", True),
+        assert _welcome_in_node(pathname) == [("bars", "Which fridges need me?", "answer", True), ("chat", "Is the food still OK?", "answer", True),
+        ("bolt", "How do I connect a sensor?", "answer", True), ("help", "Who gets the texts?", "answer", True),
         ("key", "Add my AI key", "settings", False)], pathname
     # The front page's own chips no longer repeat the welcome.
     front = PILOT_APP[PILOT_APP.index('"/": ['):PILOT_APP.index('"/pricing": [')]

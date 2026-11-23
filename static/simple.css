@@ -46,6 +46,12 @@
                  background: linear-gradient(180deg,
                    color-mix(in srgb, var(--warning) 9%, var(--surface)), var(--surface)); }
 .verdict.watch h1 { color: var(--warning); }
+/* Food thrown away in the last day (3.33.0): calm, not an alarm. */
+.verdict.calm  { border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+                 background: linear-gradient(180deg,
+                   color-mix(in srgb, var(--accent) 8%, var(--surface)), var(--surface)); }
+.verdict.calm h1 { color: var(--ink); }
+.verdict .loss-acts { margin-top: 16px; }
 
 /* The explainer. Deliberately quieter than the verdict below it: it is
    the thing you read once, not the thing you came for. */
@@ -188,6 +194,8 @@ h2.plain {
    note of what went, one tap each. */
 .answer-row + .answer-row { margin-top: 8px; }
 .answer-what { margin: 0; }
+/* The note of what went (3.33.0), under the food's answer. */
+.answer-note { margin: 4px 0 0; color: var(--ink-2); font-style: italic; overflow-wrap: anywhere; }
 .answer-change { font-size: 13px; padding: 2px 4px; min-height: 32px; }
 .answer-change-to { display: none; gap: 8px; margin-top: 8px; max-width: 360px; }
 .answer-row.changing .answer-change-to { display: flex; }

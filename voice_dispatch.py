@@ -1015,6 +1015,16 @@ def record_food(
     # still say what happened since.
     until = incident.food_change_until()
     changing = bool(incident.product_disposition)
+    # The answer it already has, pressed again (3.33.0): nothing changes,
+    # nothing is added to the history, and its time stays.
+    if (changing and incident.product_disposition == fate
+            and incident.food_auto_minutes is None):
+        said = "kept" if payload.food == "kept" else "thrown away"
+        return {
+            "message": f"Already recorded: food {said}.",
+            "changed": False,
+            "incident": incident.public(),
+        }
     if changing and until is not None and utc_now() > until:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

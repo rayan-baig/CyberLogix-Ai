@@ -1006,6 +1006,7 @@ class Incident:
             "fix_reported_at": iso(self.fix_reported_at),
             "corrective_action": self.corrective_action,
             "corrective_action_by": self.corrective_action_by,
+            "corrective_action_by_name": person_name(self.corrective_action_by),
             "corrective_action_at": iso(self.corrective_action_at),
             "product_disposition": self.product_disposition,
             # Who said what happened to the food and when, and the answer in

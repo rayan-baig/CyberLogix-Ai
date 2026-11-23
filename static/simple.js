@@ -203,8 +203,10 @@ function foodWhy(i) {
 }
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
-function verdict(units, jobs, paused, live, food) {
+let lossShown = null;
+function verdict(units, jobs, paused, live, food, loss) {
   const box = $("verdict");
+  lossShown = null;
   // Paused by the owner (retention.py): no "everything is fine" while
   // nobody is being texted or called.
   if (paused) {
@@ -287,6 +289,24 @@ function verdict(units, jobs, paused, live, food) {
         `<h1>${esc(name)} is ${c.word === "Too cold" ? "too cold" : "too warm"}</h1>
          <p>${esc(c.line)}${c.overdue ? "" : " Nobody has been texted yet: if it comes back in range first, nobody is."}</p>`;
     }
+    return;
+  }
+  // Food thrown away in the last day (3.33.0): said calmly, with the
+  // insurance pack one tap away, never the all-clear ("nothing for you to
+  // do") the morning after a loss.
+  if (loss && units.length) {
+    lossShown = loss.incident_id;
+    const id = esc(loss.incident_id);
+    const by = loss.by_name ? `, by ${esc(loss.by_name)}` : "";
+    box.className = "verdict calm";
+    box.innerHTML = `<h1>Food thrown away from ${esc(loss.unit)}: make the insurance pack</h1>
+       <p>Recorded at ${esc(CLXWords.clock(loss.at))}${by}. Your fridges are back to normal. The pack has
+          the readings, who was told and when, and ${loss.note ? "your note of what went" : "room for a note of what went"},
+          ready to send to your insurer.${jobs.length ? ` ${esc(CLXWords.count(jobs.length, "thing"))} to sort out below.` : ""}</p>
+       <div class="need-acts loss-acts">
+         <button class="btn btn-primary" type="button" data-loss-pack="${id}">Make the insurance pack</button>
+         ${loss.note || viewerOnly() ? "" : `<button class="btn" type="button" data-loss-note="${id}">Add what was thrown away</button>`}
+       </div>`;
     return;
   }
   if (jobs.length) {
@@ -443,11 +463,12 @@ function monthLine(data, units) {
     return `<div class="answer-row">
       <p class="answer-what">${esc(many ? `${a.unit}: ${who}.` : `${who}.`)}${open
         ? ` <button class="linkish answer-change" type="button" data-food-change="${id}">Change</button>` : ""}</p>
+      ${a.note ? `<p class="answer-note">“${esc(a.note)}”</p>` : ""}
       ${open ? `<div class="answer-change-to food-acts">
         <button class="btn btn-sm" type="button" data-food-kept="${id}"${a.disposition === "unaffected" && !a.auto ? ' aria-pressed="true"' : ""}>${a.disposition === "unaffected" && !a.auto ? "✓ " : ""}Food kept</button>
         <button class="btn btn-sm" type="button" data-food-thrown="${id}"${a.thrown ? ' aria-pressed="true"' : ""}>${a.thrown ? "✓ " : ""}Thrown away</button>
       </div>` : ""}
-      ${open && a.thrown ? `<div class="answer-loss">
+      ${open && a.thrown && a.incident_id !== lossShown ? `<div class="answer-loss">
         <button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>
         ${a.has_note ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}
       </div>` : ""}
@@ -482,10 +503,12 @@ async function loadDid() {
   followDid();
 }
 
+let lastDid = null;
 function renderDid(got) {
+  lastDid = got;
   const f = got.figures || {};
-  $("did-teaser").textContent = `${got.label}: ${Number(f.readings || 0).toLocaleString("en-US")} readings checked, ${
-    f.alerts ? `${f.alerts} alert${f.alerts === 1 ? "" : "s"}` : "no alerts"}.`;
+  $("did-teaser").textContent = `${got.label}: ${CLXWords.count(f.readings, "reading")} checked, ${
+    f.alerts ? CLXWords.count(f.alerts, "alert") : "no alerts"}.`;
   $("did-lines").innerHTML = (got.lines || []).map((line) => `<li>${esc(line)}</li>`).join("");
   const sample = got.sample;
   $("did-sample").hidden = !sample;
@@ -581,7 +604,7 @@ function render(data) {
   });
 
   const food = foodQuestions(data);
-  const shownAbove = verdict(units, jobs, (data.account || {}).paused, live, food) === true;
+  const shownAbove = verdict(units, jobs, (data.account || {}).paused, live, food, data.recent_loss) === true;
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   (shownAbove ? food.slice(1) : food).forEach((i) => {
     const name = whichOne(byId[i.sensor_id] || { sensor_id: i.sensor_id }, units);
@@ -674,4 +697,7 @@ tick();
 /* What this page last loaded, for Pilot's answers that need no AI key
    (3.27.0): "Which fridges need me?" and the like are read from it in the
    browser, with nothing fetched and nothing sent. */
-window.CyberLogixToday = Object.freeze({ overview: () => lastData });
+window.CyberLogixToday = Object.freeze({ overview: () => lastData,
+  // What CyberLogix did for you, as last loaded (3.33.0): Pilot quotes its
+  // summary line when asked, with nothing fetched.
+  did: () => lastDid });

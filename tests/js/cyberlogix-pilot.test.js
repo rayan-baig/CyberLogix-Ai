@@ -351,18 +351,26 @@ function overviewWith({ ack = false, fixed = false, none = false, quiet = false,
 
 // The config on a page, with what that page's own bridge hands over.
 // fetch is a trap: an answer that touched the network fails the test.
-function mountAt(pathname, { data, signedIn = true, overview } = {}) {
+function mountAt(pathname, { data, signedIn = true, overview, did } = {}) {
   let given = null;
   const fetchTrap = () => { throw new Error("an answer called the network"); };
   const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
     localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
-  if (pathname === "/console") win.CyberLogixConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null) };
-  if (pathname === "/today") win.CyberLogixToday = { overview: () => overview };
+  if (pathname === "/console") {
+    win.CyberLogixConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null),
+      // The console's own session, for "What CyberLogix did for you" only (3.33.0).
+      api: async (url) => { if (url === "/api/console/did-for-you?period=week" && did) return did; throw new Error(`not mocked: ${url}`); } };
+  }
+  if (pathname === "/today") win.CyberLogixToday = { overview: () => overview, did: () => did || null };
   vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL,
     document: { getElementById: () => ({ dataset: data || DATA }), title: "Restaurants" } });
   return given;
 }
 const pills = (given, pathname) => PANEL.welcomePills(given.welcomePills, BASE + pathname);
+// 3.33.0: "What does this alert mean?" is a suggestion shown while an alert
+// is open, not a welcome pill.
+const chipOf = (given, label) => given.chips(given.screen()).find((c) => c.label === label);
+const meaningOf = (pathname, overview) => chipOf(mountAt(pathname, { overview }), "What does this alert mean?");
 // Arrays made inside the vm are compared as plain data.
 const J = (x) => JSON.parse(JSON.stringify(x));
 const ask = (pill) => (typeof pill.answer === "function" ? pill.answer({ facts: {}, ready: false, label: pill.label }) : pill.answer);
@@ -402,8 +410,8 @@ test("1.4.0: 'Will it work for my café?' is a short answer with the real figure
 test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from the page's own data, worst first, with no names of people", () => {
   for (const pathname of ["/console", "/today"]) {
     const p = pills(mountAt(pathname, { overview: overviewWith() }), pathname);
-    assert.deepEqual(J(p.map((x) => x.label)), ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?",
-      "How do I connect a sensor?", "Add my AI key"], pathname);
+    assert.deepEqual(J(p.map((x) => x.label)), ["Which fridges need me?", "Is the food still OK?",
+      "How do I connect a sensor?", "Who gets the texts?", "Add my AI key"], pathname);
     const text = ask(p[0]);
     assert.match(text, /These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\*/);
     assert.match(text, /- \*\*Kitchen walk-in\*\* \(47°F\): Too warm for /);
@@ -428,40 +436,41 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
 });
 
 test("1.4.0: 'What does this alert mean?' explains the open alert from its own record", () => {
-  const open = ask(pills(mountAt("/console", { overview: overviewWith() }), "/console")[1]);
+  const open = ask(meaningOf("/console", overviewWith()));
   assert.match(open, /^\*\*Kitchen walk-in\*\* is too warm: 47°F, above its 41°F limit\./);
   assert.match(open, /It went out of range at .+ and has been out for .+; worst so far 48\.5°F\./);
   assert.match(open, /It stayed out longer than its 20-minute wait, so we alerted\./);
   // A reading far past the limit alerts at once: it never claims the wait passed.
   const fast = overviewWith();
   fast.incidents[0].opened_at = fast.incidents[0].out_since;
-  assert.match(ask(pills(mountAt("/console", { overview: fast }), "/console")[1]),
+  assert.match(ask(meaningOf("/console", fast)),
     /It went far enough past its limit to alert at once, without its 20-minute wait\./);
   assert.match(open, /Nobody has answered yet\. Press \*\*I'm on it\*\* at the top of the page/);
   assert.match(open, /Check the door is shut/);
   assert.match(open, /\*\*Is the food still good\?\*\* button/);
   assert.doesNotMatch(open, NO_PEOPLE);
   // Someone has it: never their name.
-  const ack = ask(pills(mountAt("/today", { overview: overviewWith({ ack: true }) }), "/today")[1]);
+  const ack = ask(meaningOf("/today", overviewWith({ ack: true })));
   assert.match(ack, /Someone on your team is on it\./);
   assert.doesNotMatch(ack, NO_PEOPLE);
-  const fixed = ask(pills(mountAt("/today", { overview: overviewWith({ ack: true, fixed: true }) }), "/today")[1]);
+  const fixed = ask(meaningOf("/today", overviewWith({ ack: true, fixed: true })));
   assert.match(fixed, /Someone on your team said it is fixed\. It closes by itself once it is back in range\./);
   // On /today the buttons are under Needs you now.
-  assert.match(ask(pills(mountAt("/today", { overview: overviewWith() }), "/today")[1]), /\*\*I'm on it\*\* under Needs you now/);
-  // No alert open: says so, and the last one in a line.
-  const none = ask(pills(mountAt("/console", { overview: overviewWith({ none: true }) }), "/console")[1]);
+  assert.match(ask(meaningOf("/today", overviewWith())), /\*\*I'm on it\*\* under Needs you now/);
+  // No alert open (3.33.0): no such suggestion, but typed it says so, and the last one in a line.
+  assert.equal(meaningOf("/console", overviewWith({ none: true })), undefined);
+  const none = typedAnswer("/console", "What does this alert mean?", { overview: overviewWith({ none: true }) });
   assert.match(none, /^No alert is open right now\. The last one: \*\*Prep fridge x\(\/evil\)\*\* was out of range for 30 minutes and came back on its own\. It is closed\./);
   assert.doesNotMatch(none, NO_PEOPLE);
 });
 
 test("1.4.0: 'Is the food still OK?' gives what was measured and the rule of thumb, always with its not-a-ruling note", () => {
-  const text = ask(pills(mountAt("/console", { overview: overviewWith() }), "/console")[2]);
+  const text = ask(pills(mountAt("/console", { overview: overviewWith() }), "/console")[1]);
   assert.match(text, /\*\*Kitchen walk-in\*\* has been out of range for .+, at worst 48\.5°F, and it is not back yet\./);
   assert.match(text, /under 2 hours above the limit, cool it back down; 2 to 4 hours, use it straight away/);
   assert.match(text, /That is guidance, not a ruling: .+ your written food safety plan and local code decide\./);
   // Signed out: the rule and the note, and where to sign in; never a guess about their food.
-  const out = ask(pills(mountAt("/console", { signedIn: false }), "/console")[2]);
+  const out = ask(pills(mountAt("/console", { signedIn: false }), "/console")[1]);
   assert.match(out, /not a ruling/);
   assert.match(out, /\[sign in\]\(\/console\)/);
 });
@@ -472,7 +481,7 @@ test("1.4.0: signed out, the console's answers say where to look instead of gues
   const p = pills(given, "/console");
   assert.match(ask(p[0]), /Sign in to see your fridges: \[sign in\]\(\/console\)/);
   // 3.32.0: an answer with the link, so a typed sensor question gets the right one too.
-  assert.match(ask(p[3]), /\[Open Connect your sensor\]\(\/console#connect\)/);
+  assert.match(ask(p[2]), /\[Open Connect your sensor\]\(\/console#connect\)/);
   // Its suggestions need no key either: how to sign in, the reset page, the trial.
   const chips = PANEL.cleanChips(given.chips(), BASE + "/console");
   assert.match(ask(chips[0]), /email and password you signed up with, on \[the console\]\(\/console\)/);
@@ -488,7 +497,7 @@ test("1.4.0: signed out, the console's answers say where to look instead of gues
   // The pages hand over what they loaded, and nothing else is fetched for it.
   assert.ok(js.includes("overview: () => (state.token ? state.data : null),"));
   const simple = fsx.readFileSync(app("simple.js"), "utf8");
-  assert.ok(simple.includes("window.CyberLogixToday = Object.freeze({ overview: () => lastData });"));
+  assert.ok(simple.includes("window.CyberLogixToday = Object.freeze({ overview: () => lastData,"));
 });
 
 test("1.4.0: page suggestions that are facts are answered at once; open questions stay AI prompts; every answer is local", () => {
@@ -502,7 +511,10 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
   // "Log for the inspector" goes straight to the log once signed in (3.30.0).
   // 3.32.0: "What CyberLogix did for you" in place of the proof report, which needed a key.
-  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["link", "answer", "link"]);
+  // 3.33.0: with an alert open, what it means and "It's fixed now" first; with none, the
+  // week's summary (quoted, an answer now) and the power.
+  assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "answer", "link"]);
+  assert.deepEqual(kinds("/console", { overview: overviewWith({ none: true }) }), ["link", "answer", "answer"]);
   const texts = {};
   for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo"]) {
     for (const c of mountAt(pathname).chips()) if (c.answer) texts[c.label] = ask(c);
@@ -532,8 +544,9 @@ test("3.28.0: 'It's fixed now' points at the real button, and never closes anyth
     assert.match(text, /was the food kept or thrown away/);
     assert.doesNotMatch(text, NO_PEOPLE);
   }
-  assert.equal(ask(mountAt("/today", { overview: overviewWith({ none: true }) }).chips()
-    .find((c) => c.label === "It's fixed now")), "No alert is open right now, so there is nothing to mark fixed.");
+  // 3.33.0: with no alert open it isn't offered at all.
+  assert.equal(mountAt("/today", { overview: overviewWith({ none: true }) }).chips()
+    .find((c) => c.label === "It's fixed now"), undefined);
   assert.equal(fixedChip("/console", { overview: overviewWith() }).prompt, undefined);
 });
 
@@ -561,8 +574,7 @@ test("3.28.0: 'What does this alert mean?' says 'we have phoned' only when a cal
   const meaning = (extra) => {
     const o = overviewWith();
     Object.assign(o.incidents[0], extra);
-    const p = pills(mountAt("/console", { overview: o }), "/console");
-    return ask(p.find((x) => x.label === "What does this alert mean?"));
+    return ask(meaningOf("/console", o));
   };
   assert.match(meaning({ voice_escalated_at: "2026-11-20T10:25:00Z", phoned: true }), /Nobody has answered yet, and we have phoned\./);
   const off = meaning({ voice_escalated_at: "2026-11-20T10:25:00Z", phoned: false, calls_off: true });
@@ -592,10 +604,10 @@ test("1.4.1: after one of this app's own answers the welcome's pills come back u
   // The console and /today: Which fridges need me? leaves the other three (the key pill
   // waits while the "Want more?" line right above offers the key).
   for (const pathname of ["/console", "/today"]) {
-    assert.deepEqual(row(pathname, "Which fridges need me?"), ["What does this alert mean?", "Is the food still OK?", "How do I connect a sensor?"], pathname);
+    assert.deepEqual(row(pathname, "Which fridges need me?"), ["Is the food still OK?", "How do I connect a sensor?", "Who gets the texts?"], pathname);
     // Under a later answer (no "Want more?" there: once per chat), the key pill comes back.
     assert.deepEqual(row(pathname, "Is the food still OK?", true),
-      ["Which fridges need me?", "What does this alert mean?", "How do I connect a sensor?", "Add my AI key"], pathname);
+      ["Which fridges need me?", "How do I connect a sensor?", "Who gets the texts?", "Add my AI key"], pathname);
   }
   // A visitor: Will it work for my café? leaves the three links.
   for (const pathname of ["/", "/pricing", "/help/sensors", "/demo"]) {
@@ -605,8 +617,7 @@ test("1.4.1: after one of this app's own answers the welcome's pills come back u
 
 test("1.4.1: the console's own answers never reach the AI provider once a key is added; the stand-in takes their place", async () => {
   const given = mountAt("/console", { overview: overviewWith() });
-  const p = pills(given, "/console");
-  const text = ask(p.find((x) => x.label === "What does this alert mean?"));
+  const text = ask(chipOf(given, "What does this alert mean?"));
   assert.ok(text.includes("Kitchen walk-in"), text);
   // Shown with no key and kept in the chat, then a key is added and the next question is asked.
   const store = Store.create({ prefix: "c141", local: memoryStorage(), session: memoryStorage() });
@@ -725,6 +736,8 @@ test("1.4.2: anything else typed with no key still goes to key settings: no gues
         if (words === "Does this work for a bakery?") { assert.equal(got, "Will it work for my café?", pathname); continue; }
         if (words === "Does this work with my sensor?") { assert.equal(got, "What sensors do I need?", pathname); continue; }
       }
+      // 3.33.0: on the person's own pages too, through the connect pill (the sensors answer).
+      if (words === "Does this work with my sensor?") { assert.equal(got, "How do I connect a sensor?", pathname); continue; }
       assert.equal(got, null, `${pathname}: ${words}`);
     }
   }
@@ -884,9 +897,11 @@ test("1.4.3: the \"does/this\" workaround is gone; \"does\" and \"this\" alone n
   const match = CONFIG.slice(CONFIG.indexOf("const MATCH = {"), CONFIG.indexOf("const TOPICS = ["));
   assert.doesNotMatch(match, /"does"|"this"/);
   for (const pathname of ["/console", "/today"]) {
-    for (const words of ["Does this work with my sensor?", "What does this button do?", "How does this work?", "What is this?", "Does it?"]) {
+    for (const words of ["What does this button do?", "How does this work?", "What is this?", "Does it?"]) {
       assert.equal(typed(pathname, words), null, `${pathname}: ${words}`);
     }
+    // 3.33.0: "work" and "sensor" are two words of the sensors answer.
+    assert.match(typedAnswer(pathname, "Does this work with my sensor?"), /^Most likely, yes\./);
     assert.equal(typed(pathname, "What does this alert mean?"), "What does this alert mean?");
     assert.equal(typed(pathname, "what does the alert mean"), "What does this alert mean?");
     assert.equal(typed(pathname, "Is my walk-in fridge OK?"), "Which fridges need me?");
@@ -915,8 +930,8 @@ test("1.4.3: with no key, a question nothing fits gets the core's note in the ch
   // On the console, signed in: the live suggestions first, then the welcome's answers.
   const given = mountAt("/console", { overview: overviewWith() });
   const row = J(PANEL.noKeyItems(PANEL.ownPills(given.welcomePills, `${BASE}/console`), PANEL.cleanChips(given.chips(given.screen()), `${BASE}/console`), true));
-  assert.deepEqual(row.map((x) => x.label), ["Log for the inspector", "It's fixed now", "What CyberLogix did for you",
-    "Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "Add my AI key"]);
+  assert.deepEqual(row.map((x) => x.label), ["What does this alert mean?", "It's fixed now", "Log for the inspector",
+    "Which fridges need me?", "Is the food still OK?", "How do I connect a sensor?", "Add my AI key"]);
 });
 
 test("3.32.1: the unit asked about, when it needs you, ends its line with one full stop", () => {
@@ -928,4 +943,105 @@ test("3.32.1: the unit asked about, when it needs you, ends its line with one fu
     assert.doesNotMatch(text, /\.\.(\s|$)/, text);
     assert.match(text.split("\n")[0], /[.!?]$/, text);
   }
+});
+
+// ---------------------------------------------------------------- 3.33.0 (round 11)
+
+const ROUND11 = [
+  ["Does this work with my sensor?", /^Most likely, yes\. CyberLogix works with any wireless sensor that can send its readings to a web address/],
+  ["Does it work with Monnit?", /^Yes, \*\*Monnit\*\* works: .+\[The Monnit guide\]\(\/help\/sensors#monnit\)/],
+  ["does it work with sensorpush", /^Yes, \*\*SensorPush\*\* works/],
+  ["how do I add my chef to get texts", /\*\*Who gets alerts\*\* in the console \(the \*\*Team\*\* tab\): .*name and .*mobile number/],
+  ["What if the power goes out?", /^Sensors send their readings over your internet\. If the power or the Wi-Fi goes off/],
+  ["what happens if the wifi goes down", /^Sensors send their readings over your internet/],
+  ["How much for a pharmacy?", /^\*\*Pharmacies: \$199 a month per pharmacy\*\*, for up to 10 fridges and freezers there; each one past that is \$15 a month\./],
+  ["pharmacy price", /^\*\*Pharmacies: \$199 a month per pharmacy\*\*/],
+  ["How do I cancel my subscription?", /^In the console: \*\*Money\*\* tab, \*\*Pause or cancel\*\*, then \*\*Cancel my plan\*\*\./],
+  ["cancel subscription", /^In the console: \*\*Money\*\* tab/],
+  ["Is my data safe?", /^Yes\. What we keep: .+\n- Nothing is sold or used to train anything\.[\s\S]+\[Read the privacy statement\]\(\/legal#privacy\)$/],
+];
+
+test("3.33.0: sensors, the team, the power, a pharmacy's price, cancelling and the data: answered with no key on every page, an alert open or not", () => {
+  for (const pathname of EVERY) {
+    const states = pathname === "/console" || pathname === "/today"
+      ? [overviewWith(), overviewWith({ none: true }), overviewWith({ quiet: true })] : [overviewWith()];
+    for (const overview of states) {
+      for (const [words, want] of ROUND11) {
+        const got = typedAnswer(pathname, words, { overview });
+        assert.match(got || "(no answer)", want, `${pathname} (${overview.incidents.length} alerts): ${words}`);
+        assert.doesNotMatch(got, NO_PEOPLE);
+      }
+    }
+  }
+  // Signed out on the console too.
+  for (const [words, want] of ROUND11) assert.match(typedAnswer("/console", words, { signedIn: false }) || "", want, words);
+  // A visitor adding the chef: the way in. Signed in: the console's Team card, opened by its link.
+  assert.match(typedAnswer("/", "how do I add my chef to get texts"), /\[Start a free trial\]\(\/signup\)$/);
+  assert.match(typedAnswer("/today", "how do I add my chef to get texts"), /\[Add someone\]\(\/console\?view=full#team\)$/);
+  assert.match(typedAnswer("/console", "how do I add my chef to get texts"), /\[Add someone\]\(\/console#team\)$/);
+  // Cancelling quotes the rule checkout shows (main.pilot_facts "cancel-rule"); its fallback is the same words.
+  assert.ok(typedAnswer("/pricing", "How do I cancel?", { data: { ...DATA, cancelRule: "Cancel any time. RULE." } }).includes("Cancel any time. RULE."));
+  assert.ok(CONFIG.includes("What you have already paid is not refunded, in part or in full."));
+  // The figures are the server's.
+  assert.ok(typedAnswer("/", "How much for a pharmacy?", { data: { ...DATA, pharmacyPrice: "210" } }).startsWith("**Pharmacies: $210 a month"));
+  // The misses still miss, the "does/this" ones included.
+  for (const pathname of EVERY) {
+    for (const words of ["How does this work?", "Write me a poem about fridges", "What does this button do?", "Tell me a joke", "Does it?"]) {
+      assert.equal(typedAnswer(pathname, words), null, `${pathname}: ${words}`);
+    }
+  }
+});
+
+test("3.33.0: signed out, 'Is my walk-in fridge OK?' says to sign in, with the link, on every page", () => {
+  for (const pathname of EVERY) {
+    const got = typedAnswer(pathname, "Is my walk-in fridge OK?", { signedIn: false, overview: null });
+    assert.match(got || "(no answer)", /^Sign in to see your fridges: \[sign in\]\(\/console\)/, pathname);
+  }
+});
+
+test("3.33.0: 'What CyberLogix did for you', pressed or typed, quotes the week's summary line, an alert open or not", async () => {
+  const did = { period: "week", label: "This week", figures: { readings: 1, alerts: 2 },
+    lines: ["Checked 1 reading from 1 fridge or freezer, 100% in range.", "2 alerts, 1 answered in 4 minutes.", "Every sensor is reporting."] };
+  for (const pathname of ["/today", "/console"]) {
+    for (const overview of [overviewWith({ none: true }), overviewWith()]) {
+      const got = await Promise.resolve((() => {
+        const given = mountAt(pathname, { overview, did });
+        const hit = PANEL.matchTyped("What CyberLogix did for you", typedItems(given, pathname));
+        return hit.answer({ facts: {}, ready: false, label: "What CyberLogix did for you" });
+      })());
+      assert.ok(got.startsWith("**This week: 1 reading checked, 2 alerts.**"), `${pathname}: ${got}`);
+      assert.ok(got.includes("- 2 alerts, 1 answered in 4 minutes."), got);
+      // A link Pilot draws (a bare "#did" was printed as words).
+      assert.ok(got.endsWith("[Open What CyberLogix did for you](/today#did)"), got);
+    }
+    // Pressed, with no alert open, the same.
+    const chip = chipOf(mountAt(pathname, { overview: overviewWith({ none: true }), did }), "What CyberLogix did for you");
+    assert.ok((await ask(chip)).startsWith("**This week: 1 reading checked, 2 alerts.**"));
+  }
+  // Nothing loaded yet: where it is.
+  assert.match(await ask(chipOf(mountAt("/today", { overview: overviewWith({ none: true }) }), "What CyberLogix did for you")),
+    /^\*\*What CyberLogix did for you\*\* shows this week or this month/);
+});
+
+test("3.33.0: 'It's fixed now' and 'What does this alert mean?' are offered only while an alert is open", () => {
+  for (const pathname of ["/console", "/today"]) {
+    const calm = mountAt(pathname, { overview: overviewWith({ none: true }) });
+    const labels = J(typedItems(calm, pathname).map((x) => x.label));
+    assert.ok(!labels.includes("It's fixed now") && !labels.includes("What does this alert mean?"), `${pathname}: ${labels}`);
+    assert.deepEqual(J(calm.chips(calm.screen()).map((c) => c.label)), ["Log for the inspector", "What CyberLogix did for you", "Wi-Fi or power goes off?"]);
+    const live = mountAt(pathname, { overview: overviewWith() });
+    assert.deepEqual(J(live.chips(live.screen()).map((c) => c.label)), ["What does this alert mean?", "It's fixed now", "Log for the inspector"]);
+    // Not loaded yet counts as none open.
+    const loading = mountAt(pathname, { overview: null });
+    assert.ok(!J(loading.chips(loading.screen()).map((c) => c.label)).includes("It's fixed now"));
+  }
+  // The console follows "#team" to Who gets alerts, once.
+  const js = fsx.readFileSync(app("console.js"), "utf8");
+  const follow = js.slice(js.indexOf("function followTeamLink"), js.indexOf("// A link followed while the console is already open"));
+  assert.ok(follow.includes('location.hash !== "#team"') && follow.includes('goTo("oncall");'));
+});
+
+test("3.33.0: the robot keeps off the opened summary's list on /today", () => {
+  const avoid = J(mountAt("/today", { overview: overviewWith() }).avoid);
+  for (const sel of ["#did-lines", "#did-sample-lines", ".did-tabs"]) assert.ok(avoid.includes(sel), sel);
 });

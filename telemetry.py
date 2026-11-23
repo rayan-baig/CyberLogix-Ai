@@ -776,6 +776,20 @@ def _alert_reply_words(fanout: list, breach: Optional[str]) -> str:
     return first + "Alert opened. The texts did not go through; see the console."
 
 
+
+def _worst_over_f(incident, sensor) -> Optional[float]:
+    """How far past its limit the alert's worst reading went, in °F, or
+    None when it isn't known (3.33.0: wording.back_to_normal_note)."""
+    worst = incident.peak_f if incident.peak_f is not None else incident.temperature_fahrenheit
+    if worst is None:
+        return None
+    above, below = sensor.bounds()
+    if above is not None and worst > above:
+        return worst - above
+    if below is not None and worst < below:
+        return below - worst
+    return 0.0
+
 def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
     """Close the unanswered alert on a unit that came back to normal.
 
@@ -801,7 +815,8 @@ def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
             minutes, person_name(incident.fix_reported_by) or "Somebody",
             plain_temperature(temperature, tenant.temperature_unit))
     else:
-        note = wording.back_to_normal_note(minutes, called=called)
+        note = wording.back_to_normal_note(minutes, called=called,
+                                           over_by_f=_worst_over_f(incident, sensor))
     if not STORE.resolve_back_to_normal(incident, note, fix_reported=reported):
         return None
     if reported:

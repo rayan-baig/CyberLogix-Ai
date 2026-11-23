@@ -832,6 +832,7 @@ body.has-terminal main { padding-bottom: 148px; }
    and the answer once given ("Thrown away, Jo, 4:09 PM"). */
 .food-ask { margin: 6px 0 4px; font-size: 13.5px; color: var(--ink-2, inherit); }
 .food-said { margin: 6px 0 4px; font-size: 13.5px; }
+.food-said .food-note, .food-saved .food-note { font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
 .food-risk p, .food-ask p { margin: 0; }
 .food-risk .sub, .food-ask .sub, .food-said .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .food-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -1052,6 +1053,24 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   padding-left: 18px; border-left: 1px solid var(--accent-deep);
 }
 .doc-letter .quote-label { margin-bottom: 9px; }
+/* A small heading inside a section ("Change history", 3.33.0). */
+.doc-sub {
+  font-size: 12.5px; color: var(--muted); margin: 14px 0 6px;
+}
+/* "For the adjuster's IT team" (3.33.0): how to check the seal, small and
+   last, so the people the pack is for read the food and the timeline,
+   not a developer's instructions. */
+.doc-it {
+  margin-top: 30px; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--sunken);
+  font-size: 12px; line-height: 1.55; color: var(--muted);
+}
+.doc-it p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.doc-it .digest { margin-top: 8px; }
+.doc-it-head {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+}
 
 /* ---------- the inspector's log, and a document's footer ---------- */
 .log-unit { margin-top: 24px; }
@@ -1096,6 +1115,8 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-issuer-name { color: #111; }
   .doc-issuer-warn { color: #1F4E8A; }
   .doc-letter { color: #111; border-left-color: #999; }
+  .doc-it { background: #fff; border-color: #ccc; color: #444; break-inside: avoid; }
+  .doc-it-head, .doc-sub { color: #555; }
   .readout, .digest { border-color: #ccc; background: #fff; }
   .readout div { border-color: #eee; }
   .readout .k, .card-note, .drawer-sub, .timeline .when { color: #555; }
@@ -1344,6 +1365,8 @@ tr[tabindex]:focus-visible {
   display: block; font-family: var(--mono); font-size: 13.5px;
   color: var(--ink);
 }
+/* A unit's own name in the insurance-pack list (3.33.0). */
+.fc-name { display: block; font-size: 14.5px; color: var(--ink); }
 .fc-when {
   font-size: 12px; font-family: var(--mono); white-space: nowrap;
   padding: 3px 8px; border-radius: 999px; min-width: 96px;

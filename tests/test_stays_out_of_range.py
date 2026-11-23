@@ -225,7 +225,8 @@ def test_recovery_before_the_call_cancels_it_and_closes_the_alert(
     incident = STORE.get_incident(incident_id)
     assert incident.resolved_at is not None
     assert incident.acknowledged_by is None         # nobody did
-    assert incident.resolved_note.startswith("Back to normal after 3 minutes, probably the door")
+    # 19°F past its limit (3.33.0): not "probably the door", however short.
+    assert incident.resolved_note.startswith("Back to normal after 3 minutes, on its own. It went far past its limit")
     assert back["message"] == incident.resolved_note
     # The people texted are told it is over, so nobody drives in.
     assert len(phone["sms"]) == 2

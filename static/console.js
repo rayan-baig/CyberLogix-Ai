@@ -401,6 +401,7 @@ async function enter(token, user) {
   followInspectorLink().catch(() => { /* the estate is the page */ });
   followConnectLink();
   followPacketLink();
+  followTeamLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -625,7 +626,7 @@ function unitKindDeg(f) {
 
 function unitKindLabel(k) {
   const deg = unitKindDeg;
-  const wait = k.alert_after_minutes ? ` for ${k.alert_after_minutes} minutes` : "";
+  const wait = k.alert_after_minutes ? ` for ${CLXWords.count(k.alert_after_minutes, "minute")}` : "";
   if (k.danger_below != null) {
     return `outside ${deg(k.danger_below)} to ${deg(k.danger_above)}${wait}`;
   }
@@ -2113,6 +2114,14 @@ function incidentTimeline(i) {
     steps.push({ cls: "done", when: row.at || null,
       text: who ? `${said}, ${who}` : said, order: row.at ? undefined : Infinity });
   });
+  // The note saved with it (3.33.0): what was thrown away, or what was
+  // done, under the food's answer, with who wrote it.
+  if (i.corrective_action) {
+    const by = i.corrective_action_by_name || (i.corrective_action_by ? CLXWords.person(null, i.corrective_action_by) : "");
+    steps.push({ cls: "done", when: i.corrective_action_at || null,
+      text: `Note: “${i.corrective_action}”${by ? `, ${by}` : ""}`,
+      order: i.corrective_action_at ? undefined : Infinity });
+  }
   if (!i.resolved_at) {
     const unit = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === i.sensor_id);
     const back = Boolean(unit && unit.condition && unit.condition.back_in_range);
@@ -2165,7 +2174,8 @@ function foodAnswered(i) {
     open ? `<button class="linkish food-change" type="button" data-food-change="${id}">Change</button>` : ""}${
     i.food_protected ? `<span class="sub">${esc(i.food_protected.words)}. ${
       esc(i.food_protected.note)}</span>` : ""}${
-    i.food_auto ? `<span class="sub">Out for under ${esc((state.data && state.data.food_safe_minutes) || 30)} minutes and never far past its limit: well inside the 2-hour rule, so nobody was asked.</span>` : ""}</p>${
+    i.corrective_action ? `<span class="sub food-note">“${esc(i.corrective_action)}”</span>` : ""}${
+    i.food_auto ? `<span class="sub">Out for under ${esc(CLXWords.count((state.data && state.data.food_safe_minutes) || 30, "minute"))} and never far past its limit: well inside the 2-hour rule, so nobody was asked.</span>` : ""}</p>${
     open ? `<div class="food-acts food-change-to"><button class="btn btn-sm" type="button" data-food-kept="${id}">Food kept</button><button class="btn btn-sm" type="button" data-food-thrown="${id}">Thrown away</button></div>` : ""}${
     open && thrown ? `<div class="food-loss"><button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>${
       i.corrective_action ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}</div>` : ""}</div>`;
@@ -3702,8 +3712,8 @@ document.addEventListener("click", async (event) => {
           ...(unit ? { unit: unit.value } : {}),
         }),
       });
-      toast(`Added. ${out.replayed_readings} reading(s) it already sent `
-            + "were kept.", "ok");
+      toast(`Added. ${CLXWords.count(out.replayed_readings, "reading")} it already sent `
+            + (Number(out.replayed_readings) === 1 ? "was kept." : "were kept."), "ok");
     }
     renderKnocking(await api("/api/doorstep"));
     refresh().catch(() => {});
@@ -3739,7 +3749,7 @@ function renderPollers(seen) {
             : row.last_status || "never asked")}</span>
       <span class="grow">
         <span class="fc-id">${esc(row.name)}</span>
-        <span class="sub">${esc(row.readings_ingested)} reading(s) fetched${
+        <span class="sub">${esc(CLXWords.count(row.readings_ingested, "reading"))} fetched${
           row.last_detail ? ` \u00B7 ${esc(row.last_detail)}` : ""}</span>
       </span>
       <button class="btn btn-sm" data-poll-test="${esc(row.source_id)}">Try
@@ -4555,8 +4565,8 @@ function renderForecast(fleet) {
     $("forecast-body").innerHTML =
       `<div class="empty u-p-14">
          Nothing is trending out of range.
-         <span class="sub">${esc(fleet.sensors_analysed)} sensor(s) modelled
-         over ${esc(fleet.window_hours)} hours${
+         <span class="sub">${esc(CLXWords.count(fleet.sensors_analysed, "sensor"))} modelled
+         over ${esc(CLXWords.count(fleet.window_hours, "hour"))}${
            unknown ? `; ${esc(unknown)} without enough history yet` : ""}.</span>
        </div>`;
     return;
@@ -4609,8 +4619,8 @@ function renderForecast(fleet) {
              timer and doors get opened. These are above the line and we
              are not calling anybody about them.</div>`
       : "")
-    + (unknown ? `<div class="sub u-pt-8">${esc(unknown)
-        } sensor(s) have too little history to model yet.</div>` : "");
+    + (unknown ? `<div class="sub u-pt-8">${esc(CLXWords.count(unknown, "sensor"))
+        } ${unknown === 1 ? "has" : "have"} too little history to model yet.</div>` : "");
 }
 
 /* ---------------- do I throw this away? ----------------
@@ -4655,6 +4665,7 @@ document.addEventListener("click", async (event) => {
    A packet could always be produced for an incident. Nothing said which
    incidents one could be produced for, so using the feature meant
    already knowing the answer. */
+const CLAIM_STATE = { resolved: "closed", acknowledged: "someone is on it", open: "open" };
 function renderClaims(eligible) {
   if (!eligible.count) {
     const none = !((state.data && state.data.sensors) || []).length;
@@ -4665,14 +4676,17 @@ function renderClaims(eligible) {
       + (none ? nextSteps([["sensor", `Add a ${noun(1)}`]]) : "");
     return;
   }
+  // "2 alerts an insurance pack can be made for", each by its unit's name
+  // ("Walk-in fridge"), never the sensor id, and what happened to the food
+  // once somebody said (3.33.0).
   $("claims-body").innerHTML =
-    `<div class="sub u-mb-8">${esc(eligible.count)
-      } alert(s) an insurance pack can be made for:</div>`
+    `<div class="sub u-mb-8">${esc(CLXWords.count(eligible.count, "alert"))
+      } an insurance pack can be made for:</div>`
     + eligible.incidents.map((i) => `<div class="fc-row">
         <span class="grow">
-          <span class="fc-id">${esc(i.sensor_id)}</span>
+          <span class="fc-name">${esc(i.unit || i.sensor_id)}</span>
           <span class="sub">${esc(shortDate(i.opened_at))} · ${
-            esc(i.catastrophe)} · ${esc(i.state)}${
+            esc(i.food || CLAIM_STATE[i.state] || i.state)}${
             i.readings_available ? "" : " · no readings kept"}</span>
         </span>
         <button class="btn btn-sm" data-packet="${esc(i.incident_id)}"
@@ -4715,8 +4729,13 @@ function renderEscalation(preview) {
 async function openPacket(incidentId) {
   let packet;
   try {
+    // The reader's own clock for the dates the covering summary writes
+    // out in words (3.33.0); UTC if the browser doesn't say.
+    let zone = "";
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { zone = ""; }
     packet = await api(
-      `/api/claims/${encodeURIComponent(incidentId)}/packet`, { method: "POST" });
+      `/api/claims/${encodeURIComponent(incidentId)}/packet${zone ? `?tz=${encodeURIComponent(zone)}` : ""}`,
+      { method: "POST" });
   } catch (err) { toast(err.message, "err"); return; }
 
   state.packet = packet;
@@ -4752,6 +4771,29 @@ async function openPacket(incidentId) {
       <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
 
+  // What happened to the food (3.33.0): the answer, who and when, the
+  // note of what went, and every change, oldest first.
+  const food = packet.food || {};
+  const foodHistory = (food.history || []).map((row) => `<li>
+      <b>${esc(row.changed ? `Changed to ${row.words}` : row.words)}</b>${row.by ? " — " + esc(row.by) : ""}
+      <span class="when">${esc(stamp(row.at))}</span>
+    </li>`).join("");
+  const foodBlock = food.answer ? `
+    <div class="readout">
+      <div><span class="k">Answer</span><span class="v">${esc(food.answer)}</span></div>
+      <div><span class="k">Who</span><span class="v">${esc(food.by || "not recorded")}</span></div>
+      <div><span class="k">When</span><span class="v">${esc(stamp(food.at))}</span></div>
+      ${food.note ? `<div><span class="k">What went</span><span class="v">${esc(food.note)}</span></div>` : ""}
+    </div>
+    ${food.note ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet.${
+      food.thrown ? " Add one from the alert: it makes this pack complete." : ""}</div>`}
+    ${(food.history || []).length > 1 ? `<div class="doc-sub">Change history</div><ul class="timeline">${foodHistory}</ul>` : ""}`
+    : `<div class="card-note">Nobody has said yet whether the food was kept or thrown away.
+       Answer it on the alert (Food kept or Thrown away), then make this pack again.</div>`;
+  const closedWords = ev.resolved_at
+    ? `closed at ${stamp(ev.resolved_at)}${ev.closed_by_itself ? ", back in range by itself" : ""}`
+    : ev.state === "acknowledged" ? "someone is on it, not closed yet" : "still open";
+
   $("drawer").innerHTML = `
     <div class="drawer-head">
       <div class="grow">
@@ -4771,6 +4813,9 @@ async function openPacket(incidentId) {
       ${esc(packet.cover_letter)}
     </div>` : ""}
 
+    <div class="doc-section">What happened to the food</div>
+    ${foodBlock}
+
     <div class="doc-section">Insured and location</div>
     <div class="readout">
       <div><span class="k">Insured</span><span class="v">${
@@ -4780,15 +4825,17 @@ async function openPacket(incidentId) {
         esc(packet.insured.contact_phone)}</span></div>
       <div><span class="k">Site</span><span class="v">${
         esc(loc.site || "not recorded")}</span></div>
-      <div><span class="k">Asset</span><span class="v">${
-        esc(loc.asset)} (${esc(loc.asset_type)})</span></div>
+      <div><span class="k">Unit</span><span class="v">${
+        esc(loc.asset_label || loc.asset)}</span></div>
       <div><span class="k">Sector</span><span class="v">${
         esc(loc.industry)}</span></div>
     </div>
 
     <div class="doc-section">The event</div>
     <div class="readout">
-      <div><span class="k">Detected</span><span class="v">${
+      <div><span class="k">Out of range since</span><span class="v">${
+        esc(stamp(ev.out_since || ev.opened_at))}</span></div>
+      <div><span class="k">Alert sent</span><span class="v">${
         esc(stamp(ev.opened_at))}</span></div>
       <div><span class="k">Reading at detection</span><span class="v">${
         esc(ev.detected_reading)}°${esc(ev.temperature_unit)}</span></div>
@@ -4799,7 +4846,8 @@ async function openPacket(incidentId) {
       <div><span class="k">Acknowledged after</span><span class="v">${
         ev.minutes_to_acknowledge === null
           ? "not acknowledged"
-          : esc(ev.minutes_to_acknowledge) + " min"}</span></div>
+          : esc(CLXWords.minutes(ev.minutes_to_acknowledge))}</span></div>
+      <div><span class="k">Closed</span><span class="v">${esc(closedWords)}</span></div>
     </div>
 
     <div class="doc-section">Response</div>
@@ -4842,13 +4890,17 @@ async function openPacket(incidentId) {
            than one that does not.</div>`
       : `<div class="card-note">None in the preceding 90 days.</div>`}
 
-    <div class="doc-section">Verification</div>
-    <div class="digest">
-      <span class="digest-label">Chain head at issue</span>
-      <code>${esc(packet.attestation ? packet.attestation.chain_head : "—")}</code>
+    <div class="doc-it">
+      <div class="doc-it-head">${esc(packet.verification_heading || "For the adjuster's IT team")}</div>
+      <p>Every reading in this pack is sealed so that a change made after the
+        event would show. Your IT team can check it with the details below.</p>
+      <div class="digest">
+        <span class="digest-label">Chain head at issue</span>
+        <code>${esc(packet.attestation ? packet.attestation.chain_head : "—")}</code>
+      </div>
+      <p>${esc(packet.verification)}</p>
+      <p>${esc(packet.signing.note)}</p>
     </div>
-    <div class="card-note u-mt-8">${esc(packet.verification)}</div>
-    <div class="card-note">${esc(packet.signing.note)}</div>
   `;
 
   showDrawer();
@@ -4950,9 +5002,18 @@ function followConnectLink() {
   openConnect("");
 }
 
+/* "/console#team" opens Who gets alerts at its Name box (3.33.0): Pilot's
+   "How do I add my chef to get texts?" comes here. Followed once. */
+function followTeamLink() {
+  if (location.hash !== "#team" || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  goTo("oncall");
+}
+
 // A link followed while the console is already open changes only the hash.
 window.addEventListener("hashchange", () => {
   if (!state.token) return;
+  followTeamLink();
   followConnectLink();
   followPacketLink();
   followInspectorLink().catch(() => { /* the estate is the page */ });
@@ -5027,7 +5088,7 @@ async function openInspectorLog(from, to, print) {
       <h3 class="log-unit-name">${esc(unit.location_name)}${
         unit.site_name ? ` <span class="log-sub-inline">· ${esc(unit.site_name)}</span>` : ""}</h3>
       <div class="log-meta">${esc(unit.sensor_id)} · ${esc(unit.industry_name)} · limit ${
-        limits(unit) || "none set"} · ${esc(unit.readings)} readings${
+        limits(unit) || "none set"} · ${esc(CLXWords.count(unit.readings, "reading"))}${
         unit.in_range_percent !== null ? `, ${esc(unit.in_range_percent)}% in range` : ""}</div>
       <div class="scrollx"><table class="log-table log-days">
         <thead><tr><th>Day</th><th class="num">Lowest</th><th class="num">Highest</th>
@@ -5108,7 +5169,7 @@ function renderVault(attestation) {
 
   state.attestation = held;
   $("vault-note").textContent =
-    `${held.readings.toLocaleString()} readings sealed`;
+    `${CLXWords.count(held.readings, "reading")} sealed`;
   $("vault-body").innerHTML = `
     <div class="readout">
       <div><span class="k">Period</span><span class="v">${
@@ -6855,8 +6916,8 @@ document.addEventListener("click", (event) => {
       $("shortcut-out").innerHTML =
         `<div class="quote u-mt-12">
            <div class="quote-label">${esc(out.shortcut_name)} · last
-             ${out.period_days} days · ${ev.sensor_count} sensor(s),
-             ${ev.total_readings} readings, ${ev.total_excursions} excursion(s)${
+             ${esc(CLXWords.count(out.period_days, "day"))} · ${esc(CLXWords.count(ev.sensor_count, "sensor"))},
+             ${esc(CLXWords.count(ev.total_readings, "reading"))}, ${esc(CLXWords.count(ev.total_excursions, "excursion"))}${
                out.document_source === "fallback_template"
                  ? " · model unavailable, figures only" : ""
              }</div>
@@ -7160,7 +7221,7 @@ $("run-compliance").addEventListener("click", () => {
     $("autopilot-out").innerHTML =
       `<div class="quote"><div class="quote-label">Compliance · last 7 days</div>`
       + `${r.overall_compliance_percent === null ? "—" : r.overall_compliance_percent}% in band · `
-      + `${r.total_readings_logged} readings · ${r.incidents_opened} incident(s) · `
+      + `${CLXWords.count(r.total_readings_logged, "reading")} · ${CLXWords.count(r.incidents_opened, "incident")} · `
       + `mean response ${r.mean_response_minutes === null ? "—" : r.mean_response_minutes} min</div>`;
   });
 });

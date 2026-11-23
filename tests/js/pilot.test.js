@@ -965,7 +965,7 @@ test("placement 1.2.0: a row of dots with tooltips counts, and line ends just be
 test("CyberLogix's own welcome: its tagline, a visitor's five on the public pages and the console's five on its own pages, no picture or video keys, kept on screen, its phone menu", () => {
   const cfg = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
   assert.ok(cfg.includes('tagline: "Your fridge-alarm helper",'));
-  for (const label of ["Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "How do I connect a sensor?",
+  for (const label of ["Which fridges need me?", "Who gets the texts?", "Is the food still OK?", "How do I connect a sensor?",
     "Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"]) {
     assert.ok(cfg.includes(`"${label}"`), label);
   }
@@ -979,8 +979,10 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
   const sandbox = { window: {}, document: {}, URL };
   vm.runInNewContext(fs.readFileSync(core("pilot-panel.js"), "utf8"), sandbox);
   const kind = (p) => (p.link ? `link ${new URL(p.link).pathname}${new URL(p.link).hash}` : p.answer !== undefined ? "answer" : p.builtin ? p.action : "ai");
-  const own = [["Which fridges need me?", "answer"], ["What does this alert mean?", "answer"],
-    ["Is the food still OK?", "answer"], ["How do I connect a sensor?", "answer"], ["Add my AI key", "settings"]];
+  // 3.33.0: "What does this alert mean?" is a suggestion while an alert is
+  // open; the welcome has "Who gets the texts?" in its place.
+  const own = [["Which fridges need me?", "answer"], ["Is the food still OK?", "answer"],
+    ["How do I connect a sensor?", "answer"], ["Who gets the texts?", "answer"], ["Add my AI key", "settings"]];
   // 3.32.0: the price and the sensors are answered from the real figures,
   // with their pages linked in the answer.
   const visitor = [["Will it work for my café?", "answer"], ["What does it cost?", "answer"],

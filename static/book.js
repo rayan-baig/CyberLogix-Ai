@@ -691,7 +691,7 @@ async function loadHealth() {
     title: d.company_name,
     detail: "stage: " + d.stage
       + (d.already_sent ? " (already sent, would be skipped)" : ""),
-    meta: d.tenant_id + " · " + d.units + " unit(s)",
+    meta: d.tenant_id + " · " + d.units + (d.units === 1 ? " unit" : " units"),
   })), "No trial is due anything.");
 }
 
@@ -888,7 +888,7 @@ async function act(button) {
       const body = await resp.json().catch(() => ({}));
       // sent_count again: `sent` here is also the list, not the number.
       say("health-said", resp.ok
-          ? ("Sent " + body.sent_count + " customer report(s).")
+          ? ("Sent " + body.sent_count + (body.sent_count === 1 ? " customer report." : " customer reports."))
           : "The reports could not be sent.", !resp.ok);
       await loadHealth();
       return;

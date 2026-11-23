@@ -230,3 +230,67 @@ test("3.32.0: the 'What this is' label follows the toggle", async () => {
   first.nodes.intro.listeners.toggle.forEach((fn) => fn());
   assert.equal(summary.textContent, "How this works");
 });
+
+// ---------------------------------------------------------------- 3.33.0
+
+test("3.33.0: for a day after food is thrown away, a calm headline with the insurance pack, never 'nothing for you to do'", async () => {
+  const loss = { incident_id: "INC-7", unit: "Walk-in fridge", at: NOW, by_name: "Maya", note: null, until: LATER, others: 0 };
+  const answer = { incident_id: "INC-7", unit: "Walk-in fridge", words: "Thrown away", by_name: "Maya", at: NOW,
+    auto: false, thrown: true, disposition: "discarded", changeable: true, change_until: LATER, has_note: false, note: null };
+  const { nodes, CLXWords } = await today(base({ recent_loss: loss,
+    this_month: { alerts: 1, words: "This month: 1 alert", food_usd: 0, food_answers: [answer] } }));
+  const v = nodes.verdict.innerHTML;
+  assert.match(v, /<h1>Food thrown away from Walk-in fridge: make the insurance pack<\/h1>/);
+  assert.ok(v.includes(`Recorded at ${CLXWords.clock(NOW)}, by Maya.`), v);
+  assert.match(v, /data-loss-pack="INC-7"[^>]*>Make the insurance pack</);
+  assert.match(v, /data-loss-note="INC-7"[^>]*>Add what was thrown away</);
+  assert.doesNotMatch(v, /Everything is fine|nothing for you to do/);
+  assert.equal(nodes.verdict.className, "verdict calm", "calm: not red, not amber");
+  // The pack is offered once, in the headline, not again on the month line.
+  assert.doesNotMatch(nodes["month-sub"].innerHTML, /data-loss-pack/);
+  // With the note saved: only the pack, and the note under the food line.
+  const noted = await today(base({ recent_loss: { ...loss, note: "Thrown away from Walk-in fridge: 20 lb chicken" },
+    this_month: { alerts: 1, words: "x", food_usd: 0,
+      food_answers: [{ ...answer, has_note: true, note: "Thrown away from Walk-in fridge: 20 lb chicken" }] } }));
+  assert.doesNotMatch(noted.nodes.verdict.innerHTML, /data-loss-note/);
+  assert.match(noted.nodes["month-sub"].innerHTML, /<p class="answer-note">“Thrown away from Walk-in fridge: 20 lb chicken”<\/p>/);
+  // A viewer: the pack, no note button.
+  const viewer = await today(base({ recent_loss: loss }), { user: { role: "viewer" }, prefs: {} });
+  assert.match(viewer.nodes.verdict.innerHTML, /data-loss-pack/);
+  assert.doesNotMatch(viewer.nodes.verdict.innerHTML, /data-loss-note/);
+  // An open alert still comes first; none at all, and it is fine again.
+  assert.match((await today(base())).nodes.verdict.innerHTML, /Everything is fine/);
+});
+
+test("3.33.0: plurals: '1 reading checked', never '1 readings'", async () => {
+  const { nodes } = await today(base(), undefined, { ...DID, figures: { readings: 1, alerts: 0 } });
+  assert.equal(nodes["did-teaser"].textContent, "This week: 1 reading checked, no alerts.");
+  const two = await today(base(), undefined, { ...DID, figures: { readings: 2, alerts: 1 } });
+  assert.equal(two.nodes["did-teaser"].textContent, "This week: 2 readings checked, 1 alert.");
+  const W = require(path.join(__dirname, "..", "..", "static", "words.js"));
+  assert.equal(W.count(1, "alert"), "1 alert");
+  assert.equal(W.count(2, "alert"), "2 alerts");
+  assert.equal(W.count(1240, "reading"), "1,240 readings");
+  assert.equal(W.count(0, "fridge or freezer", "fridges and freezers"), "0 fridges and freezers");
+});
+
+test("3.33.0: the console's insurance-pack list: '1 alert', '2 alerts', each by its unit's name, never a sensor id", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "..", "static", "console.js"), "utf8");
+  const start = src.indexOf("const CLAIM_STATE");
+  const code = src.slice(start, src.indexOf("\n}\n", src.indexOf("function renderClaims", start)) + 3);
+  const box = { innerHTML: "" };
+  const context = { CLXWords: require(path.join(__dirname, "..", "..", "static", "words.js")), $: () => box,
+    esc: (s) => String(s == null ? "" : s), shortDate: () => "Nov 23", noun: () => "fridge", nextSteps: () => "", state: { data: {} } };
+  vm.createContext(context);
+  vm.runInContext(`${code}\nthis.renderClaims = renderClaims;`, context);
+  const row = (id, unit, food) => ({ incident_id: id, sensor_id: "WALK-IN-1", unit, opened_at: NOW, catastrophe: "Fridge warming",
+    state: "resolved", readings_available: true, food });
+  context.renderClaims({ count: 1, period_days: 365, incidents: [row("INC-1", "Walk-in fridge", "Thrown away")] });
+  assert.match(box.innerHTML, /1 alert an insurance pack can be made for:/);
+  assert.match(box.innerHTML, /<span class="fc-name">Walk-in fridge<\/span>/);
+  assert.match(box.innerHTML, /Nov 23 · Thrown away/);
+  assert.doesNotMatch(box.innerHTML, /WALK-IN-1|alert\(s\)/);
+  context.renderClaims({ count: 2, period_days: 365, incidents: [row("INC-1", "Walk-in fridge", null), row("INC-2", "Prep fridge", null)] });
+  assert.match(box.innerHTML, /2 alerts an insurance pack can be made for:/);
+  assert.match(box.innerHTML, /Nov 23 · closed/);
+});

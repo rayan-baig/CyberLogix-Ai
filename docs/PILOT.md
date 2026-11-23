@@ -198,6 +198,38 @@ corner, hidden rather than over the search box or tabs at 320px. On a phone it i
 often than before, by design: at the top of `/help`, and on parts of `/pricing` and
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
+**3.33.0: more answers with no key, and nothing about an alert when none is open.** Still
+core 1.4.3. What changes in `static/pilot-cyberlogix.js`:
+
+- **New built-in answers**, typed or routed from whichever item the core matched (`TOPICS`,
+  `bestTopic`): "Does this work with my sensor?" and "Does it work with Monnit?" (the sensor list,
+  led by the brand's own yes and its guide for Monnit, SensorPush, Elitech and Dickson); "How do I
+  add my chef to get texts?" (Who gets alerts, with a link the console follows to the Name box,
+  `/console#team`); a pharmacy's price (from `data-pharmacy-price`, the units and the extra unit);
+  "How do I cancel?" (Money, Pause or cancel, Cancel my plan, then the rule checkout shows,
+  `data-cancel-rule` from `pricing.CANCELLATION_RULE`); "Is my data safe?" (the privacy statement
+  in five lines, linked); and the power or Wi-Fi going off on every page.
+- **Their words** are lent to an item that is on the page in every state (`LEND`): the connect
+  pill carries the brands, the food pill the data, the new "Who gets the texts?" pill the people,
+  the alert's and the summary's chips the price, a pharmacy and cancelling, "It's fixed now" and
+  the power chip the power. Unlike `CARRY`, a lent word is kept even where another item uses it:
+  the item it is on wins by having two of the typed words, and the answer is still the closest of
+  all. Each list stays inside the core's 20 words. "work" is on two pills, so "How does this
+  work?" alone picks neither.
+- **Signed out**, "Is my walk-in fridge OK?" says "Sign in to see your fridges" with the link, on
+  the public pages too (the café pill carries "walk" and "fridge").
+- **"What CyberLogix did for you"**, pressed or typed, quotes the week's summary line ("This
+  week: 1,240 readings checked, 2 alerts.") with its few lines and the link: from what `/today`
+  loaded (`CyberLogixToday.did()`), or on the console through its own session. Never sent to an
+  AI.
+- **No alert open, no alert suggestions.** The welcome's "What does this alert mean?" is now a
+  suggestion, with "It's fixed now", shown only while an alert is open; the welcome has "Who gets
+  the texts?" in its place. With none open the suggestions are the inspector's log, the week's
+  summary and the power. Typed, "What does this alert mean?" still says none is open and names
+  the last one.
+- **The robot keeps off the opened summary's list** on `/today` (`#did-lines`,
+  `#did-sample-lines`, `.did-tabs` in `avoid`).
+
 **Core 1.4.3 (3.32.1): no dead end without a key.** The thirteen files from the MTRX Horizyn
 site (commit ea7498b), byte for byte; the pictures are unchanged. What changes here:
 

@@ -95,12 +95,13 @@ def lines(f: Dict[str, Any]) -> List[str]:
         if f["texts"] or f["calls"]:
             out.append(f"{_count(f['texts'], 'alert text')} delivered, {_count(f['calls'], 'phone call')}.")
         food = []
+        # The count first (3.33.0): "1 kept, 1 thrown away", never "thrown away 1".
         if f["food_kept"]:
-            food.append(f"kept {f['food_kept']}")
+            food.append(f"{f['food_kept']} kept")
         if f["food_auto_safe"]:
             food.append(f"{f['food_auto_safe']} short blip{'' if f['food_auto_safe'] == 1 else 's'} recorded safe")
         if f["food_thrown"]:
-            food.append(f"thrown away {f['food_thrown']}")
+            food.append(f"{f['food_thrown']} thrown away")
         if f["food_missing"]:
             food.append(f"{f['food_missing']} answer{'' if f['food_missing'] == 1 else 's'} missing")
         if food:

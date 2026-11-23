@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -278,6 +278,10 @@ def console_overview(
         row["food_at_risk"] = food_value.at_risk(incident, unit_sensor)
         row["food_question"] = food_value.question(incident, unit_sensor, now)
         incidents.append(row)
+    # Food thrown away in the last day (3.33.0): /today's headline says so,
+    # calmly, with the insurance pack one tap away, instead of "Everything
+    # is fine... nothing for you to do".
+    recent_loss = loss_headline(tenant, now)
     # The possible attack or site-wide failure alerts, apart from the
     # units' own: the console shows them as one banner each, above
     # everything, with the units in them. Live ones and the last week's.
@@ -406,11 +410,40 @@ def console_overview(
         # "This month: 1 alert, answered in 4 minutes, food kept." for the
         # Simple view (3.28.0), by the same rule as each alert's line.
         "this_month": month_summary(tenant, now),
+        # The newest food thrown away in the last 24 hours, or None.
+        "recent_loss": recent_loss,
         # A short blip's food is recorded safe by itself under this many
         # minutes out (food_value.SHORT_MINUTES, 3.32.0); 0 when it is off.
         "food_safe_minutes": food_value.SHORT_MINUTES,
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
+    }
+
+
+# How long /today leads with food thrown away (3.33.0).
+LOSS_HEADLINE_HOURS = 24
+
+
+def loss_headline(tenant: Tenant, now) -> Optional[Dict[str, Any]]:
+    """The newest alert whose food was thrown away in the last day, for
+    /today's calm headline: "Food thrown away from Walk-in fridge: make
+    the insurance pack". None when there is none."""
+    since = now - timedelta(hours=LOSS_HEADLINE_HOURS)
+    lost = [i for i in STORE.incidents_for(tenant.tenant_id)
+            if not i.site_wide and i.product_disposition == "discarded"
+            and i.food_answered_at is not None and i.food_answered_at >= since]
+    if not lost:
+        return None
+    i = max(lost, key=lambda x: x.food_answered_at)
+    sensor = STORE.get_sensor(i.sensor_id)
+    return {
+        "incident_id": i.incident_id,
+        "unit": (sensor.location_name if sensor and sensor.location_name else i.sensor_id),
+        "at": iso(i.food_answered_at),
+        "by_name": person_name(i.food_answered_by),
+        "note": i.corrective_action or None,
+        "until": iso(i.food_answered_at + timedelta(hours=LOSS_HEADLINE_HOURS)),
+        "others": len(lost) - 1,
     }
 
 
@@ -464,6 +497,8 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
             "change_until": iso(until),
             "changeable": until is not None and now <= until,
             "has_note": bool(i.corrective_action),
+            # The note of what went (3.33.0), shown under the answer.
+            "note": i.corrective_action or None,
         })
 
     # One short line (3.32.0): "3 alerts · all answered · 1 food answer

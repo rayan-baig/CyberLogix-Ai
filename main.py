@@ -798,7 +798,7 @@ def pilot_facts() -> Dict[str, str]:
                         ALERT_AFTER_MINUTES_FOOD_FRIDGE, ALERT_AT_ONCE_DEGREES_F,
                         DISPATCH_SLA_SECONDS, SENSOR_OFFLINE_AFTER_MINUTES,
                         VOICE_ESCALATION_GRACE_MINUTES, unit_kind_limits)
-    from pricing import PRICE_BOOK, headline
+    from pricing import CANCELLATION_RULE, PRICE_BOOK, headline
 
     facts = headline()
     landing = _landing_facts()
@@ -834,6 +834,9 @@ def pilot_facts() -> Dict[str, str]:
         "alert-after-freezer": number(ALERT_AFTER_MINUTES_FOOD_FREEZER),
         "alert-after-vaccine": number(ALERT_AFTER_MINUTES_CLINICAL_FRIDGE),
         "alert-at-once-degrees": number(ALERT_AT_ONCE_DEGREES_F),
+        # The cancellation rule as checkout shows it (3.33.0), for Pilot's
+        # "How do I cancel?".
+        "cancel-rule": CANCELLATION_RULE,
     }
 
 

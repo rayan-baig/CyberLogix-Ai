@@ -179,17 +179,28 @@ def alert_sms(tenant, sensor, temperature_f: float, unit: str,
 # A spell this short that comes back on its own is almost always a door
 # held open or a delivery going in (patterns.DOOR_MAX_MINUTES).
 DOOR_LIKE_MINUTES = 25.0
+# ...unless it got far too warm (3.33.0): a walk-in that reached 58°F
+# against a 41°F limit was not a door held open, however short.
+DOOR_LIKE_MOST_OVER_F = 10.0
 
 
-def back_to_normal_note(minutes: float, called: bool = False) -> str:
+def back_to_normal_note(minutes: float, called: bool = False,
+                        over_by_f: Optional[float] = None) -> str:
     """The plain note on an alert the unit answered itself.
 
-    "Back to normal after 3 minutes, probably the door."
+    "Back to normal after 3 minutes, probably the door or a delivery."
+    `over_by_f`: how far past its limit the worst reading went, in °F;
+    more than DOOR_LIKE_MOST_OVER_F and the door is not offered as the
+    likely cause.
     """
     from domain import minutes_words
 
     spell = minutes_words(minutes)
-    if minutes <= DOOR_LIKE_MINUTES:
+    far = over_by_f is not None and over_by_f > DOOR_LIKE_MOST_OVER_F
+    if far:
+        note = (f"Back to normal after {spell}, on its own. It went far past its "
+                "limit, so check the unit is cooling properly.")
+    elif minutes <= DOOR_LIKE_MINUTES:
         note = f"Back to normal after {spell}, probably the door or a delivery."
     else:
         note = (f"Back to normal after {spell}, on its own. Worth a look at "
