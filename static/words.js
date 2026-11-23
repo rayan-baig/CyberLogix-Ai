@@ -186,13 +186,21 @@
     return Boolean(until) && until.getTime() >= now();
   }
 
+  /* "1 reading", "6 readings", "1,240 readings checked" (3.33.0): the
+     count and the noun that goes with it, on every page, never "1
+     readings" or "alert(s)". `many` for a plural that isn't one + "s". */
+  function count(n, one, many) {
+    const value = Number(n) || 0;
+    return `${value.toLocaleString("en-US")} ${value === 1 ? one : (many || `${one}s`)}`;
+  }
+
   let clockNow = () => Date.now();
   function now() { return clockNow(); }
   /* For the tests: read the time from here instead of the computer. */
   function setNow(fn) { clockNow = typeof fn === "function" ? fn : () => Date.now(); }
 
   const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet,
-    foodBack, changeable };
+    foodBack, changeable, count };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CLXWords = Object.freeze(api);
 })(typeof window !== "undefined" ? window : globalThis);

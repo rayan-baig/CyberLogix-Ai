@@ -72,6 +72,7 @@
     callAfterMinutes: d.callAfterMinutes || "", textWithinSeconds: d.textWithinSeconds || "",
     alertAfterFridge: d.alertAfterFridge || "", alertAfterFreezer: d.alertAfterFreezer || "",
     alertAfterVaccine: d.alertAfterVaccine || "", alertAtOnceDegrees: d.alertAtOnceDegrees || "",
+    cancelRule: d.cancelRule || "",
   };
   const fig = (v, fallback) => v || fallback;
 
@@ -93,10 +94,18 @@
     return null;
   }
 
+  // Signed out (3.33.0): "Sign in to see your fridges", with the link, on
+  // every page, the public ones included.
   const NOT_LOADED = onConsole || onToday
     ? (signedIn() ? "Your fridges are still loading. Try again in a moment."
       : "Sign in to see your fridges: [sign in](/console). Pilot reads them from the page once you are signed in.")
-    : "Pilot can see your fridges once you are signed in: [sign in](/console) or [see the demo](/demo).";
+    : "Sign in to see your fridges: [sign in](/console). No account yet? [See the demo](/demo) with pretend fridges.";
+
+  // "1 reading", "6 readings" (3.33.0), here too, where words.js may not be.
+  const count = (n, one, many) => {
+    const v = Number(n) || 0;
+    return `${v.toLocaleString("en-US")} ${v === 1 ? one : (many || `${one}s`)}`;
+  };
 
   const unitName = (u) => words((u && u.location_name) || "") || words(u && u.sensor_id) || "A unit";
   function degrees(value, unit, dd) {
@@ -444,13 +453,38 @@
   ].join("\n\n");
   // The knowledge pack's own words on sensors (pilot-cyberlogix-pack.js),
   // short.
-  const SENSORS = () => [
+  // "Does it work with Monnit?" or "Does this work with my sensor?"
+  // (3.33.0): the brand's own yes and its guide first, then the list.
+  const BRANDS = {
+    monnit: ["Monnit", "iMonnit, Monnit's cloud, sends each reading on to CyberLogix", "monnit"],
+    sensorpush: ["SensorPush", "CyberLogix reads SensorPush's cloud every few minutes, through its G1 gateway", "sensorpush"],
+    elitech: ["Elitech", "its cloud forwards each reading to CyberLogix", "webhook"],
+    dickson: ["Dickson", "its cloud forwards each reading to CyberLogix", "webhook"],
+  };
+  function sensorsLead(ctx) {
+    const typed = ctx && typeof ctx.label === "string" && !sameLabel(ctx.label, "What sensors do I need?") ? wordsIn(ctx.label) : [];
+    const brand = Object.keys(BRANDS).find((b) => typed.includes(b));
+    if (brand) {
+      const [name, how, guide] = BRANDS[brand];
+      return `Yes, **${name}** works: ${how}. [The ${name} guide](/help/sensors#${guide})${onConsole || onToday ? ` · [Connect it](${CONNECT})` : ""}\n\nThe sensors that work:`;
+    }
+    if (typed.includes("work") || typed.includes("compatible")) {
+      return "Most likely, yes. CyberLogix works with any wireless sensor that can send its readings to a web address, or whose maker's cloud we can read. The sensors that work:";
+    }
+    return "";
+  }
+  const SENSORS = (ctx) => {
+    const lead = sensorsLead(ctx);
+    const list = SENSOR_LIST();
+    return lead ? `${lead}\n${list.slice(1).join("\n")}` : list.join("\n");
+  };
+  const SENSOR_LIST = () => [
     "We don't sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at CyberLogix.",
     "- One that sends each reading to a web address (Elitech, Dickson and most devices set up with a URL), or",
     "- One whose maker's cloud we read every few minutes (Monnit through iMonnit, SensorPush).",
     "A basic Wi-Fi sensor is about $30 to $100; a commercial one with a probe for a walk-in about $100 to $250. CyberLogix's price doesn't include them.",
     "[Which sensors work, brand by brand](/help/sensors)",
-  ].join("\n");
+  ];
   // "How do I connect a sensor?" (3.32.0: an answer with the link, so a
   // typed sensor question on the console gets the right answer too).
   const CONNECT_HOW = () => (onConsole || onToday
@@ -461,6 +495,52 @@
   const DID = () => (onConsole || onToday
     ? "**What CyberLogix did for you** shows this week or this month on one screen: readings checked, alerts and how fast someone answered, what happened to the food, and the printable log for the same days. [Open it](/today#did)"
     : "Once your fridges are watched, **What CyberLogix did for you** shows each week on one screen: readings checked, alerts and how fast someone answered, and the printable log. [See it live](/demo)");
+  // Pressed or typed, signed in (3.33.0): the week's own summary line,
+  // quoted ("This week: 1,240 readings checked, 2 alerts."), with its few
+  // lines and the link. From what /today already loaded, or on the console
+  // the same summary through its own session. Never sent to an AI.
+  async function didAnswer() {
+    if (!(onConsole || onToday) || !signedIn()) return DID();
+    let got = null;
+    try {
+      if (onToday && window.CyberLogixToday && typeof window.CyberLogixToday.did === "function") got = window.CyberLogixToday.did();
+      if (!got && onConsole && window.CyberLogixConsole && typeof window.CyberLogixConsole.api === "function") {
+        got = await window.CyberLogixConsole.api("/api/console/did-for-you?period=week");
+      }
+    } catch (_) { got = null; }
+    if (!got || !got.figures) return DID();
+    const f = got.figures;
+    const line = `${words(got.label) || "This week"}: ${count(f.readings, "reading")} checked, ${f.alerts ? count(f.alerts, "alert") : "no alerts"}.`;
+    const rest = (Array.isArray(got.lines) ? got.lines : []).slice(1).map((l) => `- ${words(l)}`);
+    return `**${line}**${rest.length ? `\n\n${rest.join("\n")}` : ""}\n\n[Open What CyberLogix did for you](${DID_HERE})`;
+  }
+  // "How do I add my chef to get texts?" (3.33.0).
+  const TEAM_LINK = onConsole ? `${window.location.pathname + (window.location.search || "")}#team` : "/console?view=full#team";
+  const TEAM = () => ((onConsole || onToday) && signedIn()
+    ? `Add them under **Who gets alerts** in the console (the **Team** tab): their name and mobile number. Everyone on the list is texted when a fridge stays too warm, and on plans with calls, phoned in the order you set. Then press **Send a test alert** so they know what one looks like.\n\n[Add someone](${TEAM_LINK})`
+    : `Once you've signed up, add each person under **Who gets alerts** in the console (the **Team** tab): a name and a mobile number, as many people as you like. Everyone on the list is texted when a fridge stays too warm, and on plans with calls, phoned in the order you set. **Send a test alert** shows them what one looks like. [Start a free trial](/signup)`);
+  // "How much for a pharmacy?" (3.33.0), from the plan figures.
+  const PHARMACY = () => [
+    `**Pharmacies: $${fig(F.pharmacyPrice, "199")} a month per pharmacy**, for up to ${fig(F.unitsPerLocation, "10")} fridges and freezers there; each one past that is $${fig(F.extraUnit, "15")} a month.`,
+    `A vaccine fridge gets its own range (36°F to 46°F) and alerts after ${fig(F.alertAfterVaccine, "10")} minutes out, and everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds. No setup fee; sensors are bought separately.`,
+    `Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [See all prices](/pricing)`,
+  ].join("\n\n");
+  // "How do I cancel my subscription?" (3.33.0): where, and the rule as
+  // checkout shows it.
+  const CANCEL = () => [
+    "In the console: **Money** tab, **Pause or cancel**, then **Cancel my plan**. One press, never hidden behind another screen. You can pause for 1 to 3 months instead.",
+    fig(F.cancelRule, "Cancel any time. Nothing more is billed after you cancel, and the service carries on to the end of the month or year you have already paid for. What you have already paid is not refunded, in part or in full."),
+    "A free trial has nothing to cancel: it ends by itself, and nothing moves you to a paid plan unless you choose one.",
+  ].join("\n\n");
+  // "Is my data safe?" (3.33.0): the privacy statement in a few lines.
+  const PRIVACY = () => [
+    "Yes. What we keep: your readings (about machines, not people), the names and mobile numbers of the people on call, and who signs in, with passwords scrambled.",
+    "- Nothing is sold or used to train anything.",
+    "- Only Twilio (to send the texts and calls), Google (to word an alert) and our mail host get the bit each needs.",
+    "- Every reading is sealed, so a change made later would show.",
+    "- An owner can download everything, or delete everything, from the Setup tab.",
+    "[Read the privacy statement](/legal#privacy)",
+  ].join("\n");
 
   // Words a typed question may use for each answer or link that needs no
   // key (core 1.4.2, matchTyped). With no key, "Is my walk-in fridge OK?"
@@ -480,10 +560,12 @@
   const MATCH = {
     "Which fridges need me?": ["fridge", "freezer", "unit", "warm", "cold", "ok", "fine", "temperature", "temp", "problem", "wrong", "status",
       "walk", "hot", "reading"],
-    "What does this alert mean?": ["alert", "alarm", "mean", "warning", "happened", "happening", "text", "message", "going"],
-    "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "bin", "spoiled", "spoilt", "bad", "good", "discard", "stock"],
-    "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "wire", "hook", "probe", "device", "new"],
-    "Will it work for my café?": ["cafe", "café", "restaurant", "bakery", "kitchen", "coffee", "shop", "bar", "diner", "pub", "deli", "small", "business", "suit", "right"],
+    "What does this alert mean?": ["alert", "alarm", "mean", "warning", "happened", "message", "going"],
+    "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "bin", "spoiled", "bad", "good", "discard", "stock"],
+    "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "probe", "device", "new"],
+    "Will it work for my café?": ["cafe", "café", "restaurant", "bakery", "kitchen", "coffee", "shop", "bar", "diner", "small", "business"],
+    "Who gets the texts?": ["text", "chef", "cook", "staff", "team", "manager", "employee", "colleague", "worker", "person", "people",
+      "someone", "add", "roster", "mobile", "invite"],
     "What does it cost?": ["cost", "price", "pricing", "much", "pay", "fee", "month", "monthly", "expensive", "cheap", "subscription", "dollar", "charge",
       "starter", "growth"],
     "See it live": ["demo", "live", "try", "example", "preview", "tour", "sample", "pretend", "watch"],
@@ -519,8 +601,16 @@
     { id: "status", labels: ["Which fridges need me?"], also: ["refrigerator", "cooler", "degree"], answer: needsAnswer },
     { id: "alert", labels: ["What does this alert mean?"], answer: alertAnswer },
     { id: "food", labels: ["Is the food still OK?"], answer: foodAnswer },
-    { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model"], answer: SENSORS },
+    { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model", "monnit", "sensorpush", "elitech", "dickson"],
+      answer: SENSORS },
     { id: "price", labels: ["What does it cost?"], also: ["afford", "subscribe"], answer: PRICE },
+    // 3.33.0: a pharmacy's price, cancelling, who gets the texts, and
+    // whether the data is safe, each with its own words.
+    { id: "pharmacy", labels: [], also: ["pharmacy", "pharmacist", "chemist", "drugstore", "vaccine", "cost", "price", "much"], answer: PHARMACY },
+    { id: "cancel", labels: [], also: ["cancel", "cancellation", "unsubscribe", "refund", "quit", "contract", "subscription", "stop"],
+      answer: CANCEL },
+    { id: "team", labels: ["Who gets the texts?"], answer: TEAM },
+    { id: "privacy", labels: [], also: ["data", "privacy", "private", "secure", "security", "gdpr", "sold", "safe"], answer: PRIVACY },
     { id: "plan", labels: ["Which plan for a café?"], also: ["tier", "option", "upgrade"], answer: PLAN },
     { id: "cafe", labels: ["Will it work for my café?"], answer: cafeAnswer },
     { id: "connect", labels: ["How do I connect a sensor?"], also: ["pair"], answer: CONNECT_HOW },
@@ -533,7 +623,7 @@
     // What happens when a fridge is warm, for a visitor: on the person's
     // own pages "which fridges need me" says it with their own fridges.
     { id: "warm", labels: ["A fridge is warm: what now?", "What happens next?"], answer: WARM, only: () => !ownPage },
-    { id: "did", labels: ["What CyberLogix did for you"], answer: DID },
+    { id: "did", labels: ["What CyberLogix did for you"], answer: didAnswer },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -579,11 +669,49 @@
   // Never a word another item on the same page already uses (in its label
   // or its own words), so the two never tie on it.
   const CARRY = {
-    "What does this alert mean?": ["cost", "price", "pricing", "much", "pay", "month", "monthly", "expensive", "starter", "growth"],
+    "What does this alert mean?": ["starter", "growth", "month"],
+    "What CyberLogix did for you": ["starter", "growth", "month"],
     "Is the food still OK?": ["plan", "best", "cafe", "café"],
-    "It's fixed now": ["door", "wifi", "power", "outage", "down", "phone", "call", "night", "trial"],
+    "It's fixed now": ["phone", "call", "night"],
+    "Wi-Fi or power goes off?": ["phone", "call", "night"],
     "Will it work for my café?": ["plan", "starter", "growth", "best", "choose"],
-    "How do I connect a sensor?": ["sell", "buy", "hardware", "brand", "thermometer", "compatible"],
+    "How do I connect a sensor?": ["sell", "buy", "brand", "compatible"],
+  };
+  // 3.33.0: the words of this round's answers (sensor brands, a pharmacy's
+  // price, cancelling, who gets the texts, the data, the power), lent to
+  // an item that is on the page whatever state it is in, kept even where
+  // another item uses the word: the item they are on wins by having two of
+  // them, and the answer is still the closest of all (bestTopic). The
+  // core keeps the first 20 words of an item, so each list fits: checked
+  // by tests/js/cyberlogix-pilot.test.js on every page.
+  const PRICE_WORDS = ["cost", "price", "much", "pay", "expensive", "pharmacy", "pharmacist", "cancel", "subscription", "refund"];
+  const LEND = {
+    // The person's own pages (whatever the alerts): sensors on the connect
+    // pill, the data on the food pill, the summary on the texts pill.
+    "How do I connect a sensor?": ["work", "monnit", "sensorpush", "elitech", "dickson"],
+    // "Is my freezer working?"; and "work" on two pills, so "How does this
+    // work?" alone picks neither.
+    "Which fridges need me?": ["work", "working"],
+    "Is the food still OK?": ["data", "privacy"],
+    "Who gets the texts?": ["cyberlogix", "summary"],
+    // ...and on the chips of either state: an alert open, or not.
+    "What does this alert mean?": PRICE_WORDS,
+    "What CyberLogix did for you": PRICE_WORDS,
+    "It's fixed now": ["wifi", "power", "goes", "outage", "internet", "down", "door", "trial"],
+    // With no alert open, the alert's own words too: typed, it says none is.
+    "Wi-Fi or power goes off?": ["door", "trial", "alert", "alarm", "mean"],
+    // A visitor: the brands and the people on the sensors pill, a
+    // pharmacy and cancelling on the price pill, the data and their own
+    // fridge on the café pill.
+    "What sensors do I need?": ["monnit", "sensorpush", "elitech", "dickson", "chef", "staff", "team", "text"],
+    "What does it cost?": ["pharmacy", "pharmacist", "cancel", "refund", "contract"],
+    "Will it work for my café?": ["data", "privacy", "safe", "walk", "fridge", "freezer"],
+    // The pages whose chips don't say it already: the power, the door,
+    // the trial and the calls.
+    "What's in the trial?": ["wifi", "power", "goes", "outage", "door"],
+    "A log for the inspector": ["wifi", "power", "goes", "outage", "phone", "call", "night", "trial"],
+    "What happens next?": ["wifi", "power", "goes", "outage", "door", "trial"],
+    "How do I sign in?": ["wifi", "power", "goes", "down", "cost", "price", "much", "pharmacy", "cancel", "subscription", "phone", "trial"],
   };
   let PAGE_WORDS = new Set();
   function matching(label) {
@@ -591,7 +719,7 @@
     if (!own.length) return {};
     const others = new Set([...PAGE_WORDS].filter((w) => !wordsIn(label).includes(w) && !own.map(stemWord).includes(w)));
     const extra = (CARRY[label] || []).filter((w) => !others.has(stemWord(w)));
-    return { match: [...new Set(own.concat(extra))].slice(0, 20) };
+    return { match: [...new Set(own.concat(extra, LEND[label] || []))].slice(0, 20) };
   }
 
   // Each a label and what it does: words for the AI, or a {link} / {answer}
@@ -604,10 +732,23 @@
   // page's #, so nothing reloads. 3.32.0: "What CyberLogix did for you" in
   // place of "Make a proof report", which needed an AI key.
   const LOG_HERE = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#inspector-log?open=1`;
-  const DID_HERE = onToday ? "#did" : "/today#did";
-  const LIVE = [["Log for the inspector", link(LOG_HERE)],
+  // A page's own address with the #: a bare "#did" is not a link in Pilot's
+  // answers. On /today only the # changes, so nothing reloads.
+  const DID_HERE = "/today#did";
+  // With an alert open: what it means and "It's fixed now" first. With
+  // none (3.33.0), neither: those two were offered beside "Nothing needs
+  // you right now". The week's summary and the power instead.
+  const LIVE_ALERT = [["What does this alert mean?", answer(alertAnswer)],
     ["It's fixed now", answer(fixedAnswer)],
-    ["What CyberLogix did for you", link(DID_HERE)]];
+    ["Log for the inspector", link(LOG_HERE)]];
+  const LIVE_CALM = [["Log for the inspector", link(LOG_HERE)],
+    ["What CyberLogix did for you", answer(didAnswer)],
+    ["Wi-Fi or power goes off?", answer(POWER)]];
+  function alertOpen() {
+    const dd = overview();
+    return Boolean(dd) && liveAlerts(dd).length > 0;
+  }
+  const LIVE = () => (alertOpen() ? LIVE_ALERT : LIVE_CALM);
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
@@ -647,15 +788,15 @@
   // Every list of suggestions this page can show (the console's changes
   // when somebody signs in), for the words the pills must leave alone.
   function pageLists() {
-    if (onConsole) return [LIVE, CHIPS["/console-out"]];
-    if (onToday) return [LIVE];
+    if (onConsole) return [LIVE_ALERT, LIVE_CALM, CHIPS["/console-out"]];
+    if (onToday) return [LIVE_ALERT, LIVE_CALM];
     if (path.startsWith("/for/")) return [CHIPS["/for/*"]];
     return [CHIPS[path] || []];
   }
 
   function chips() {
     let list;
-    if ((onConsole || onToday) && signedIn()) list = LIVE;
+    if ((onConsole || onToday) && signedIn()) list = LIVE();
     else if (onConsole) list = CHIPS["/console-out"];
     else if (path.startsWith("/for/")) list = CHIPS["/for/*"];
     else list = CHIPS[path] || [];
@@ -676,9 +817,9 @@
   const pill = (icon, label, fn) => ({ icon, label, answer: routed(label, fn) });
   const OWN = [
     ["bars", "Which fridges need me?", needsAnswer],
-    ["help", "What does this alert mean?", alertAnswer],
     ["chat", "Is the food still OK?", foodAnswer],
     ["bolt", "How do I connect a sensor?", CONNECT_HOW],
+    ["help", "Who gets the texts?", TEAM],
   ];
   const VISITOR = [
     ["chat", "Will it work for my café?", cafeAnswer],
@@ -784,7 +925,10 @@
       // 375px the robot waved over "62.5°" on the Simple view's last row,
       // and over the demo Freezer card's edge. And /today's own "Needs you
       // now" card, buttons and all.
-      ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need"],
+      ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need",
+      // What CyberLogix did for you, opened on /today (3.33.0): at 375px
+      // the robot waved over its first lines.
+      "#did-lines", "#did-sample-lines", ".did-tabs"],
     // Not the logo (3.31.0): it is a picture and words, not a link, on most
     // pages, so core 1.4.2's handle may peek in beside it at the screen's
     // left edge. At 320px and 375x667 on /today with an alert that is the

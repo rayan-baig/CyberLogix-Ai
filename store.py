@@ -1956,8 +1956,16 @@ class HubStore:
             incident.corrective_action = action.strip()
             incident.corrective_action_by = actor
             incident.corrective_action_at = now
-            if disposition.strip():
-                self._set_food(incident, disposition.strip(), actor, now)
+            # The same answer again (the note of what was thrown away is
+            # saved with "discarded") is not a change (3.33.0): no
+            # "Changed to Thrown away" in the history, and the answer keeps
+            # its own time, so its 24 hours to change don't start over. An
+            # answer CyberLogix recorded by itself, confirmed by a person,
+            # is theirs from then.
+            fate = disposition.strip()
+            if fate and (fate != incident.product_disposition
+                         or incident.food_auto_minutes is not None):
+                self._set_food(incident, fate, actor, now)
             self._save_incident(incident)
         return incident
 

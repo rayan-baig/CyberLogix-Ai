@@ -467,8 +467,8 @@ def test_cyberlogixs_own_welcome():
     # 3.32.0: the pills are built in code (the answers routed to the best
     # built-in one for a typed question), so they are read by running it.
     own, visitor = _welcome_in_node("/console"), _welcome_in_node("/")
-    assert own == [("bars", "Which fridges need me?", "answer", True), ("help", "What does this alert mean?", "answer", True),
-        ("chat", "Is the food still OK?", "answer", True), ("bolt", "How do I connect a sensor?", "answer", True),
+    assert own == [("bars", "Which fridges need me?", "answer", True), ("chat", "Is the food still OK?", "answer", True),
+        ("bolt", "How do I connect a sensor?", "answer", True), ("help", "Who gets the texts?", "answer", True),
         ("key", "Add my AI key", "settings", False)]
     assert visitor == [("chat", "Will it work for my café?", "answer", True), ("bars", "What does it cost?", "answer", True),
         ("spark", "See it live", "link /demo", True), ("help", "What sensors do I need?", "answer", True),
@@ -484,7 +484,9 @@ def test_cyberlogixs_own_welcome():
     assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
     assert 'hideKeySections: ["image", "video"],' in config
     assert 'modals: [".menu[open] > nav"],' in config
-    live = config[config.index("const LIVE = ["):config.index("];", config.index("const LIVE = ["))]
+    # 3.33.0: two lists, one while an alert is open and one when none is.
+    live = config[config.index("const LIVE_ALERT = ["):config.index("function alertOpen()")]
+    assert "const LIVE_CALM = [" in live
     for _i, label, _k, _v in own:
         assert f'"{label}"' not in live, label
     front = config[config.index('"/": ['):config.index('"/pricing": [')]

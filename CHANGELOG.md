@@ -4,6 +4,57 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.33.0 — 2026-11-23
+
+The insurance pack now leads with what happened to the food, the morning
+after a loss says so calmly, Pilot answers more without a key, and the
+front page shows what the app looks like. No price or plan term has
+changed.
+
+- **The insurance pack, around the food.** A new "What happened to the
+  food" section: the answer (Thrown away, Food kept), who gave it and when,
+  the note of what went in the bin, and every change. The covering summary
+  says the same, says "The alert closed at 2:40 AM" once it closed (it used
+  to say "remains open" for an alert that had closed by itself), and writes
+  every date in words in your own time zone ("Nov 23, 2026, 1:58 AM EST")
+  instead of "2026-11-23T01:58:35Z". The readings stop at the moment the
+  pack is made, never 12 hours in the future. The unit reads "Walk-in
+  fridge", not "Walk-in fridge (walk-in)", and the first reading out of
+  range is the one quoted ("58.6°F: too warm, over the 41°F limit"). How a
+  developer checks the seal is now a small note at the end, "For the
+  adjuster's IT team".
+- **The note shows where the food's answer shows.** "Two trays of chicken,
+  12 lb" sits under "Thrown away" on the alert's card, in its history, on
+  the Simple view and in the pack. Saving the note no longer adds
+  "Changed to Thrown away" or restarts the 24 hours to change the answer,
+  and pressing the answer you already gave changes nothing.
+- **The morning after a loss.** For 24 hours after food is thrown away the
+  Simple view's headline is "Food thrown away from Walk-in fridge: make the
+  insurance pack", with the button (and "Add what was thrown away" until
+  the note is saved), instead of "Everything is fine... nothing for you to
+  do".
+- **Pilot answers more without a key.** "Does this work with my sensor?"
+  and "Does it work with Monnit?" (the sensors that work, with the brand's
+  guide), "How do I add my chef to get texts?" (Who gets alerts, with a link
+  straight to it), what happens if the power or Wi-Fi goes off, a
+  pharmacy's price, how to cancel (with the same rule checkout shows), and
+  "Is my data safe?" (the privacy statement in five lines). Signed out, "Is
+  my walk-in fridge OK?" says to sign in, with the link. "What CyberLogix
+  did for you" quotes your week's summary line. "It's fixed now" and "What
+  does this alert mean?" are offered only while an alert is open; the
+  welcome has "Who gets the texts?" instead. On a phone the robot keeps off
+  the summary's list once it is open.
+- **The front page shows the app.** Beside "See it live", a real
+  screenshot of the Simple view on a phone with an alert open, taken from
+  the app with pretend data and labelled as an example.
+- **Plurals and names.** "1 reading checked", never "1 readings", on the
+  Simple view, the console (the inspector's log, the seal, the sensor
+  cloud, the forecast) and the public proof page. The Proof tab lists "2
+  alerts an insurance pack can be made for", each by its unit's name and
+  what happened to the food, never a sensor id. An alert whose worst
+  reading went more than 10°F past its limit no longer closes with
+  "probably the door or a delivery".
+
 ## 3.32.1 — 2026-11-23
 
 Pilot, the helper robot, moves to the shared Pilot core 1.4.3. It is more

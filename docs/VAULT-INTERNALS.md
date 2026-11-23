@@ -122,6 +122,20 @@ A covering letter is drafted for the adjuster, and is forbidden from
 estimating the loss, arguing the claim, or characterising the insured's
 conduct. One invented figure discredits the entire packet.
 
+**Around the food (3.33.0).** The packet has `food`: what happened to the
+food (the answer, who gave it and when), the note of what was thrown away,
+and every change, oldest first; the console shows it as "What happened to
+the food", right under the covering letter. The letter says the same, with
+"The alert closed at ..." once it closed (never "remains open" for one that
+did) and every date in words ("Nov 23, 2026, 1:58 AM EST") in the reader's
+own clock: the console sends the browser's time zone as `?tz=`, and an
+unknown or missing one is UTC. The evidence window ends 12 hours after the
+alert closed, or at the moment the packet is issued if that is sooner,
+never in the future. The unit is named as the kitchen names it ("Walk-in
+fridge", `location.asset_label`), with its kind only when the name lacks
+it. How to re-derive the seal is at the end under "For the adjuster's IT
+team".
+
 The console renders it as a document and prints it: a dedicated print
 stylesheet re-sets the whole thing for ink, because the adjuster's office
 will print it and the dark console on paper is unreadable.

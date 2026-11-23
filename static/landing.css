@@ -89,6 +89,33 @@
   .hero-inner .cta-note { display: none; }
   .hero-inner .facts { order: 2; margin-bottom: 0; }
 }
+/* What it looks like (3.33.0): the Today screen on a phone, a real
+   screenshot with pretend data, beside the words and "See it live" on a
+   wide screen, and under the buttons and the three facts on a phone. */
+.hero-shot { margin: 0; }
+.hero-shot-frame {
+  display: block; border-radius: 26px; overflow: hidden;
+  border: 1px solid var(--border-lit); box-shadow: var(--lift-2);
+  background: var(--surface);
+}
+.hero-shot img { display: block; width: 100%; height: auto; }
+.hero-shot figcaption {
+  margin-top: 10px; font-size: 12.5px; line-height: 1.45; color: var(--muted); text-align: center;
+}
+@media (min-width: 960px) {
+  .hero-inner {
+    max-width: none; display: grid; column-gap: clamp(36px, 5vw, 64px); align-items: start;
+    grid-template-columns: minmax(0, 1fr) clamp(216px, 20vw, 248px);
+  }
+  .hero-inner > * { grid-column: 1; }
+  .hero-inner > .hero-shot { grid-column: 2; grid-row: 1 / span 6; align-self: center; }
+}
+@media (max-width: 959px) {
+  .hero-shot { width: min(240px, 70vw); margin: 34px auto 0; }
+}
+@media (max-width: 720px) {
+  .hero-inner .hero-shot { order: 3; margin-top: 30px; }
+}
 .kicker {
   font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
   text-transform: uppercase; color: var(--accent); margin: 0 0 22px;

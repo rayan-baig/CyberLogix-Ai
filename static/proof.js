@@ -4,6 +4,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
 }[c]));
 const $ = (id) => document.getElementById(id);
 const pct = (n) => (n === null || n === undefined) ? "—" : n + "%";
+/* "1 reading", "6 readings" (3.33.0): the count and its noun, always. */
+const count = (n, one, many) => {
+  const v = Number(n) || 0;
+  return `${v.toLocaleString("en-US")} ${v === 1 ? one : (many || one + "s")}`;
+};
 
 const token = location.pathname.split("/").filter(Boolean).pop();
 let record = null;
@@ -14,7 +19,7 @@ function tiles(r) {
     : "none in this period";
   return [
     ["In band", pct(r.within_band_percent),
-     `${Number(r.readings).toLocaleString()} readings over ${r.period_days} days`],
+     `${count(r.readings, "reading")} over ${count(r.period_days, "day")}`],
     ["Excursions", String(r.excursions), answered],
     ["Signed off", `${r.excursions_reviewed_by_a_manager}`,
      "reviewed by a named manager"],
@@ -27,7 +32,7 @@ function render(r) {
   record = r;
   $("who").textContent = `${r.company_name} — cold chain record`;
   $("what").textContent =
-    `${r.assets_monitored} monitored asset(s), ${r.period_days} days to `
+    `${count(r.assets_monitored, "monitored asset")}, ${count(r.period_days, "day")} to `
     + `${new Date(r.issued_at).toLocaleDateString()}. Published by the `
     + `operator; checkable by anyone.`;
 
