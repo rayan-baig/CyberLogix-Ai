@@ -801,7 +801,7 @@ function panelHelpers() {
 
 test("welcome 1.2.0: the design's five pills and tagline unless the app gives its own", () => {
   const P = panelHelpers();
-  assert.equal(P.VERSION, "1.4.2");
+  assert.equal(P.VERSION, "1.4.3");
   assert.equal(P.DEFAULT_TAGLINE, "Your AI copilot. Powered by you.");
   const five = P.welcomePills(undefined);
   assert.deepEqual(five.map((p) => p.label), ["Ask anything…", "Get things done…", "Help with code…", "Analyze & explain…", "Customize with your API key"]);
@@ -848,7 +848,9 @@ test("welcome 1.2.0: a message typed with no key stays in the box, key settings 
   // Sending with no key: the box isn't emptied, and ask() holds the words.
   assert.match(panel, /if \(store\.ready\(\) \|\| !text\.trim\(\)\) \{\s*input\.value = "";/);
   // (Core 1.4.2: unless one of the app's own answers clearly fits the words: matchTyped.)
-  assert.ok(panel.includes('if (!extra && typedHere(words)) return;\n        if (!extra) hold({ text: words }); else show("settings");'));
+  // (Core 1.4.3: and then, unless config.noKeyReply is false, Pilot says so in the chat, the words still waiting: noKeyReply.)
+  assert.ok(panel.includes('if (!extra && typedHere(words)) return;'));
+  assert.ok(panel.includes('else if (config.noKeyReply === false) hold({ text: words });'));
   assert.ok(panel.includes('if (!store.ready()) { hold({ screen: [prompt, label] }); return; }'));
   assert.match(panel, /function hold\(job\) \{\s*pending = job;\s*if \(job\.text\) fill\(job\.text\);\s*show\("settings"\);/);
   // A key added (here or in another tab): the waiting message goes.
@@ -913,7 +915,8 @@ test("placement 1.2.0: keepInViewport: tucked away it shrinks into its corner, n
   assert.ok(mascot.includes("width: o.launcher.offsetWidth || r.width"));
   const css = fs.readFileSync(core("pilot.css"), "utf8");
   assert.match(css, /\.pilot-root\.pilot-keep-in\.pilot-peek \.pilot-launcher,[\s\S]*?scale\(var\(--pilot-peek-scale\)\)/);
-  assert.match(css, /:root\.pilot-on\.pilot-keep-in \{ --pilot-side: 30px; \}/);
+  // Core 1.4.3: 34 px (1.2.0-1.4.2: 30 px), so the tucked robot's ring clears full-width cards.
+  assert.match(css, /:root\.pilot-on\.pilot-keep-in \{ --pilot-side: 34px; \}/);
 });
 
 test("placement 1.2.0: pop-ups that aren't marked as dialogs: the app's selectors, and any fixed layer covering the screen", () => {
@@ -998,15 +1001,15 @@ test("CyberLogix's own welcome: its tagline, a visitor's five on the public page
 
 // ---------------------------------------------------------------- core 1.3.0: the first look, one key ask, room for the welcome, tap targets
 
-test("core 1.4.2: every core file says 1.4.2", () => {
+test("core 1.4.3: every core file says 1.4.3", () => {
   const files = fs.readdirSync(path.join(__dirname, "..", "..", "static", "pilot")).filter((n) => /\.(js|css)$/.test(n));
   assert.equal(files.length, 13);
   for (const f of files) {
-    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.2 · /, f);
+    assert.match(fs.readFileSync(core(f), "utf8").split("\n")[0], /Pilot core 1\.4\.3 · /, f);
     const v = fs.readFileSync(core(f), "utf8").match(/const VERSION = "([\d.]+)"/);
-    if (v) assert.equal(v[1], "1.4.2", f);
+    if (v) assert.equal(v[1], "1.4.3", f);
   }
-  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.2");
+  for (const m of [Mascot, Render, Store, Engine, Providers, Media]) assert.equal(m.VERSION, "1.4.3");
 });
 
 test("first look 1.3.0: it uses the same free-corner check as normal placement, and never sits on content", () => {
@@ -1943,7 +1946,8 @@ test("typed 1.4.2: with no key, a typed question that clearly fits one of the ap
   assert.ok(askFn.includes("if (!extra && typedHere(words)) return;"));
   assert.ok(askFn.indexOf("typedHere(words)") < askFn.indexOf("hold({ text: words })"));
   assert.ok(panel.includes('if (config.matchTyped === false || answering || state.busy) return false;'));
-  assert.ok(panel.includes("answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD);"));
+  // (Core 1.4.3: and the label of the item it matched, MATCH_LEAD, hit.label.)
+  assert.ok(panel.includes("answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD"));
   assert.ok(panel.includes('{ role: "assistant", text: lead ? `${lead}\\n\\n${text}` : text, local: true }'));
 });
 
@@ -2006,8 +2010,9 @@ test("welcome 1.4.2: under the app's own answer, this page's suggestions first, 
   assert.equal(got[0].answer, "Dup.", "the page's own suggestion wins");
   assert.equal(got[2].chip, undefined);
   // At most six; nothing under an AI answer.
-  const many = P.cleanChips([{ label: "A b", answer: "x" }, { label: "C d", answer: "x" }, { label: "E f", answer: "x" }], base);
-  const capped = plain(P.againItems(local, pills.concat(P.ownPills([{ label: "G h", answer: "x" }, { label: "I j", answer: "x" }], base)), many, true));
+  // (Core 1.4.3: items with the same answer are one item, so each has its own here.)
+  const many = P.cleanChips([{ label: "A b", answer: "x1" }, { label: "C d", answer: "x2" }, { label: "E f", answer: "x3" }], base);
+  const capped = plain(P.againItems(local, pills.concat(P.ownPills([{ label: "G h", answer: "x4" }, { label: "I j", answer: "x5" }], base)), many, true));
   assert.equal(capped.length, P.AGAIN_MOST + 1, "six, and the key pill after them");
   assert.equal(capped[capped.length - 1].label, "Add my AI key");
   assert.equal(plain(P.againItems(local, pills, many, false)).some((x) => x.label === "Add my AI key"), false);
@@ -2022,4 +2027,277 @@ test("panel 1.4.2: scrolled, the chat's top edge fades under the header instead 
   assert.ok(panel.includes('scroller.addEventListener("scroll", () => scroller.classList.toggle("pilot-scrolled", scroller.scrollTop > 1), { passive: true });'));
   const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
   assert.match(css, /\.pilot-scroll\.pilot-scrolled \{ -webkit-mask-image: linear-gradient\(to bottom, transparent 0, #000 16px\);\s*mask-image: linear-gradient/);
+});
+
+// ---------------------------------------------------------------- core 1.4.3: typed words, one item once, the side gutter
+
+test("typed 1.4.3: stop words are dropped before stemming, so \"does\" and \"this\" never count (1.4.2: \"doe\", \"thi\")", () => {
+  const P = panelHelpers();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepEqual(plain(P.wordsOf("What does this check mean?")), ["check", "mean"]);
+  assert.deepEqual(plain(P.wordsOf("Does this work with my sensor?")), ["work", "sensor"]);
+  assert.deepEqual(plain(P.wordsOf("What does this colour mean?")), ["colour", "mean"]);
+  assert.deepEqual(plain(P.wordsOf("Is it his?")), ["his"], "a stop word as typed only: \"his\" is a word");
+  assert.deepEqual(plain(P.wordsOf("What's this? Is it theirs?")), [], "and once stemmed (\"theirs\" -> \"their\")");
+  assert.deepEqual(plain(P.wordsOf("What is my walk-in fridge's temperature?")), ["walk", "fridge", "temperature"]);
+  const base = "https://omni.example/business";
+  // OmniArmor's business pages (its labels and `match` words).
+  const explain = () => "The rule behind this check.";
+  const colour = () => "Red means overdue.";
+  const omni = P.ownPills([
+    { icon: "help", label: "Explain this check", answer: explain, match: ["rule", "mean", "means", "source", "law", "regulation"] },
+    { icon: "spark", label: "What does this colour mean?", answer: colour, match: ["color", "colors", "colour", "red", "orange", "status"] },
+    { icon: "chat", label: "How does Pilot work?", answer: "In this browser." },
+  ], base);
+  const pick = (t, items) => { const m = P.matchTyped(t, items); return m ? m.label : null; };
+  assert.equal(pick("What does this check mean?", omni), "Explain this check", "1.4.2: a tie with the colour answer, so neither");
+  assert.equal(pick("What does this colour mean?", omni), "What does this colour mean?");
+  assert.equal(pick("How does Pilot work?", omni), "How does Pilot work?");
+  // CyberLogix's console: an alert answer must not answer questions that share only "does" and "this" with it.
+  const clx = P.ownPills([
+    { icon: "bars", label: "What does this alert mean?", answer: "The fridge is warm." },
+    { icon: "bolt", label: "What does it cost?", answer: "From 5 a month." },
+    { icon: "spark", label: "See it live", link: "/demo" },
+  ], "https://clx.example/console");
+  for (const q of ["Does this work with my sensor?", "What does this button do?", "How does this work?", "How does it work?",
+    "Does it?", "What is this?", "Is this it?"]) {
+    assert.equal(pick(q, clx), null, q);
+  }
+  // Still matched: the label's own words, typed.
+  assert.equal(pick("What does this alert mean?", clx), "What does this alert mean?");
+  assert.equal(pick("How much does it cost?", clx), "What does it cost?", "every word of the label, and half of what was typed");
+  assert.equal(pick("alert mean", clx), "What does this alert mean?");
+  assert.equal(pick("Does the price cost extra for my team and my shop?", clx), null, "one word of five is not enough");
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes(".filter((w) => !STOP.has(plainWord(w))).map(stem).filter((w) => w.length > 1 && !STOP.has(w))"));
+  for (const w of ["does", "this", "is"]) assert.match(panel, new RegExp(`const STOP = [\\s\\S]*?[" ]${w}[" ][\\s\\S]*?\\.split\\(" "\\)`), w);
+});
+
+test("typed 1.4.3: two items with the same answer, link or words are one item: no tie, and the first is the one", () => {
+  const P = panelHelpers();
+  const base = "https://omni.example/school";
+  const overdue = () => "Two checks are overdue.";
+  // A page suggestion "What's overdue?" next to a welcome pill "What's due or overdue?": one answer function.
+  const pills = P.ownPills([
+    { icon: "bars", label: "What's due or overdue?", answer: overdue, match: ["late", "missed"] },
+    { icon: "spark", label: "See the dashboard", link: "/dashboard" },
+    { icon: "chat", label: "What is Orbyt?", answer: "Orbyt is..." },
+  ], base);
+  const chips = P.cleanChips([
+    { label: "What's overdue?", answer: overdue },
+    { label: "Open the dashboard", link: "https://omni.example/dashboard" },
+    { label: "what is  orbyt", answer: "Another copy." },
+  ], base);
+  const items = pills.concat(chips);
+  const pick = (t) => { const m = P.matchTyped(t, items); return m ? m.label : null; };
+  assert.equal(pick("What's overdue?"), "What's overdue?", "1.4.2: a tie with the pill (one answer), so nothing");
+  assert.equal(P.matchTyped("What's overdue?", items).answer, overdue);
+  assert.equal(pick("anything overdue or late?"), "What's due or overdue?");
+  assert.equal(P.matchTyped("anything overdue or late?", pills.slice(0, 1).concat(chips)).answer, overdue);
+  assert.equal(pick("dashboard"), null, "one word not in `match`: as before");
+  assert.equal(pick("open or see the dashboard"), "See the dashboard", "same link: one item (1.4.2: a tie)");
+  assert.equal(pick("What is Orbyt?"), "What is Orbyt?", "same words made plain: one item");
+  // Different items that are as close still tie.
+  const two = P.ownPills([{ label: "Fridge one alerts", answer: "a" }, { label: "Fridge two alerts", answer: "b" }], base);
+  assert.equal(P.matchTyped("fridge alerts", two), null);
+  // sameItem and labelKey.
+  assert.equal(P.sameItem(pills[0], chips[0]), true);
+  assert.equal(P.sameItem(pills[1], chips[1]), true);
+  assert.equal(P.sameItem(pills[2], chips[2]), true);
+  assert.equal(P.sameItem(pills[0], pills[2]), false);
+  assert.equal(P.sameItem({ label: "A", action: "Ask A" }, { label: "B", action: "Ask B" }), false, "prompts: never one by a missing answer");
+  assert.equal(P.labelKey("  What’s  OVERDUE? "), "whats overdue");
+});
+
+test("welcome 1.4.3: under the app's own answer an item shows once by its answer or link, and never the one just matched", () => {
+  const P = panelHelpers();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const base = "https://omni.example/school";
+  const overdue = () => "Two checks are overdue.";
+  const pills = P.ownPills([
+    { icon: "bars", label: "What's due or overdue?", answer: overdue },
+    { icon: "spark", label: "See the dashboard", link: "/dashboard" },
+    { icon: "chat", label: "Plan a week", answer: "Monday..." },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], base);
+  const chips = P.cleanChips([{ label: "What's overdue?", answer: overdue }, { label: "Open the dashboard", link: "/dashboard" },
+    { label: "Explain this check", answer: "The rule." }], base);
+  // A pill pressed: it and the suggestion with the same answer are both left out.
+  const pressed = [{ role: "user", text: "What's due or overdue?" }, { role: "assistant", text: "Two checks are overdue.", local: true }];
+  assert.deepEqual(plain(P.againItems(pressed, pills, chips, true)).map((x) => x.label),
+    ["Open the dashboard", "Explain this check", "Plan a week", "Add my AI key"], "1.4.2 showed \"What's overdue?\" and both dashboards");
+  // A suggestion pressed: the pill with its answer is left out too.
+  const chipPressed = [{ role: "user", text: "What's overdue?" }, { role: "assistant", text: "Two checks are overdue.", local: true }];
+  assert.deepEqual(plain(P.againItems(chipPressed, pills, chips, false)).map((x) => x.label), ["Open the dashboard", "Explain this check", "Plan a week"]);
+  // A typed match: the answer remembers what it matched (`of`), and that item (and its twin) is left out.
+  const typed = [{ role: "user", text: "Is anything late?" },
+    { role: "assistant", text: "Here's what I can tell you without an AI key:\n\nTwo checks are overdue.", local: true, of: "What's due or overdue?" },
+    { role: "note", kind: "more", text: "Want more?" }];
+  const got = plain(P.againItems(typed, pills, chips, false)).map((x) => x.label);
+  assert.ok(!got.includes("What's due or overdue?") && !got.includes("What's overdue?"), got);
+  assert.deepEqual(got, ["Open the dashboard", "Explain this check", "Plan a week"]);
+  assert.deepEqual(plain(P.againPills(typed, pills, false)).map((x) => x.label), ["See the dashboard", "Plan a week"]);
+  // Without `of` (1.4.2), the matched pill came back right under its own answer.
+  const old = typed.map((m) => { const { of, ...rest } = m; return rest; });
+  assert.ok(plain(P.againItems(old, pills, [], false)).some((x) => x.label === "What's due or overdue?"));
+  // The answer keeps `of` through storage (other pages, other tabs); only on the app's own answers.
+  const s = Store.create({ session: memoryStorage(), local: memoryStorage(), prefix: "t143" });
+  s.saveChat(typed);
+  assert.equal(s.loadChat()[1].of, "What's due or overdue?");
+  s.saveChat([{ role: "user", text: "Hi" }, { role: "assistant", text: "Hello", of: "Sneaky" }]);
+  assert.equal(s.loadChat()[1].of, undefined);
+  // The window: a typed match passes the item's label; answerWith keeps it on the answer.
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes("answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD, hit.label);"));
+  assert.ok(panel.includes("async function answerWith(label, answer, lead, of) {"));
+  assert.ok(panel.includes('if (typeof of === "string" && of && of !== label) own.of = of.slice(0, 200);'));
+});
+
+test("placement 1.4.3: the phone side gutter is 34 px with keepInViewport, and the tucked robot is still a 44 px tap target", () => {
+  const css = fs.readFileSync(core("pilot.css"), "utf8");
+  const phone = css.slice(css.indexOf("@media (max-width: 720px)"));
+  const num = (name) => parseFloat(phone.match(new RegExp(`${name}: ([\\d.]+)px`))[1]);
+  const side = num(":root\\.pilot-on\\.pilot-keep-in \\{ --pilot-side");
+  const size = num("--pilot-size"), margin = num("--pilot-keep-margin");
+  const scale = parseFloat(phone.match(/--pilot-peek-scale: ([\d.]+)/)[1]);
+  assert.equal(side, 34);
+  assert.ok(size * scale >= 44 - 0.1, "a 44 px tap target");
+  // The tucked robot's drawn ring reaches about 30 px in from its box's outer edge (CyberLogix /for at 375-390 px:
+  // 3 px over a card's border with 30 px of gutter); the gutter now clears it.
+  assert.ok(side >= margin + 30 + 1, `${side} px of gutter for a ring ${margin + 30} px in`);
+  assert.equal(Mascot.keepScale(scale, { width: size, height: size * 0.97 }), scale);
+});
+
+test("no key 1.4.3: a typed question nothing fits gets a message in the chat and what works now, not a jump to key settings", () => {
+  const P = panelHelpers();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const base = "https://mtrx.example/privacy";
+  const pills = P.ownPills([
+    { icon: "spark", label: "Help with my idea", link: "/genesis#new" },
+    { icon: "chat", label: "What is Orbyt?", answer: "Orbyt is..." },
+    { icon: "bars", label: "Explain this page", action: "explain-screen" },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], base);
+  const chips = P.cleanChips([{ label: "What do you keep?", answer: "Nothing about you." }, { label: "What does Pilot send?", prompt: "What does Pilot send?" },
+    { label: "Orbyt?", answer: "Orbyt is..." }], base);
+  // The page's suggestions that work with no key, then the welcome's, each once; never a prompt or a built-in; the app's key pill last.
+  const row = plain(P.noKeyItems(pills, chips, true));
+  assert.deepEqual(row.map((x) => x.label), ["What do you keep?", "Orbyt?", "Help with my idea", "Add my AI key"]);
+  assert.equal(row[0].chip, true);
+  assert.equal(row[row.length - 1].action, "settings");
+  assert.equal(P.noKeyText(undefined, true, true), "I need an AI key to answer that one. Here's what I can help with right now:");
+  // The design's five (apps that set nothing): its look and words kept, "API key"; only the key pill to offer, so a shorter line.
+  const design = plain(P.noKeyItems(P.welcomePills(undefined), [], false));
+  assert.deepEqual(design.map((x) => x.label), ["Customize with your API key"]);
+  assert.equal(P.noKeyText(undefined, false, design.length > 1), "I need an API key to answer that one.");
+  assert.equal(P.noKeyText(undefined, false, true), "I need an API key to answer that one. Here's what I can help with right now:");
+  // An app with no key pill of its own gets one in its own words.
+  assert.deepEqual(plain(P.noKeyItems(pills.filter((p) => p.action !== "settings"), [], true)).map((x) => x.label), ["Help with my idea", "What is Orbyt?", "Add my AI key"]);
+  assert.equal(P.noKeyText("  I can't answer that   without a key. ", true, true), "I can't answer that without a key.");
+  // The window: typed, nothing fits, no key: noKeyReply (the words wait in the box, a "nokey" note, one at a time, the chat
+  // stays open); config.noKeyReply: false keeps 1.4.2's jump to key settings; a pill or a shared screen still opens them.
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  const askFn = panel.slice(panel.indexOf("async function ask(text, extra)"), panel.indexOf("function typedHere"));
+  assert.ok(askFn.indexOf("typedHere(words)") < askFn.indexOf("noKeyReply(words)"));
+  assert.ok(askFn.includes("if (extra) show(\"settings\");\n        else if (config.noKeyReply === false) hold({ text: words });\n        else noKeyReply(words);"));
+  const reply = panel.slice(panel.indexOf("function noKeyReply(words)"), panel.indexOf("function sendPending()"));
+  assert.ok(reply.includes("pending = { text: words };"));
+  assert.ok(reply.includes('{ role: "note", kind: "nokey", text: noKeyText(config.noKeyReply, site, offers) }'));
+  assert.ok(reply.includes('kept[kept.length - 1].kind === "nokey") kept.pop();'));
+  assert.ok(reply.includes('if (view !== "chat") show("chat");'));
+  assert.ok(!reply.includes('show("settings")'));
+  assert.ok(panel.includes('if (!store.ready()) { hold({ screen: [prompt, label] }); return; }'));
+  // Drawn: the note, then the row (the app's pill look, small), then "Your message is waiting..."; gone once a key is set.
+  assert.ok(panel.includes('return el("li", { class: "pilot-msg pilot-note pilot-nokey", role: "status", text: m.text });'));
+  assert.ok(panel.includes('el("li", { class: "pilot-msg pilot-again pilot-nokey-row" },'));
+  assert.ok(panel.includes('text: "Your message is waiting in the box. It sends as soon as you add a key." }) : null);'));
+  // Never sent to an AI (a note), and kept through storage.
+  const s = Store.create({ session: memoryStorage(), local: memoryStorage(), prefix: "t143n" });
+  s.saveChat([{ role: "user", text: "What is Orbyt?" }, { role: "assistant", text: "Orbyt is...", local: true }, { role: "note", kind: "nokey", text: P.NO_KEY_REPLY.site }]);
+  assert.equal(s.loadChat()[2].kind, "nokey");
+  const engine = fs.readFileSync(core("pilot-engine.js"), "utf8");
+  assert.ok(engine.includes('return messages.filter((m) => m.role !== "note")'));
+});
+
+test("typed 1.4.3: a pill's or a suggestion's own words, typed, always get that item's answer (live answer functions too)", () => {
+  const P = panelHelpers();
+  // The MTRX site checks every one of its own pages here; this app's pages are checked in
+  // tests/js/cyberlogix-pilot.test.js. These are core-generic: pills and suggestions with answers,
+  // a live answer function and links, typed as words (any case, no "?").
+  const base = "https://x.example/console";
+  const live = () => "Two fridges need you.";
+  const items = P.ownPills([
+    { icon: "bars", label: "Which fridges need me?", answer: live, match: ["fridge", "warm"] },
+    { icon: "help", label: "What does this alert mean?", answer: "The fridge is warm." },
+    { icon: "spark", label: "See it live", link: "/demo" },
+    { icon: "key", label: "Add my AI key", action: "settings" },
+  ], base).concat(P.cleanChips([{ label: "It's fixed now", answer: () => "Press Fixed." }, { label: "Log for the inspector", link: "/log" },
+    { label: "Ask about my week", prompt: "Tell me about my week" }], base));
+  let checked = 0;
+  for (const item of items.filter((x) => x.link || x.answer !== undefined)) {
+    for (const typed of [item.label, item.label.toLowerCase().replace(/[?’'!.]/g, ""), ` ${item.label.toUpperCase()} `]) {
+      const got = P.matchTyped(typed, items);
+      assert.ok(got && P.sameItem(got, item), `"${typed}" -> ${got && got.label}`);
+      checked += 1;
+    }
+  }
+  assert.equal(checked, 15);
+  assert.equal(P.matchTyped("which fridges need me", items).label, "Which fridges need me?");
+  assert.equal(typeof P.matchTyped("which fridges need me", items).answer, "function", "a live answer");
+  assert.equal(P.matchTyped("Ask about my week", items), null, "a prompt typed whole is not answered here");
+  // A label of question words only still matches when typed whole; one word of it doesn't.
+  const only = P.ownPills([{ label: "What can you do?", answer: () => "Lots." }], "https://x.example/");
+  assert.equal(P.matchTyped("what can you do", only).label, "What can you do?");
+  assert.equal(P.matchTyped("what", only), null);
+  // A prompt or a built-in typed whole is still never what it answers with (they need the AI or open settings).
+  assert.equal(P.matchTyped("Explain this page", P.ownPills([{ label: "Explain this page", action: "explain-screen" }], "https://x.example/")), null);
+});
+
+test("panel 1.4.3: typing on a short screen (keyboard open, under 500 px visible): tagline, grown-ups line and round buttons step aside", () => {
+  const P = panelHelpers();
+  assert.equal(P.SHORT_MOST, 500);
+  assert.equal(P.isShort(420), true);
+  assert.equal(P.isShort(499), true);
+  assert.equal(P.isShort(500), false);
+  assert.equal(P.isShort(812), false);
+  assert.equal(P.isShort(0), false, "unknown: not short");
+  const panel = fs.readFileSync(core("pilot-panel.js"), "utf8");
+  assert.ok(panel.includes('panel.classList.toggle("pilot-typing", document.activeElement === input);'));
+  assert.ok(panel.includes('panel.classList.toggle("pilot-short", isShort(viewHeight()));'));
+  assert.ok(panel.includes("(window.visualViewport && window.visualViewport.height) || window.innerHeight || 0"));
+  assert.ok(panel.includes('if (window.visualViewport) window.visualViewport.addEventListener("resize", compact);'));
+  assert.ok(panel.includes('input.addEventListener("focus", compact);') && panel.includes('input.addEventListener("blur", compact);'));
+  const css = fs.readFileSync(core("pilot-panel.css"), "utf8");
+  assert.match(css, /\.pilot-panel\.pilot-typing\.pilot-short \.pilot-tagline,\s*\.pilot-panel\.pilot-typing\.pilot-short \.pilot-foot-note,\s*\.pilot-panel\.pilot-typing\.pilot-short \.pilot-bottom \{ display: none; \}/);
+  assert.match(css, /@media \(max-height: 500px\) \{\s*\.pilot-panel\.pilot-typing \.pilot-tagline,/);
+});
+
+test("placement 1.4.3: near the page's end, dense words under the tucked robot move it to a wholly clear corner; otherwise as before", () => {
+  const view = { width: 320, height: 640 };
+  const size = { width: 56, height: 54 };
+  const keep = { scale: 0.82, margin: 3, pull: 9 };
+  const base = { corner: "br", stay: "br", view, size, gap: 12, peekShow: 20, keep, away: true };
+  const box = Mascot.peekBox("br", view, size, 12, 20, keep);
+  const area = (box.right - box.left) * (box.bottom - box.top);
+  // A footer's "© 2026 / YOUR IDEA" under the bottom right; nothing at the bottom left.
+  const footer = (share) => (s, c) => (c === "br" ? area * share : 0);
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: footer(0.4), full: true, nearEnd: true }), { corner: "bl", peek: true }, "1.4.2 stayed on the words");
+  // Conservative: not near the end, mid-scroll, sparse words, words in both corners, or anything in the other: it stays.
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: footer(0.4), full: true, nearEnd: false }), { corner: "br", peek: true });
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: footer(0.4), full: false, nearEnd: true }), { corner: "br", peek: true });
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: footer(0.05), full: true, nearEnd: true }), { corner: "br", peek: true });
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: () => area * 0.4, full: true, nearEnd: true }), { corner: "br", peek: true });
+  const blockLeft = { left: 0, top: 560, right: 60, bottom: 640 };
+  assert.deepEqual(Mascot.scrollPlace({ ...base, cost: footer(0.4), full: true, nearEnd: true, blocks: [blockLeft] }), { corner: "br", peek: true });
+  // Once there, it stays (the bottom left is clear).
+  assert.deepEqual(Mascot.scrollPlace({ ...base, stay: "bl", cost: footer(0.4), full: true, nearEnd: true }), { corner: "bl", peek: true });
+  assert.equal(Mascot.TEXT_DENSE, 0.15);
+  // nearEnd: less than half a screen left to scroll.
+  const at = (y, total) => Mascot.nearEnd({ innerHeight: 640, scrollY: y }, { documentElement: { scrollHeight: total }, body: { scrollHeight: 0 } });
+  assert.equal(at(2000, 2640), true);
+  assert.equal(at(1700, 2640), true);
+  assert.equal(at(1600, 2640), false);
+  assert.equal(at(0, 0), false);
+  const mascot = fs.readFileSync(core("pilot-mascot.js"), "utf8");
+  assert.ok(mascot.includes("nearEnd: nearEnd(o.win, o.doc) });"));
 });

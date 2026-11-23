@@ -132,18 +132,24 @@
 
   // The words in a question that count, for this file's own matching
   // (3.32.0): lower case, a plural "s" off, and the little words left out
-  // before and after (core 1.4.2 checks them only after, so it counts
-  // "does" and "this").
+  // before and after, as core 1.4.3 does.
   const SMALL = new Set(("a an and any are am at be can could did do does for from get give got has have help how i if in "
     + "into is it its just know let like me my need of on or our please show should so some tell than that the their them "
-    + "then there these they this those to up us want was we what whats when where which who why will with would you your "
-    + "doe thi").split(" "));
+    + "then there these they this those to up us want was we what whats when where which who why will with would you your").split(" "));
   function stemWord(w) {
     let x = String(w || "").toLowerCase().replace(/['’]s$/, "").replace(/[^a-z0-9]/g, "");
     if (x.length > 4 && x.endsWith("ies")) x = `${x.slice(0, -3)}y`;
     else if (x.length > 3 && x.endsWith("s") && !x.endsWith("ss")) x = x.slice(0, -1);
     return x;
   }
+  // A label made plain, as core 1.4.3 compares a typed label with a pill's
+  // (case, spaces, punctuation and accents aside): "which fridges need
+  // me" is the pill "Which fridges need me?" pressed, and gets its own
+  // answer.
+  const sameLabel = (a, b) => {
+    const key = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    return Boolean(key(a)) && key(a) === key(b);
+  };
   const wordsIn = (text) => [...new Set(String(text || "").split(/[^A-Za-z0-9'’]+/)
     .filter((w) => !SMALL.has(w.toLowerCase())).map(stemWord).filter((w) => w.length > 1 && !SMALL.has(w)))];
 
@@ -178,7 +184,7 @@
     const dd = overview();
     if (!dd) return NOT_LOADED;
     const units = Array.isArray(dd.sensors) ? dd.sensors : [];
-    const typed = ctx && typeof ctx.label === "string" && ctx.label !== "Which fridges need me?" ? wordsIn(ctx.label) : [];
+    const typed = ctx && typeof ctx.label === "string" && !sameLabel(ctx.label, "Which fridges need me?") ? wordsIn(ctx.label) : [];
     const wantKind = typed.includes("freezer") ? "freezer" : (typed.includes("fridge") || typed.includes("refrigerator") || typed.includes("cooler")) ? "fridge" : "";
     if (!units.length) {
       return `You have no fridges or freezers added yet. [Connect your first sensor](${CONNECT}): say where it is, and the wizard shows the few steps for your brand.`;
@@ -191,7 +197,9 @@
     const named = typed.length ? units.filter((u) => wordsIn(u.location_name || "").some((w) => !GENERIC.has(w) && typed.includes(w))) : [];
     const asked = named.length ? named : (wantKind ? units.filter((u) => kindOf(u) === wantKind) : []);
     const first = asked.length && asked.length < units.length ? asked : [];
-    if (first.length) lines.push(first.map((u) => `${unitLine(u, dd)}.`).join("\n"));
+    // One full stop (3.32.1): a unit that needs you already ends its line
+    // with one ("since 1:32 AM."), and got two.
+    if (first.length) lines.push(first.map((u) => unitLine(u, dd).replace(/([^.!?])$/, "$1.")).join("\n"));
     const rows = units.map((u) => ({ u, s: stateOf(u) })).filter((r) => r.s.state in URGENCY)
       .sort((a, b) => URGENCY[a.s.state] - URGENCY[b.s.state]);
     const live = liveAlerts(dd);
@@ -209,7 +217,7 @@
       if (first.length) {
         lines.push(`Nothing needs you right now.${fine.length ? ` The others:\n${fine.map((u) => `- ${unitLine(u, dd)}`).join("\n")}` : ""}`);
       } else {
-        lines.push(total === 1 ? `Nothing needs you right now: ${unitLine(units[0], dd)}.`
+        lines.push(total === 1 ? `Nothing needs you right now: ${unitLine(units[0], dd).replace(/([^.!?])$/, "$1.")}`
           : `Nothing needs you right now. All ${total} are within their limits:\n${fine.map((u) => `- ${unitLine(u, dd)}`).join("\n")}`);
       }
     } else if (urgent.length) {
@@ -461,18 +469,17 @@
   // when two typed words are in its label or here (one, if it is listed
   // here and all that was typed) and no other item on the page comes as
   // close, so a word two of a page's items share makes neither match on its
-  // own. Plurals count as one word; "what", "is", "my" and the like never
-  // count.
-  // "does" and "this" should not count either, but core 1.4.2 takes the
-  // plural "s" off before it checks its list of words that don't, so they
-  // count as "doe" and "thi", and both are in "What does this alert mean?":
-  // with no key, "Does this work with my sensor?" or "What does this button
-  // do?" got the alert's answer on the console. Listed on "Which fridges
-  // need me?" (and "this" on "It's fixed now") too, they can never pick
-  // the alert's answer on their own. (Reported for the core; fixed in 1.4.3.)
+  // own. Plurals count as one word; "what", "is", "my", "does", "this" and
+  // the like never count. (3.32.1: core 1.4.3 drops those before it takes a
+  // plural "s" off, so "does" and "this" no longer count as "doe" and "thi";
+  // this app's workaround, the two listed on "Which fridges need me?" and
+  // "It's fixed now" so they tied, is gone.) Since core 1.4.3 a pill's or a
+  // suggestion's own label, typed, always gets that item, and a question
+  // nothing fits gets the core's note in the chat, with this page's answers
+  // under it (noKeyReply, left at its default), instead of key settings.
   const MATCH = {
     "Which fridges need me?": ["fridge", "freezer", "unit", "warm", "cold", "ok", "fine", "temperature", "temp", "problem", "wrong", "status",
-      "does", "this", "walk", "hot", "reading"],
+      "walk", "hot", "reading"],
     "What does this alert mean?": ["alert", "alarm", "mean", "warning", "happened", "happening", "text", "message", "going"],
     "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "bin", "spoiled", "spoilt", "bad", "good", "discard", "stock"],
     "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "wire", "hook", "probe", "device", "new"],
@@ -482,7 +489,7 @@
     "See it live": ["demo", "live", "try", "example", "preview", "tour", "sample", "pretend", "watch"],
     "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "sell", "compatible", "kind", "type", "work"],
     "Log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
-    "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert", "this"],
+    "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert"],
     "What CyberLogix did for you": ["cyberlogix", "did", "summary", "week", "weekly", "worth", "value"],
     "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute", "short", "quick", "delay", "wait"],
     "Wi-Fi or power goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
@@ -560,7 +567,7 @@
   function routed(label, own) {
     return (ctx) => {
       const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
-      if (!typed || typed === label) return own(ctx);
+      if (!typed || sameLabel(typed, label)) return own(ctx);
       const pick = bestTopic(typed, TOPIC_OF[label] || null);
       return (pick ? pick.answer : own)(ctx);
     };
@@ -713,6 +720,10 @@
     // only once a key is set. Typed questions that fit one of the answers
     // above are answered with no key (MATCH; matchTyped left on), and the
     // handle at the screen's edge while the robot is hidden is left on.
+    // Core 1.4.3: anything else typed with no key gets the core's note in
+    // the chat ("I need an AI key to answer that one...") with this page's
+    // answers and the key pill under it, the words kept in the box
+    // (noKeyReply left at its default).
     screenChip: ownPage ? { label: "Sum up my fridges", answer: summaryAnswer } : undefined,
     // CyberLogix has no use for making pictures or videos.
     hideKeySections: ["image", "video"],

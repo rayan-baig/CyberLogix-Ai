@@ -1,4 +1,4 @@
-// Pilot core 1.4.2 · pilot-mascot.js
+// Pilot core 1.4.3 · pilot-mascot.js
 // The Pilot robot and the P mark.
 //
 // Also where the robot may sit (placement): it steps back while a page's
@@ -27,7 +27,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.2";
+  const VERSION = "1.4.3";
   const NS = "http://www.w3.org/2000/svg";
   let made = 0;
 
@@ -192,6 +192,12 @@
   // How near a link, a button or a box counts as under the robot on a
   // computer (core 1.4.2: contentIn's pad).
   const CONTROL_PAD = 8;
+  // Dense words (core 1.4.3): words over at least this share of the tucked
+  // robot's box, near the page's end (scrollPlace's nearEnd).
+  const TEXT_DENSE = 0.15;
+  // Near the page's end (core 1.4.3): less than this share of a screen left
+  // to scroll.
+  const END_NEAR = 0.5;
   // What touching a link, a button or a box costs at the least (costOf: a
   // tenth of WEIGHT.control), or one thing the app asked it to avoid. On a
   // computer (core 1.4.2) the robot hides rather than pay this much.
@@ -379,6 +385,11 @@
   // time the scrolling stopped: it changed corner every 100 px or so and sat
   // whole in a top corner over a card. o: as choosePlace, plus `stay` (the
   // corner it is in now) and `full`.
+  // Core 1.4.3 (`nearEnd`: the page's end is less than half a screen
+  // below): dense words there (a footer's "© 2026", a tile's text: at least
+  // TEXT_DENSE of the tucked robot's box) count when, once scrolling stops,
+  // the other corner of the edge is wholly clear: it moves there. Only then;
+  // with words in both corners, or anything at all in the other, it stays.
   function scrollPlace(o) {
     const order = cornerOrder(o.corner);
     const edge = order[0][0];
@@ -389,7 +400,15 @@
     const slice = (c) => peekBox(c, o.view, o.size, o.gap, o.peekShow, o.keep);
     const clear = (box) => !blocks.some((b) => overlaps(box, b, 2));
     const fine = (c) => { const s = slice(c); return clear(s) && (!cost || cost(s, c) < WEIGHT.pinned); };
-    if (fine(here)) return { corner: here, peek: true };
+    if (fine(here)) {
+      if (o.nearEnd && o.full && cost) {
+        const s = slice(here);
+        const area = Math.max(1, (s.right - s.left) * (s.bottom - s.top));
+        const other = slice(there);
+        if (cost(s, here) >= area * TEXT_DENSE && clear(other) && cost(other, there) === 0) return { corner: there, peek: true };
+      }
+      return { corner: here, peek: true };
+    }
     if (o.full && fine(there)) return { corner: there, peek: true };
     return o.away ? { corner: here, peek: true, hide: true } : { corner: here, peek: true };
   }
@@ -661,7 +680,8 @@
     const awayAt = narrow || field ? WEIGHT.pinned : TOUCH;
     let place;
     if (o.scrolled && narrow && !field) {
-      place = scrollPlace({ corner: o.corner, stay: o.shown, view, size, gap, blocks, busy, cost, peekShow, keep, full: Boolean(o.full), away });
+      place = scrollPlace({ corner: o.corner, stay: o.shown, view, size, gap, blocks, busy, cost, peekShow, keep, full: Boolean(o.full), away,
+        nearEnd: nearEnd(o.win, o.doc) });
     } else if (o.full || field) {
       place = choosePlace({ corner: o.corner, view, size, gap, blocks, hard: field ? [field.getBoundingClientRect()] : [], busy, cost, peekShow, keep,
         narrow, tuck: Boolean(o.tuck), away, awayAt, stay: o.shown });
@@ -727,6 +747,18 @@
   // card the moment the page opens.
   const COMPACT = { width: 360, height: 700 };
   const isCompact = (view) => Boolean(view && ((view.width > 0 && view.width <= COMPACT.width) || (view.height > 0 && view.height <= COMPACT.height)));
+
+  // Is the page's end less than END_NEAR of a screen below (core 1.4.3)?
+  function nearEnd(win, doc) {
+    try {
+      const h = win.innerHeight || 0;
+      const total = Math.max((doc.documentElement && doc.documentElement.scrollHeight) || 0, (doc.body && doc.body.scrollHeight) || 0);
+      const y = win.scrollY || win.pageYOffset || 0;
+      return h > 0 && total > 0 && total - (y + h) < h * END_NEAR;
+    } catch (_) {
+      return false;
+    }
+  }
 
   // Is the page scrolled away from its top (core 1.4.1; pilot.js asks on
   // every scroll)? The window, or the box that scrolled (t) when it is at
@@ -877,7 +909,7 @@
   const api = { VERSION, SIZES, scrolledAway, restArt, TAP_LEAST, keepScale, robot, mark, typingIn, placeNow, sideGutter, MODALS, modalOpen, covered, coverLayer, cornerOrder, cornerBox, peekBox, overlaps,
     choosePlace, scrollPlace, boxesOf, shown, grow, areaOf, firstLook, INTERACTIVE, MEANS, isEditable, contentBox, contentIn,
     NARROW_MOST, WEIGHT, isNarrow, cornerPasses, pinnedBar, costOf, COMPACT, isCompact, inStroll,
-    gapAt, edgeRoom, CONTROL_PAD, TOUCH, HANDLE, HANDLE_MS, handleBox, handleSpot, handleFree, restHandle };
+    gapAt, edgeRoom, CONTROL_PAD, TOUCH, HANDLE, HANDLE_MS, handleBox, handleSpot, handleFree, restHandle, TEXT_DENSE, END_NEAR, nearEnd };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PilotMascot = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -4,6 +4,36 @@ What changed in CyberLogix AI, newest first, in plain words. The number at
 the top must match the `VERSION` file; a test checks that it does.
 
 
+## 3.32.1 — 2026-11-23
+
+Pilot, the helper robot, moves to the shared Pilot core 1.4.3. It is more
+helpful when you haven't added an AI key, and it keeps out of the way a
+little better on phones. No price or plan term has changed.
+
+- **No dead end without a key.** If you type a question Pilot can't answer
+  by itself, it now says so in the chat ("I need an AI key to answer that
+  one") and shows what it can help with right now: this page's answers,
+  then the welcome's, then the key button. Your words wait in the box and
+  send once you add a key. Before, key settings opened straight away.
+  Nothing you type is sent anywhere without a key.
+- **Typing a button's words works.** Typing "which fridges need me" or
+  "whats in the trial" (any case, with or without the question mark) gets
+  that button's own answer, the same as pressing it.
+- **"Does" and "this" no longer mislead Pilot.** "Does this work with my
+  sensor?" or "What does this button do?" on the console no longer get the
+  alert's answer. The stopgap we had for this is gone; Pilot handles it
+  itself now.
+- **Each suggestion once.** Under one of Pilot's answers the same answer is
+  never offered twice, and the one you just got isn't offered again.
+- **Easier reading while typing on a phone.** With the keyboard open on a
+  small phone, Pilot hides its tagline, the 18+ line and the round buttons
+  while you type, so more of the answer shows.
+- **More room at the sides on a phone.** The tucked-away robot no longer
+  touches the edge of full-width cards, and near the end of a page it moves
+  off dense footer words to the other bottom corner when that one is clear.
+- **Fixed:** "Is my walk-in fridge OK?" could end the fridge's line with
+  two full stops.
+
 ## 3.32.0 — 2026-11-23
 
 Short blips look after themselves, losing food takes two taps to record

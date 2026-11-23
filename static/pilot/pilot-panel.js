@@ -1,4 +1,4 @@
-// Pilot core 1.4.2 · pilot-panel.js
+// Pilot core 1.4.3 · pilot-panel.js
 // The web chat window that opens from the robot: the Pilot header, the
 // greeting and its pill buttons (the design's five unless the app sets its
 // own: config.welcomePills, with config.tagline under the name; with its
@@ -21,6 +21,14 @@
 // (config.screenChip: screenChip below). And with no key, a typed question
 // that clearly asks what one of the app's own answers (or links) is about
 // gets that answer at once (matchTyped below), instead of key settings.
+// Core 1.4.3: stop words ("does", "this", "is") are dropped before a word
+// is stemmed (1.4.2 stemmed first, so "does" and "this" became "doe" and
+// "thi" and counted); two items with the same answer, link or words are one
+// item (no tie in matchTyped, shown once under an answer); and under a
+// typed match the item it matched isn't offered again. With no key, a typed
+// question that none of the app's own answers fits no longer jumps to key
+// settings: Pilot says in the chat that it needs a key for that one and
+// offers what it can do now (noKeyReply), the words waiting in the box.
 //
 // Every word on screen is placed with textContent or built by
 // pilot-render.js from text nodes: nothing is ever set as HTML. No style
@@ -28,7 +36,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.4.2";
+  const VERSION = "1.4.3";
   const SCREEN_LIMIT = 3500;
   const R = window.PilotRender;
   const P = window.PilotProviders;
@@ -239,20 +247,46 @@
   // was typed (one word will do only when the app listed it in `match` and
   // it is all that was typed), and only when no other item comes as close.
   // Otherwise null, and the no-key flow is as before.
+  // Core 1.4.3: stop words are checked before stemming (and after), so
+  // "does" and "this" never count ("doe" and "thi" did in 1.4.2); a typed
+  // question that has every word of a label also fits it when those words
+  // are at least half of what was typed ("How much does it cost?" with
+  // "What does it cost?"); and items that are the same (sameItem: one
+  // answer, one link, or the same words) are one, never a tie.
 
   const STOP = new Set(("a an and any are am at be can could did do does for from get give got has have help how i if in "
     + "into is it its just know let like me my need of on or our please show should so some tell than that the their them "
     + "then there these they this those to up us want was we what whats when where which who why will with would you your").split(" "));
-  // A word in its plain form: lower case, letters and digits only, a plural
-  // "s" (or "ies") taken off.
+  // A word as typed, made plain: lower case, letters and digits only, a
+  // "'s" taken off ("what's" is "what").
+  const plainWord = (w) => String(w || "").toLowerCase().replace(/['’]s$/, "").replace(/[^a-z0-9]/g, "");
+  // A word in its plain form: plainWord, a plural "s" (or "ies") taken off.
   function stem(w) {
-    let x = String(w || "").toLowerCase().replace(/['’]s$/, "").replace(/[^a-z0-9]/g, "");
+    let x = plainWord(w);
     if (x.length > 4 && x.endsWith("ies")) x = `${x.slice(0, -3)}y`;
     else if (x.length > 3 && x.endsWith("s") && !x.endsWith("ss")) x = x.slice(0, -1);
     return x;
   }
-  // The words that count in some text: [] for none.
-  const wordsOf = (text) => [...new Set(String(text || "").split(/[^A-Za-z0-9'’]+/).map(stem).filter((w) => w.length > 1 && !STOP.has(w)))];
+  // The words that count in some text: [] for none. A stop word is dropped
+  // as typed, before stemming (core 1.4.3), and once stemmed too.
+  const wordsOf = (text) => [...new Set(String(text || "").split(/[^A-Za-z0-9'’]+/)
+    .filter((w) => !STOP.has(plainWord(w))).map(stem).filter((w) => w.length > 1 && !STOP.has(w)))];
+  // A label's words for telling items apart (core 1.4.3): lower case,
+  // letters and digits, one space between.
+  const labelKey = (label) => String(label || "").toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  // Are two items (pills or suggestions) the same one (core 1.4.3)? The
+  // same link, the same answer (one function, or the same words), or the
+  // same label once made plain. A page suggestion "What's overdue?" next to
+  // a welcome pill "What's due or overdue?" that share one answer function
+  // are one item: no tie, and shown once.
+  function sameItem(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.link && b.link && a.link === b.link) return true;
+    if (a.answer !== undefined && a.answer === b.answer) return true;
+    const ka = labelKey(a.label);
+    return Boolean(ka) && ka === labelKey(b.label);
+  }
   // An item's own `match` words, cleaned: {match: [...]} or {} when none.
   function matchWords(given) {
     const list = (Array.isArray(given) ? given : []).filter((w) => typeof w === "string").slice(0, 20).map(stem).filter((w) => w.length > 1);
@@ -262,6 +296,15 @@
   // The one item (of `items`: cleaned pills and suggestions) that clearly
   // fits the typed `text`, or null.
   function matchTyped(text, items) {
+    // A pill's or a suggestion's own words, typed (core 1.4.3): always that
+    // item, whatever its words are ("what is orbyt", "show my projects",
+    // even a label of question words only), a live answer function or not.
+    const typed = labelKey(text);
+    if (typed) {
+      const same = (Array.isArray(items) ? items : []).find((item) => item && (item.link || item.answer !== undefined)
+        && typeof item.label === "string" && labelKey(item.label) === typed);
+      if (same) return same;
+    }
     const asked = wordsOf(text);
     if (!asked.length || asked.length > 12) return null;
     const scored = [];
@@ -270,14 +313,18 @@
       const own = new Set(wordsOf(item.label));
       const listed = new Set(item.match || []);
       const hits = asked.filter((w) => own.has(w) || listed.has(w));
-      const whole = hits.length >= 2 && hits.length * 2 >= asked.length;
+      const half = hits.length * 2 >= asked.length;
+      const whole = hits.length >= 2 && half;
+      // Every word of the label typed (core 1.4.3), and half of what was typed.
+      const label = own.size > 0 && half && [...own].every((w) => asked.includes(w));
       const one = asked.length === 1 && listed.has(asked[0]);
-      scored.push({ item, n: hits.length, fits: whole || one });
+      scored.push({ item, n: hits.length, fits: whole || label || one });
     }
     const best = scored.filter((s) => s.fits).sort((a, b) => b.n - a.n)[0];
     if (!best) return null;
-    // Another item as close (by words) means it isn't clear which was meant.
-    if (scored.some((s) => s !== best && s.n >= best.n)) return null;
+    // Another item as close (by words) means it isn't clear which was meant,
+    // unless it is the same item (core 1.4.3: sameItem).
+    if (scored.some((s) => s !== best && s.n >= best.n && !sameItem(s.item, best.item))) return null;
     return best.item;
   }
 
@@ -342,12 +389,15 @@
   // the key pill; [] otherwise (an AI answer, a note, an empty chat).
   // keyPill: keep the key pill too (no key yet, and no "Want more?" line
   // right under this answer: it shows once per chat).
+  // Core 1.4.3: after a typed question the answer remembers the label of the
+  // item it matched (`of`), and that item is left out too.
   function againPills(messages, given, keyPill) {
     const msgs = Array.isArray(messages) ? messages : [];
     const i = localAnswerAt(msgs);
     if (i < 0) return [];
     const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? msgs[i - 1].text : "";
-    return (given || []).filter((p) => !(p.builtin && p.action === "settings" && !keyPill) && p.label !== asked);
+    const of = typeof msgs[i].of === "string" ? msgs[i].of : "";
+    return (given || []).filter((p) => !(p.builtin && p.action === "settings" && !keyPill) && p.label !== asked && !(of && p.label === of));
   }
 
   // The row under the app's own answer (core 1.4.2): this page's own
@@ -356,25 +406,85 @@
   // most AGAIN_MOST, and the key pill (when it is kept) always last, beyond
   // that. A suggestion comes as {label, icon: "spark", chip}.
   // 1.4.1 showed only the welcome's pills.
+  // Core 1.4.3: "each once" is by sameItem (one answer, one link, or the
+  // same words made plain), not by the exact label only; and what was just
+  // asked is left out with every item that is the same as it: the pill or
+  // suggestion pressed, or (after a typed question) the one it matched,
+  // which the answer remembers as `of`.
   const AGAIN_MOST = 6;
+
+  // Short while typing (core 1.4.3): the visible height, in CSS pixels,
+  // under which the window goes compact while its message box is typed in
+  // (a phone's keyboard open at 320 px wide, or 375 x 667): the tagline, the
+  // grown-ups line and the row of round buttons step aside, so more than a
+  // line or two of the answer shows. view: the visual viewport's height
+  // (innerHeight where there is none).
+  const SHORT_MOST = 500;
+  const isShort = (view) => Number(view) > 0 && Number(view) < SHORT_MOST;
   function againItems(messages, given, chips, keyPill) {
     const pills = againPills(messages, given, keyPill);
     const i = localAnswerAt(messages);
     if (i < 0) return [];
     const msgs = messages;
-    const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? String(msgs[i - 1].text).trim().toLowerCase() : "";
-    const seen = new Set(asked ? [asked] : []);
-    const out = [];
+    const asked = i > 0 && msgs[i - 1] && msgs[i - 1].role === "user" ? String(msgs[i - 1].text) : "";
+    const of = typeof msgs[i].of === "string" ? msgs[i].of : "";
     const isKey = (p) => p.builtin && p.action === "settings";
+    const all = (Array.isArray(chips) ? chips : []).map((c) => ({ icon: "spark", ...c, chip: true }))
+      .concat((Array.isArray(given) ? given : []).filter((p) => p && !isKey(p)));
+    // What was just answered: its words, and every item with them.
+    const done = [asked, of].map(labelKey).filter(Boolean);
+    const gone = all.filter((x) => done.includes(labelKey(x.label)));
+    const out = [];
     const take = (item) => {
-      const key = String(item.label || "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (!key || seen.has(key) || out.length >= AGAIN_MOST) return;
-      seen.add(key);
+      if (!labelKey(item.label) || out.length >= AGAIN_MOST) return;
+      if (done.includes(labelKey(item.label)) || gone.some((g) => sameItem(g, item)) || out.some((o) => sameItem(o, item))) return;
       out.push(item);
     };
-    for (const c of Array.isArray(chips) ? chips : []) take({ icon: "spark", ...c, chip: true });
+    for (const c of all.filter((x) => x.chip)) take(c);
     for (const p of pills) if (!isKey(p)) take(p);
     return out.concat(pills.filter(isKey).slice(0, 1));
+  }
+
+  // ---------------------------------------------------------------- a typed question, no key, no match (core 1.4.3)
+  // Before, with no key, a typed question that none of the app's own
+  // answers fits opened key settings at once (reviewers found it abrupt).
+  // Now Pilot stays in the chat with a short message of its own (a note,
+  // kind "nokey": never sent to an AI), and under it what it can do with no
+  // key: this page's suggestions that answer or link, then the welcome's
+  // pills that do, each once (sameItem), at most AGAIN_MOST, then the key
+  // pill (the app's own, or one in the same words as its key settings). The
+  // typed words stay in the box and are sent once a key is added, as
+  // before. config.noKeyReply: false keeps the old jump to key settings; a
+  // string replaces the message's words.
+  const NO_KEY_REPLY = {
+    site: "I need an AI key to answer that one. Here's what I can help with right now:",
+    design: "I need an API key to answer that one. Here's what I can help with right now:",
+  };
+  const NO_KEY_ALONE = { site: "I need an AI key to answer that one.", design: "I need an API key to answer that one." };
+  const NO_KEY_PILL = { site: "Add my AI key", design: "Add my API key" };
+  // The row under it: [{label, icon, ...}], the key pill last.
+  // given: the cleaned welcome pills (welcomePills); chips: this page's
+  // cleaned suggestions; site: the app has its own welcome (the words).
+  function noKeyItems(given, chips, site) {
+    const isKey = (p) => p && p.builtin && p.action === "settings";
+    const plainItem = (x) => x && (x.link || x.answer !== undefined);
+    const out = [];
+    const take = (item) => {
+      if (out.length >= AGAIN_MOST || !labelKey(item.label) || out.some((o) => sameItem(o, item))) return;
+      out.push(item);
+    };
+    for (const c of Array.isArray(chips) ? chips : []) if (plainItem(c)) take({ icon: "spark", ...c, chip: true });
+    for (const p of Array.isArray(given) ? given : []) if (plainItem(p) && !isKey(p)) take(p);
+    const own = (Array.isArray(given) ? given : []).find(isKey);
+    const words = site ? "site" : "design";
+    return out.concat([own || { icon: "key", label: NO_KEY_PILL[words], action: "settings", builtin: true, send: false }]);
+  }
+  // The message's words: the app's own (config.noKeyReply as a string), or
+  // the core's, shorter when there is nothing but the key pill to offer.
+  function noKeyText(given, site, offers) {
+    if (typeof given === "string" && given.trim()) return given.replace(/\s+/g, " ").trim().slice(0, 300);
+    const words = site ? "site" : "design";
+    return offers ? NO_KEY_REPLY[words] : NO_KEY_ALONE[words];
   }
 
   // Where to scroll the chat to show a new answer of the app's own (core
@@ -551,8 +661,10 @@
     // no key yet, a line under it offers the key (config.answerMore).
     let answering = false;
     // lead (core 1.4.2): a line put before the answer (a typed question
-    // answered without a key: MATCH_LEAD).
-    async function answerWith(label, answer, lead) {
+    // answered without a key: MATCH_LEAD). of (core 1.4.3): the label of the
+    // item a typed question matched, kept on the answer so that item isn't
+    // offered again right under it (againItems).
+    async function answerWith(label, answer, lead, of) {
       if (answering || state.busy) return;
       answering = true;
       let text = "";
@@ -567,7 +679,9 @@
       }
       text = typeof text === "string" ? text.trim().slice(0, ANSWER_MOST) : "";
       const more = config.answerMore === false ? "" : (typeof config.answerMore === "string" && config.answerMore.trim()) || DEFAULT_MORE;
-      const add = text ? [{ role: "user", text: label }, { role: "assistant", text: lead ? `${lead}\n\n${text}` : text, local: true }]
+      const own = { role: "assistant", text: lead ? `${lead}\n\n${text}` : text, local: true };
+      if (typeof of === "string" && of && of !== label) own.of = of.slice(0, 200);
+      const add = text ? [{ role: "user", text: label }, own]
         : [{ role: "user", text: label }, { role: "note", kind: "error", text: "Pilot couldn't find that answer just now. Try again in a moment." }];
       // Once per chat (core 1.4.1): under the first answer of the app's own only.
       const offered = state.messages.some((m) => m.role === "note" && m.kind === "more");
@@ -666,6 +780,25 @@
       show("settings");
     }
 
+    // A typed question none of the app's own answers fits, with no key
+    // (core 1.4.3): Pilot answers in the chat that it needs a key for that
+    // one, with what it can do now under it (againRow: noKeyItems). The
+    // words wait in the box (pending), and go once a key is added. One such
+    // message at a time: a second question replaces it.
+    function noKeyReply(words) {
+      pending = { text: words };
+      if (input.value.trim() !== words.trim()) fill(words);
+      const site = ownPills(config.welcomePills).length > 0;
+      const offers = noKeyItems(pills, pageChips(), site).length > 1;
+      const kept = state.messages.slice();
+      if (kept.length && kept[kept.length - 1].role === "note" && kept[kept.length - 1].kind === "nokey") kept.pop();
+      engine.replace(kept.concat([{ role: "note", kind: "nokey", text: noKeyText(config.noKeyReply, site, offers) }]));
+      state = { ...state, messages: engine.messages };
+      pilot.post({ type: "chat", messages: state.messages });
+      if (view !== "chat") show("chat");
+      queueDraw();
+    }
+
     function sendPending() {
       if (!pending || !store.ready() || state.busy || otherBusy) return;
       const job = pending;
@@ -749,6 +882,12 @@
         if (store.ready()) return null;
         return el("li", { class: "pilot-msg pilot-note pilot-more" }, el("span", { text: m.text }), " ",
           el("button", { type: "button", class: "pilot-link", text: "Key settings", on: { click: () => show("settings") } }));
+      }
+      // Pilot needs a key for a typed question (core 1.4.3): gone once a key
+      // is added (the waiting words are sent then).
+      if (m.role === "note" && m.kind === "nokey") {
+        if (store.ready()) return null;
+        return el("li", { class: "pilot-msg pilot-note pilot-nokey", role: "status", text: m.text });
       }
       if (m.role === "note") return el("li", { class: `pilot-msg pilot-note${m.kind === "error" ? " bad" : ""}`, text: m.text });
       return null;
@@ -849,6 +988,16 @@
     function againRow() {
       if (state.busy || otherBusy || cards.size) return null;
       const last = state.messages[state.messages.length - 1];
+      // Core 1.4.3: under "I need an AI key to answer that one", what works
+      // now, the key pill last, and a line saying the words are waiting.
+      if (last && last.role === "note" && last.kind === "nokey") {
+        if (store.ready()) return null;
+        const offer = noKeyItems(pills, pageChips(), ownPills(config.welcomePills).length > 0);
+        return el("li", { class: "pilot-msg pilot-again pilot-nokey-row" },
+          el("div", { class: "pilot-pills pilot-pills-row", role: "group", "aria-label": "What Pilot can help with now" },
+            ...offer.map((p) => { const b = pill(p.icon, p.label, () => (p.chip ? runChip(p) : runPill(p))); b.classList.add("pilot-pill-small"); return b; })),
+          pending && pending.text ? el("p", { class: "pilot-small pilot-waiting-line", text: "Your message is waiting in the box. It sends as soon as you add a key." }) : null);
+      }
       // Core 1.4.2: this page's own suggestions first, then the welcome's pills.
       const list = againItems(state.messages, pills, pageChips(), !store.ready() && !(last && last.role === "note" && last.kind === "more"));
       if (!list.length) return null;
@@ -1011,7 +1160,10 @@
       }
       if (!store.ready()) {
         if (!extra && typedHere(words)) return;
-        if (!extra) hold({ text: words }); else show("settings");
+        // Core 1.4.3: in the chat (noKeyReply) unless the app keeps the jump to settings.
+        if (extra) show("settings");
+        else if (config.noKeyReply === false) hold({ text: words });
+        else noKeyReply(words);
         return;
       }
       await engine.send(words, extra);
@@ -1029,7 +1181,7 @@
       if (!hit) return false;
       if (input.value.trim() === words) { input.value = ""; grow(); }
       const safe = String(hit.label).replace(/[[\]()\\*_`]/g, "");
-      answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD);
+      answerWith(words, hit.link ? `[${safe}](${hit.link})` : hit.answer, MATCH_LEAD, hit.label);
       return true;
     }
 
@@ -1060,6 +1212,19 @@
     });
     function grow() { input.classList.toggle("pilot-tall", input.value.length > 48 || input.value.includes("\n")); }
     input.addEventListener("input", grow);
+    // Typing on a short screen (core 1.4.3): .pilot-typing on the window
+    // while its box has focus, and .pilot-short while the visible height is
+    // under SHORT_MOST (the keyboard takes the rest); pilot-panel.css then
+    // hides the tagline, the grown-ups line and the round buttons.
+    const viewHeight = () => (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
+    const compact = () => {
+      panel.classList.toggle("pilot-typing", document.activeElement === input);
+      panel.classList.toggle("pilot-short", isShort(viewHeight()));
+    };
+    input.addEventListener("focus", compact);
+    input.addEventListener("blur", compact);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", compact);
+    window.addEventListener("resize", compact);
 
     // Voice: the browser's own speech recognition, only where it has one.
     // The words land in the box to check before sending. Nothing goes to the
@@ -1377,5 +1542,6 @@
 
   window.PilotPanel = { VERSION, create, screenText, redact, welcomePills, ownPills, keyPillGiven, keyWords, KEY_WORDS, hiddenSections,
     DEFAULT_PILLS, DEFAULT_TAGLINE, BUILTINS, siteLink, noAi, cleanChips, DEFAULT_MORE, againPills, localAnswerAt, answerScroll,
-    SCREEN_CHIP, screenChip, matchTyped, wordsOf, MATCH_LEAD, againItems, AGAIN_MOST };
+    SCREEN_CHIP, screenChip, matchTyped, wordsOf, MATCH_LEAD, againItems, AGAIN_MOST, sameItem, labelKey,
+    NO_KEY_REPLY, NO_KEY_ALONE, NO_KEY_PILL, noKeyItems, noKeyText, SHORT_MOST, isShort };
 })();

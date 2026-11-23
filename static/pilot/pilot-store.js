@@ -1,4 +1,4 @@
-// Pilot core 1.4.2 · pilot-store.js
+// Pilot core 1.4.3 · pilot-store.js
 // What Pilot keeps, and where: only in this browser, never on a server.
 //
 // - Keys (one or more chat keys, an image key, a video key, each with its
@@ -16,7 +16,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.4.2";
+  const VERSION = "1.4.3";
   const LIMITS = { messages: 60, text: 20000, notes: 20, note: 200, key: 400, model: 200, baseUrl: 300, keys: 8 };
   const PROVIDERS = ["anthropic", "openai", "gemini", "compatible"];
   // Anthropic makes no pictures or videos, so it isn't offered for those.
@@ -115,11 +115,14 @@
     if (m.role === "user" && typeof m.label === "string") out.label = m.label.slice(0, 200);
     // "more" (core 1.4.0): the line after an app's own answer that offers
     // the key ("Want more? Add your AI key to ask anything.").
-    if (m.role === "note") out.kind = m.kind === "error" || m.kind === "more" ? m.kind : "info";
+    // "nokey" (core 1.4.3): Pilot needs a key for a typed question.
+    if (m.role === "note") out.kind = m.kind === "error" || m.kind === "more" || m.kind === "nokey" ? m.kind : "info";
     if (m.role === "assistant") {
       // An app's own answer (a pill's `answer`, core 1.4.0), not the AI's:
       // its links to this site work, and it never came from a provider.
       if (m.local === true) out.local = true;
+      // of (core 1.4.3): the label of the item a typed question matched.
+      if (m.local === true && typeof m.of === "string" && m.of) out.of = m.of.slice(0, 200);
       if (Array.isArray(m.toolCalls)) {
         out.toolCalls = m.toolCalls.filter((c) => c && typeof c.id === "string" && typeof c.name === "string")
           .map((c) => ({ id: c.id.slice(0, 200), name: c.name.slice(0, 64), args: c.args && typeof c.args === "object" ? c.args : {} }));

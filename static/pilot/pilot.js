@@ -1,4 +1,4 @@
-// Pilot core 1.4.2 · pilot.js
+// Pilot core 1.4.3 · pilot.js
 // The one Pilot file a page loads. After the page has loaded it fetches the
 // store, the robot (pilot-mascot.js) and the app's config (which calls
 // Pilot.mount); the chat window, engine, providers, renderer and knowledge
@@ -12,7 +12,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "1.4.2";
+  const VERSION = "1.4.3";
   const me = document.currentScript || document.getElementById("pilot-core");
   const assets = me ? { ...me.dataset } : {};
   const loaded = {};

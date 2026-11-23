@@ -848,3 +848,84 @@ test("3.32.0: the food question's line says when it went out, in the reader's cl
   const text = ask(pills(mountAt("/today", { overview: ov }), "/today")[0]);
   assert.ok(text.includes(`Cold again after 2 minutes out (since ${Words.clock("2026-11-20T09:58:00Z")})`), text);
 });
+
+// ---------------------------------------------------------------- core 1.4.3 (3.32.1)
+
+const PAGES_143 = [["/console", true], ["/console", false], ["/today", true], ["/", false], ["/pricing", false], ["/help", false],
+  ["/help/sensors", false], ["/for", false], ["/for/restaurant", false], ["/demo", false]];
+const answerOf = (item, label) => (item.link ? `LINK ${item.link}`
+  : String(typeof item.answer === "function" ? item.answer({ facts: {}, ready: false, label }) : item.answer));
+
+test("1.4.3: every pill's and suggestion's own words, typed, get that item and the answer it gives when pressed", () => {
+  let checked = 0;
+  for (const [pathname, signedIn] of PAGES_143) {
+    const given = mountAt(pathname, { overview: overviewWith(), signedIn });
+    const items = typedItems(given, pathname);
+    for (const item of items.filter((x) => x.link || x.answer !== undefined)) {
+      const pressed = answerOf(item, item.label);
+      for (const words of [item.label, item.label.toLowerCase().replace(/[?’'!.:]/g, ""), ` ${item.label.toUpperCase()} `]) {
+        const hit = PANEL.matchTyped(words, items);
+        assert.ok(hit && PANEL.sameItem(hit, item), `${pathname}: "${words}" -> ${hit && hit.label}`);
+        // The routed answer treats its own label typed as a press (3.32.0 routed only an exact match).
+        assert.equal(answerOf(hit, words), pressed, `${pathname}: "${words}"`);
+        checked += 1;
+      }
+    }
+  }
+  assert.ok(checked >= 90, checked);
+  // Accents aside, for this app's own answer too.
+  const given = mountAt("/", {});
+  const cafe = PANEL.ownPills(given.welcomePills, `${BASE}/`).find((p) => p.label === "Will it work for my café?");
+  assert.equal(answerOf(cafe, "will it work for my cafe"), answerOf(cafe, cafe.label));
+});
+
+test("1.4.3: the \"does/this\" workaround is gone; \"does\" and \"this\" alone never pick an answer, the labels still do", () => {
+  assert.doesNotMatch(CONFIG, /"doe thi"|\bdoe thi\b/);
+  const match = CONFIG.slice(CONFIG.indexOf("const MATCH = {"), CONFIG.indexOf("const TOPICS = ["));
+  assert.doesNotMatch(match, /"does"|"this"/);
+  for (const pathname of ["/console", "/today"]) {
+    for (const words of ["Does this work with my sensor?", "What does this button do?", "How does this work?", "What is this?", "Does it?"]) {
+      assert.equal(typed(pathname, words), null, `${pathname}: ${words}`);
+    }
+    assert.equal(typed(pathname, "What does this alert mean?"), "What does this alert mean?");
+    assert.equal(typed(pathname, "what does the alert mean"), "What does this alert mean?");
+    assert.equal(typed(pathname, "Is my walk-in fridge OK?"), "Which fridges need me?");
+  }
+  for (const pathname of ["/", "/pricing", "/help", "/demo"]) {
+    assert.equal(typed(pathname, "How much does it cost?"), "What does it cost?", pathname);
+    assert.ok(typedAnswer(pathname, "How much does it cost?").includes("Starter $59 a month"), pathname);
+  }
+});
+
+test("1.4.3: with no key, a question nothing fits gets the core's note in the chat with this page's own answers under it, never a prompt", () => {
+  for (const [pathname, signedIn] of PAGES_143) {
+    const given = mountAt(pathname, { overview: overviewWith(), signedIn });
+    assert.equal("noKeyReply" in given, false, "the core's default: the note in the chat");
+    const pillsHere = PANEL.ownPills(given.welcomePills, BASE + pathname);
+    const chipsHere = PANEL.cleanChips(given.chips(given.screen()), BASE + pathname);
+    const row = Array.from(PANEL.noKeyItems(pillsHere, chipsHere, true));
+    assert.equal(row[row.length - 1].label, "Add my AI key", pathname);
+    assert.ok(row.length >= 3 && row.length <= PANEL.AGAIN_MOST + 1, `${pathname}: ${row.length}`);
+    for (const item of row.slice(0, -1)) assert.ok(item.link || item.answer !== undefined, `${pathname}: ${item.label}`);
+    assert.equal(new Set(row.map((x) => x.label)).size, row.length, `${pathname}: each once`);
+    assert.equal(PANEL.noKeyText(given.noKeyReply, true, row.length > 1),
+      "I need an AI key to answer that one. Here's what I can help with right now:");
+    assert.equal(PANEL.matchTyped("Write me a poem about fridges", typedItems(given, pathname)), null, pathname);
+  }
+  // On the console, signed in: the live suggestions first, then the welcome's answers.
+  const given = mountAt("/console", { overview: overviewWith() });
+  const row = J(PANEL.noKeyItems(PANEL.ownPills(given.welcomePills, `${BASE}/console`), PANEL.cleanChips(given.chips(given.screen()), `${BASE}/console`), true));
+  assert.deepEqual(row.map((x) => x.label), ["Log for the inspector", "It's fixed now", "What CyberLogix did for you",
+    "Which fridges need me?", "What does this alert mean?", "Is the food still OK?", "Add my AI key"]);
+});
+
+test("3.32.1: the unit asked about, when it needs you, ends its line with one full stop", () => {
+  const ov = overviewWith();
+  ov.sensors[0].condition = { state: "alert", too: "warm", out_since: "2026-11-20T09:55:00Z" };
+  for (const pathname of ["/console", "/today"]) {
+    const text = typedAnswer(pathname, "Is my kitchen walk-in OK?", { overview: ov });
+    assert.ok(text.startsWith("**Kitchen walk-in** (47°F): "), text);
+    assert.doesNotMatch(text, /\.\.(\s|$)/, text);
+    assert.match(text.split("\n")[0], /[.!?]$/, text);
+  }
+});
