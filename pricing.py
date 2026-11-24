@@ -25,6 +25,7 @@ because an ROI page built on invented figures is worse than one that says
 
 from __future__ import annotations
 
+from brand import CHECKLIST_APP
 import math
 from datetime import datetime, timezone
 
@@ -592,15 +593,15 @@ ADD_ONS: Dict[str, Dict[str, Any]] = {
             "whole fleet, for anyone specifying what to buy next."
         ),
     },
-    # The CyberLogix half of the Kitchen Safety Bundle with OmniArmor
+    # The Kryozyn half of the Kitchen Safety Bundle with Aegizyn
     # (omniarmor.py). Billed while the connection is switched on rather
     # than chosen from a list, so nobody pays for a connection they took
     # off and nobody runs one that is not on the bill. Free on a trial,
     # like everything else, so it can be tried before it is bought.
     #
-    # It includes OmniArmor Pro for each location: OmniArmor waives its own
+    # It includes Aegizyn Pro for each location: Aegizyn waives its own
     # Pro fee for a workspace whose daily reports arrive signed by a
-    # CyberLogix server (KITCHEN_BUNDLE_SECRET, omniarmor.py), which is
+    # Kryozyn server (KITCHEN_BUNDLE_SECRET, omniarmor.py), which is
     # how only a connection on this bill unlocks it.
     "kitchen_safety_bundle": {
         "name": "Kitchen Safety Bundle",
@@ -608,10 +609,10 @@ ADD_ONS: Dict[str, Dict[str, Any]] = {
         "monthly_usd": 29.0,
         "included_in_trial": True,
         "billed_while_connected": True,
-        "includes": "OmniArmor Pro for that location",
+        "includes": f"{CHECKLIST_APP} Pro for that location",
         "description": (
-            "Each day's fridge and freezer record sent to OmniArmor, which "
-            "fills in its temperature-log checks for you, and OmniArmor Pro "
+            f"Each day's fridge and freezer record sent to {CHECKLIST_APP}, which "
+            f"fills in its temperature-log checks for you, and {CHECKLIST_APP} Pro "
             "for that location included. Billed while the connection is "
             "on; free during the trial."
         ),
@@ -663,7 +664,7 @@ def locations_billed(tenant: Tenant) -> int:
 
 def auto_add_ons(tenant: Tenant) -> List[str]:
     """Add-ons billed because something is switched on, not because they
-    were picked: today, the Kitchen Safety Bundle while OmniArmor is
+    were picked: today, the Kitchen Safety Bundle while Aegizyn is
     connected. Imported late: omniarmor imports this module."""
     if tenant.plan == "trial":
         return []  # included in the trial, so it can be tried first

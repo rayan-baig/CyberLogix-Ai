@@ -1,11 +1,11 @@
 # ==============================================================================
-# CyberLogix AI - BYOD Hardware Webhook & Meeting Intelligence Bridge
+# Kryozyn - BYOD Hardware Webhook & Meeting Intelligence Bridge
 # File: hardware_bridge.py
 # ==============================================================================
 """Bring-your-own-device ingestion and sector meeting intelligence.
 
 Part 1 lets any off-the-shelf commercial sensor (Elitech, Dickson, Monnit,
-SensorPush and friends) POST its raw JSON straight to CyberLogix, so a
+SensorPush and friends) POST its raw JSON straight to Kryozyn, so a
 customer needs no proprietary hardware. Webhook readings run through the
 same engine as native pulses, so BYOD estates get incidents, escalation,
 forecasting and compliance logging identically.
@@ -16,6 +16,7 @@ sector-specific operational intelligence.
 
 from __future__ import annotations
 
+from brand import APP_NAME
 import json
 import logging
 import math
@@ -61,7 +62,7 @@ SUPPORTED_METRICS = (
 # ==============================================================================
 # PART 1: The BYOD Hardware Webhook Receiver (No Physical Product Needed)
 # Allows any 3rd-party commercial sensor/thermostat (Elitech, Dickson, Monnit,
-# etc.) to push raw JSON telemetry data straight to the CyberLogix AI backend.
+# etc.) to push raw JSON telemetry data straight to the Kryozyn backend.
 # ==============================================================================
 
 
@@ -466,7 +467,7 @@ def process_voice_meeting_summarizer(
     focus_directive = SECTOR_PROMPTS[vertical]
 
     prompt = f"""
-    You are the CyberLogix AI Executive Sector Intelligence Clerk.
+    You are the {APP_NAME} Executive Sector Intelligence Clerk.
     Target Industry: {vertical.upper()}
     Sector Analytical Directive: {focus_directive}
 
@@ -564,9 +565,9 @@ async def ingest_any_payload(
     request: Request,
     k: Optional[str] = None,
     authorization: Optional[str] = Header(None),
-    x_cyberlogix_key: Optional[str] = Header(None),
+    x_kryozyn_key: Optional[str] = Header(None),
     x_signature: Optional[str] = Header(None),
-    x_cyberlogix_sensor_key: Optional[str] = Header(
+    x_kryozyn_sensor_key: Optional[str] = Header(
         None, description="The per-sensor key, in the header /api/sensor-pulse takes it in."),
 ):
     """Take whatever the device sends and work out the reading.
@@ -594,22 +595,22 @@ async def ingest_any_payload(
     # held the one event-loop thread for the whole alert, and every other
     # request in the process -- other businesses' sensors, the console,
     # /api/health -- waited behind it.
-    # The sensor key is told to travel in X-CyberLogix-Sensor-Key when it
-    # is issued, and this route only read X-CyberLogix-Key: a device set up
+    # The sensor key is told to travel in X-Kryozyn-Sensor-Key when it
+    # is issued, and this route only read X-Kryozyn-Key: a device set up
     # as the notice says was refused with a 401.
     return await run_in_threadpool(
         _ingest_any, payload, k, authorization,
-        x_cyberlogix_sensor_key or x_cyberlogix_key, x_signature)
+        x_kryozyn_sensor_key or x_kryozyn_key, x_signature)
 
 
-def _ingest_any(payload, k, authorization, x_cyberlogix_key, x_signature):
+def _ingest_any(payload, k, authorization, x_kryozyn_key, x_signature):
     """The blocking half of /any, on a worker thread."""
     import byod
 
     # Three ways in, worst last. A header is the right place for a
     # credential; the query string is here only because a great many
     # devices offer one field and it is a URL.
-    token = x_cyberlogix_key or k
+    token = x_kryozyn_key or k
     if token is None and isinstance(payload, dict):
         token = payload.get("api_key_token") or payload.get("key")
     tenant, scoped = _authenticate_webhook(token, authorization)

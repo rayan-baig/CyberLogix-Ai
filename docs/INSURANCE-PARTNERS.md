@@ -99,7 +99,7 @@ The privacy statement says this in one sentence (agreements version 2.6).
 
 ## The operator's controls
 
-All behind the platform key (`X-CyberLogix-Admin`):
+All behind the platform key (`X-Kryozyn-Admin`):
 
 | | |
 |---|---|
@@ -111,7 +111,7 @@ All behind the platform key (`X-CyberLogix-Admin`):
 | `POST /api/insurance-partners/{id}/payouts` | Records a payment you made: `amount_usd`, `paid_on`, `reference`, `note` |
 
 Public: `POST /api/insurance-partners/apply`. Partner:
-`GET /api/insurance-partners/me` with `X-CyberLogix-Insurance-Partner`.
+`GET /api/insurance-partners/me` with `X-Kryozyn-Insurance-Partner`.
 
 ## Settings
 

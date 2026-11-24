@@ -80,7 +80,7 @@ def main(argv=None) -> int:
         servers.append(prod)
         prod.wait_ready()
         step(timings, "start production on it", t)
-        admin = {"X-CyberLogix-Admin": prod.admin_key}
+        admin = {"X-Kryozyn-Admin": prod.admin_key}
         owner = {"Authorization": f"Bearer {seeded['console'][0]}"}
         first = seeded["businesses"][0]
         by_id = {s["sensor_id"]: s for s in seeded["sensors"]}
@@ -88,7 +88,7 @@ def main(argv=None) -> int:
 
         with httpx.Client(base_url=prod.base, timeout=600) as api:
             hit = api.post("/api/sensor-pulse", headers={
-                "X-CyberLogix-Sensor-Key": breach_sensor["key"]},
+                "X-Kryozyn-Sensor-Key": breach_sensor["key"]},
                 json={"sensor_id": breach_sensor["sensor_id"],
                       "temperature_fahrenheit": breach_sensor["breach"]})
             incident_id = hit.json()["incident_id"]
@@ -165,7 +165,7 @@ def main(argv=None) -> int:
             sent_before = len(fresh.events())
             spare = [s for s in seeded["sensors"] if s["business"] == 1][0]
             hit = api.post("/api/sensor-pulse", headers={
-                "X-CyberLogix-Sensor-Key": spare["key"]},
+                "X-Kryozyn-Sensor-Key": spare["key"]},
                 json={"sensor_id": spare["sensor_id"], "temperature_fahrenheit": spare["breach"]})
             if hit.json().get("status") != "CRITICAL_CATASTROPHE_TRIGGERED":
                 problems.append(f"fresh copy breach: {hit.text[:200]}")

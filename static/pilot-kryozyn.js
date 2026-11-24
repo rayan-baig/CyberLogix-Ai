@@ -1,8 +1,8 @@
-// Pilot on CyberLogix AI: the small per-app config (docs/PILOT.md).
+// Pilot on Kryozyn: the small per-app config (docs/PILOT.md).
 // The shared core is in static/pilot/ (the same files as on the MTRX
 // Horizyn site); this file only says who we are, where the person is, which
 // suggestions fit each page, and where the knowledge pack and the console
-// tools are (static/pilot-cyberlogix-pack.js, fetched only when Pilot is
+// tools are (static/pilot-kryozyn-pack.js, fetched only when Pilot is
 // first opened). pilot.js loads this file once the page has loaded. The
 // figures in data-* on Pilot's script tag come from the code that charges
 // and alarms (main.pilot_facts), so Pilot never quotes one the product
@@ -17,7 +17,7 @@
   const onToday = path === "/today";
 
   function signedIn() {
-    if (onConsole) return Boolean(window.CyberLogixConsole && window.CyberLogixConsole.signedIn());
+    if (onConsole) return Boolean(window.KryozynConsole && window.KryozynConsole.signedIn());
     if (onToday) {
       try { return Boolean(window.localStorage.getItem("cyberlogix.session")); } catch (_) { return false; }
     }
@@ -45,7 +45,7 @@
   function screen() {
     if (onConsole) {
       if (!signedIn()) return { name: "Console sign-in", facts: SIGNED_OUT };
-      const tab = window.CyberLogixConsole.tab();
+      const tab = window.KryozynConsole.tab();
       return { name: `Console (Advanced view)${tab ? `, ${tab} tab` : ""}`, facts: "The person is signed in." };
     }
     if (onToday) return { name: PAGES["/today"], facts: signedIn() ? "The person is signed in." : SIGNED_OUT };
@@ -60,7 +60,7 @@
   // sent anywhere. On the console and /today they are built from what the
   // page already loaded for the person (the same overview the cards and
   // "Needs you now" are drawn from, handed over by the page's own bridge:
-  // CyberLogixConsole.overview(), CyberLogixToday.overview()); elsewhere from
+  // KryozynConsole.overview(), KryozynToday.overview()); elsewhere from
   // the figures on Pilot's script tag. Kept short, and never a person's
   // name, number or email: who answered an alert is "someone on your team".
 
@@ -73,7 +73,11 @@
     alertAfterFridge: d.alertAfterFridge || "", alertAfterFreezer: d.alertAfterFreezer || "",
     alertAfterVaccine: d.alertAfterVaccine || "", alertAtOnceDegrees: d.alertAtOnceDegrees || "",
     cancelRule: d.cancelRule || "",
+    // The names, from brand.py through Pilot's script tag (main.pilot_facts).
+    appName: d.appName || "", appShort: d.appShort || "", companyName: d.companyName || "",
   };
+  // The summary's name, a label and a key in the word lists below.
+  const DID_LABEL = `What ${F.appShort} did for you`;
   const fig = (v, fallback) => v || fallback;
 
   // A unit's name as typed by the business, kept as plain words in Pilot's
@@ -85,10 +89,10 @@
   // page, or not loaded yet). Read only: nothing is fetched.
   function overview() {
     try {
-      if (onConsole && window.CyberLogixConsole && window.CyberLogixConsole.signedIn()
-          && typeof window.CyberLogixConsole.overview === "function") return window.CyberLogixConsole.overview() || null;
-      if (onToday && window.CyberLogixToday && typeof window.CyberLogixToday.overview === "function") {
-        return window.CyberLogixToday.overview() || null;
+      if (onConsole && window.KryozynConsole && window.KryozynConsole.signedIn()
+          && typeof window.KryozynConsole.overview === "function") return window.KryozynConsole.overview() || null;
+      if (onToday && window.KryozynToday && typeof window.KryozynToday.overview === "function") {
+        return window.KryozynToday.overview() || null;
       }
     } catch (_) { /* the answer says where to look instead */ }
     return null;
@@ -356,7 +360,7 @@
   // The visitor's "Will it work for my café?": short, from the real figures.
   function cafeAnswer() {
     return [
-      "Yes: CyberLogix is made for cafés and small restaurants first.",
+      `Yes: ${F.appShort} is made for cafés and small restaurants first.`,
       `- A wireless sensor goes in each fridge and freezer (we don't sell them: [which sensors work](/help/sensors)).`,
       `- A fridge alarms over ${fig(F.fridgeLimit, "41")}°F and a freezer over ${fig(F.freezerLimit, "10")}°F, only if it stays out (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer), so a door opened for a minute wakes nobody.`,
       `- Then everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds, and on plans with calls, phoned if nobody answers in ${fig(F.callAfterMinutes, "10")} minutes.`,
@@ -367,7 +371,7 @@
 
   const DOOR = () => `No. A door opened for a minute doesn't alert anybody: a fridge has to **stay** out of range for its wait first (${fig(F.alertAfterFridge, "20")} minutes for a food fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer). You can change the wait per unit with **Alert wait** on its card. A reading ${fig(F.alertAtOnceDegrees, "15")}°F or more past the limit alerts at once.`;
   const POWER = () => `Sensors send their readings over your internet. If the power or the Wi-Fi goes off, readings stop, and after ${fig(F.offlineMinutes, "30")} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts go out from our servers, not from your building.\n\nUntil the sensor reports again, check that fridge with a thermometer and write it down. [What to check](/help#sensor-offline)`;
-  const CALLS = () => `Yes, on plans with calls. If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, CyberLogix phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
+  const CALLS = () => `Yes, on plans with calls. If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, ${F.appShort} phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
   const TRIAL = () => `The free trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors, needs no card, and includes ${fig(F.trialCalls, "5")} alert calls. Nothing moves you to a paid plan by itself: you choose one when you are ready. [Start a free trial](/signup)`;
   // Signed in on /today, the console is a link to open, never "Sign in"
   // (3.28.0): that was offered to somebody already signed in.
@@ -451,15 +455,15 @@
     `**Growth $${fig(F.restaurantPrice, "149")} a month a location** for a restaurant, up to ${fig(F.unitsPerLocation, "10")} units there, with a phone call when a text goes unanswered.`,
     `Sensors are bought separately. Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [See all prices](/pricing)`,
   ].join("\n\n");
-  // The knowledge pack's own words on sensors (pilot-cyberlogix-pack.js),
+  // The knowledge pack's own words on sensors (pilot-kryozyn-pack.js),
   // short.
   // "Does it work with Monnit?" or "Does this work with my sensor?"
   // (3.33.0): the brand's own yes and its guide first, then the list.
   const BRANDS = {
-    monnit: ["Monnit", "iMonnit, Monnit's cloud, sends each reading on to CyberLogix", "monnit"],
-    sensorpush: ["SensorPush", "CyberLogix reads SensorPush's cloud every few minutes, through its G1 gateway", "sensorpush"],
-    elitech: ["Elitech", "its cloud forwards each reading to CyberLogix", "webhook"],
-    dickson: ["Dickson", "its cloud forwards each reading to CyberLogix", "webhook"],
+    monnit: ["Monnit", `iMonnit, Monnit's cloud, sends each reading on to ${F.appShort}`, "monnit"],
+    sensorpush: ["SensorPush", `${F.appShort} reads SensorPush's cloud every few minutes, through its G1 gateway`, "sensorpush"],
+    elitech: ["Elitech", `its cloud forwards each reading to ${F.appShort}`, "webhook"],
+    dickson: ["Dickson", `its cloud forwards each reading to ${F.appShort}`, "webhook"],
   };
   function sensorsLead(ctx) {
     const typed = ctx && typeof ctx.label === "string" && !sameLabel(ctx.label, "What sensors do I need?") ? wordsIn(ctx.label) : [];
@@ -469,7 +473,7 @@
       return `Yes, **${name}** works: ${how}. [The ${name} guide](/help/sensors#${guide})${onConsole || onToday ? ` · [Connect it](${CONNECT})` : ""}\n\nThe sensors that work:`;
     }
     if (typed.includes("work") || typed.includes("compatible")) {
-      return "Most likely, yes. CyberLogix works with any wireless sensor that can send its readings to a web address, or whose maker's cloud we can read. The sensors that work:";
+      return `Most likely, yes. ${F.appShort} works with any wireless sensor that can send its readings to a web address, or whose maker's cloud we can read. The sensors that work:`;
     }
     return "";
   }
@@ -479,10 +483,10 @@
     return lead ? `${lead}\n${list.slice(1).join("\n")}` : list.join("\n");
   };
   const SENSOR_LIST = () => [
-    "We don't sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at CyberLogix.",
+    `We don't sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and point it at ${F.appShort}.`,
     "- One that sends each reading to a web address (Elitech, Dickson and most devices set up with a URL), or",
     "- One whose maker's cloud we read every few minutes (Monnit through iMonnit, SensorPush).",
-    "A basic Wi-Fi sensor is about $30 to $100; a commercial one with a probe for a walk-in about $100 to $250. CyberLogix's price doesn't include them.",
+    `A basic Wi-Fi sensor is about $30 to $100; a commercial one with a probe for a walk-in about $100 to $250. ${F.appShort}'s price doesn't include them.`,
     "[Which sensors work, brand by brand](/help/sensors)",
   ];
   // "How do I connect a sensor?" (3.32.0: an answer with the link, so a
@@ -493,8 +497,8 @@
   const DEMO_LINK = () => `${DEMO_WHAT}\n\n[See it live](/demo)`;
   const PASSWORD = () => "On [the sign-in page](/console) press **Forgot your password?**, or [reset it here](/reset): we email you a link.";
   const DID = () => (onConsole || onToday
-    ? "**What CyberLogix did for you** shows this week or this month on one screen: readings checked, alerts and how fast someone answered, what happened to the food, and the printable log for the same days. [Open it](/today#did)"
-    : "Once your fridges are watched, **What CyberLogix did for you** shows each week on one screen: readings checked, alerts and how fast someone answered, and the printable log. [See it live](/demo)");
+    ? `**What ${F.appShort} did for you** shows this week or this month on one screen: readings checked, alerts and how fast someone answered, what happened to the food, and the printable log for the same days. [Open it](/today#did)`
+    : `Once your fridges are watched, **What ${F.appShort} did for you** shows each week on one screen: readings checked, alerts and how fast someone answered, and the printable log. [See it live](/demo)`);
   // Pressed or typed, signed in (3.33.0): the week's own summary line,
   // quoted ("This week: 1,240 readings checked, 2 alerts."), with its few
   // lines and the link. From what /today already loaded, or on the console
@@ -503,16 +507,16 @@
     if (!(onConsole || onToday) || !signedIn()) return DID();
     let got = null;
     try {
-      if (onToday && window.CyberLogixToday && typeof window.CyberLogixToday.did === "function") got = window.CyberLogixToday.did();
-      if (!got && onConsole && window.CyberLogixConsole && typeof window.CyberLogixConsole.api === "function") {
-        got = await window.CyberLogixConsole.api("/api/console/did-for-you?period=week");
+      if (onToday && window.KryozynToday && typeof window.KryozynToday.did === "function") got = window.KryozynToday.did();
+      if (!got && onConsole && window.KryozynConsole && typeof window.KryozynConsole.api === "function") {
+        got = await window.KryozynConsole.api("/api/console/did-for-you?period=week");
       }
     } catch (_) { got = null; }
     if (!got || !got.figures) return DID();
     const f = got.figures;
     const line = `${words(got.label) || "This week"}: ${count(f.readings, "reading")} checked, ${f.alerts ? count(f.alerts, "alert") : "no alerts"}.`;
     const rest = (Array.isArray(got.lines) ? got.lines : []).slice(1).map((l) => `- ${words(l)}`);
-    return `**${line}**${rest.length ? `\n\n${rest.join("\n")}` : ""}\n\n[Open What CyberLogix did for you](${DID_HERE})`;
+    return `**${line}**${rest.length ? `\n\n${rest.join("\n")}` : ""}\n\n[Open ${DID_LABEL}](${DID_HERE})`;
   }
   // "How do I add my chef to get texts?" (3.33.0).
   const TEAM_LINK = onConsole ? `${window.location.pathname + (window.location.search || "")}#team` : "/console?view=full#team";
@@ -572,7 +576,7 @@
     "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "sell", "compatible", "kind", "type", "work"],
     "Log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
     "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert"],
-    "What CyberLogix did for you": ["cyberlogix", "did", "summary", "week", "weekly", "worth", "value"],
+    [DID_LABEL]: [F.appShort.toLowerCase(), "did", "summary", "week", "weekly", "worth", "value"],
     "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute", "short", "quick", "delay", "wait"],
     "Wi-Fi or power goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
     "Do you phone at night?": ["phone", "call", "night", "ring", "voice", "escalate", "sleep", "weekend"],
@@ -623,7 +627,7 @@
     // What happens when a fridge is warm, for a visitor: on the person's
     // own pages "which fridges need me" says it with their own fridges.
     { id: "warm", labels: ["A fridge is warm: what now?", "What happens next?"], answer: WARM, only: () => !ownPage },
-    { id: "did", labels: ["What CyberLogix did for you"], answer: didAnswer },
+    { id: "did", labels: [DID_LABEL], answer: didAnswer },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -670,7 +674,7 @@
   // or its own words), so the two never tie on it.
   const CARRY = {
     "What does this alert mean?": ["starter", "growth", "month"],
-    "What CyberLogix did for you": ["starter", "growth", "month"],
+    [DID_LABEL]: ["starter", "growth", "month"],
     "Is the food still OK?": ["plan", "best", "cafe", "café"],
     "It's fixed now": ["phone", "call", "night"],
     "Wi-Fi or power goes off?": ["phone", "call", "night"],
@@ -683,7 +687,7 @@
   // another item uses the word: the item they are on wins by having two of
   // them, and the answer is still the closest of all (bestTopic). The
   // core keeps the first 20 words of an item, so each list fits: checked
-  // by tests/js/cyberlogix-pilot.test.js on every page.
+  // by tests/js/kryozyn-pilot.test.js on every page.
   const PRICE_WORDS = ["cost", "price", "much", "pay", "expensive", "pharmacy", "pharmacist", "cancel", "subscription", "refund"];
   const LEND = {
     // The person's own pages (whatever the alerts): sensors on the connect
@@ -693,10 +697,10 @@
     // work?" alone picks neither.
     "Which fridges need me?": ["work", "working"],
     "Is the food still OK?": ["data", "privacy"],
-    "Who gets the texts?": ["cyberlogix", "summary"],
+    "Who gets the texts?": [F.appShort.toLowerCase(), "summary"],
     // ...and on the chips of either state: an alert open, or not.
     "What does this alert mean?": PRICE_WORDS,
-    "What CyberLogix did for you": PRICE_WORDS,
+    [DID_LABEL]: PRICE_WORDS,
     "It's fixed now": ["wifi", "power", "goes", "outage", "internet", "down", "door", "trial"],
     // With no alert open, the alert's own words too: typed, it says none is.
     "Wi-Fi or power goes off?": ["door", "trial", "alert", "alarm", "mean"],
@@ -729,7 +733,7 @@
   // Signed in, under the welcome's own five (so none says the same thing).
   // Signed in: straight to the log for the last seven days (3.30.0), not
   // an answer that says where it is. On the console it only changes the
-  // page's #, so nothing reloads. 3.32.0: "What CyberLogix did for you" in
+  // page's #, so nothing reloads. 3.32.0: "What Kryozyn did for you" in
   // place of "Make a proof report", which needed an AI key.
   const LOG_HERE = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#inspector-log?open=1`;
   // A page's own address with the #: a bare "#did" is not a link in Pilot's
@@ -742,7 +746,7 @@
     ["It's fixed now", answer(fixedAnswer)],
     ["Log for the inspector", link(LOG_HERE)]];
   const LIVE_CALM = [["Log for the inspector", link(LOG_HERE)],
-    ["What CyberLogix did for you", answer(didAnswer)],
+    [DID_LABEL, answer(didAnswer)],
     ["Wi-Fi or power goes off?", answer(POWER)]];
   function alertOpen() {
     const dd = overview();
@@ -765,7 +769,7 @@
     "/help/sensors": [["Easiest way to set up", "What's the easiest way to set up a sensor, with no coding?"],
       ["Set up step by step", answer(STEPS)],
       ["Power or Wi-Fi goes off?", answer(POWER)]],
-    "/for": [["When do you alert?", "At what temperature, and after how long, does CyberLogix alert, and can I change it?"],
+    "/for": [["When do you alert?", `At what temperature, and after how long, does ${F.appShort} alert, and can I change it?`],
       ["A log for the inspector", answer(LOG)]],
     "/demo": [["What am I seeing?", answer(() => DEMO_WHAT)],
       ["What happens next?", answer(WARM)],
@@ -773,8 +777,8 @@
     "/console-out": [["How do I sign in?", answer(() => SIGN_IN)],
       ["I forgot my password", link("/reset")],
       ["Start a free trial", link("/signup")]],
-    "/for/*": [["How would this work for me?", "How would CyberLogix work for a business like mine?"],
-      ["When do you alert?", "At what temperature, and after how long, does CyberLogix alert for this trade, and can I change it?"],
+    "/for/*": [["How would this work for me?", `How would ${F.appShort} work for a business like mine?`],
+      ["When do you alert?", `At what temperature, and after how long, does ${F.appShort} alert for this trade, and can I change it?`],
       ["A log for the inspector", answer(LOG)]],
   };
 
@@ -844,9 +848,9 @@
   const VISITOR_PILLS = ownPage ? [] : pillsFor(VISITOR);
 
   window.Pilot.mount({
-    appName: "CyberLogix AI",
+    appName: F.appName,
     name: "Pilot",
-    // Core 1.2.0: the welcome is CyberLogix's own (docs/PILOT.md): the
+    // Core 1.2.0: the welcome is Kryozyn's own (docs/PILOT.md): the
     // console's five on the person's own pages, the visitor's five on the
     // public ones (OWN_PILLS, VISITOR_PILLS above).
     tagline: "Your fridge-alarm helper",
@@ -866,7 +870,7 @@
     // answers and the key pill under it, the words kept in the box
     // (noKeyReply left at its default).
     screenChip: ownPage ? { label: "Sum up my fridges", answer: summaryAnswer } : undefined,
-    // CyberLogix has no use for making pictures or videos.
+    // Kryozyn has no use for making pictures or videos.
     hideKeySections: ["image", "video"],
     // With every corner busy the robot shrinks into its corner, wholly on
     // the screen, instead of hanging off the edge (it replaced this app's
@@ -926,7 +930,7 @@
       // and over the demo Freezer card's edge. And /today's own "Needs you
       // now" card, buttons and all.
       ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need",
-      // What CyberLogix did for you, opened on /today (3.33.0): at 375px
+      // What Kryozyn did for you, opened on /today (3.33.0): at 375px
       // the robot waved over its first lines.
       "#did-lines", "#did-sample-lines", ".did-tabs"],
     // Not the logo (3.31.0): it is a picture and words, not a link, on most

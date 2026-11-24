@@ -1,7 +1,7 @@
 # Load test, and when to leave SQLite
 
 What happens when many sensors report at once, what broke first, what was
-fixed, and the point at which CyberLogix should move from SQLite to
+fixed, and the point at which Kryozyn should move from SQLite to
 Postgres. Measured on 2026-11-03 on a shared 4-core machine, so **every
 number here is rough**: treat a difference of a few milliseconds as noise,
 and run the tools again before relying on a figure.

@@ -917,7 +917,7 @@ async function checkSwitcher(browser, base) {
   for (const [i, b] of businesses.entries()) {
     const unit = `SW${i}-UNIT`;
     b.unit = unit;
-    const headers = { "Content-Type": "application/json", "X-CyberLogix-Key": b.key };
+    const headers = { "Content-Type": "application/json", "X-Kryozyn-Key": b.key };
     await fetch(`${base}/api/licenses/me/sensors`, { method: "POST", headers,
       body: JSON.stringify({ sensor_id: unit, industry_vertical: "restaurant",
                              location_name: `${b.name} cold room` }) });
@@ -1056,7 +1056,7 @@ async function checkSwitcher(browser, base) {
    with its units, and nothing on screen is missing a value or scrolls
    sideways. */
 async function checkPartner(browser, base) {
-  const admin = { "Content-Type": "application/json", "X-CyberLogix-Admin": ADMIN_KEY };
+  const admin = { "Content-Type": "application/json", "X-Kryozyn-Admin": ADMIN_KEY };
   const made = await fetch(`${base}/api/partners`, {
     method: "POST", headers: admin,
     body: JSON.stringify({ company_name: "Smoke Refrigeration", contact_name: "Ray Smoke",

@@ -17,6 +17,7 @@ instead of a pager storm.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -828,7 +829,7 @@ def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
 
             write_audit(tenant, None, "incident.resolved",
                         f"{incident.incident_id} on {incident.sensor_id}: {note}",
-                        fallback_actor=incident.fix_reported_by or "CyberLogix")
+                        fallback_actor=incident.fix_reported_by or APP_SHORT)
         except Exception:  # noqa: BLE001 - the record of it must not stop the close
             logger.exception("Audit entry for %s failed.", incident.incident_id)
         _notify_hooks(tenant, incident, "resolved", note, background=True)
@@ -848,7 +849,7 @@ def close_if_back_to_normal(tenant: Tenant, sensor, temperature: float):
 
         write_audit(tenant, None, "incident.resolved",
                     f"{incident.incident_id} on {incident.sensor_id}: {note}",
-                    fallback_actor="CyberLogix (back to normal)")
+                    fallback_actor=f"{APP_SHORT} (back to normal)")
     except Exception:  # noqa: BLE001 - the record of it must not stop the close
         logger.exception("Audit entry for %s failed.", incident.incident_id)
     _notify_hooks(tenant, incident, "resolved", note, background=True)

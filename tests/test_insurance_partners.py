@@ -36,7 +36,7 @@ def _apply(api, **changes):
 
 @pytest.fixture()
 def inbox(monkeypatch, mailbox):
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "operator@cyberlogix.example")
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "operator@kryozyn.example")
     return mailbox
 
 
@@ -50,7 +50,7 @@ def partner(api, admin_headers, inbox):
     assert approved.status_code == 200, approved.text
     body = approved.json()
     return {"id": row["partner_id"], "code": body["code"], "key": body["key"],
-            "headers": {"X-CyberLogix-Insurance-Partner": body["key"]}}
+            "headers": {"X-Kryozyn-Insurance-Partner": body["key"]}}
 
 
 def _join(api, code, company="Corner Cafe", email="sam@cornercafe.example"):
@@ -63,7 +63,7 @@ def _join(api, code, company="Corner Cafe", email="sam@cornercafe.example"):
 def _pay(api, admin_headers, settle, joined, amount=None, reference="WIRE-1"):
     """The referred business moves onto Starter, is invoiced, and pays."""
     token = {"Authorization": f"Bearer {joined['token']}"}
-    key = {"X-CyberLogix-Key": joined["api_key"]}
+    key = {"X-Kryozyn-Key": joined["api_key"]}
     tenant_id = joined["tenant"]["tenant_id"]
     if not STORE.sensors_for(tenant_id):
         assert api.post("/api/licenses/me/sensors", headers=key, json={
@@ -133,7 +133,7 @@ def test_an_application_waits_and_is_mailed_to_the_operator(api, inbox, caplog):
     assert "reply by email" in resp.json()["message"]
     [row] = STORE._db.all(insurers.PARTNER_KIND)
     assert row["status"] == "applied" and row["code"] is None and not row["active"]
-    [mail] = inbox.to("operator@cyberlogix.example")
+    [mail] = inbox.to("operator@kryozyn.example")
     assert "Northgate Brokers" in mail["Subject"]
     body = mail.get_body(preferencelist=("plain",)).get_content()
     assert "alex@northgate.example" in body and "/book" in body
@@ -179,7 +179,7 @@ def test_only_the_operator_sees_and_decides_applications(api, inbox):
     [row] = STORE._db.all(insurers.PARTNER_KIND)
     assert api.get("/api/insurance-partners").status_code == 401
     assert api.get("/api/insurance-partners",
-                   headers={"X-CyberLogix-Admin": "wrong"}).status_code == 401
+                   headers={"X-Kryozyn-Admin": "wrong"}).status_code == 401
     assert api.post(f"/api/insurance-partners/{row['partner_id']}/approve",
                     json={}).status_code == 401
 
@@ -233,7 +233,7 @@ def test_declining_sends_a_short_note_and_cannot_be_redone(api, admin_headers, i
                     headers=admin_headers)
     assert resp.status_code == 200 and resp.json()["status"] == "declined"
     assert [m["Subject"] for m in inbox.to("alex@northgate.example")] == [
-        "Your CyberLogix partner application"]
+        "Your Kryozyn partner application"]
     assert api.post(f"/api/insurance-partners/{row['partner_id']}/decline",
                     headers=admin_headers).status_code == 409
     assert api.post("/api/insurance-partners/IPT-999999/approve",
@@ -247,7 +247,7 @@ def test_switched_off_and_rotated_keys_stop_working(api, admin_headers, partner)
     me = "/api/insurance-partners/me"
     assert api.get(me, headers=partner["headers"]).status_code == 200
     assert api.get(me).status_code == 401
-    assert api.get(me, headers={"X-CyberLogix-Insurance-Partner": "clx_ins_nope"}).status_code == 401
+    assert api.get(me, headers={"X-Kryozyn-Insurance-Partner": "clx_ins_nope"}).status_code == 401
 
     off = api.post(f"/api/insurance-partners/{partner['id']}/status",
                    headers=admin_headers, json={"active": False})
@@ -262,7 +262,7 @@ def test_switched_off_and_rotated_keys_stop_working(api, admin_headers, partner)
                        headers=admin_headers)
     assert rotated.status_code == 200
     assert api.get(me, headers=partner["headers"]).status_code == 401
-    assert api.get(me, headers={"X-CyberLogix-Insurance-Partner": rotated.json()["key"]}
+    assert api.get(me, headers={"X-Kryozyn-Insurance-Partner": rotated.json()["key"]}
                    ).status_code == 200
 
 
@@ -301,7 +301,7 @@ def test_a_partner_cannot_refer_themselves_and_a_made_up_code_is_refused(api, pa
 
 def test_the_dashboard_shows_business_name_and_plan_only(api, partner, sensor_factory):
     joined = _join(api, partner["code"]).json()
-    key = {"X-CyberLogix-Key": joined["api_key"]}
+    key = {"X-Kryozyn-Key": joined["api_key"]}
     sensor_factory(key, "CC-FRIDGE", "restaurant", "Dessert fridge")
     seen = api.get("/api/insurance-partners/me", headers=partner["headers"])
     assert seen.status_code == 200
@@ -320,17 +320,17 @@ def test_the_dashboard_shows_business_name_and_plan_only(api, partner, sensor_fa
 def test_a_partner_key_opens_nothing_inside_any_business(api, partner, sensor_factory):
     joined = _join(api, partner["code"]).json()
     owner = {"Authorization": f"Bearer {joined['token']}"}
-    sensor_factory({"X-CyberLogix-Key": joined["api_key"]}, "CC-FRIDGE", "restaurant", "Fridge")
+    sensor_factory({"X-Kryozyn-Key": joined["api_key"]}, "CC-FRIDGE", "restaurant", "Fridge")
     made = api.post("/api/proof-reports", headers=owner,
                     json={"month": utc_now().strftime("%Y-%m")})
     assert made.status_code == 201, made.text
     rid = made.json()["report_id"]
     key = partner["key"]
     tried = [
-        {"X-CyberLogix-Insurance-Partner": key},
-        {"X-CyberLogix-Key": key},
+        {"X-Kryozyn-Insurance-Partner": key},
+        {"X-Kryozyn-Key": key},
         {"Authorization": f"Bearer {key}"},
-        {"X-CyberLogix-Partner": key},
+        {"X-Kryozyn-Partner": key},
     ]
     for headers in tried:
         for path in ("/api/console/overview", "/api/sites", "/api/contacts",
@@ -346,7 +346,7 @@ def test_a_shared_report_link_is_the_only_window_and_it_is_public(api, partner, 
     """Not a partner privilege: whoever the business gives the link to."""
     joined = _join(api, partner["code"]).json()
     owner = {"Authorization": f"Bearer {joined['token']}"}
-    sensor_factory({"X-CyberLogix-Key": joined["api_key"]}, "CC-FRIDGE", "restaurant", "Fridge")
+    sensor_factory({"X-Kryozyn-Key": joined["api_key"]}, "CC-FRIDGE", "restaurant", "Fridge")
     made = api.post("/api/proof-reports", headers=owner,
                     json={"month": utc_now().strftime("%Y-%m")}).json()
     seen = api.get(f"/api/proof-reports/verify/{made['verify_code']}")

@@ -8,6 +8,7 @@ and perfectly in-band right now, and will ruin its contents before dawn.
 
 from __future__ import annotations
 
+from brand import APP_NAME
 import logging
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
@@ -257,7 +258,7 @@ def sensor_forecast(
             f"Likely cause: {result['likely_catastrophe']}. {advice}"
         )
         prompt = f"""
-        You are the CyberLogix AI predictive maintenance analyst.
+        You are the {APP_NAME} predictive maintenance analyst.
 
         Sector: {result['industry_name']}
         Sensor: {sensor_id} at {result['location_name']}

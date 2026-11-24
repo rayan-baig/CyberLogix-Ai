@@ -32,9 +32,9 @@ def test_rotating_a_key_retires_the_old_one(api, admin):
     resp = api.post(f"/api/partners/{body['partner_id']}/rotate-key", headers=admin)
     assert resp.status_code == 200
     new_key = resp.json()["api_key"]
-    assert new_key.startswith("clx_ptr_") and new_key != old["X-CyberLogix-Partner"]
+    assert new_key.startswith("clx_ptr_") and new_key != old["X-Kryozyn-Partner"]
     assert api.get("/api/partners/me", headers=old).status_code == 401
-    assert api.get("/api/partners/me", headers={"X-CyberLogix-Partner": new_key}).status_code == 200
+    assert api.get("/api/partners/me", headers={"X-Kryozyn-Partner": new_key}).status_code == 200
     assert new_key not in api.get("/api/partners", headers=admin).text
 
 

@@ -70,7 +70,7 @@ its spacing; everything a customer typed is escaped. The HTML is made
 from the text rather than written beside it because two versions drift:
 the monthly summary's HTML once left out every alert its text listed.
 
-The footer always ends "CyberLogix is a product of MTRX Horizyn." Above
+The footer always ends "Kryozyn is a product of MTRX Horizyn." Above
 that it says how to stop or change the message, by kind (`mail.MUST_SEND`
 and `mail.MANAGED`):
 

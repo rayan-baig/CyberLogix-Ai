@@ -1,7 +1,7 @@
-"""Every kind of email CyberLogix sends, through a mail server, read back.
+"""Every kind of email Kryozyn sends, through a mail server, read back.
 
 One look for all of them: a plain-text part and an HTML part, the HTML
-in one column no wider than 600px, the "CyberLogix is a product of MTRX
+in one column no wider than 600px, the "Kryozyn is a product of MTRX
 Horizyn" footer once, the same words and links in both parts, nothing
 left unfilled, and a way to stop or manage it on anything that is not a
 must-send alert or receipt.
@@ -37,10 +37,10 @@ from contracts import run_billing, run_dunning
 from store import STORE, utc_now
 
 ROOT = Path(__file__).resolve().parent.parent
-FOOTER = "CyberLogix is a product of MTRX Horizyn."
+FOOTER = "Kryozyn is a product of MTRX Horizyn."
 OWNER = "ops@example.com"
-OPERATOR = "founder@cyberlogix.example"
-ERRORS = "errors@cyberlogix.example"
+OPERATOR = "founder@kryozyn.example"
+ERRORS = "errors@kryozyn.example"
 
 
 class _SMTPSink(socketserver.ThreadingTCPServer):
@@ -97,9 +97,9 @@ def smtp(monkeypatch):
     monkeypatch.setattr(mail, "SMTP_STARTTLS", False)
     monkeypatch.setattr(mail, "SMTP_USERNAME", "")
     monkeypatch.setattr(mail, "SMTP_TIMEOUT_SECONDS", 5.0)
-    monkeypatch.setattr(mail, "MAIL_FROM", "hello@cyberlogix.example")
-    monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://cyberlogix.example.com")
-    monkeypatch.setattr(notifications, "PUBLIC_BASE_URL", "https://cyberlogix.example.com")
+    monkeypatch.setattr(mail, "MAIL_FROM", "hello@kryozyn.example")
+    monkeypatch.setattr(mail, "PUBLIC_BASE_URL", "https://kryozyn.example.com")
+    monkeypatch.setattr(notifications, "PUBLIC_BASE_URL", "https://kryozyn.example.com")
     monkeypatch.setattr(mail, "PAY_URL", "https://pay.example/{invoice}")
     monkeypatch.setattr(digest, "OPERATOR_EMAIL", OPERATOR)
     monkeypatch.setattr(digest, "DIGEST_HOUR_UTC", 0)
@@ -163,12 +163,12 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     last = today.replace(day=1) - timedelta(days=1)
     monthly.send_for(the_tenant, first, last)                        # monthly
 
-    # The daily report to OmniArmor has not got through for two days.
+    # The daily report to Aegizyn has not got through for two days.
     import omniarmor
 
     STORE._db.put(omniarmor.CONNECTION_KIND, the_tenant.tenant_id, {
-        "tenant_id": the_tenant.tenant_id, "base_url": "https://omniarmor.example.com",
-        "enabled": True, "last_detail": "OmniArmor answered 503."})
+        "tenant_id": the_tenant.tenant_id, "base_url": "https://aegizyn.example.com",
+        "enabled": True, "last_detail": "Aegizyn answered 503."})
     for back in (2, 1):
         day = (today - timedelta(days=back)).isoformat()
         STORE._db.put(omniarmor.DAY_KIND, f"{the_tenant.tenant_id}:{day}", {
@@ -201,7 +201,7 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     conversion._dark(trial, ev)
 
     # Two insurance partner applications: one approved, one declined.
-    admin = {"X-CyberLogix-Admin": "test-admin-key"}
+    admin = {"X-Kryozyn-Admin": "test-admin-key"}
     for firm, address in (("Northgate Brokers", "alex@northgate.example"),
                           ("Harbor Mutual", "kim@harbormutual.example")):
         assert api.post("/api/insurance-partners/apply", json={
@@ -241,7 +241,7 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
         "contact_phone": "+1-555-0177", "street": "1 Bell St", "city": "Boston",
         "postcode": "02110", "consent": True})
     assert lead.status_code == 201, lead.text                        # repair-lead
-    partner_key = {"X-CyberLogix-Repair-Partner": approved.json()["key"]}
+    partner_key = {"X-Kryozyn-Repair-Partner": approved.json()["key"]}
     assert api.post(f"/api/repair-partners/me/leads/{lead.json()['lead_id']}/bad",
                     headers=partner_key, json={"reason": "No answer at that number."}
                     ).status_code == 200                             # repair-dispute
@@ -425,12 +425,12 @@ def test_a_way_to_stop_or_manage_it_unless_it_must_be_sent(every_email):
         both = plain.get_content() + _visible_text(rich.get_content())
         how = KINDS[_kind(key)]
         if how == "unsubscribe":
-            assert "https://cyberlogix.example.com/api/mail/unsubscribe?" in both, key
+            assert "https://kryozyn.example.com/api/mail/unsubscribe?" in both, key
             assert message["List-Unsubscribe"], key
         elif how == "manage":
             path, label = mail.MANAGED[_kind(key)]
-            assert f"{label}: https://cyberlogix.example.com{path}" in plain.get_content(), key
-            assert f'href="https://cyberlogix.example.com{path}"' in rich.get_content(), key
+            assert f"{label}: https://kryozyn.example.com{path}" in plain.get_content(), key
+            assert f'href="https://kryozyn.example.com{path}"' in rich.get_content(), key
             assert message["List-Unsubscribe"] is None, key
         else:
             assert "/api/mail/unsubscribe" not in both, key
@@ -454,3 +454,14 @@ def test_what_a_customer_typed_is_escaped_in_the_html(api, smtp, tenant_factory)
 def test_date_is_not_reread_as_a_placeholder():
     """The checks above look for {name}; a real date must not trip them."""
     assert not UNFILLED.findall(f"Due {date(2026, 11, 3).isoformat()}")
+
+
+def test_no_email_says_an_old_name(every_email):
+    """3.34.0: the product is Kryozyn and the checklist app Aegizyn, in the
+    subject, the From name and both parts of every kind of email. (The
+    operator's digest may name a CYBERLOGIX_ setting: a setting's name, not
+    the product's.)"""
+    old = re.compile("Cyber" + "Logix|Omni" + "Armor")
+    for key, message in every_email:
+        assert not old.search(message.as_string()), key
+        assert "Kryozyn" in str(message["From"]), key

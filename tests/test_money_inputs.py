@@ -11,7 +11,7 @@ import pytest
 from contracts import run_billing
 from store import STORE
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 @pytest.fixture()
@@ -74,7 +74,7 @@ def test_a_plausible_quantity_field_cannot_be_ignored_into_an_overcharge(
 
     resp = api.post(
         "/api/v1/enterprise-billing/provision-cluster",
-        headers={**headers, **owner, "X-CyberLogix-Admin": "test-admin-key"},
+        headers={**headers, **owner, "X-Kryozyn-Admin": "test-admin-key"},
         json={
             "corporate_client_name": "Chain Co",
             "industry_vertical": "restaurant",

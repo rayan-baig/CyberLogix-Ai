@@ -24,7 +24,7 @@ import digest
 import notifications
 from store import STORE, VOICE_ESCALATION_GRACE_MINUTES, utc_now
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 @pytest.fixture()
@@ -147,7 +147,7 @@ def test_a_restore_does_not_call_or_mail_again_about_what_was_already_sent(
     # After the snapshot: the call goes out and the day's digest goes out.
     automation.sweep_tenant(tenant_row)
     assert len(twilio["calls"]) == 1
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "ops@cyberlogix.example")
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "ops@kryozyn.example")
     evening = utc_now().replace(hour=23)
     assert digest.run_digests(evening)["operator"]["sent"] is True
     digests = len(mailbox)

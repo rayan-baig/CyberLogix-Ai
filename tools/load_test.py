@@ -423,7 +423,7 @@ async def run_stage(server: Server, mail: MailSink, heartbeat: HeartbeatSink,
                 response = await client.post(
                     "/api/sensor-pulse",
                     json={"sensor_id": sensor["sensor_id"], "temperature_fahrenheit": temp},
-                    headers={"X-CyberLogix-Sensor-Key": sensor["key"]},
+                    headers={"X-Kryozyn-Sensor-Key": sensor["key"]},
                 )
             except httpx.HTTPError as exc:
                 statuses["transport_error"] = statuses.get("transport_error", 0) + 1
@@ -632,7 +632,7 @@ def _hammer(base: str, sensors: List[Dict[str, Any]], seconds: float,
                             "/api/sensor-pulse",
                             json={"sensor_id": sensor["sensor_id"],
                                   "temperature_fahrenheit": sensor["nominal"]},
-                            headers={"X-CyberLogix-Sensor-Key": sensor["key"]})
+                            headers={"X-Kryozyn-Sensor-Key": sensor["key"]})
                         code = str(r.status_code)
                     except httpx.HTTPError as exc:
                         code = type(exc).__name__

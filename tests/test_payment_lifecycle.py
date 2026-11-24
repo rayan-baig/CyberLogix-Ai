@@ -174,7 +174,7 @@ class Business:
         assert made.status_code == 201, made.text
         body = made.json()
         self.tenant_id = body["tenant"]["tenant_id"]
-        self.key = {"X-CyberLogix-Key": body["api_key"]}
+        self.key = {"X-Kryozyn-Key": body["api_key"]}
         self.owner = {"Authorization": f"Bearer {body['token']}"}
         registered = api.post("/api/licenses/me/sensors", headers=self.key, json={
             "sensor_id": "WALKIN-1", "industry_vertical": "restaurant",

@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 
 const TOKEN_STORAGE = "cyberlogix.session";
 // The sign-up page leaves the new business key here for exactly one load.
@@ -240,7 +249,7 @@ async function api(path, options = {}) {
     // is no network, which then gets shown to somebody standing next to
     // a freezer. Say what actually happened.
     const offline = new Error(
-      "No connection to CyberLogix. Nothing shown here is current."
+      `No connection to ${BRAND.short}. Nothing shown here is current.`
     );
     offline.offline = true;
     showConnection(false, "this device is offline");
@@ -900,7 +909,7 @@ async function refresh(opts = {}) {
     // Owners only. Anyone else is told so on the card, not shown an error.
     referrals: () => api("/api/referrals/me").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
-    omni: () => api("/api/connections/omniarmor").catch((err) =>
+    omni: () => api("/api/connections/aegizyn").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     aiKey: () => api("/api/ai-key").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
@@ -3511,7 +3520,7 @@ async function openInvoice(invoiceId) {
     ${inv.issued_by.remit_to
       ? `<div class="card-note">Remit to: ${esc(inv.issued_by.remit_to)}</div>`
       : ""}
-    <div class="doc-footer">CyberLogix AI is a product of MTRX Horizyn.
+    <div class="doc-footer">${esc(BRAND.app)} is a product of ${esc(BRAND.company)}.
       ${esc(inv.number)} · issued ${esc(stamp(inv.issued_at))}</div>
 
     ${inv.state === "issued" ? `<div class="row no-print u-mt-18">
@@ -3995,14 +4004,14 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-/* ---------------- the OmniArmor connection ----------------
+/* ---------------- the Aegizyn connection ----------------
    The form is filled from the server only when what the server holds has
    changed and nobody is typing in it, so the poll never wipes a half
    pasted key. The key itself never comes back: only its last four. */
 
 let omniSignature = null;
 
-/* What the OmniArmor link costs, said once it is connected (3.26.0). While
+/* What the Aegizyn link costs, said once it is connected (3.26.0). While
    a business is still setting up on the free trial it is not offered a
    paid extra: "+$29 a month per location" sat in the middle of Setup on
    the first day. Connected, or on a paid plan, the price is always shown. */
@@ -4034,7 +4043,7 @@ function renderOmni(seen) {
     $("omni-key").value = "";
     $("omni-key").placeholder = seen.key_hint
       ? `Saved key ends ${seen.key_hint}. Paste a new one to replace it.`
-      : "clx_\u2026 from OmniArmor: Settings, Connections";
+      : `clx_\u2026 from ${BRAND.checklist}: Settings, Connections`;
     $("omni-sites").innerHTML = seen.sites.length > 1
       ? `<div class="u-fs-12 u-c-muted u-mb-3">Sites to include (none ticked:
            every unit, in one report)</div>`
@@ -4085,7 +4094,7 @@ $("omni-form").addEventListener("submit", async (event) => {
   if ($("omni-key").value.trim()) body.key = $("omni-key").value.trim();
   if ($("omni-tz").value.trim()) body.timezone = $("omni-tz").value.trim();
   try {
-    const seen = await api("/api/connections/omniarmor", {
+    const seen = await api("/api/connections/aegizyn", {
       method: "PUT", body: JSON.stringify(body),
     });
     $("omni-key").value = "";
@@ -4101,7 +4110,7 @@ $("omni-test").addEventListener("click", async () => {
   const button = $("omni-test");
   button.disabled = true;
   try {
-    const out = await api("/api/connections/omniarmor/test", { method: "POST" });
+    const out = await api("/api/connections/aegizyn/test", { method: "POST" });
     renderOmni(out.connection);
     toast(out.message, out.status === "ok" || out.status === "already_sent" ? "ok" : "err");
   } catch (err) {
@@ -4112,9 +4121,9 @@ $("omni-test").addEventListener("click", async () => {
 });
 
 $("omni-remove").addEventListener("click", async () => {
-  if (!confirm("Disconnect OmniArmor? The key is deleted and nothing more is sent.")) return;
+  if (!confirm(`Disconnect ${BRAND.checklist}? The key is deleted and nothing more is sent.`)) return;
   try {
-    const out = await api("/api/connections/omniarmor", { method: "DELETE" });
+    const out = await api("/api/connections/aegizyn", { method: "DELETE" });
     omniSignature = null;
     renderOmni(out);
     toast(out.message, "ok");
@@ -5143,7 +5152,7 @@ async function openInspectorLog(from, to, print) {
     ${groupSection}
     ${sections || `<div class="card-note u-mt-10">No units yet.</div>`}
     <div class="card-note u-mt-16">${esc(log.note)} Made ${esc(stamp(log.generated_at))}
-      by CyberLogix AI, a product of MTRX Horizyn.</div>
+      by ${esc(BRAND.app)}, a product of ${esc(BRAND.company)}.</div>
   `;
   state.drawerSensor = null;
   showDrawer();
@@ -5603,7 +5612,7 @@ async function openBusinesses() {
   const codeForm = here && here.role === "owner" ? `
       <form id="biz-invite" class="biz-add">
         <div class="card-title">Let someone join ${esc(here.company_name)}</div>
-        <p class="biz-meta">For somebody who already has a CyberLogix sign-in. Make a
+        <p class="biz-meta">For somebody who already has a ${esc(BRAND.short)} sign-in. Make a
           code, give it to them yourself, and they add this business from their own
           account. It works once and lasts three days.</p>
         <div class="field"><label for="biz-role">Their role here</label>
@@ -7461,7 +7470,7 @@ const ADV_SECTIONS = [
     say: "Your sealed safety records, how you compare, and who did what.",
     cards: ["find-compliance-vault", "find-sector-standing", "find-audit-trail"] },
   { id: "connect", title: "Sensors and connections",
-    say: "A sensor cloud, a sensor you already own, OmniArmor, an AI key, your industry's settings.",
+    say: `A sensor cloud, a sensor you already own, ${BRAND.checklist}, an AI key, your industry's settings.`,
     cards: ["find-vendor-clouds", "find-byod-sensor-webhook", "find-omniarmor", "find-ai-key", "find-sector-shortcuts"] },
   { id: "jobs", title: "Jobs and staff",
     say: "Things to do, notes from a meeting, staff licences, your crew.",
@@ -7754,7 +7763,7 @@ function discardNote(id) {
 }
 
 /* ---------------- Pilot ----------------
-   What Pilot, the assistant (static/pilot-cyberlogix-pack.js, docs/PILOT.md),
+   What Pilot, the assistant (static/pilot-kryozyn-pack.js, docs/PILOT.md),
    may do on this page: through this page's own api(), with the signed-in
    person's own session and permissions, so the server checks every call
    exactly as it checks a button press here. Pilot reads the units and the
@@ -7762,7 +7771,7 @@ function discardNote(id) {
    report only after the person presses Allow on its card. Nothing here
    changes the plan, deletes anything, changes who gets called, or sends a
    text or a call. */
-window.CyberLogixConsole = Object.freeze({
+window.KryozynConsole = Object.freeze({
   signedIn: () => Boolean(state.token),
   api: (path, options) => api(path, options),
   // What this page last loaded (the overview the cards and "Needs you now"

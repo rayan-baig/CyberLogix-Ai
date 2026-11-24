@@ -27,7 +27,7 @@ def report(api, headers, serial="NEW-BOX-1", value=38.0, unit="temperature_f"):
     return api.post("/api/v1/bridge/sensor-webhook-ingest", headers=headers,
                     json={"device_sn": serial, "reading_value": value,
                           "metric_type": unit,
-                          "api_key_token": headers["X-CyberLogix-Key"]})
+                          "api_key_token": headers["X-Kryozyn-Key"]})
 
 
 # --- the hassle this removes ----------------------------------------------
@@ -120,7 +120,7 @@ def test_a_device_that_never_says_its_unit_is_not_guessed(api, account):
     headers, _ = account
     api.post("/api/v1/bridge/any", headers=headers,
              json={"serial": "NO-UNIT-1", "reading": 4.0,
-                   "api_key_token": headers["X-CyberLogix-Key"]})
+                   "api_key_token": headers["X-Kryozyn-Key"]})
     waiting = api.get("/api/doorstep", headers=headers).json()
     assert waiting["count"] == 1, (
         "a device that does not state its unit is still a real device "
@@ -224,7 +224,7 @@ def test_a_unitless_device_can_be_adopted_by_saying_which(api, account):
     headers, _ = account
     api.post("/api/v1/bridge/any", headers=headers,
              json={"serial": "NO-UNIT-2", "reading": 4.0,
-                   "api_key_token": headers["X-CyberLogix-Key"]})
+                   "api_key_token": headers["X-Kryozyn-Key"]})
 
     added = api.post("/api/doorstep/adopt", headers=headers, json={
         "serial": "NO-UNIT-2", "industry_vertical": "restaurant",

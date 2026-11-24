@@ -41,6 +41,7 @@ else.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import math
 from datetime import datetime, timedelta
@@ -1046,7 +1047,7 @@ def send_renewal_reminder(tenant: Tenant, sub: Subscription, stage: int,
                 "a location or units.")
     body = (
         f"{tenant.contact_name},\n\n"
-        f"Your yearly CyberLogix plan renews on {when}, in "
+        f"Your yearly {APP_SHORT} plan renews on {when}, in "
         f"{days_left or stage} day{'' if (days_left or stage) == 1 else 's'}.\n\n"
         f"{cost}\n\n"
         "Nothing to do if you want to carry on. To switch to monthly billing "

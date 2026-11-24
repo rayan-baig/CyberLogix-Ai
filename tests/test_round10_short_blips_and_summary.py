@@ -6,12 +6,12 @@
    no dollars. Long, severe, closed-while-warm and pharmacy alerts still
    ask.
 2. Pilot's built-in answers on every page (Node:
-   tests/js/cyberlogix-pilot.test.js).
+   tests/js/kryozyn-pilot.test.js).
 3. "Cold again after 2 minutes out (since 9:10 PM)" everywhere, and the
    short month line "3 alerts · all answered · 1 food answer missing".
 4. After "Thrown away": the insurance pack and the discard note; any
    answer can be changed for 24 hours, each change in the history.
-5. What CyberLogix did for you: GET /api/console/did-for-you, with a
+5. What Kryozyn did for you: GET /api/console/did-for-you, with a
    sample in a trial's first week.
 6. The TV screen's bar, phone tiles 1 + 2, Advanced in sections, the
    "What this is" label (Node: tests/js/today.test.js), referral words
@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+import brand
 import food_value
 from store import STORE, utc_now
 
@@ -72,7 +73,7 @@ def _unit(api, owner, sensor_id="WALK-IN-1", where="Walk-in fridge", vertical="r
 
 
 def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
-    got = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    got = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                    json={"sensor_id": sensor_id, "temperature_fahrenheit": temp})
     assert got.status_code == 200, got.text
     return got.json()
@@ -111,7 +112,7 @@ def test_a_short_blip_records_food_safe_by_itself_with_no_question_and_no_dollar
     assert row["food_question"] is None, "nobody is asked"
     assert row["food_auto"] is True and row["food_auto_minutes"] == pytest.approx(12, abs=0.5)
     assert row["food_answer_words"] == "Food safe: out for 12 minutes"
-    assert row["food_answered_by"] == "CyberLogix (automatic)"
+    assert row["food_answered_by"] == "Kryozyn (automatic)"
     assert row["food_protected"] is None, "no dollars for a short blip"
     assert row["food_change_until"], "Change shows for 24 hours"
     assert [h["auto"] for h in row["food_history"]] == [True]
@@ -261,7 +262,7 @@ def test_the_month_line_is_short(api):
     assert month["words"] == "This month: 2 alerts · all cold again by themselves · thrown away on 1"
 
 
-# --- 5. What CyberLogix did for you --------------------------------------------------
+# --- 5. What Kryozyn did for you --------------------------------------------------
 
 def test_what_cyberlogix_did_for_you(api):
     owner = _sign_up(api)
@@ -295,8 +296,8 @@ def test_what_cyberlogix_did_for_you(api):
 
 
 def test_today_shows_it_with_the_log_link():
-    html = (STATIC / "simple.html").read_text()
-    assert 'id="did"' in html and "What CyberLogix did for you" in html
+    html = brand.fill((STATIC / "simple.html").read_text())
+    assert 'id="did"' in html and "What Kryozyn did for you" in html
     assert 'id="did-log"' in html and 'id="did-sample"' in html
     js = (STATIC / "simple.js").read_text()
     assert "/api/console/did-for-you?period=${didPeriod}" in js
@@ -333,7 +334,7 @@ def test_referral_words_follow_the_plan():
     assert "off, one month on one location,\n      when they pay" not in render
 
 
-@pytest.mark.parametrize("suite", ["today.test.js", "cyberlogix-pilot.test.js"])
+@pytest.mark.parametrize("suite", ["today.test.js", "kryozyn-pilot.test.js"])
 def test_the_pages_in_node(suite):
     node = shutil.which("node")
     if node is None:

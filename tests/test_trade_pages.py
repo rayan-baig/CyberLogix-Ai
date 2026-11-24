@@ -36,12 +36,12 @@ def test_each_page_renders_with_its_own_title_and_description(api, slug):
     page = resp.text
     trade = trades.TRADES[slug]
     title = re.search(r"<title>(.*?)</title>", page).group(1)
-    assert title == f"{trade['title']} | CyberLogix AI"
+    assert title == f"{trade['title']} | Kryozyn"
     description = re.search(r'<meta name="description" content="([^"]*)"', page).group(1)
     assert html.unescape(description) == trade["description"]
     assert 50 < len(trade["description"]) < 200
     assert f'<link rel="canonical" href="http://testserver/for/{slug}">' in page
-    for section in ("The risk", "What CyberLogix does", "What it costs"):
+    for section in ("The risk", "What Kryozyn does", "What it costs"):
         assert section in page
     assert "%%" not in page
     # Strict CSP: nothing inline.

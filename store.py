@@ -1,4 +1,4 @@
-"""Shared domain model and in-memory state for the CyberLogix AI hub.
+"""Shared domain model and in-memory state for the Kryozyn hub.
 
 Every router in the suite reads and writes through the single `STORE`
 instance defined at the bottom of this module. State is held in memory and
@@ -17,6 +17,7 @@ reads them.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import hashlib
 import logging
 import os
@@ -1960,7 +1961,7 @@ class HubStore:
             # saved with "discarded") is not a change (3.33.0): no
             # "Changed to Thrown away" in the history, and the answer keeps
             # its own time, so its 24 hours to change don't start over. An
-            # answer CyberLogix recorded by itself, confirmed by a person,
+            # answer Kryozyn recorded by itself, confirmed by a person,
             # is theirs from then.
             fate = disposition.strip()
             if fate and (fate != incident.product_disposition
@@ -1992,7 +1993,7 @@ class HubStore:
         minutes = food_value.auto_safe_minutes(incident, self._sensors.get(incident.sensor_id))
         if minutes is None:
             return
-        self._set_food(incident, "unaffected", "CyberLogix (automatic)",
+        self._set_food(incident, "unaffected", f"{APP_SHORT} (automatic)",
                        incident.resolved_at or utc_now(), auto_minutes=minutes)
 
     def record_disposition(self, incident: Incident, disposition: str,

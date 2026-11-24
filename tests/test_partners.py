@@ -15,7 +15,7 @@ from partners import COMMISSION_WINDOW_DAYS
 @pytest.fixture()
 def admin(monkeypatch):
     monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "root-key")
-    return {"X-CyberLogix-Admin": "root-key"}
+    return {"X-Kryozyn-Admin": "root-key"}
 
 
 def make_partner(api, admin, name="Acme Refrigeration"):
@@ -24,7 +24,7 @@ def make_partner(api, admin, name="Acme Refrigeration"):
                           "contact_email": "ray@acme.example"})
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    return body, {"X-CyberLogix-Partner": body["api_key"]}
+    return body, {"X-Kryozyn-Partner": body["api_key"]}
 
 
 def attach(api, admin, partner_id, tenant_id):
@@ -39,7 +39,7 @@ def test_minting_a_partner_needs_the_platform_key(api, admin):
                           "contact_email": "x@example.com"})
     assert resp.status_code == 401
 
-    resp = api.post("/api/partners", headers={"X-CyberLogix-Admin": "wrong"},
+    resp = api.post("/api/partners", headers={"X-Kryozyn-Admin": "wrong"},
                     json={"company_name": "Rogue", "contact_name": "X",
                           "contact_email": "x@example.com"})
     assert resp.status_code == 401
@@ -48,7 +48,7 @@ def test_minting_a_partner_needs_the_platform_key(api, admin):
 def test_no_admin_key_configured_closes_the_door(api, monkeypatch):
     """A deployment that forgot the variable must not be wide open."""
     monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "")
-    resp = api.post("/api/partners", headers={"X-CyberLogix-Admin": "anything"},
+    resp = api.post("/api/partners", headers={"X-Kryozyn-Admin": "anything"},
                     json={"company_name": "Rogue", "contact_name": "X",
                           "contact_email": "x@example.com"})
     assert resp.status_code == 503
@@ -79,7 +79,7 @@ def _pay_an_invoice(api, headers, amount=None):
     paid = api.post(
         f"/api/invoices/{invoice.invoice_id}/paid",
         params={"tenant_id": invoice.tenant_id},
-        headers={"X-CyberLogix-Admin": "root-key"},
+        headers={"X-Kryozyn-Admin": "root-key"},
         json={"reference": "WIRE-1", **({"amount_usd": amount} if amount else {})},
     )
     assert paid.status_code == 200, paid.text
@@ -163,7 +163,7 @@ def test_a_voided_invoice_earns_no_commission(
     invoice = STORE.invoices_for(tenant["tenant_id"])[0]
     api.post(f"/api/invoices/{invoice.invoice_id}/void",
              params={"tenant_id": tenant["tenant_id"]},
-             headers={"X-CyberLogix-Admin": "root-key"})
+             headers={"X-Kryozyn-Admin": "root-key"})
 
     statement = api.get("/api/partners/me/statement", headers=key).json()
     assert statement["commission_usd"] == 0.0

@@ -71,44 +71,148 @@ the only step with a lead time measured in days — DNS propagates slowly
 and mail reputation builds slowly. Done on the last day, invoices land
 in spam for a fortnight.
 
-**CyberLogix has no domain of its own.** It is a product of MTRX Horizyn,
+**Kryozyn has no domain of its own.** It is a product of MTRX Horizyn,
 and MTRX Horizyn owns the one domain: its own site on the apex (and
-`www`), each product on a subdomain. CyberLogix lives at
-`cyberlogix.mtrxhorizyn.com`, beside `rankup.mtrxhorizyn.com` and
-`omniarmor.mtrxhorizyn.com`; MTRX Horizyn's own site is `mtrxhorizyn.com`.
+`www`), each product on a subdomain. Kryozyn lives at
+`kryozyn.mtrxhorizyn.com`, beside `rankup.mtrxhorizyn.com` and
+`aegizyn.mtrxhorizyn.com`; MTRX Horizyn's own site is `mtrxhorizyn.com`.
 
-A subdomain, not a path (`mtrxhorizyn.com/cyberlogix`), on purpose: each
+A subdomain, not a path (`mtrxhorizyn.com/kryozyn`), on purpose: each
 subdomain is its own origin, so a sign-in, the browser's storage and the
-installed app's service worker belong to CyberLogix alone and never
+installed app's service worker belong to Kryozyn alone and never
 reach a sibling. Keep it that way — the app sets no cookie for the
 parent domain and, unless `CYBERLOGIX_ALLOWED_ORIGINS` says otherwise,
 lets no other site (siblings included) call its API from a browser.
 
 1. **DNS.** At whoever holds the domain's DNS, add one record for the
-   subdomain: a `CNAME` named `cyberlogix` pointing at the address the
-   host gave you (Render: `cyberlogix.onrender.com` or similar), or an
+   subdomain: a `CNAME` named `kryozyn` pointing at the address the
+   host gave you (Render: `cyberlogix.onrender.com` or similar: the
+   service keeps its old Render name, which nobody sees), or an
    `A` record to the server's IP if you run the container yourself.
 2. **The host's custom-domain step.** Tell the host the name it will
    answer to. Render: the service → Settings → Custom Domains → add
-   `cyberlogix.mtrxhorizyn.com`, then wait for it to verify. Your own server:
-   name `cyberlogix.mtrxhorizyn.com` in the proxy (Caddy, nginx) in front of
+   `kryozyn.mtrxhorizyn.com`, then wait for it to verify. Your own server:
+   name `kryozyn.mtrxhorizyn.com` in the proxy (Caddy, nginx) in front of
    the container.
 3. **HTTPS.** Render issues the certificate itself once DNS resolves;
-   Caddy does the same. Do not go on until `https://cyberlogix.mtrxhorizyn.com`
+   Caddy does the same. Do not go on until `https://kryozyn.mtrxhorizyn.com`
    loads with a padlock — sensors, Twilio's callback and the installed app
    all need it.
 4. **Point the app at its own address.** `PUBLIC_BASE_URL` is
-   `https://cyberlogix.mtrxhorizyn.com` (no trailing slash), then redeploy.
+   `https://kryozyn.mtrxhorizyn.com` (no trailing slash), then redeploy.
    Leave `CYBERLOGIX_ALLOWED_ORIGINS` unset unless a page on another
    origin genuinely has to call this API; then name that exact origin.
-   Neither CyberLogix's own console (served from this same address) nor
+   Neither Kryozyn's own console (served from this same address) nor
    MTRX Horizyn's console (which asks `/api/health` and `/api/stats` from
    its server, not from a browser) needs it.
    Never `*`, and never the parent domain or a sibling as a convenience.
-5. **MTRX Horizyn.** In MTRX Horizyn's settings, CyberLogix's address is
-   `https://cyberlogix.mtrxhorizyn.com` and its stats address is
-   `https://cyberlogix.mtrxhorizyn.com/api/stats` (MTRX Horizyn's README names
-   the two settings; `STATS_KEY` here matches its `MTRX_STATS_KEY`).
+5. **MTRX Horizyn.** In MTRX Horizyn's settings, Kryozyn's address is
+   `https://kryozyn.mtrxhorizyn.com` and its stats address is
+   `https://kryozyn.mtrxhorizyn.com/api/stats` (MTRX Horizyn's README names
+   the two settings; `STATS_KEY` here matches its stats key setting (`MTRX_STATS_KEY`
+   there, a name kept from before the rename, unless that site has renamed it).
+
+### The names, in one place
+
+The product's name, the company's name, its domain, the app's address and
+the checklist app's name are set once, in `brand.py`, and every page,
+email, text, agreement and Pilot answer takes them from there
+(`tests/test_brand.py` fails if anything else spells them). Each can also
+be set without a code change: `CYBERLOGIX_APP_NAME`,
+`CYBERLOGIX_COMPANY_NAME`, `CYBERLOGIX_COMPANY_DOMAIN` (the app's address
+follows it: `kryozyn.<domain>`), `CYBERLOGIX_APP_HOST`,
+`CYBERLOGIX_CHECKLIST_APP` and `CYBERLOGIX_SUPPORT_EMAIL`. The company's
+new name is still being chosen; when it is, the change is the two company
+defaults in `brand.py` (and the outside steps below for the new domain).
+
+### The old address keeps working
+
+Kryozyn was CyberLogix AI, at `cyberlogix.mtrxhorizyn.com` (and
+`staging.cyberlogix.mtrxhorizyn.com`). Keep those names pointing at the
+service for as long as anything might still use them: their DNS records
+and their Render custom domains stay exactly as they are. The app then
+does the rest by itself (`formerly.py`):
+
+* A page opened at the old address (the front page, the console, a proof
+  link in an old email, a QR code on a printed sheet) moves to the same
+  page at `kryozyn.mtrxhorizyn.com` with a permanent (301) redirect.
+* Anything under `/api/`, and every request that is not a plain page visit
+  (sensor readings, Twilio's callbacks, Stripe's webhooks), is answered at
+  the old address as before, so no sensor, phone number or payment set up
+  against it breaks while you move them over.
+* `KRYOZYN_OLD_HOSTS` changes the list (`old=new,old2=new2`); set it to
+  an empty value to switch the redirect off.
+
+### Settings and headers: the old names still work
+
+Every setting keeps its `CYBERLOGIX_` name, and the values already in the
+dashboard keep working with no change. Each may also be set as `KRYOZYN_`
+plus the same rest (`KRYOZYN_ADMIN_KEY` for `CYBERLOGIX_ADMIN_KEY`); when
+both are set, the `KRYOZYN_` one wins. The API's headers are now
+`X-Kryozyn-Key`, `X-Kryozyn-Sensor-Key`, `X-Kryozyn-Admin` and so on;
+devices and scripts that send the old `X-CyberLogix-` names keep working,
+and when a request sends both, the new one wins. The daily report to
+Aegizyn carries its signature under both `X-Kryozyn-Signature` and the
+`X-CyberLogix-Signature` Aegizyn has read until now. The Render service,
+its disk, the database file, the backup file names and this repository
+keep their old names: renaming any of them would mean a new service or a
+lost disk, and nobody outside sees them.
+
+### The rename: what the owner does outside the code
+
+The code is renamed. These steps are not code, so only the owner can do
+them. In this order:
+
+1. **DNS.** On `mtrxhorizyn.com`, add a `CNAME` named `kryozyn` (and
+   `staging.kryozyn` for the staging copy) pointing at the same
+   `onrender.com` address as the `cyberlogix` record. Leave the
+   `cyberlogix` records in place.
+2. **Render custom domains.** On the service add
+   `kryozyn.mtrxhorizyn.com`; on the staging service add
+   `staging.kryozyn.mtrxhorizyn.com`. Keep the old names on both. Wait for
+   each certificate (the padlock).
+3. **The app's own address.** Once
+   `https://kryozyn.mtrxhorizyn.com/api/health` loads with a padlock, set
+   `PUBLIC_BASE_URL=https://kryozyn.mtrxhorizyn.com` (staging:
+   `https://staging.kryozyn.mtrxhorizyn.com`) and redeploy. If
+   `CYBERLOGIX_ALLOWED_ORIGINS` names the old address, change it.
+4. **Mail.** With the mail provider, verify the sending name
+   `kryozyn.mtrxhorizyn.com` (it adds its DKIM record; SPF and DMARC stay
+   on the parent domain, section "Mail, from the one domain" below). Then
+   set `MAIL_FROM=no-reply@kryozyn.mtrxhorizyn.com` and
+   `CYBERLOGIX_SUPPORT_EMAIL=help@kryozyn.mtrxhorizyn.com` (make that
+   mailbox, or forward it). If `MAIL_FROM_NAME` is set to the old name,
+   set it to `Kryozyn` or remove it (Kryozyn is the default). Send yourself
+   a test invoice and check it is not in spam.
+5. **Stripe.** Add the webhook endpoint
+   `https://kryozyn.mtrxhorizyn.com/api/payments/stripe` with the same
+   events, put its new signing secret in `STRIPE_WEBHOOK_SECRET`, then
+   remove the old endpoint (the old address keeps working until then).
+   Change the public business name and statement descriptor to Kryozyn,
+   and the product names on any payment links (`CYBERLOGIX_PAY_URL`).
+6. **Twilio.** Point the number's messaging and voice webhooks at
+   `https://kryozyn.mtrxhorizyn.com/...` (the same paths; section 3,
+   "Twilio"). Change the caller name (CNAM) and the messaging service's
+   name to Kryozyn, and update the A2P 10DLC campaign description (Kryozyn
+   alerts), which the carriers review.
+7. **Everything else that knows the old address.** The uptime monitor on
+   `/api/health`, the company console's Kryozyn address and stats address,
+   Google Search Console (add the new address), and any sensor maker's
+   cloud set up with the old address (it keeps working; move it when
+   convenient). Customers' Kitchen Safety Bundle connections keep the
+   Aegizyn address they pasted, which keeps working for as long as that
+   old address does.
+8. **When the company's new name is chosen.** Change `COMPANY_NAME` and
+   `COMPANY_DOMAIN` in `brand.py` (or set `CYBERLOGIX_COMPANY_NAME` and
+   `CYBERLOGIX_COMPANY_DOMAIN`), add the new address to
+   `KRYOZYN_OLD_HOSTS`' targets if it moves, and repeat steps 1 to 7 for
+   the new domain (buy it; DNS; SPF, DKIM and DMARC for the new mail
+   domain; Render; Stripe's business name; Twilio's brand registration).
+   If `CYBERLOGIX_LEGAL_NAME` is set, change it too.
+9. **Later.** The GitHub repositories keep their names (historical; the
+   demo on GitHub Pages keeps its address). Store listings and code
+   signing for an installable app, if one is ever made, use the new name.
+   When nothing uses the old addresses any more, remove them.
 
 ### Mail, from the one domain
 
@@ -122,15 +226,15 @@ once per app. Your mail provider gives you the exact values:
 | **DKIM** (`TXT`) | signs each message so it cannot be forged |
 | **DMARC** (`TXT`) | says what to do with mail that fails the other two |
 
-CyberLogix then sends from an address of its own on that domain, so a
+Kryozyn then sends from an address of its own on that domain, so a
 customer (and a spam filter) can tell the products apart:
-`MAIL_FROM=no-reply@cyberlogix.mtrxhorizyn.com`. Customers write for help
-to `help@cyberlogix.mtrxhorizyn.com` (`CYBERLOGIX_SUPPORT_EMAIL`). A sending
-subdomain like `cyberlogix.mtrxhorizyn.com`
+`MAIL_FROM=no-reply@kryozyn.mtrxhorizyn.com`. Customers write for help
+to `help@kryozyn.mtrxhorizyn.com` (`CYBERLOGIX_SUPPORT_EMAIL`). A sending
+subdomain like `kryozyn.mtrxhorizyn.com`
 needs to be verified with the mail provider too (it adds its DKIM record
 there), and is covered by the parent's DMARC policy. Keep
-`MAIL_FROM_NAME=CyberLogix AI`; every message already says in its footer
-that CyberLogix is a product of MTRX Horizyn.
+`MAIL_FROM_NAME=Kryozyn`; every message already says in its footer
+that Kryozyn is a product of MTRX Horizyn.
 
 Without all three records, `MAIL_FROM` is an address the receiving server
 has no reason to trust, and the collections ladder in `mail.py` will run
@@ -182,7 +286,7 @@ process means replacing `db.py` with a shared database first.
 **Driving the sweep from outside instead** (a platform that sleeps idle
 containers, or a scheduler you already run): set
 `CYBERLOGIX_SWEEP_SECONDS=0` and have the scheduler call
-`POST /api/autopilot/sweep-all` with the `X-CyberLogix-Admin` header every
+`POST /api/autopilot/sweep-all` with the `X-Kryozyn-Admin` header every
 few minutes, and set `CYBERLOGIX_EXTERNAL_SWEEP_SECONDS` to how often, so
 the watchdog knows when it has stopped. That route sweeps every business
 and, once an hour, starts the money pass in the background (invoices,
@@ -220,7 +324,7 @@ CYBERLOGIX_MAIL_SECRET=<generated above>
 CYBERLOGIX_PROOF_REPORT_KEY=<generated above>
 # Leave CYBERLOGIX_ALLOWED_ORIGINS unset: every page is served from this
 # same origin. See section 1 before naming one.
-PUBLIC_BASE_URL=https://cyberlogix.mtrxhorizyn.com
+PUBLIC_BASE_URL=https://kryozyn.mtrxhorizyn.com
 
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -232,10 +336,10 @@ SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
-MAIL_FROM=no-reply@cyberlogix.mtrxhorizyn.com
+MAIL_FROM=no-reply@kryozyn.mtrxhorizyn.com
 # Where /help tells customers to write. Unset, it uses MAIL_REPLY_TO;
 # with neither, it tells them to use the contact on their invoice.
-CYBERLOGIX_SUPPORT_EMAIL=help@cyberlogix.mtrxhorizyn.com
+CYBERLOGIX_SUPPORT_EMAIL=help@kryozyn.mtrxhorizyn.com
 # You: the daily digest of what was billed, what arrived and what broke.
 CYBERLOGIX_OPERATOR_EMAIL=
 ```
@@ -266,7 +370,7 @@ Then tell Twilio where a **reply** to an alert text goes. In the Twilio
 console: Phone Numbers → your number → Messaging → "A message comes in"
 → Webhook, method `POST`:
 
-    https://cyberlogix.mtrxhorizyn.com/api/voice/sms-reply
+    https://kryozyn.mtrxhorizyn.com/api/voice/sms-reply
 
 That is what makes "Reply 1" work. Without it a reply of 1 goes nowhere
 and the calls carry on as if nobody had answered. It needs two settings
@@ -372,24 +476,24 @@ A backup nobody has restored is a file, not a backup. Do this once now,
 on purpose, so the first time is not during an incident:
 
 ```
-curl -s -H "X-CyberLogix-Admin: $KEY" \
-  https://cyberlogix.mtrxhorizyn.com/api/admin/backups
+curl -s -H "X-Kryozyn-Admin: $KEY" \
+  https://kryozyn.mtrxhorizyn.com/api/admin/backups
 ```
 
 Pick a snapshot and verify it:
 
 ```
-curl -s -H "X-CyberLogix-Admin: $KEY" \
-  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/verify
+curl -s -H "X-Kryozyn-Admin: $KEY" \
+  https://kryozyn.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/verify
 ```
 
 Then restore it from `/book → Health`, or:
 
 ```
-curl -s -X POST -H "X-CyberLogix-Admin: $KEY" \
+curl -s -X POST -H "X-Kryozyn-Admin: $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"snapshot":"cyberlogix-....sqlite3","confirm":true}' \
-  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/restore
+  https://kryozyn.mtrxhorizyn.com/api/admin/backups/restore
 ```
 
 It verifies the snapshot, snapshots the database it is about to replace,
@@ -411,8 +515,8 @@ a bad migration and surviving a lost disk. A cron job elsewhere can fetch
 each one:
 
 ```
-curl -fsS -H "X-CyberLogix-Admin: $KEY" -o cyberlogix-....sqlite3 \
-  https://cyberlogix.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/download
+curl -fsS -H "X-Kryozyn-Admin: $KEY" -o cyberlogix-....sqlite3 \
+  https://kryozyn.mtrxhorizyn.com/api/admin/backups/cyberlogix-....sqlite3/download
 ```
 
 ---
@@ -452,7 +556,7 @@ what changed in it, in plain words. The image will not build without
 both. After a deploy, check the live copy is the one you meant:
 
 ```
-curl -s https://cyberlogix.mtrxhorizyn.com/api/health
+curl -s https://kryozyn.mtrxhorizyn.com/api/health
 ```
 
 `version` in the answer is the `VERSION` file the image was built from.
@@ -491,7 +595,7 @@ copy on Render is [docs/STAGING.md](docs/STAGING.md).
   until someone qualified has read it.
 - **The invoice says who is asking.** `CYBERLOGIX_LEGAL_NAME`,
   `CYBERLOGIX_ADDRESS`, `CYBERLOGIX_TAX_ID`, `CYBERLOGIX_REMIT_TO`.
-  These are the entity's details, not the software's. CyberLogix is a
+  These are the entity's details, not the software's. Kryozyn is a
   product of MTRX Horizyn, so they are MTRX Horizyn's: set
   `CYBERLOGIX_LEGAL_NAME` to its registered name exactly as registered
   (unset, invoices and the agreements say "MTRX Horizyn").
@@ -500,7 +604,7 @@ copy on Render is [docs/STAGING.md](docs/STAGING.md).
   webhook that trusts its body is a button for marking every invoice in
   the system paid.
   In Stripe: Developers → Webhooks → add endpoint
-  `https://cyberlogix.mtrxhorizyn.com/api/payments/stripe`, subscribe it to
+  `https://kryozyn.mtrxhorizyn.com/api/payments/stripe`, subscribe it to
   **`checkout.session.completed`** (what a payment link produces), and copy
   its signing secret here. Make the payment link pass the invoice number as
   `?client_reference_id={invoice}` (that is what `CYBERLOGIX_PAY_URL` is for)

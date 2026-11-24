@@ -9,7 +9,7 @@ under the policy every other page has: the routes are read from the
 router, so a new endpoint appears without anybody writing it up.
 
 What it leaves out on purpose: routes only the platform operator can call
-(the ones behind X-CyberLogix-Admin or X-CyberLogix-Provisioning and no
+(the ones behind X-Kryozyn-Admin or X-Kryozyn-Provisioning and no
 customer credential). They are counted at the bottom, not listed. Nothing
 here prints a credential's value; examples name the header and show a
 placeholder. tests/test_api_reference.py holds both.
@@ -26,19 +26,19 @@ from typing import Any, Dict, List, Optional, Tuple
 # Lower-cased, as HTTP header names are compared.
 CREDENTIALS: Dict[str, Tuple[str, str]] = {
     "authorization": ("Signed-in session", "Authorization: Bearer $TOKEN"),
-    "x-cyberlogix-key": ("Business API key", "X-CyberLogix-Key: $KEY"),
-    "x-cyberlogix-sensor-key": ("Sensor key", "X-CyberLogix-Sensor-Key: $SENSOR_KEY"),
-    "x-cyberlogix-partner": ("Partner key", "X-CyberLogix-Partner: $PARTNER_KEY"),
+    "x-kryozyn-key": ("Business API key", "X-Kryozyn-Key: $KEY"),
+    "x-kryozyn-sensor-key": ("Sensor key", "X-Kryozyn-Sensor-Key: $SENSOR_KEY"),
+    "x-kryozyn-partner": ("Partner key", "X-Kryozyn-Partner: $PARTNER_KEY"),
     "x-signature": ("Signed webhook", "X-Signature: $HMAC_OF_THE_BODY"),
 }
 
 # Which credential the example command uses, when several will do.
-_CURL_PREFERENCE = ("x-cyberlogix-key", "authorization", "x-cyberlogix-sensor-key",
-                    "x-cyberlogix-partner")
+_CURL_PREFERENCE = ("x-kryozyn-key", "authorization", "x-kryozyn-sensor-key",
+                    "x-kryozyn-partner")
 
 # The platform operator's own credentials. A route that takes only these
 # is internal and is not listed.
-OPERATOR_HEADERS = ("x-cyberlogix-admin", "x-cyberlogix-provisioning")
+OPERATOR_HEADERS = ("x-kryozyn-admin", "x-kryozyn-provisioning")
 
 # Example values that must never look like a real secret.
 _SECRET_NAME = re.compile(r"key|token|secret|password|signature", re.I)

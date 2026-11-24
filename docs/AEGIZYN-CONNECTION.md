@@ -1,28 +1,28 @@
-# The OmniArmor connection (Kitchen Safety Bundle)
+# The Aegizyn connection (Kitchen Safety Bundle)
 
-OmniArmor is MTRX Horizyn's food-safety checklist app. It has a
+Aegizyn is MTRX Horizyn's food-safety checklist app. It has a
 temperature-log check (cold holding at 41°F or below) that somebody fills
-in by hand. With the Kitchen Safety Bundle, CyberLogix fills it in: once a
-day, after the site's day ends, it sends OmniArmor one combined report for
-the business. On a clean day OmniArmor ticks the check with the warmest
+in by hand. With the Kitchen Safety Bundle, Kryozyn fills it in: once a
+day, after the site's day ends, it sends Aegizyn one combined report for
+the business. On a clean day Aegizyn ticks the check with the warmest
 reading; on a day something went out of range it leaves a note for a
 person to review.
 
-The contract is OmniArmor's `docs/CYBERLOGIX-CONNECTION.md`; the code here
+The contract is Aegizyn's `docs/CYBERLOGIX-CONNECTION.md`; the code here
 is `omniarmor.py`, and `tests/test_omniarmor_bundle.py` sends every report
-through OmniArmor's own validation, ported into
+through Aegizyn's own validation, ported into
 `tests/omniarmor_contract.py`. Change one side, change the other.
 
-OmniArmor is at `omniarmor.mtrxhorizyn.com` and CyberLogix at
-`cyberlogix.mtrxhorizyn.com`.
+Aegizyn is at `aegizyn.mtrxhorizyn.com` and Kryozyn at
+`kryozyn.mtrxhorizyn.com`.
 
 ## What it costs
 
 **+$29 a month per location**, billed while the connection is on
 (`ADD_ONS["kitchen_safety_bundle"]` in `pricing.py`). It **includes
-OmniArmor Pro for that location**: OmniArmor waives its own $50 a month
+Aegizyn Pro for that location**: Aegizyn waives its own $50 a month
 per location Pro fee for a workspace whose daily reports arrive signed by
-a CyberLogix server (see [The signature](#the-signature)), and only a
+a Kryozyn server (see [The signature](#the-signature)), and only a
 server that bills this add-on sends them. Free during the trial, so a
 kitchen can try it first. It is the one extra the Starter plan takes.
 Disconnecting takes it off the next invoice. More in
@@ -30,26 +30,26 @@ Disconnecting takes it off the next invoice. More in
 
 ## Connecting (the owner)
 
-1. In OmniArmor, the workspace owner opens Settings, Connections and makes
-   a **CyberLogix connection key** (`clx_` and 43 more characters). It is
+1. In Aegizyn, the workspace owner opens Settings, Connections and makes
+   a **Kryozyn connection key** (`clx_` and 43 more characters). It is
    shown once.
-2. In the CyberLogix console, the owner opens Setup, **OmniArmor
+2. In the Kryozyn console, the owner opens Setup, **Aegizyn
    connection**, and fills in:
-   - **OmniArmor's address**, `https://omniarmor.mtrxhorizyn.com` (https only;
+   - **Aegizyn's address**, `https://aegizyn.mtrxhorizyn.com` (https only;
      a private or local address is refused);
    - **the connection key**;
-   - optionally a **site name** for OmniArmor to show, the **time zone**
+   - optionally a **site name** for Aegizyn to show, the **time zone**
      whose midnight ends the day (it defaults to the site's on-call
      rotation, then UTC), and, for a business with several sites, **which
      sites** to include. Every included unit goes into one combined
      report: the contract allows one report per workspace per day.
 3. **Send a test report** sends yesterday's real report straight away, so
-   the owner sees it arrive. OmniArmor has no test mode; sending a day
+   the owner sees it arrive. Aegizyn has no test mode; sending a day
    again is safe (it answers "unchanged"), and the daily job will not send
    that day a second time.
 
-Owners only, every route (`GET`, `PUT`, `DELETE /api/connections/omniarmor`,
-`POST /api/connections/omniarmor/test`). Operators and viewers are told on
+Owners only, every route (`GET`, `PUT`, `DELETE /api/connections/aegizyn`,
+`POST /api/connections/aegizyn/test`). Operators and viewers are told on
 the card that an owner can connect it.
 
 ## The key
@@ -80,7 +80,7 @@ money pass sends it a little after midnight at the site):
 | `warmest_reading`, `unit_of_measure` | the warmest in-range reading of the day, in the business's °F or °C |
 | `log_url` | that day's inspector log in the console (only when the server's address is https) |
 
-A unit that sent nothing all day is not counted as in range: OmniArmor
+A unit that sent nothing all day is not counted as in range: Aegizyn
 then leaves a note rather than ticking the check. A day with no readings
 at all from any unit is not sent as clean.
 
@@ -89,9 +89,9 @@ next read in range (in the site's own time, with its UTC offset; null if
 it had not come back), the worst reading, the limit it crossed, and two
 fixed codes:
 
-**Who acknowledged it** is a role from OmniArmor's list, never a person:
+**Who acknowledged it** is a role from Aegizyn's list, never a person:
 
-| In CyberLogix | Sent as |
+| In Kryozyn | Sent as |
 |---|---|
 | an owner of the business | `owner` |
 | an operator | `manager` |
@@ -126,7 +126,7 @@ Every daily report carries one more header when the server has
 `KITCHEN_BUNDLE_SECRET` set:
 
 ```
-X-CyberLogix-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>
+X-Kryozyn-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>
 ```
 
 - `t` is the time of sending in whole Unix seconds.
@@ -136,11 +136,11 @@ X-CyberLogix-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + bo
   JSON.
 - Each try is signed afresh, so a retry after a wait carries a current
   timestamp.
-- The same value is set as `KITCHEN_BUNDLE_SECRET` on both apps. OmniArmor
+- The same value is set as `KITCHEN_BUNDLE_SECRET` on both apps. Aegizyn
   checks the header the same way, and waives its Pro fee for the
   workspace while signed reports arrive.
 - **Unset, no header is sent.** Reports still go and are still accepted;
-  OmniArmor just does not waive its fee. Nothing else about the connection
+  Aegizyn just does not waive its fee. Nothing else about the connection
   changes.
 
 The code is `omniarmor.sign()` and `signature_headers()`;
@@ -154,7 +154,7 @@ written out again, and that it is absent when the secret is unset.
   `Retry-After` asks (in seconds or as a date). A wait longer than 30
   seconds is not slept through: the day is left for the pass after the
   wait.
-- **`401`** stops sending at once: the console says "OmniArmor refused the
+- **`401`** stops sending at once: the console says "Aegizyn refused the
   key · paste a new one". Pasting a new key, or pressing Send a test
   report, tries again.
 - **`422`** (and `400`, `413`, `415`) is our bug, by the contract's own
@@ -183,5 +183,5 @@ written out again, and that it is absent when the secret is unset.
 | Setting | What it does |
 |---|---|
 | `CYBERLOGIX_CREDENTIAL_KEY` | Seals saved connection keys. Required to connect. |
-| `KITCHEN_BUNDLE_SECRET` | Signs each report (`X-CyberLogix-Signature`). The same value as OmniArmor's. Unset, reports go unsigned and OmniArmor does not waive its Pro fee. A secret: never in a file in the repository. |
+| `KITCHEN_BUNDLE_SECRET` | Signs each report (`X-Kryozyn-Signature`). The same value as Aegizyn's. Unset, reports go unsigned and Aegizyn does not waive its Pro fee. A secret: never in a file in the repository. |
 | `PUBLIC_BASE_URL` | Where the `log_url` points. Only an https address is sent. |

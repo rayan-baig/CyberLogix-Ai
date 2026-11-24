@@ -28,6 +28,7 @@ fails, and that nothing used to tell it to do:
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import logging
 import threading
 from datetime import timedelta
@@ -69,14 +70,14 @@ def sms_text(tenant: Tenant) -> str:
     its own tail, never the words that say nobody needs to get up.
     """
     return (
-        "TEST from CyberLogix: nothing is wrong, no action needed. "
+        f"TEST from {APP_SHORT}: nothing is wrong, no action needed. "
         f"Real alerts for {tenant.company_name} will come from this number."
     )
 
 
 def spoken_text(tenant: Tenant) -> str:
     return (
-        "This is a test call from CyberLogix. Nothing is wrong, and you do "
+        f"This is a test call from {APP_SHORT}. Nothing is wrong, and you do "
         "not need to do anything. If something does go wrong at "
         f"{tenant.company_name}, a call like this one will say what, and "
         "where. Goodbye."

@@ -104,7 +104,7 @@ def test_a_trial_is_left_alone(api, tenant_factory, owner_headers):
 
 def test_only_an_owner_can_turn_it_on(api, paying, tenant_factory):
     headers, _ = paying
-    key_only = {"X-CyberLogix-Key": headers["X-CyberLogix-Key"]}
+    key_only = {"X-Kryozyn-Key": headers["X-Kryozyn-Key"]}
 
     refused = api.post("/api/digest/weekly-text", headers=key_only,
                        json={"enabled": True, "phone": "+15550100"})

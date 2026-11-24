@@ -17,6 +17,7 @@ tests/test_sales_sheet.py holds each figure to its source.
 
 from __future__ import annotations
 
+from brand import APP_NAME, COMPANY_NAME
 import html
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
@@ -278,7 +279,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
   <header class="sheet-head">
     <div class="sheet-brand">
       <img src="/static/logo.svg" alt="" width="28" height="28">
-      <span>CyberLogix AI</span>
+      <span>{APP_NAME}</span>
     </div>
     <p class="sheet-for">Temperature alarms for {e(w['name'])}</p>
   </header>
@@ -350,7 +351,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
   </section>
 
   <footer class="sheet-foot">
-    <span>CyberLogix AI is a product of MTRX Horizyn.</span>
+    <span>{APP_NAME} is a product of {COMPANY_NAME}.</span>
     <span>{e(base)}/for/{e(vertical)}</span>
     <span>{('Version ' + e(version)) if version else ''}</span>
   </footer>
@@ -360,7 +361,7 @@ def render_html(vertical: str, base: str, version: str = "") -> str:
 def sheet_title(vertical: str) -> str:
     from domain import INDUSTRY_PROFILES
 
-    return f"CyberLogix AI for {INDUSTRY_PROFILES[vertical]['name']}: one-page sheet"
+    return f"{APP_NAME} for {INDUSTRY_PROFILES[vertical]['name']}: one-page sheet"
 
 
 def known_sheet(vertical: Optional[str]) -> bool:

@@ -63,7 +63,7 @@ def test_unknown_email_gives_the_same_answer(api):
 
 def test_session_token_authenticates_the_whole_platform(api, operator_factory):
     headers, _, _ = operator_factory()
-    # No X-CyberLogix-Key anywhere: the bearer token stands in for it.
+    # No X-Kryozyn-Key anywhere: the bearer token stands in for it.
     assert api.get("/api/licenses/me", headers=headers).status_code == 200
     assert api.get("/api/console/overview", headers=headers).status_code == 200
     assert api.get("/api/costs", headers=headers).status_code == 200

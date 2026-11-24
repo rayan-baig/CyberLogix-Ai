@@ -4,7 +4,7 @@ Starter $59 a month (1 location, up to 3 units). Restaurants $149 a month
 per location and pharmacies $199 a month per pharmacy, each for up to ten
 units at that location, with $15 a month for each unit past ten there.
 No setup fee anywhere. The Kitchen Safety Bundle stays +$29 a month per
-location and now includes OmniArmor Pro for that location. Every other
+location and now includes Aegizyn Pro for that location. Every other
 trade is "Custom pricing — ask for a quote" on every public page, and its
 rate stays in the code so the invoices of businesses already on it keep
 working. A business already on the old prices pays the new ones from its
@@ -23,7 +23,7 @@ import legal
 import pricing
 from store import STORE
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 CUSTOM = [v for v in pricing.PRICE_BOOK if pricing.custom_quote(v)]
 
 
@@ -307,7 +307,7 @@ def test_no_agreement_quotes_a_setup_fee_or_a_price():
         for entry in pricing.PRICE_BOOK.values():
             assert _money(entry["monthly_usd"]) not in body
         assert "$1,500" not in body and "$79" not in body and "$59" not in body
-    assert legal.TERMS_VERSION == "2.9"
+    assert legal.TERMS_VERSION == "2.10"
 
 
 def test_the_docs_say_there_is_no_setup_fee():
@@ -345,12 +345,12 @@ def test_the_catalogues_say_custom_pricing(api):
 def test_the_industry_page_says_custom_and_offers_to_talk(api, monkeypatch):
     import helpdesk
 
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@kryozyn.example")
     body = api.get("/api/for/superyacht").json()
     assert body["price_custom"] is True
     assert body["price_label"] == pricing.CUSTOM_PRICE_LABEL
-    assert body["talk_href"].startswith("mailto:sales@cyberlogix.example")
-    assert body["talk_address"] == "sales@cyberlogix.example"
+    assert body["talk_href"].startswith("mailto:sales@kryozyn.example")
+    assert body["talk_address"] == "sales@kryozyn.example"
     restaurant = api.get("/api/for/restaurant").json()
     assert restaurant["price_label"] == "$149 a month per location"
     assert "each one past 10 is $15 a month" in restaurant["price_note"]
@@ -361,10 +361,10 @@ def test_the_landing_page_cards_say_custom_with_a_way_to_talk(api, monkeypatch):
 
     import helpdesk
 
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@kryozyn.example")
     page = api.get("/").text
-    assert 'data-talk-href="mailto:sales@cyberlogix.example?subject=' in page
-    assert 'data-talk-address="sales@cyberlogix.example"' in page
+    assert 'data-talk-href="mailto:sales@kryozyn.example?subject=' in page
+    assert 'data-talk-address="sales@kryozyn.example"' in page
     script = (Path(__file__).resolve().parent.parent / "static" / "landing.js").read_text()
     assert "Custom pricing" in script and "Ask for a quote" in script
     assert "talk-address" in script
@@ -399,14 +399,14 @@ def test_the_seat_limit_does_not_quote_a_custom_rate(api, tenant_factory, sensor
 
 def test_the_bundle_includes_omniarmor_pro_wherever_it_is_described(api):
     entry = pricing.ADD_ONS["kitchen_safety_bundle"]
-    assert entry["includes"] == "OmniArmor Pro for that location"
-    assert "OmniArmor Pro for that location included" in entry["description"]
-    assert pricing.bundle_includes_label() == "Includes OmniArmor Pro for that location"
+    assert entry["includes"] == "Aegizyn Pro for that location"
+    assert "Aegizyn Pro for that location included" in entry["description"]
+    assert pricing.bundle_includes_label() == "Includes Aegizyn Pro for that location"
 
     pricing_page = _words(api.get("/pricing").text)
     assert "+$29 a month per location" in pricing_page
-    assert "Includes OmniArmor Pro for that location." in pricing_page
+    assert "Includes Aegizyn Pro for that location." in pricing_page
     help_page = _words(api.get("/help").text)
-    assert "includes OmniArmor Pro for that location" in help_page
+    assert "includes Aegizyn Pro for that location" in help_page
     sheet = _words(api.get("/for/restaurant/sheet").text)
-    assert "Kitchen Safety Bundle: $29 a month per location, includes OmniArmor Pro" in sheet
+    assert "Kitchen Safety Bundle: $29 a month per location, includes Aegizyn Pro" in sheet

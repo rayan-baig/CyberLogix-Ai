@@ -110,7 +110,7 @@ def test_nothing_is_named_in_the_words_that_was_not_declared(guide):
     paths = set(re.findall(r"(/api/[A-Za-z0-9_/{}.-]*[A-Za-z0-9_}])", text))
     declared = {path for _, path in guide["routes"]}
     assert paths <= declared, (guide["id"], paths - declared)
-    headers = set(re.findall(r"\b(X-CyberLogix-[A-Za-z-]+)", text))
+    headers = set(re.findall(r"\b(X-Kryozyn-[A-Za-z-]+)", text))
     named = {h for hs in guide["headers"].values() for h in hs}
     assert headers <= named, (guide["id"], headers - named)
     for field in re.findall(r"\b([a-z]+(?:_[a-z]+)+)\b", text):
@@ -163,16 +163,16 @@ def _guide(key):
 def test_the_native_guide_end_to_end(api, unit):
     key, _ = unit("WALKIN-1")
     resp = api.post("/api/sensor-pulse", json=_guide("native")["example"],
-                    headers={"X-CyberLogix-Sensor-Key": key,
+                    headers={"X-Kryozyn-Sensor-Key": key,
                              "Content-Type": "application/json"})
     assert resp.status_code == 200, resp.text
     assert STORE.get_sensor("WALKIN-1").last_temperature == 2.5
     # The answers the last step lists.
     assert api.post("/api/sensor-pulse", json=_guide("native")["example"],
-                    headers={"X-CyberLogix-Sensor-Key": "nope"}).status_code == 401
+                    headers={"X-Kryozyn-Sensor-Key": "nope"}).status_code == 401
     other, _ = unit("WALKIN-2")
     assert api.post("/api/sensor-pulse", json=_guide("native")["example"],
-                    headers={"X-CyberLogix-Sensor-Key": other}).status_code == 403
+                    headers={"X-Kryozyn-Sensor-Key": other}).status_code == 403
 
 
 def test_the_webhook_guide_end_to_end(api, unit):
@@ -184,7 +184,7 @@ def test_the_webhook_guide_end_to_end(api, unit):
     assert STORE.get_sensor("COOLER-1").last_seen is not None
     stranger = dict(example, device_sn="NOT-SET-UP")
     _, headers = unit("COOLER-2")
-    stranger["api_key_token"] = headers["X-CyberLogix-Key"]
+    stranger["api_key_token"] = headers["X-Kryozyn-Key"]
     assert api.post("/api/v1/bridge/sensor-webhook-ingest",
                     json=stranger).status_code == 202
 
@@ -197,37 +197,37 @@ def test_the_monnit_guide_end_to_end(api, unit, how):
         resp = api.post(f"/api/v1/bridge/any?k={key}", json=example)
     else:
         resp = api.post("/api/v1/bridge/any", json=example,
-                        headers={"X-CyberLogix-Sensor-Key": key})
+                        headers={"X-Kryozyn-Sensor-Key": key})
     assert resp.status_code == 200, resp.text
     assert resp.json()["understood_as"]["unit"] == "temperature_c"
 
 
 def test_the_sensor_key_header_works_on_the_send_anything_route(api, unit):
-    """The key's own notice says to send it as X-CyberLogix-Sensor-Key, and
+    """The key's own notice says to send it as X-Kryozyn-Sensor-Key, and
     this route did not read that header: a device set up as told got 401."""
     example = _guide("anything")["example"]
     key, _ = unit("DICKSON-1", serial=example["Device ID"])
     resp = api.post("/api/v1/bridge/any", json=example,
-                    headers={"X-CyberLogix-Sensor-Key": key})
+                    headers={"X-Kryozyn-Sensor-Key": key})
     assert resp.status_code == 200, resp.text
     # And it is still only good for its own unit.
     other = dict(example, **{"Device ID": "SOMEBODY-ELSE"})
     unit("OTHER-1", serial="SOMEBODY-ELSE")
     assert api.post("/api/v1/bridge/any", json=other,
-                    headers={"X-CyberLogix-Sensor-Key": key}).status_code == 403
+                    headers={"X-Kryozyn-Sensor-Key": key}).status_code == 403
 
 
 def test_the_sensorpush_guide_end_to_end(api, unit):
     example = _guide("sensorpush")["example"]
     key, _ = unit("PUSH-1", serial=example["sensor"])
     resp = api.post("/api/v1/bridge/any", json=example,
-                    headers={"X-CyberLogix-Sensor-Key": key})
+                    headers={"X-Kryozyn-Sensor-Key": key})
     assert resp.status_code == 200, resp.text
     assert resp.json()["understood_as"]["unit"] == "temperature_f"
     # The Celsius form the guide gives.
     celsius = {"sensor_id": example["sensor"], "temp_c": 3.0}
     resp = api.post("/api/v1/bridge/any", json=celsius,
-                    headers={"X-CyberLogix-Sensor-Key": key})
+                    headers={"X-Kryozyn-Sensor-Key": key})
     assert resp.status_code == 200, resp.text
     assert resp.json()["understood_as"]["unit"] == "temperature_c"
 
@@ -294,7 +294,7 @@ def test_the_docs_file_is_what_the_module_renders():
 def test_the_docs_name_only_cyberlogixs_own_address():
     text = (ROOT / "docs" / "SENSOR-SETUP.md").read_text()
     hosts = set(re.findall(r"https?://([a-z0-9.-]+)", text))
-    assert hosts == {"cyberlogix.mtrxhorizyn.com"}, hosts
+    assert hosts == {"kryozyn.mtrxhorizyn.com"}, hosts
 
 
 def test_examples_are_valid_json():

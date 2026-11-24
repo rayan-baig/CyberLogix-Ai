@@ -36,6 +36,7 @@ anything, so they see nothing.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import calendar
 import logging
 import os
@@ -248,7 +249,7 @@ def record_signup(referred: Tenant, partner: Dict[str, Any]) -> Dict[str, Any]:
     }
     STORE._db.put(REFERRAL_KIND, referred.tenant_id, row)
     STORE.record_audit(
-        tenant_id=referred.tenant_id, actor="CyberLogix", actor_role="system",
+        tenant_id=referred.tenant_id, actor=APP_SHORT, actor_role="system",
         action="partner_code.used",
         detail=(f"Signed up with the partner code of {partner.get('company_name')}. "
                 "They see this business's name and plan, never what is inside it."))
@@ -601,8 +602,8 @@ def _mail_key(row: Dict[str, Any], key: str, first: bool) -> bool:
     link = link_for(code)
     result = send_mail(
         to_address=str(row.get("contact_email")),
-        subject=("You are a CyberLogix partner" if first
-                 else "Your new CyberLogix partner key"),
+        subject=(f"You are a {APP_SHORT} partner" if first
+                 else f"Your new {APP_SHORT} partner key"),
         body=(
             f"{row.get('contact_name')},\n\n"
             + ("Your application has been approved.\n\n" if first else
@@ -673,9 +674,9 @@ def decline(partner_id: str):
     _save(row)
     send_mail(
         to_address=str(row.get("contact_email")),
-        subject="Your CyberLogix partner application",
+        subject=f"Your {APP_SHORT} partner application",
         body=(f"{row.get('contact_name')},\n\nThank you for applying to be a "
-              "CyberLogix partner. We are not able to take it further at the "
+              f"{APP_SHORT} partner. We are not able to take it further at the "
               "moment. You are welcome to apply again later."),
         dedupe_key=f"insurance-declined:{row['partner_id']}",
         klass="transactional",
@@ -738,11 +739,11 @@ def record_payout(partner_id: str, payload: Payout):
 
 
 def require_insurance_partner(
-    x_cyberlogix_insurance_partner: Optional[str] = Header(
-        None, alias="X-CyberLogix-Insurance-Partner"),
+    x_kryozyn_insurance_partner: Optional[str] = Header(
+        None, alias="X-Kryozyn-Insurance-Partner"),
 ) -> Dict[str, Any]:
     """The partner making the request, by their dashboard key."""
-    row = partner_by_key(x_cyberlogix_insurance_partner)
+    row = partner_by_key(x_kryozyn_insurance_partner)
     if row is None or row.get("status") != "approved":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="That partner key was not accepted.")

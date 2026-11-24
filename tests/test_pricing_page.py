@@ -82,11 +82,11 @@ def test_every_rate_on_the_page_is_the_rate_card(api):
 def test_a_trade_priced_by_quote_offers_a_way_to_talk_to_us(api, monkeypatch):
     import helpdesk
 
-    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@cyberlogix.example")
+    monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "sales@kryozyn.example")
     page = api.get("/pricing").text
-    assert '<a class="talk-link" href="mailto:sales@cyberlogix.example?subject=' in page
+    assert '<a class="talk-link" href="mailto:sales@kryozyn.example?subject=' in page
     # The address as text too, so it can be selected and copied.
-    assert '<span class="talk-address">sales@cyberlogix.example</span>' in page
+    assert '<span class="talk-address">sales@kryozyn.example</span>' in page
     assert 'id="calc-custom" hidden' in page
 
     monkeypatch.setattr(helpdesk, "SUPPORT_EMAIL", "")

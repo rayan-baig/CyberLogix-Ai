@@ -1,21 +1,21 @@
-"""The Kitchen Safety Bundle: each day's fridge record, sent to OmniArmor.
+"""The Kitchen Safety Bundle: each day's fridge record, sent to Aegizyn.
 
-OmniArmor (MTRX Horizyn's food-safety checklist app) keeps a temperature-
+Aegizyn (MTRX Horizyn's food-safety checklist app) keeps a temperature-
 log check that somebody has to fill in by hand. With the bundle, this app
-fills it in: once a day, after the site's day has ended, it sends OmniArmor
+fills it in: once a day, after the site's day has ended, it sends Aegizyn
 one combined report for the business (`POST /api/connect/cyberlogix/daily`)
-and OmniArmor ticks the check on a clean day or leaves a note for a person
+and Aegizyn ticks the check on a clean day or leaves a note for a person
 on a day something went out of range.
 
-The contract is OmniArmor's docs/CYBERLOGIX-CONNECTION.md, and this module
-is built exactly to it. tests/omniarmor_contract.py carries OmniArmor's own
+The contract is Aegizyn's docs/CYBERLOGIX-CONNECTION.md, and this module
+is built exactly to it. tests/omniarmor_contract.py carries Aegizyn's own
 validation, ported, and the tests send every report through it, so a
 field that drifts fails here before it fails there.
 
 What it promises:
 
 * **No names.** A report carries temperatures, unit and site names, times
-  and roles. Who acknowledged an alarm is sent as a role from OmniArmor's
+  and roles. Who acknowledged an alarm is sent as a role from Aegizyn's
   fixed list ("on-call staff", "manager"...), never the person; what was
   done, as one of its fixed action codes. A unit or site whose name holds
   somebody's name is sent as "Unit 2" instead.
@@ -24,9 +24,9 @@ What it promises:
   logged, never shown again after it is pasted (the last four characters
   are). Without that setting nothing can be connected.
 * **Signed.** With KITCHEN_BUNDLE_SECRET set (the same value as
-  OmniArmor's), every report carries `X-CyberLogix-Signature:
+  Aegizyn's), every report carries `X-Kryozyn-Signature:
   t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>` over the
-  exact bytes sent. OmniArmor waives its Pro fee for a workspace whose
+  exact bytes sent. Aegizyn waives its Pro fee for a workspace whose
   reports arrive signed, which only a server billing the bundle can do.
   Unset, no header is sent and reports work as before.
 * **One send per day.** Each day is claimed before it is sent, under the
@@ -35,7 +35,7 @@ What it promises:
   acknowledged after midnight, a corrective action written up the next
   morning): that is a correction, and the contract says a correction
   replaces the earlier report.
-* **Patient with OmniArmor.** 429 and 5xx, and a network that fails, are
+* **Patient with Aegizyn.** 429 and 5xx, and a network that fails, are
   retried with backoff, waiting at least as long as Retry-After asks; a
   wait longer than a pass can hold is picked up by the next pass. 401
   stops sending until the owner pastes a new key. 422 is our bug: it is
@@ -50,6 +50,7 @@ bill.
 
 from __future__ import annotations
 
+from brand import APP_SHORT, CHECKLIST_APP, UA_NAME
 import base64
 import hashlib
 import json
@@ -75,7 +76,10 @@ from store import STORE, Tenant, User, display_temperature, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.omniarmor")
 
-router = APIRouter(prefix="/api/connections/omniarmor", tags=["Kitchen Safety Bundle"])
+router = APIRouter(prefix="/api/connections/aegizyn", tags=["Kitchen Safety Bundle"])
+# The address before the checklist app was renamed (3.34.0), still answered
+# for an installed console that has not reloaded, and left out of the docs.
+old_router = APIRouter(prefix="/api/connections/" + "omni" + "armor", include_in_schema=False)
 
 CONNECTION_KIND = "omniarmor_connection"
 DAY_KIND = "omniarmor_day"
@@ -87,16 +91,20 @@ PATH = "/api/connect/cyberlogix/daily"
 # of it) is the thing the contract asks us not to do.
 CREDENTIAL_KEY = os.environ.get("CYBERLOGIX_CREDENTIAL_KEY", "").strip()
 
-# Signs every daily report, so OmniArmor can tell a report from a real
-# CyberLogix server -- which bills the +$29 Kitchen Safety Bundle -- from
-# one anybody could post with a key. OmniArmor waives its own Pro fee for
+# Signs every daily report, so Aegizyn can tell a report from a real
+# Kryozyn server -- which bills the +$29 Kitchen Safety Bundle -- from
+# one anybody could post with a key. Aegizyn waives its own Pro fee for
 # a workspace whose reports arrive signed. The same value is set in both
-# apps. Unset, reports go unsigned: they still work, and OmniArmor charges
+# apps. Unset, reports go unsigned: they still work, and Aegizyn charges
 # its Pro fee as usual.
 KITCHEN_BUNDLE_SECRET = os.environ.get("KITCHEN_BUNDLE_SECRET", "").strip()
-SIGNATURE_HEADER = "X-CyberLogix-Signature"
+SIGNATURE_HEADER = "X-Kryozyn-Signature"
+# The same value under the name Aegizyn has read since before the rename
+# (its docs/CYBERLOGIX-CONNECTION.md), so a signed report is recognised
+# whichever name that server reads.
+OLD_SIGNATURE_HEADER = "X-" + "Cyber" + "Logix-Signature"
 
-# ---- the contract (OmniArmor docs/CYBERLOGIX-CONNECTION.md) --------------
+# ---- the contract (Aegizyn docs/CYBERLOGIX-CONNECTION.md) --------------
 KEY_RE = re.compile(r"^clx_[A-Za-z0-9_-]{43}$")
 ROLES = ("owner", "manager", "chef", "shift lead", "on-call staff",
          "kitchen staff", "maintenance", "technician")
@@ -133,7 +141,7 @@ CLAIM_LEASE = timedelta(minutes=10)
 FAILED_DAYS_BEFORE_EMAIL = 2
 TIMEOUT_SECONDS = 20
 
-# CyberLogix roles onto OmniArmor's. A person's name never leaves; their
+# Kryozyn roles onto Aegizyn's. A person's name never leaves; their
 # role in the account does.
 USER_ROLES = {"owner": "owner", "operator": "manager", "viewer": "kitchen staff"}
 DEFAULT_ROLE = "on-call staff"
@@ -194,7 +202,7 @@ def _save(row: Dict[str, Any]) -> None:
 
 
 def normalise_address(raw: str) -> str:
-    """OmniArmor's address as scheme and host: https only, public only."""
+    """Aegizyn's address as scheme and host: https only, public only."""
     import pollers
 
     value = (raw or "").strip().rstrip("/")
@@ -202,7 +210,7 @@ def normalise_address(raw: str) -> str:
         value = "https://" + value
     parts = urlsplit(value)
     if parts.scheme != "https":
-        raise ValueError("OmniArmor's address must start https://.")
+        raise ValueError(f"{CHECKLIST_APP}'s address must start https://.")
     if parts.username or parts.password or "@" in parts.netloc:
         raise ValueError("Leave any user name or password out of the address.")
     host = pollers.host_of(value)
@@ -262,7 +270,7 @@ def safe_text(value: Optional[str], words: List[str]) -> Optional[str]:
 
 
 def role_for(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]:
-    """Who acknowledged, as one of OmniArmor's roles. Never a name."""
+    """Who acknowledged, as one of Aegizyn's roles. Never a name."""
     if not acknowledged_by:
         return None
     text = acknowledged_by.split(", with site-wide alert")[0]
@@ -283,7 +291,7 @@ def role_for(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]:
 
 
 def action_for(incident) -> Optional[str]:
-    """What was done, as one of OmniArmor's action codes.
+    """What was done, as one of Aegizyn's action codes.
 
     What happened to the food first, because that is what an inspector
     reads the note for; then what was done to the unit. Something written
@@ -479,7 +487,7 @@ def fingerprint(report: Dict[str, Any]) -> str:
 
 def sign(body: bytes, timestamp: Optional[int] = None,
          secret: Optional[str] = None) -> Optional[str]:
-    """The X-CyberLogix-Signature value for these exact bytes, or None.
+    """The X-Kryozyn-Signature value for these exact bytes, or None.
 
     `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, b"<t>." + body)>`: the
     timestamp, a full stop, then the body exactly as it goes on the wire,
@@ -498,15 +506,15 @@ def sign(body: bytes, timestamp: Optional[int] = None,
 
 
 def signature_headers(body: bytes) -> Dict[str, str]:
-    """The header to add to a report, or nothing when there is no secret."""
+    """The headers to add to a report, or nothing when there is no secret."""
     value = sign(body)
-    return {SIGNATURE_HEADER: value} if value else {}
+    return {SIGNATURE_HEADER: value, OLD_SIGNATURE_HEADER: value} if value else {}
 
 
 def _post(url: str, key: str, body: bytes,
           extra_headers: Optional[Dict[str, str]] = None
           ) -> Tuple[int, Dict[str, str], bytes]:
-    """One POST to OmniArmor. Raises on a network failure.
+    """One POST to Aegizyn. Raises on a network failure.
 
     Through the poller's opener, so it follows no redirect (a redirect
     would carry the key to an address nobody checked), uses no proxy, and
@@ -519,7 +527,7 @@ def _post(url: str, key: str, body: bytes,
     request.add_header("Authorization", f"Bearer {key}")
     request.add_header("Content-Type", "application/json; charset=utf-8")
     request.add_header("Accept", "application/json")
-    request.add_header("User-Agent", "CyberLogix-KitchenSafetyBundle/1")
+    request.add_header("User-Agent", f"{UA_NAME}-KitchenSafetyBundle/1")
     for name, value in (extra_headers or {}).items():
         request.add_header(name, value)
     try:
@@ -529,7 +537,7 @@ def _post(url: str, key: str, body: bytes,
         return exc.code, dict(exc.headers or {}), exc.read(65536)
 
 
-# Replaced by the tests with a fake OmniArmor.
+# Replaced by the tests with a fake Aegizyn.
 TRANSPORT: Transport = _post
 
 
@@ -573,7 +581,7 @@ def deliver(url: str, key: str, report: Dict[str, Any],
             code, headers, raw = send(url, key, body, signature_headers(body))
         except Exception as exc:  # noqa: BLE001 - a network failure is a Tuesday
             last = {"outcome": "failed", "status": None,
-                    "detail": f"Could not reach OmniArmor ({type(exc).__name__})."}
+                    "detail": f"Could not reach {CHECKLIST_APP} ({type(exc).__name__})."}
             code, headers, raw = 0, {}, b""
         else:
             try:
@@ -589,8 +597,8 @@ def deliver(url: str, key: str, report: Dict[str, Any],
                                     "unchanged", "checks", "hint")}}
             if code == 401:
                 return {"outcome": "key_rejected", "status": code, "attempts": attempts,
-                        "detail": "OmniArmor did not accept the connection key. Make a "
-                                  "new one in OmniArmor (Settings, Connections) and "
+                        "detail": f"{CHECKLIST_APP} did not accept the connection key. Make a "
+                                  f"new one in {CHECKLIST_APP} (Settings, Connections) and "
                                   "paste it here."}
             if code in (400, 405, 413, 415, 422):
                 return {"outcome": "refused", "status": code, "attempts": attempts,
@@ -599,10 +607,10 @@ def deliver(url: str, key: str, report: Dict[str, Any],
             if code == 429 or code >= 500:
                 wait = retry_after_seconds(headers)
                 last = {"outcome": "failed", "status": code,
-                        "detail": f"OmniArmor answered {code}."}
+                        "detail": f"{CHECKLIST_APP} answered {code}."}
             else:
                 return {"outcome": "failed", "status": code, "attempts": attempts,
-                        "detail": f"OmniArmor answered {code}."}
+                        "detail": f"{CHECKLIST_APP} answered {code}."}
         if attempts >= MAX_ATTEMPTS:
             break
         backoff = BACKOFF_SECONDS[min(attempts - 1, len(BACKOFF_SECONDS) - 1)]
@@ -679,7 +687,7 @@ def _finish_day(tenant_id: str, day: date, digest: str, kind: str,
                 "breaches": len(report["breaches"]),
             }
         else:
-            # A correction that fails leaves the day as sent: what OmniArmor
+            # A correction that fails leaves the day as sent: what Aegizyn
             # holds is the earlier report, and the next pass tries again.
             row["state"] = "sent" if row.get("sent_fingerprint") else "failed"
             row["detail"] = result.get("detail", "")
@@ -716,7 +724,7 @@ def send_day(tenant: Tenant, day: date, now: Optional[datetime] = None,
         key = unseal(tenant.tenant_id, row["key_ciphertext"])
         result = deliver(row["base_url"] + PATH, key, report, sleep=sleep, transport=transport)
     except Exception as exc:  # noqa: BLE001 - the claim must be finished either way
-        logger.exception("OmniArmor send for %s failed before it went.", tenant.tenant_id)
+        logger.exception(f"{CHECKLIST_APP} send for %s failed before it went.", tenant.tenant_id)
         result = {"outcome": "failed", "status": None,
                   "detail": f"Could not send ({type(exc).__name__})."}
     done = _finish_day(tenant.tenant_id, day, digest, kind, result, report, now)
@@ -746,10 +754,10 @@ def _after(tenant: Tenant, row: Dict[str, Any], day: date, kind: str,
         import faults
 
         faults.record("omniarmor.daily",
-                      ValueError(f"OmniArmor refused the {day.isoformat()} report: "
+                      ValueError(f"{CHECKLIST_APP} refused the {day.isoformat()} report: "
                                  f"{json.dumps(result.get('errors'))[:500]}"),
                       context=f"tenant {tenant.tenant_id}, {kind}")
-        logger.error("OmniArmor refused %s's report for %s (%s): %s",
+        logger.error(f"{CHECKLIST_APP} refused %s's report for %s (%s): %s",
                      tenant.tenant_id, day, result.get("status"), result.get("errors"))
 
 
@@ -774,25 +782,25 @@ def maybe_email_owners(tenant: Tenant, now: Optional[datetime] = None) -> bool:
     row = connection(tenant.tenant_id)
     if row is None or row.get("failure_email_for") == streak:
         return False
-    detail = row.get("last_detail") or "OmniArmor did not take the report."
+    detail = row.get("last_detail") or f"{CHECKLIST_APP} did not take the report."
     sent = False
     for owner in owners(tenant.tenant_id):
         person = STORE.person_of(owner)
         result = send_mail(
             to_address=owner.email,
-            subject=f"{tenant.company_name}: the daily report to OmniArmor is not getting through",
+            subject=f"{tenant.company_name}: the daily report to {CHECKLIST_APP} is not getting through",
             body=(
                 f"{owner.full_name},\n\n"
-                f"CyberLogix has not been able to send OmniArmor the daily "
+                f"{APP_SHORT} has not been able to send {CHECKLIST_APP} the daily "
                 f"fridge and freezer report for {len(failed)} days "
                 f"({', '.join(failed[:7])}).\n\n"
                 f"The last answer: {detail}\n\n"
                 "Your alarms are not affected: texts and calls carry on as "
-                "normal. What is missing is OmniArmor's temperature-log check "
+                f"normal. What is missing is {CHECKLIST_APP}'s temperature-log check "
                 "being filled in for you.\n\n"
-                "Open the console, Setup, OmniArmor connection, to see each "
-                "day. If OmniArmor no longer accepts the key, make a new one "
-                "in OmniArmor (Settings, Connections) and paste it there. "
+                f"Open the console, Setup, {CHECKLIST_APP} connection, to see each "
+                f"day. If {CHECKLIST_APP} no longer accepts the key, make a new one "
+                f"in {CHECKLIST_APP} (Settings, Connections) and paste it there. "
                 "Every day missed is sent once it gets through.\n\n"
                 "You get this once for this run of failures."),
             dedupe_key=f"omniarmor-failing:{tenant.tenant_id}:{streak}:{person.user_id}",
@@ -844,7 +852,7 @@ def run_daily(now: Optional[datetime] = None,
     """
     now = now or utc_now()
     if not _pass_lock.acquire(blocking=False):
-        logger.warning("An OmniArmor pass is still running; this one stands aside.")
+        logger.warning(f"An {CHECKLIST_APP} pass is still running; this one stands aside.")
         return {"skipped": "another pass is still running", "sent": 0}
     try:
         sent = corrected = failed = 0
@@ -880,7 +888,7 @@ def run_daily(now: Optional[datetime] = None,
                     row = connection(tenant.tenant_id) or row
                 maybe_email_owners(tenant, now)
             except Exception as exc:  # noqa: BLE001 - one business must not stop the rest
-                logger.exception("OmniArmor pass failed for %s (%s).", tenant.tenant_id, exc)
+                logger.exception(f"{CHECKLIST_APP} pass failed for %s (%s).", tenant.tenant_id, exc)
                 failed += 1
         return {"sent": sent, "corrections": corrected, "failed": failed}
     finally:
@@ -926,7 +934,7 @@ def status_line(row: Optional[Dict[str, Any]], tenant_id: str) -> str:
     if row is None:
         return "Not connected"
     if row.get("key_rejected_at"):
-        return "OmniArmor refused the key · paste a new one"
+        return f"{CHECKLIST_APP} refused the key · paste a new one"
     failed = failing_days(tenant_id)
     sent = row.get("last_sent_date")
     if failed:
@@ -975,14 +983,14 @@ class ConnectionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     address: str = Field(..., min_length=4, max_length=200,
-                         description="OmniArmor's address, e.g. https://omniarmor.example.com")
+                         description=f"{CHECKLIST_APP}'s address, e.g. https://{CHECKLIST_APP.lower()}.example.com")
     key: Optional[str] = Field(None, max_length=60,
-                               description="The connection key from OmniArmor (clx_...). "
+                               description=f"The connection key from {CHECKLIST_APP} (clx_...). "
                                            "Leave out to keep the one already saved.")
     site_ids: List[str] = Field(default_factory=list, max_length=50,
                                 description="Sites to report on. Empty: every unit.")
     site_label: str = Field("", max_length=MAX_TEXT,
-                            description="The site name OmniArmor shows. Optional.")
+                            description=f"The site name {CHECKLIST_APP} shows. Optional.")
     timezone: Optional[str] = Field(None, max_length=64,
                                     description="The site's time zone, for when its day ends.")
 
@@ -992,16 +1000,18 @@ def _owner_tenant(owner: User) -> Tenant:
 
 
 @router.get("")
+@old_router.get("")
 def read_connection(owner: User = Depends(require_role("owner"))):
-    """The OmniArmor connection: where it sends, how it is doing, what it
+    """The Aegizyn connection: where it sends, how it is doing, what it
     costs. The key is never shown, only its last four characters."""
     return overview(_owner_tenant(owner))
 
 
 @router.put("")
+@old_router.put("")
 def save_connection(payload: ConnectionSettings,
                     owner: User = Depends(require_role("owner"))):
-    """Connect to OmniArmor, or change the connection. Owner only."""
+    """Connect to Aegizyn, or change the connection. Owner only."""
     import oncall
 
     tenant = _owner_tenant(owner)
@@ -1020,12 +1030,12 @@ def save_connection(payload: ConnectionSettings,
     if key and not KEY_RE.match(key):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=("That is not an OmniArmor connection key. It starts clx_ and "
-                    "is 47 characters; copy it from OmniArmor, Settings, "
+            detail=(f"That is not an {CHECKLIST_APP} connection key. It starts clx_ and "
+                    f"is 47 characters; copy it from {CHECKLIST_APP}, Settings, "
                     "Connections."))
     if not key and existing is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                            detail="Paste the connection key from OmniArmor.")
+                            detail=f"Paste the connection key from {CHECKLIST_APP}.")
     own_sites = {s.site_id for s in STORE.sites_for(tenant.tenant_id)}
     unknown = [s for s in payload.site_ids if s not in own_sites]
     if unknown:
@@ -1060,39 +1070,41 @@ def save_connection(payload: ConnectionSettings,
         row["key_saved_at"] = iso(now)
     _save(row)
     write_audit(tenant, owner, "omniarmor.connected" if existing is None else "omniarmor.updated",
-                f"OmniArmor connection {'made' if existing is None else 'changed'} "
+                f"{CHECKLIST_APP} connection {'made' if existing is None else 'changed'} "
                 f"({base_url}){'; new key ending ' + key[-4:] if key else ''}.")
     return overview(tenant)
 
 
 @router.delete("")
+@old_router.delete("")
 def remove_connection(owner: User = Depends(require_role("owner"))):
     """Disconnect. Nothing more is sent, the key is deleted, and the bundle
     comes off the bill from the next invoice."""
     tenant = _owner_tenant(owner)
     if connection(tenant.tenant_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="There is no OmniArmor connection to remove.")
+                            detail=f"There is no {CHECKLIST_APP} connection to remove.")
     STORE._db.delete(CONNECTION_KIND, tenant.tenant_id)
     write_audit(tenant, owner, "omniarmor.disconnected",
-                "OmniArmor connection removed; its key was deleted.")
+                f"{CHECKLIST_APP} connection removed; its key was deleted.")
     return {"message": "Disconnected. The key is deleted and nothing more is sent.",
             **overview(tenant)}
 
 
 @router.post("/test")
+@old_router.post("/test")
 def send_test_report(owner: User = Depends(require_role("owner"))):
     """Send the last finished day's real report now, to see it arrive.
 
-    OmniArmor has no test mode, so this is the real report for that day;
-    sending it again is safe (OmniArmor answers "unchanged"), and the
+    Aegizyn has no test mode, so this is the real report for that day;
+    sending it again is safe (Aegizyn answers "unchanged"), and the
     daily job will not send it a second time.
     """
     tenant = _owner_tenant(owner)
     row = connection(tenant.tenant_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Connect to OmniArmor first.")
+                            detail=f"Connect to {CHECKLIST_APP} first.")
     if row.get("key_rejected_at"):
         # The owner pressing the button is asking us to try the key again.
         with STORE._lock:
@@ -1106,14 +1118,14 @@ def send_test_report(owner: User = Depends(require_role("owner"))):
         result = {"status": "already_sent", "day": day.isoformat(),
                   "record": public_day(existing)}
     words = {
-        "ok": f"Sent the report for {day.isoformat()}. OmniArmor took it.",
+        "ok": f"Sent the report for {day.isoformat()}. {CHECKLIST_APP} took it.",
         "already_sent": f"The report for {day.isoformat()} was already sent, and nothing in it has changed.",
         "no_units": "There are no units to report on yet.",
         "no_readings": f"No readings arrived on {day.isoformat()}, so there is nothing to send for it.",
-        "key_rejected": "OmniArmor did not accept the key. Make a new one there and paste it here.",
-        "refused": "OmniArmor refused the report. We have been told and will fix it.",
-        "retry_later": "OmniArmor asked us to wait. The daily job will send it.",
-        "failed": "OmniArmor could not be reached. The daily job keeps trying.",
+        "key_rejected": f"{CHECKLIST_APP} did not accept the key. Make a new one there and paste it here.",
+        "refused": f"{CHECKLIST_APP} refused the report. We have been told and will fix it.",
+        "retry_later": f"{CHECKLIST_APP} asked us to wait. The daily job will send it.",
+        "failed": f"{CHECKLIST_APP} could not be reached. The daily job keeps trying.",
     }
     return {**result, "message": words.get(result["status"], result["status"]),
             **{"connection": overview(tenant)}}

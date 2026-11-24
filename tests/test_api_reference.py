@@ -63,7 +63,7 @@ def test_the_basics_are_there_with_their_credentials(page):
                   "GET /api/partners/me", "GET /api/health"):
         assert f'data-route="{route}"' in page, route
     pulse = page.split('data-route="POST /api/sensor-pulse"', 1)[1].split("</section>", 1)[0]
-    assert "X-CyberLogix-Sensor-Key" in pulse and "X-CyberLogix-Key" in pulse
+    assert "X-Kryozyn-Sensor-Key" in pulse and "X-Kryozyn-Key" in pulse
     signup = page.split('data-route="POST /api/signup"', 1)[1].split("</section>", 1)[0]
     assert "None. Public." in signup
     assert "company_name" in signup and "Example body" in signup
@@ -80,8 +80,8 @@ def test_operator_routes_are_counted_not_listed(page):
                   "POST /api/admin/backups/restore", "GET /api/admin/faults",
                   "POST /api/licenses/tenants"):
         assert f'data-route="{route}"' not in page, route
-    assert "X-CyberLogix-Admin" not in page
-    assert "X-CyberLogix-Provisioning" not in page
+    assert "X-Kryozyn-Admin" not in page
+    assert "X-Kryozyn-Provisioning" not in page
 
 
 def test_no_secret_or_key_is_ever_shown(api, monkeypatch, tenant_factory):
@@ -102,7 +102,7 @@ def test_no_secret_or_key_is_ever_shown(api, monkeypatch, tenant_factory):
     # The provisioning key the tenant below is created with.
     monkeypatch.setattr(licenses, "PROVISIONING_KEY", "test-provisioning-key")
     headers, _ = tenant_factory()
-    business_key = headers["X-CyberLogix-Key"]
+    business_key = headers["X-Kryozyn-Key"]
 
     page = api.get("/developers").text
     for value in list(secrets.values()) + [business_key, "test-provisioning-key"]:

@@ -66,11 +66,11 @@ def test_a_configured_base_url_wins_over_the_request(api, monkeypatch):
     """Behind a proxy, the request's idea of its own host is the proxy's."""
     import main
 
-    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://cyberlogix.example")
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://kryozyn.example")
     main._page_cache.clear()
 
     page = api.get("/", headers={"Host": "internal-8080.cluster.local"}).text
-    assert "https://cyberlogix.example/static/og.png" in page
+    assert "https://kryozyn.example/static/og.png" in page
     assert "internal-8080" not in page
 
 
@@ -284,12 +284,12 @@ def test_every_page_in_the_sitemap_is_served_and_indexable(api):
 def test_the_sitemap_uses_the_configured_address(api, monkeypatch):
     import main
 
-    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://cyberlogix.example")
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://kryozyn.example")
     body = api.get("/sitemap.xml").text
-    assert "<loc>https://cyberlogix.example/pricing</loc>" in body
+    assert "<loc>https://kryozyn.example/pricing</loc>" in body
     assert "testserver" not in body
     robots = api.get("/robots.txt").text
-    assert "Sitemap: https://cyberlogix.example/sitemap.xml" in robots
+    assert "Sitemap: https://kryozyn.example/sitemap.xml" in robots
 
 
 @pytest.mark.parametrize("path", PRIVATE)

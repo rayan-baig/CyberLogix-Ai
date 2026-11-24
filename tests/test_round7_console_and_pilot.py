@@ -1,7 +1,7 @@
 """Round 7 (3.26.0): a calmer console for a small café, honest words, and a
 value line on a closed alert.
 
-1. Pilot's robot never sits on the logo (tests/js/cyberlogix-pilot.test.js
+1. Pilot's robot never sits on the logo (tests/js/kryozyn-pilot.test.js
    runs the core's own placement on a new business's phone screen).
 2. Simple tabs: one or two fridges, three tabs and More, no search; one
    scrolling row on a phone, not pinned; the account bar in two rows.
@@ -38,7 +38,7 @@ STATIC = ROOT / "static"
 CONSOLE_JS = (STATIC / "console.js").read_text()
 CONSOLE_HTML = (STATIC / "console.html").read_text()
 THEME = (STATIC / "theme.css").read_text()
-PILOT_APP = (STATIC / "pilot-cyberlogix.js").read_text()
+PILOT_APP = (STATIC / "pilot-kryozyn.js").read_text()
 
 
 def _function(source: str, name: str) -> str:
@@ -64,7 +64,7 @@ def _sensor(api, owner, sensor_id="WALK-IN-1", where="Walk-in fridge", kind="fri
 
 
 def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
-    got = api.post("/api/sensor-pulse", headers={"X-CyberLogix-Sensor-Key": key},
+    got = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": key},
                    json={"sensor_id": sensor_id, "temperature_fahrenheit": temp})
     assert got.status_code == 200, got.text
     return got.json()
@@ -75,7 +75,7 @@ def _pulse(api, key, temp, sensor_id="WALK-IN-1"):
 def test_the_robot_avoids_only_the_checklist_buttons_and_no_header_bar():
     """3.26.0 listed every header bar; core 1.4.0 (3.27.0) keeps the robot
     out of a phone's top corners and off links itself, so the bars are no
-    longer listed (tests/js/cyberlogix-pilot.test.js runs the placement)."""
+    longer listed (tests/js/kryozyn-pilot.test.js runs the placement)."""
     avoid = PILOT_APP[PILOT_APP.index("avoid: ["):PILOT_APP.index("],", PILOT_APP.index("avoid: ["))]
     for sel in (".checklist-acts", ".btn-go"):
         assert f'"{sel}"' in avoid, sel

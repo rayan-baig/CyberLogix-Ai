@@ -16,6 +16,7 @@ to the wording, the reading and "Reply 1" are always in the text.
 
 from __future__ import annotations
 
+from brand import APP_NAME, APP_SHORT
 from typing import Any, Dict, Optional, Tuple
 
 from domain import INDUSTRY_PROFILES, display_temperature
@@ -297,7 +298,7 @@ def voice_script(tenant, sensor, incident, unit: str,
     place = place_of(sensor, tenant)
     minutes = int(incident.minutes_open())
     lines = [
-        f"This is CyberLogix AI with a temperature alarm for {tenant.company_name}.",
+        f"This is {APP_NAME} with a temperature alarm for {tenant.company_name}.",
         f"{location}, at {place}, is at {_spoken(facts['reading'], unit)}.",
     ]
     if facts["limit"] is not None:
@@ -451,7 +452,7 @@ def site_wide_voice_script(tenant, incident, can_press: bool = True) -> str:
     else:
         where = f"At {place}, {count} of {total} units started warming at the same time."
     lines = [
-        f"This is CyberLogix AI with an urgent alert for {tenant.company_name}.",
+        f"This is {APP_NAME} with an urgent alert for {tenant.company_name}.",
         where,
         "This can mean a power cut, a door left open, or someone tampering "
         f"with {controls}.",
@@ -507,7 +508,7 @@ def site_wide_email(tenant, incident, console_url: str = "") -> Tuple[str, str]:
         "everyone on call for the site and to this address straight away, "
         "and we phone them now rather than after the usual wait.",
         "",
-        "CyberLogix reads its own sensors and never controls a fridge, so "
+        f"{APP_SHORT} reads its own sensors and never controls a fridge, so "
         "these readings are what is really happening even if the controls "
         "say otherwise.",
         "",

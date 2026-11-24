@@ -4,7 +4,7 @@ from pages import page_source, served_page
 
 def test_root_gateway_lists_every_module(api):
     body = api.get("/api").json()
-    assert body["system"] == "CyberLogix AI Master Engine"
+    assert body["system"] == "Kryozyn Master Engine"
     assert body["status"] == "fully_operational_stealth_mode"
     # Asserted against the app's own list rather than a hard-coded count,
     # so mounting a new subsystem does not fail an unrelated test.

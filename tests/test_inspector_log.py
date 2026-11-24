@@ -137,7 +137,7 @@ def test_one_click_prints_it_and_the_paper_copy_is_set_for_ink():
     handler = handler[:handler.index("\n}\n")]
     assert "/api/autopilot/inspector-log?start=" in handler
     assert "window.print()" in handler and "if (print)" in handler
-    assert "MTRX Horizyn" in handler
+    assert "a product of ${esc(BRAND.company)}" in handler  # the name, from brand.py
     printing = theme[theme.index("@media print {"):]
     assert "body.drawer-open > *:not(#drawer) { display: none !important; }" in printing
     assert "thead { display: table-header-group; }" in printing
@@ -152,7 +152,7 @@ def test_the_invoice_prints_with_its_period_and_the_company_footer(
     headers, tenant, _ = operator_factory(company_name="Harbor Grill")
     sensor_factory(headers, sensor_id="HG-1", vertical="restaurant", above=32.0)
     made = api.post(f"/api/invoices?tenant_id={tenant['tenant_id']}",
-                    headers={"X-CyberLogix-Admin": "admin-key-for-tests-1234"},
+                    headers={"X-Kryozyn-Admin": "admin-key-for-tests-1234"},
                     json={"period_days": 30})
     assert made.status_code == 201, made.text
     invoice = api.get(f"/api/invoices/{made.json()['invoice_id']}", headers=headers).json()
@@ -164,5 +164,5 @@ def test_the_invoice_prints_with_its_period_and_the_company_footer(
     view = console[console.index("async function openInvoice("):]
     view = view[:view.index("\n}\n")]
     assert "inv.service_period.label" in view
-    assert "a product of MTRX Horizyn" in view
+    assert "is a product of ${esc(BRAND.company)}" in view  # the name, from brand.py
     assert "Subtotal" in view and "Balance due" in view

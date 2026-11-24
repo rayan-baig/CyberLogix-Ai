@@ -261,7 +261,7 @@ def test_hammering_it_is_cheap(api, twilio, swept, monkeypatch):
 def owner_contact(monkeypatch):
     import digest
 
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "owner@cyberlogix.example")
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "owner@kryozyn.example")
     monkeypatch.setattr(watchdog, "OPERATOR_PHONE", "+15550777")
 
 
@@ -275,7 +275,7 @@ def test_the_owner_is_told_once_when_texts_stop_and_once_when_they_are_back(
     assert first["started"] == ["texts_failing"]
     assert watchdog.check_alarm_path()["started"] == []   # not again
     assert watchdog.check_alarm_path()["started"] == []
-    told = mailbox.to("owner@cyberlogix.example")
+    told = mailbox.to("owner@kryozyn.example")
     assert len(told) == 1
     assert "texts are failing" in told[0]["Subject"].lower()
     assert "If the app is down" in mailbox.bodies()[0]
@@ -284,14 +284,14 @@ def test_the_owner_is_told_once_when_texts_stop_and_once_when_they_are_back(
     notifications.send_sms("+15550123", "ALERT")
     assert watchdog.check_alarm_path()["ended"] == ["texts_failing"]
     assert watchdog.check_alarm_path()["ended"] == []
-    told = mailbox.to("owner@cyberlogix.example")
+    told = mailbox.to("owner@kryozyn.example")
     assert len(told) == 2
     assert told[1]["Subject"].startswith("Fixed:")
     # And a text to the owner's own phone: tried when texts were down (the
     # email is what reached them then), and sent once they were back.
     to_owner = [m for m in twilio.sent if m.get("to") == "+15550777"]
     assert [m["body"] for m in to_owner] == [
-        "CyberLogix: Fixed: alert texts are going out again"]
+        "Kryozyn: Fixed: alert texts are going out again"]
 
 
 def test_what_was_said_survives_a_restart(twilio, swept, mailbox, owner_contact):

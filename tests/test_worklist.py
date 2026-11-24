@@ -15,7 +15,7 @@ import pytest
 from contracts import run_billing
 from store import STORE, add_months, utc_now
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
 
 
 def _account(api, tenant_factory, owner_headers, sensor_factory,

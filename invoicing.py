@@ -23,6 +23,7 @@ a key that has not been bought yet.
 
 from __future__ import annotations
 
+from brand import COMPANY_NAME
 import logging
 import os
 from datetime import datetime, timedelta
@@ -51,11 +52,11 @@ PAYMENT_TERMS_DAYS = 30
 # Who is issuing the invoice. An invoice without the issuer's legal name,
 # address and remittance details is not a document a finance department
 # can pay against, and in most jurisdictions is not a valid tax invoice
-# either. CyberLogix is a product of MTRX Horizyn, so MTRX Horizyn is the
+# either. Kryozyn is a product of MTRX Horizyn, so MTRX Horizyn is the
 # issuer: set CYBERLOGIX_LEGAL_NAME to its registered name once it is
 # incorporated. Configured rather than hard-coded, because that exact name
 # (and its suffix) is a business fact the code cannot know.
-COMPANY = "MTRX Horizyn"
+COMPANY = COMPANY_NAME
 
 ISSUER = {
     "legal_name": os.environ.get("CYBERLOGIX_LEGAL_NAME", COMPANY),
@@ -284,7 +285,7 @@ def build_lines(
 
     subscription = build_subscription(tenant)
     # Picked add-ons, then any billed because they are switched on (the
-    # Kitchen Safety Bundle while OmniArmor is connected), each once.
+    # Kitchen Safety Bundle while Aegizyn is connected), each once.
     add_on_keys = list(dict.fromkeys(list(add_on_keys) + auto_add_ons(tenant)))
     places = locations_billed(tenant)
     lines: List[Dict[str, Any]] = []

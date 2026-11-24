@@ -96,7 +96,7 @@ get texts, and the times everyone who would be texted is in quiet hours.
 
 `POST /api/contacts/test-alert` (the **Send a test alert** button under "Who
 gets called") texts everyone on the roster — each number once, across every
-site — a message that starts `TEST from CyberLogix: nothing is wrong`. With
+site — a message that starts `TEST from Kryozyn: nothing is wrong`. With
 `{"call": true}`, on a plan with calls (or with one of the trial's few
 calls left, which it uses), it also rings the first person on the ladder
 with a spoken test. Owners and operators only. It opens no incident,
@@ -231,7 +231,7 @@ that closes back in range after less than `CYBERLOGIX_FOOD_SAFE_MINUTES`
 minutes out (30 by default, never more than the two-hour rule it sits
 inside; 0 turns it off), and never went 15°F past its upper limit or
 reached 70°F, records "Food safe: out for 12 minutes" as it closes, as
-"CyberLogix (automatic)", and nobody is asked: no "One thing to do", no
+"Kryozyn (automatic)", and nobody is asked: no "One thing to do", no
 red bar, and no dollars counted for it (`food_value.auto_safe_minutes`,
 `SHORT_MINUTES`). "Change" beside it opens **Food kept** / **Thrown away**.
 A longer or a severe alert, one closed while still out of range, and
@@ -274,7 +274,7 @@ Simple view shows the month so far in one short line (3.32.0), "This
 month: 3 alerts · all answered · 1 food answer missing", with who
 answered and when ("Thrown away, Rosa, 4:09 PM") under it.
 
-### What CyberLogix did for you
+### What Kryozyn did for you
 
 `GET /api/console/did-for-you?period=week|month` (`didforyou.py`, 3.32.0)
 is the week (the last seven days) or the month so far on one screen:
@@ -336,7 +336,7 @@ reply 1 to the text or acknowledge in the console.
 ### Reply 1 to acknowledge
 
 A reply of `1`, `ACK`, `OK` or `yes` to the alert text acknowledges the
-alert and stops the calls. Set `https://cyberlogix.mtrxhorizyn.com/api/voice/sms-reply`
+alert and stops the calls. Set `https://kryozyn.mtrxhorizyn.com/api/voice/sms-reply`
 as the "A message comes in" webhook on the Twilio number that sends the
 alerts. A reply counts only when:
 
@@ -367,13 +367,13 @@ keypress that goes nowhere.
 
 ## The site-wide alert
 
-When many units warm up together, CyberLogix raises one urgent alert on
+When many units warm up together, Kryozyn raises one urgent alert on
 top of each unit's own: a **possible attack or site-wide failure**.
 
 On 11 October 2026 attackers took over the refrigeration controllers at
 hundreds of supermarkets in France and switched them to defrost
 overnight. A monitor that asks the fridge's own controller hears whatever
-the controller is told to say. CyberLogix reads its own, separate sensors,
+the controller is told to say. Kryozyn reads its own, separate sensors,
 so it sees the warming however the controls were changed; and it only
 reads, so nobody can use it to change a fridge. It cannot stop an attack.
 What it does is find out in minutes and call people.

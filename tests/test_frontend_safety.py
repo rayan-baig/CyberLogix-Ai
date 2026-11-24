@@ -423,7 +423,7 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
     body = page.text
 
     # No credential may be baked into a page anyone can fetch.
-    for leak in ("CYBERLOGIX_ADMIN_KEY=", "X-CyberLogix-Admin: ",
+    for leak in ("CYBERLOGIX_ADMIN_KEY=", "X-Kryozyn-Admin: ",
                  "test-admin-key"):
         assert leak not in body, f"the page ships {leak!r}"
 
@@ -438,7 +438,7 @@ def test_the_book_page_holds_no_secret_and_keeps_none(api):
         "the platform key would survive the browser being closed"
     )
     # And it is sent as a header, never as a query string that lands in logs.
-    assert '"X-CyberLogix-Admin": key' in js
+    assert '"X-Kryozyn-Admin": key' in js
     assert "admin=" not in js
 
     # Every interpolation, named. The two that are not escaped at the

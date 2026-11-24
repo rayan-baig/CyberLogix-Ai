@@ -71,7 +71,7 @@ def test_the_four_steps_tick_one_by_one_and_then_it_is_complete(api):
     note()
     # The sensor's first reading: only now is the first fridge protected.
     api.post("/api/sensor-pulse",
-             headers={"X-CyberLogix-Sensor-Key": added.json()["ingest_key"]},
+             headers={"X-Kryozyn-Sensor-Key": added.json()["ingest_key"]},
              json={"sensor_id": "WALK-IN-1", "temperature_fahrenheit": 37.0}
              ).raise_for_status()
     note()

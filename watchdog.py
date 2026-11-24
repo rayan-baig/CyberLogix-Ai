@@ -39,6 +39,7 @@ sweep's heartbeat and shouts when it has gone quiet.
 
 from __future__ import annotations
 
+from brand import APP_SHORT, UA_NAME
 import logging
 import os
 import threading
@@ -231,7 +232,7 @@ def ping() -> Dict[str, Any]:
 
     try:
         request = urllib.request.Request(
-            HEARTBEAT_URL, method="GET", headers={"User-Agent": "CyberLogix/1"}
+            HEARTBEAT_URL, method="GET", headers={"User-Agent": f"{UA_NAME}/1"}
         )
         with urllib.request.urlopen(
             request, timeout=HEARTBEAT_TIMEOUT_SECONDS
@@ -551,7 +552,7 @@ def _tell(subject: str, body: str, dedupe_key: str) -> Dict[str, Any]:
             import notifications
 
             told["text"] = notifications.send_sms(
-                OPERATOR_PHONE, f"CyberLogix: {subject}").get("status")
+                OPERATOR_PHONE, f"{APP_SHORT}: {subject}").get("status")
         except Exception as exc:  # noqa: BLE001 - never raises
             logger.error("Could not text the operator (%s).", exc)
             told["text"] = "error"

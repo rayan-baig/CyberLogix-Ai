@@ -21,6 +21,7 @@ it would be the one thing that makes it worthless.
 
 from __future__ import annotations
 
+from brand import APP_NAME
 import hashlib
 import hmac
 import logging
@@ -157,11 +158,11 @@ def signing_state() -> Dict[str, Any]:
         "algorithm": "HMAC-SHA256" if configured else None,
         "note": (
             "The chain head is counter-signed, so a recipient can confirm "
-            "this attestation was issued by CyberLogix AI."
+            f"this attestation was issued by {APP_NAME}."
             if configured
             else "No signing key is configured, so this attestation carries "
             "no counter-signature. The hash chain still verifies on its own; "
-            "set CYBERLOGIX_ATTESTATION_KEY to add one."
+            "set KRYOZYN_ATTESTATION_KEY to add one."
         ),
     }
 

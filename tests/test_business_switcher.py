@@ -65,7 +65,7 @@ class Estate:
 
     def remember(self, company, body):
         self.ids[company] = body["tenant"]["tenant_id"]
-        self.keys[company] = {"X-CyberLogix-Key": body["api_key"]}
+        self.keys[company] = {"X-Kryozyn-Key": body["api_key"]}
 
     def build(self):
         api = self.api

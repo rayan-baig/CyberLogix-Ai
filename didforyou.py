@@ -1,4 +1,4 @@
-"""What CyberLogix did for you: one screen, for the week or the month.
+"""What Kryozyn did for you: one screen, for the week or the month.
 
 A monitoring product that works is invisible: nothing breaks, nobody is
 called, and a month later the owner cannot say what they pay for. This
@@ -172,5 +172,5 @@ def summary(tenant: Tenant, period: str = "week", now: Optional[datetime] = None
 @router.get("/did-for-you")
 def did_for_you(period: str = Query("week", pattern="^(week|month)$"),
                 tenant: Tenant = Depends(require_tenant)) -> Dict[str, Any]:
-    """What CyberLogix did for this business this week or this month."""
+    """What Kryozyn did for this business this week or this month."""
     return summary(tenant, period)

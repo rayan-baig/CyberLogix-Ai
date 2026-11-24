@@ -1,8 +1,8 @@
-# Pilot on CyberLogix
+# Pilot on Kryozyn
 
 Pilot is the AI assistant in every MTRX Horizyn app: the round robot in the corner of the page.
 It runs on **the person's own AI key**, from their browser, with the provider they choose
-(Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). CyberLogix never sees the key,
+(Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible API). Kryozyn never sees the key,
 the conversation or the answers, and pays nothing for the AI.
 
 The shared core is **Pilot core 1.4.3**, the same files as on the MTRX Horizyn site, copied
@@ -12,7 +12,7 @@ once, in the MTRX Horizyn repository: `docs/PILOT.md` there. A newer core is cop
 app together; `tests/test_pilot.py` pins the files' fingerprints so a change here cannot slip in
 by itself.
 
-This page is what CyberLogix adds.
+This page is what Kryozyn adds.
 
 ## Where it is
 
@@ -49,7 +49,7 @@ the core's smaller tucked robot sits in the side room the core keeps on a phone,
 card's words and buttons (checked at 320 and 375px). The config's `avoid` list also keeps it off
 that card (`#first-day`) and its buttons.
 
-**CyberLogix's own welcome (3.24.0, core 1.2.0).** The window's header says "Your fridge-alarm
+**Kryozyn's own welcome (3.24.0, core 1.2.0).** The window's header says "Your fridge-alarm
 helper", and its five pills are what a café asks most:
 
 | Pill | What it does |
@@ -64,7 +64,7 @@ Signed in, the console's tools answer them. On a public page (and the console's 
 tells the AI that the person is not signed in and it can't see their fridges there, so it says
 where to look instead of guessing. The page's own suggestions show under the pills; the signed-in
 ones ("Show open alerts", "It's fixed now", "Make a proof report") repeat none of them. The key
-settings leave out image and video keys (`hideKeySections`), which CyberLogix has no use for. The
+settings leave out image and video keys (`hideKeySections`), which Kryozyn has no use for. The
 phone's **Menu** on the public pages is a `<details>` drop-down, not a dialog, so it is listed in
 `modals` and the robot steps back while it is open; every other pop-up here is a `<dialog>` or
 `role="dialog"`, which the core already counts. A message sent before there is a key waits in the
@@ -119,7 +119,7 @@ more? Add your AI key to ask anything." (`answerMore`).
 
 The answers on the console and `/today` are read from what the page already loaded for the
 person: the overview its cards and "Needs you now" are drawn from, handed over by the page's own
-bridge (`CyberLogixConsole.overview()` in `static/console.js`, `CyberLogixToday.overview()` in
+bridge (`KryozynConsole.overview()` in `static/console.js`, `KryozynToday.overview()` in
 `static/simple.js`). Nothing is fetched to answer and nothing leaves the browser. A unit's name is
 kept as plain words (no links or bold of its own). Signed out, or before the page has loaded,
 they say where to look instead. They carry no person's name, number or email. Since core 1.4.1
@@ -199,7 +199,7 @@ often than before, by design: at the top of `/help`, and on parts of `/pricing` 
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
 **3.33.0: more answers with no key, and nothing about an alert when none is open.** Still
-core 1.4.3. What changes in `static/pilot-cyberlogix.js`:
+core 1.4.3. What changes in `static/pilot-kryozyn.js`:
 
 - **New built-in answers**, typed or routed from whichever item the core matched (`TOPICS`,
   `bestTopic`): "Does this work with my sensor?" and "Does it work with Monnit?" (the sensor list,
@@ -218,9 +218,9 @@ core 1.4.3. What changes in `static/pilot-cyberlogix.js`:
   work?" alone picks neither.
 - **Signed out**, "Is my walk-in fridge OK?" says "Sign in to see your fridges" with the link, on
   the public pages too (the café pill carries "walk" and "fridge").
-- **"What CyberLogix did for you"**, pressed or typed, quotes the week's summary line ("This
+- **"What Kryozyn did for you"**, pressed or typed, quotes the week's summary line ("This
   week: 1,240 readings checked, 2 alerts.") with its few lines and the link: from what `/today`
-  loaded (`CyberLogixToday.did()`), or on the console through its own session. Never sent to an
+  loaded (`KryozynToday.did()`), or on the console through its own session. Never sent to an
   AI.
 - **No alert open, no alert suggestions.** The welcome's "What does this alert mean?" is now a
   suggestion, with "It's fixed now", shown only while an alert is open; the welcome has "Who gets
@@ -237,7 +237,7 @@ site (commit ea7498b), byte for byte; the pictures are unchanged. What changes h
   opened. Now the core's note ("I need an AI key to answer that one. Here's what I can help with
   right now:") shows in the chat with a row of this page's answers and links, then the welcome's
   (each once, at most six), then "Add my AI key"; the words wait in the box and send once a key is
-  added. On the console signed in: "Log for the inspector", "It's fixed now", "What CyberLogix did
+  added. On the console signed in: "Log for the inspector", "It's fixed now", "What Kryozyn did
   for you", "Which fridges need me?", "What does this alert mean?", "Is the food still OK?".
   `noKeyReply` is left at its default (the core's words). Nothing typed is sent.
 - **The "does/this" workaround is gone.** Core 1.4.3 drops "does", "this" and the other little
@@ -271,7 +271,7 @@ in-chat note with no request carrying the words; the window went compact while t
 Pilot is still absent from `/signup`, `/legal`, a proof page, an error page and `/book`.
 
 **3.32.0: built-in answers on every page, the closest one wins.** Still core 1.4.2 (1.4.3 is
-not out yet); all of it is in `static/pilot-cyberlogix.js`.
+not out yet); all of it is in `static/pilot-kryozyn.js`.
 
 - **The answers every page should reach.** The price from the real plan figures ("**Starter $59
   a month, up to 3 fridges or freezers**", Growth's location price, the trial, a link to
@@ -296,7 +296,7 @@ not out yet); all of it is in `static/pilot-cyberlogix.js`.
   before and the rest with their temperatures ("**Walk-in fridge** 37.9°F, fine"); typed, the
   unit named comes first ("Is my walk-in fridge OK?"), and a kind the business hasn't added says
   so ("You haven't added a freezer").
-- **"What CyberLogix did for you"** (a link to `/today#did`, which opens the week's summary)
+- **"What Kryozyn did for you"** (a link to `/today#did`, which opens the week's summary)
   takes the place of "Make a proof report", which needed an AI key.
 - Questions that fit nothing still open key settings (core 1.4.3 will answer them in the chat).
 
@@ -309,7 +309,7 @@ changes here:
   cost?" on a public page gets the link to the prices, "Should I throw the food away?" gets "Is
   the food still OK?", under the line "Here's what I can tell you without an AI key:". It is
   worked out in the browser and nothing is sent. Every pill and suggestion that answers or links
-  with no key carries its own `match` words (the `MATCH` list in `static/pilot-cyberlogix.js`:
+  with no key carries its own `match` words (the `MATCH` list in `static/pilot-kryozyn.js`:
   "fridge", "warm", "ok" on "Which fridges need me?"; "cost", "price", "much" on "What does it
   cost?"; "cafe", "restaurant", "bakery" on "Will it work for my café?"; and so on). The core is
   careful: two typed words must be the item's own, and no other item on the page may come as
@@ -373,20 +373,20 @@ written for a café or small restaurant first.
 | File | What it is |
 |---|---|
 | `static/pilot/*` | Pilot core 1.4.3, unchanged (thirteen files, the robot pictures and the three layers in every size, and `poses/`) |
-| `static/pilot-cyberlogix.js` | the config: name, page names, suggestions per page, the key note, the facts |
-| `static/pilot-cyberlogix-pack.js` | the knowledge pack, the "why CyberLogix is better" list and the console tools, fetched only when Pilot is first opened |
-| `static/console.js` (`window.CyberLogixConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
+| `static/pilot-kryozyn.js` | the config: name, page names, suggestions per page, the key note, the facts |
+| `static/pilot-kryozyn-pack.js` | the knowledge pack, the "why Kryozyn is better" list and the console tools, fetched only when Pilot is first opened |
+| `static/console.js` (`window.KryozynConsole`) | what the console lets Pilot use: its own `api()` with the signed-in session, the open tab, and the same "add a fridge or freezer" the form uses |
 
-The robot and the window look exactly as on the MTRX site; the tagline and the welcome's pills
-are CyberLogix's own.
+The robot and the window look exactly as on the MTRX Horizyn site; the tagline and the welcome's pills
+are Kryozyn's own.
 
 ## What it knows
 
 The pack is written from the real app and its help: how alerts and escalation work, fridge and
-freezer limits, "What you need" (CyberLogix doesn't sell sensors), the setup steps, plans and
+freezer limits, "What you need" (Kryozyn doesn't sell sensors), the setup steps, plans and
 prices, the trial, proof of monitoring reports, the Simple view and the Advanced console, what
 happens if the power or the internet goes off, the careful "is the food still OK" rule of thumb,
-your data, the AI key for alert wording, and Pilot itself. The "why CyberLogix is better" list is
+your data, the AI key for alert wording, and Pilot itself. The "why Kryozyn is better" list is
 built only from real features, with no rival named and no invented numbers.
 
 ## What it can do
@@ -441,7 +441,7 @@ every timeout are as they were.
 
 ## The security policy
 
-Pilot added only the provider addresses (the same list as the MTRX site) to `connect-src`,
+Pilot added only the provider addresses (the same list as the MTRX Horizyn site) to `connect-src`,
 `blob:` to `media-src`, and `microphone=(self)` to the Permissions-Policy. Script and style stay
 this site's own, with nothing inline.
 
@@ -450,6 +450,6 @@ this site's own, with nothing inline.
 `tests/test_pilot.py` (where it is and isn't, the policy, lazy loading, the core unchanged, no
 model names, the pack's figures against the code), `tests/test_alert_ai_key.py` (encryption,
 last four, never logged, fallback, owners only, hidden without the secret), and in Node
-`tests/js/pilot.test.js` (the core's own tests) and `tests/js/cyberlogix-pilot.test.js` (the
+`tests/js/pilot.test.js` (the core's own tests) and `tests/js/kryozyn-pilot.test.js` (the
 tools: confirm first, nothing private, and the refusals; the answers with no key, typed questions
 matched to them, and "Sum up my fridges").

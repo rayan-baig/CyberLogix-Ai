@@ -30,7 +30,7 @@ APPLICATION = {
 
 @pytest.fixture()
 def inbox(monkeypatch, mailbox):
-    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "operator@cyberlogix.example")
+    monkeypatch.setattr(digest, "OPERATOR_EMAIL", "operator@kryozyn.example")
     return mailbox
 
 
@@ -54,7 +54,7 @@ def _approve(api, admin_headers, email, postcodes=("021",), cities=(), fee=None,
                     headers=admin_headers, json=body)
     assert resp.status_code == 200, resp.text
     return {"id": row["partner_id"], "key": resp.json()["key"],
-            "headers": {"X-CyberLogix-Repair-Partner": resp.json()["key"]}}
+            "headers": {"X-Kryozyn-Repair-Partner": resp.json()["key"]}}
 
 
 @pytest.fixture()
@@ -209,7 +209,7 @@ def test_the_partner_key_opens_nothing_inside_a_business(api, shop, partner):
 
 def test_a_wrong_or_switched_off_key_is_refused(api, admin_headers, partner):
     assert api.get("/api/repair-partners/me",
-                   headers={"X-CyberLogix-Repair-Partner": "clx_rep_nope"}).status_code == 401
+                   headers={"X-Kryozyn-Repair-Partner": "clx_rep_nope"}).status_code == 401
     api.post(f"/api/repair-partners/{partner['id']}/status", headers=admin_headers,
              json={"active": False})
     assert api.get("/api/repair-partners/me", headers=partner["headers"]).status_code == 403
@@ -219,7 +219,7 @@ def test_a_new_key_retires_the_old_one(api, admin_headers, partner):
     resp = api.post(f"/api/repair-partners/{partner['id']}/rotate-key", headers=admin_headers)
     assert resp.status_code == 200
     assert api.get("/api/repair-partners/me", headers=partner["headers"]).status_code == 401
-    fresh = {"X-CyberLogix-Repair-Partner": resp.json()["key"]}
+    fresh = {"X-Kryozyn-Repair-Partner": resp.json()["key"]}
     assert api.get("/api/repair-partners/me", headers=fresh).status_code == 200
 
 
@@ -346,7 +346,7 @@ def test_an_application_waits_and_is_mailed_to_the_operator(api, inbox, caplog):
         assert _apply(api).status_code == 202
     [row] = STORE._db.all(repairs.PARTNER_KIND)
     assert row["status"] == "applied" and not row["active"] and row["key_hash"] is None
-    [mail] = inbox.to("operator@cyberlogix.example")
+    [mail] = inbox.to("operator@kryozyn.example")
     text = mail.get_body(preferencelist=("plain",)).get_content()
     assert "Polar Fix Refrigeration" in mail["Subject"]
     assert "021, 022, Boston" in text and "/book" in text
@@ -418,7 +418,7 @@ def test_a_bad_lead_refused_by_the_operator_is_not_charged(api, admin_headers, s
     resp = api.post(f"/api/repair-partners/me/leads/{first}/bad", headers=partner["headers"],
                     json={"reason": "The number did not work."})
     assert resp.status_code == 200 and resp.json()["status"] == "disputed"
-    assert inbox.to("operator@cyberlogix.example")[-1]["Subject"].startswith(
+    assert inbox.to("operator@kryozyn.example")[-1]["Subject"].startswith(
         "Repair lead marked bad")
     assert repairs.ledger(partner["id"])["charged_usd"] == 35.0
     assert repairs.ledger(partner["id"])["in_question_usd"] == 35.0

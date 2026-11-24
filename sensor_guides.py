@@ -20,6 +20,7 @@ test keeps identical to what this module renders.
 
 from __future__ import annotations
 
+from brand import APP_SHORT, APP_URL
 import html
 import json
 from typing import Any, Dict, List
@@ -37,7 +38,7 @@ from pollers import (
 # one in its place (from the request or PUBLIC_BASE_URL); the Markdown
 # names the live product's address.
 BASE = "{base}"
-DOC_BASE = "https://cyberlogix.mtrxhorizyn.com"
+DOC_BASE = APP_URL
 
 _MONNIT = PRESETS["monnit"]
 _PUSH = PRESETS["sensorpush"]
@@ -82,7 +83,7 @@ GUIDES: List[Dict[str, Any]] = [
             _KEY_STEP,
             f"Set the device to send an HTTPS POST to {BASE}/api/sensor-pulse "
             "every few minutes.",
-            "Add two headers: X-CyberLogix-Sensor-Key with the sensor key, "
+            "Add two headers: X-Kryozyn-Sensor-Key with the sensor key, "
             "and Content-Type: application/json.",
             "Send a JSON body with sensor_id (the Sensor ID from step 1) and "
             "the temperature as temperature_fahrenheit or "
@@ -97,7 +98,7 @@ GUIDES: List[Dict[str, Any]] = [
         "example": {"sensor_id": "WALKIN-1", "temperature_fahrenheit": 2.5,
                     "battery_percent": 88},
         "routes": [("POST", "/api/sensor-pulse"), ("POST", "/api/licenses/me/sensors")],
-        "headers": {"/api/sensor-pulse": ["X-CyberLogix-Sensor-Key"]},
+        "headers": {"/api/sensor-pulse": ["X-Kryozyn-Sensor-Key"]},
         "query": {},
         "fields": {
             "telemetry.SensorReading": ["sensor_id", "temperature_fahrenheit",
@@ -154,7 +155,7 @@ GUIDES: List[Dict[str, Any]] = [
             "address (a webhook) and give it this address: "
             f"{BASE}/api/v1/bridge/any?k=(the sensor key).",
             "If iMonnit lets you add a header, send the key in "
-            "X-CyberLogix-Sensor-Key instead and leave ?k= off the address: "
+            "X-Kryozyn-Sensor-Key instead and leave ?k= off the address: "
             "an address with a key in it ends up in logs.",
             "Nothing needs mapping. We read "
             f"{_MONNIT['serial']} as the serial, {_MONNIT['value']} as the "
@@ -164,7 +165,7 @@ GUIDES: List[Dict[str, Any]] = [
             "signal.",
             "One webhook for several sensors: a sensor key only reports for "
             "its own unit and refuses the rest with 403. Send the business "
-            "key in X-CyberLogix-Key instead, and replace it from the "
+            "key in X-Kryozyn-Key instead, and replace it from the "
             "console if it is ever seen by somebody it should not be.",
             _CHECK_SAMPLES,
         ],
@@ -172,7 +173,7 @@ GUIDES: List[Dict[str, Any]] = [
                     "DataTypes": "TemperatureC", "MessageDate": "2026-11-03 06:00:00",
                     "Battery": "92", "SignalStrength": "80"},
         "routes": [("POST", "/api/v1/bridge/any")],
-        "headers": {"/api/v1/bridge/any": ["X-CyberLogix-Sensor-Key", "X-CyberLogix-Key"]},
+        "headers": {"/api/v1/bridge/any": ["X-Kryozyn-Sensor-Key", "X-Kryozyn-Key"]},
         "query": {"/api/v1/bridge/any": ["k"]},
         "fields": {"licenses.SensorRegister": ["external_device_sn"]},
         "presets": {"monnit": ["serial", "value", "unit_field", "time", "battery",
@@ -195,8 +196,8 @@ GUIDES: List[Dict[str, Any]] = [
             "fetcher cannot do it: run a small relay of your own that reads "
             "SensorPush and sends each reading on, as below.",
             f"The relay sends an HTTPS POST to {BASE}/api/v1/bridge/any "
-            "with the sensor key in the X-CyberLogix-Sensor-Key header (or "
-            "the business key in X-CyberLogix-Key, for several sensors).",
+            "with the sensor key in the X-Kryozyn-Sensor-Key header (or "
+            "the business key in X-Kryozyn-Key, for several sensors).",
             f"Each reading as JSON with {_PUSH['serial']} (the sensor's "
             f"id), {_PUSH['value']} and {_PUSH['time']}. A SensorPush "
             "temperature is read as Fahrenheit, which is what it reports "
@@ -207,7 +208,7 @@ GUIDES: List[Dict[str, Any]] = [
         "example": {"sensor": "16725.1234567890", "temperature": 37.4,
                     "observed": "2026-11-03T06:00:00Z"},
         "routes": [("POST", "/api/v1/bridge/any")],
-        "headers": {"/api/v1/bridge/any": ["X-CyberLogix-Sensor-Key", "X-CyberLogix-Key"]},
+        "headers": {"/api/v1/bridge/any": ["X-Kryozyn-Sensor-Key", "X-Kryozyn-Key"]},
         "query": {},
         "fields": {"licenses.SensorRegister": ["external_device_sn"]},
         "presets": {"sensorpush": ["serial", "value", "time"]},
@@ -257,7 +258,7 @@ GUIDES: List[Dict[str, Any]] = [
             _add_unit_step(serial=True),
             _KEY_STEP,
             f"Point the device at {BASE}/api/v1/bridge/any with POST and "
-            "JSON, and the sensor key in the X-CyberLogix-Sensor-Key header. "
+            "JSON, and the sensor key in the X-Kryozyn-Sensor-Key header. "
             "If it cannot set headers, add ?k=(the sensor key) to the "
             "address instead.",
             "We look for a serial in a field named like one of: "
@@ -279,7 +280,7 @@ GUIDES: List[Dict[str, Any]] = [
         "example": {"Device ID": "DICKSON-7A:2C:19", "Temp C": "3.2",
                     "Time": "2026-11-03T06:00:00Z"},
         "routes": [("POST", "/api/v1/bridge/any"), ("POST", "/api/v1/bridge/preview")],
-        "headers": {"/api/v1/bridge/any": ["X-CyberLogix-Sensor-Key"]},
+        "headers": {"/api/v1/bridge/any": ["X-Kryozyn-Sensor-Key"]},
         "query": {"/api/v1/bridge/any": ["k"]},
         "fields": {"licenses.SensorRegister": ["external_device_sn"]},
         "presets": {},
@@ -348,7 +349,7 @@ WIZARD: List[Dict[str, Any]] = [
             "a small relay has to read it and pass each reading on. If "
             "that is not something you can set up, ask us and we will help.",
             "The relay sends an HTTPS POST to the address above with the "
-            "header X-CyberLogix-Sensor-Key set to {key}.",
+            "header X-Kryozyn-Sensor-Key set to {key}.",
             "Each reading as JSON: sensor is {serial}, with temperature and "
             "observed as SensorPush gives them.",
         ],
@@ -364,7 +365,7 @@ WIZARD: List[Dict[str, Any]] = [
         "steps": [
             "Set it to send an HTTPS POST to the address above every few "
             "minutes.",
-            "Add the header X-CyberLogix-Sensor-Key set to {key}, and "
+            "Add the header X-Kryozyn-Sensor-Key set to {key}, and "
             "Content-Type: application/json.",
             "Send the reading as JSON: sensor_id is {sensor_id}, with "
             "temperature_fahrenheit or temperature_celsius.",
@@ -422,7 +423,7 @@ def wizard(base: str) -> List[Dict[str, Any]]:
 
 # --- what you need, before any of the guides --------------------------------
 #
-# CyberLogix sells no hardware. It reads wireless temperature sensors that
+# Kryozyn sells no hardware. It reads wireless temperature sensors that
 # a business buys from a sensor maker. The landing page, the pricing page
 # and /help/sensors all say so, in these words, from here. No shop is
 # named and nothing is linked to: we earn nothing from any sensor sale.
@@ -430,7 +431,7 @@ def wizard(base: str) -> List[Dict[str, Any]]:
 WHAT_YOU_NEED: Dict[str, Any] = {
     "title": "What you need",
     "lede": (
-        "CyberLogix does not sell sensors. You buy a wireless temperature "
+        f"{APP_SHORT} does not sell sensors. You buy a wireless temperature "
         "sensor for each fridge or freezer from a sensor maker, and point "
         "it at us. We watch the readings and alert your team."
     ),
@@ -460,7 +461,7 @@ WHAT_YOU_NEED: Dict[str, Any] = {
         "Put the sensor (or its probe) inside the fridge or freezer, away "
         "from the door, and connect it to your Wi-Fi or gateway as its "
         "maker says.",
-        "In CyberLogix, use Add a fridge or freezer. Say where it is and "
+        f"In {APP_SHORT}, use Add a fridge or freezer. Say where it is and "
         "whether it is a fridge or a freezer, then copy the sensor key it "
         "shows you.",
         "In the sensor's app or cloud, set it to send readings to the "
@@ -571,7 +572,7 @@ def easiest_html(base: str) -> str:
         "<ul>"
         "<li><b>A webhook or \u201cHTTP push\u201d setting.</b> Paste this "
         f"address: <code>{e(base)}/api/sensor-pulse</code>, and the key as "
-        "the header <code>X-CyberLogix-Sensor-Key</code>.</li>"
+        "the header <code>X-Kryozyn-Sensor-Key</code>.</li>"
         "<li><b>An API key in the maker's cloud.</b> In the console, press "
         "the <b>Advanced</b> tab, open <b>Fetch from a sensor cloud</b>, "
         "choose the kind of cloud and paste that key. We fetch the readings "
@@ -623,8 +624,8 @@ def render_markdown() -> str:
         "# Setting up sensors",
         "",
         "Step by step, in words, for every way a sensor can report to",
-        "CyberLogix. The same guides are in the app at `/help/sensors`.",
-        f"`{DOC_BASE}` is CyberLogix's address. Every route, header and",
+        f"{APP_SHORT}. The same guides are in the app at `/help/sensors`.",
+        f"`{DOC_BASE}` is {APP_SHORT}'s address. Every route, header and",
         "field named here is checked against the code by",
         "`tests/test_sensor_guides.py`; this file is generated by",
         "`sensor_guides.py`, so change that rather than this.",
@@ -638,7 +639,7 @@ def render_markdown() -> str:
         "   and copy the sensor key it shows you.",
         "2. If the sensor's app has a webhook or \"HTTP push\" setting, paste",
         f"   `{DOC_BASE}/api/sensor-pulse` as the address and the key as the",
-        "   header `X-CyberLogix-Sensor-Key`. If its maker's cloud gives you an",
+        "   header `X-Kryozyn-Sensor-Key`. If its maker's cloud gives you an",
         "   API key instead, press the **Advanced** tab in the console, open",
         "   **Fetch from a sensor cloud**, choose the kind of cloud and paste",
         "   that key.",

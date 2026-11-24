@@ -18,16 +18,16 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_ALLOWED_ORIGINS` | none | Exact origins whose pages may call the API from a browser; unset allows only this site's own pages. Never `*` or a sibling subdomain |
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
-| `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the OmniArmor key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
+| `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the Aegizyn key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
 | `CYBERLOGIX_KEY_ENCRYPTION_SECRET` | none | Encrypts the AI key a business may save for its alert wording (AES-GCM, a key derived from this, bound to the business). Unset, the console hides that option and says why. A secret: keep it in the secret store; changing it makes saved AI keys unreadable (those alerts use the service's own wording until re-saved). See [PILOT.md](PILOT.md) |
-| `KITCHEN_BUNDLE_SECRET` | none | Signs each daily Kitchen Safety Bundle report to OmniArmor (`X-CyberLogix-Signature`, HMAC-SHA256 over the timestamp and the exact body). The same value as OmniArmor's; OmniArmor waives its Pro fee for signed reports. Unset, reports go unsigned. A secret: keep it in the secret store |
+| `KITCHEN_BUNDLE_SECRET` | none | Signs each daily Kitchen Safety Bundle report to Aegizyn (`X-Kryozyn-Signature`, HMAC-SHA256 over the timestamp and the exact body). The same value as Aegizyn's; Aegizyn waives its Pro fee for signed reports. Unset, reports go unsigned. A secret: keep it in the secret store |
 | `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_SMS_PER_DAY` | `100` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY` | `30` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_RATE_AI_CALL` | `0.0012` | USD per model call, for the estimate |
 | `CYBERLOGIX_RATE_SMS` | `0.0079` | USD per SMS, for the estimate |
 | `CYBERLOGIX_RATE_VOICE_CALL` | `0.0140` | USD per voice call, for the estimate |
-| `PUBLIC_BASE_URL` | — | Public URL (live: `https://cyberlogix.mtrxhorizyn.com`): "press 1 to acknowledge" reaches the callback, and link previews and the sitemap use whole addresses. Unset, pages use the address the request arrived on |
+| `PUBLIC_BASE_URL` | — | Public URL (live: `https://kryozyn.mtrxhorizyn.com`): "press 1 to acknowledge" reaches the callback, and link previews and the sitemap use whole addresses. Unset, pages use the address the request arrived on |
 | `CYBERLOGIX_SWEEP_SECONDS` | `60` | Unattended sweep interval; `0` disables the in-process loop |
 | `CYBERLOGIX_GROUP_ALERT_MIN_UNITS` | `3` | Units at one site warming together that raise the site-wide alert; `0` turns it off. The other `CYBERLOGIX_GROUP_ALERT_*` settings are in [ALERTS.md](ALERTS.md#the-site-wide-alert) |
 | `CYBERLOGIX_ATTESTATION_KEY` | — | Counter-signs vault attestations |
@@ -84,12 +84,12 @@ alert means.
    fixed. One message each way, not one a minute.
 2. **A free uptime monitor.** UptimeRobot or Better Stack (free plan)
    both work. Add an HTTP monitor:
-   - URL: `https://cyberlogix.mtrxhorizyn.com/readyz`
+   - URL: `https://kryozyn.mtrxhorizyn.com/readyz`
    - Check every: as often as the free plan allows (a few minutes is fine)
    - Alert when: the status is not 200
    - Alert to: your phone (their app, or SMS) and your email
 3. **A second monitor, for "is it up at all":** the same, with
-   `https://cyberlogix.mtrxhorizyn.com/healthz`.
+   `https://kryozyn.mtrxhorizyn.com/healthz`.
 4. **The dead man's switch** (`CYBERLOGIX_HEARTBEAT_URL`, see below and
    DEPLOY.md section 4). It is the only check that still works when the
    whole server is gone, because it alarms when the pings stop.
@@ -177,7 +177,7 @@ Nothing the app sends can hold up an alert for long:
 | Customers' chat hooks | 5 s each, 12 s for all of them | Once, for a 5xx, 408, 429 or no answer; never for a wrong address |
 | The model that words the alert's "what to check" line, on our key or on a business's own saved key | 6 s (`CYBERLOGIX_AI_TIMEOUT_SECONDS`) | No: the alert goes out with the plain template line instead (a business's own key never falls back to ours) |
 | Sensor clouds we fetch from | 20 s | On the next sweep |
-| OmniArmor daily report | 20 s | With backoff, as their contract allows |
+| Aegizyn daily report | 20 s | With backoff, as their contract allows |
 | The dead man's switch ping | 5 s | On the next sweep |
 
 The model line used to have no time limit at all: a model service that
@@ -248,9 +248,9 @@ is not one. This is the command, for a cron job anywhere else:
 
 ```bash
 KEY=...   # CYBERLOGIX_ADMIN_KEY
-HOST=https://cyberlogix.mtrxhorizyn.com
-NAME=$(curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"])')
-curl -fsS -H "X-CyberLogix-Admin: $KEY" -o "$NAME" "$HOST/api/admin/backups/$NAME/download"
+HOST=https://kryozyn.mtrxhorizyn.com
+NAME=$(curl -fsS -H "X-Kryozyn-Admin: $KEY" $HOST/api/admin/backups | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"])')
+curl -fsS -H "X-Kryozyn-Admin: $KEY" -o "$NAME" "$HOST/api/admin/backups/$NAME/download"
 ```
 
 The download is verified on the server before it is sent.
@@ -287,9 +287,9 @@ gone).**
 **3. Check and restore (3 min).**
 
 ```bash
-curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups          # pick NAME
-curl -fsS -H "X-CyberLogix-Admin: $KEY" $HOST/api/admin/backups/$NAME/verify
-curl -fsS -X POST -H "X-CyberLogix-Admin: $KEY" -H 'Content-Type: application/json' \
+curl -fsS -H "X-Kryozyn-Admin: $KEY" $HOST/api/admin/backups          # pick NAME
+curl -fsS -H "X-Kryozyn-Admin: $KEY" $HOST/api/admin/backups/$NAME/verify
+curl -fsS -X POST -H "X-Kryozyn-Admin: $KEY" -H 'Content-Type: application/json' \
   -d "{\"snapshot\":\"$NAME\",\"confirm\":true}" $HOST/api/admin/backups/restore
 ```
 
@@ -618,7 +618,7 @@ Things this repository does not do for you, in the order they will bite:
 - **Backups stay on the server.** A verified snapshot is taken daily, but
   on the same disk; copying them somewhere else is yours to arrange
   ([DEPLOY.md](../DEPLOY.md) section 7).
-- **The company is not incorporated yet.** CyberLogix is a product of MTRX
+- **The company is not incorporated yet.** Kryozyn is a product of MTRX
   Horizyn, so `CYBERLOGIX_LEGAL_NAME` and the other issuer fields are MTRX
   Horizyn's registered details; they go on every invoice, and an invoice
   from an entity that cannot receive money is not a document anyone can

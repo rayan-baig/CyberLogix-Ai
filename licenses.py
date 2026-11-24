@@ -249,7 +249,7 @@ def _require_provisioning(supplied: Optional[str], plan: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "A valid X-CyberLogix-Provisioning header is required to "
+                "A valid X-Kryozyn-Provisioning header is required to "
                 "create a paid account."
             ),
         )
@@ -260,7 +260,7 @@ def onboard_tenant(
     payload: TenantCreate,
     provisioning_key: Optional[str] = Header(
         None,
-        alias="X-CyberLogix-Provisioning",
+        alias="X-Kryozyn-Provisioning",
         description="Required to provision anything above a trial.",
     ),
 ):
@@ -573,7 +573,7 @@ def change_plan(
     owner: User = Depends(require_role("owner")),
     provisioning_key: Optional[str] = Header(
         None,
-        alias="X-CyberLogix-Provisioning",
+        alias="X-Kryozyn-Provisioning",
         description=(
             "Operator override: lets the platform move a tenant down a tier "
             "or back onto a trial, which self-service cannot."
@@ -745,7 +745,7 @@ def register_sensor(
         "ingest_key": sensor.ingest_key,
         "ingest_key_notice": (
             "Store this on the device. It is shown once and never echoed "
-            "again. Send it as the X-CyberLogix-Sensor-Key header, or as "
+            "again. Send it as the X-Kryozyn-Sensor-Key header, or as "
             "api_key_token for third-party hardware."
         ),
         "seats_used": STORE.seat_count(tenant.tenant_id),

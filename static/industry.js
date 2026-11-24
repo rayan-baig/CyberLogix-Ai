@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
@@ -9,7 +18,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
 const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
 
 function renderIndex(rows, trades) {
-  document.title = "CyberLogix — who this is for";
+  document.title = `${BRAND.short} — who this is for`;
   $("page").innerHTML =
     `<div class="eyebrow">Who this is for</div>
      <h1 class="lede">Twelve industries with the same problem.</h1>
@@ -30,7 +39,7 @@ function renderIndex(rows, trades) {
 }
 
 function renderIndustry(d) {
-  document.title = `CyberLogix — for ${d.name}`;
+  document.title = `${BRAND.short} — for ${d.name}`;
   $("page").innerHTML = `
     <div class="eyebrow">${esc(d.name)}</div>
     <h1 class="lede">We watch ${esc(d.protects)}, and wake somebody up

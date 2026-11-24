@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start CyberLogix as the unprivileged `cyberlogix` user, whatever owns the disk.
+# Start Kryozyn as the unprivileged `cyberlogix` user, whatever owns the disk.
 #
 # A host's persistent disk is often mounted owned by root. The application
 # runs as `cyberlogix`, so on such a disk it could not create its database and
@@ -9,7 +9,7 @@
 set -e
 
 if [ "$(id -u)" = "0" ]; then
-  for dir in "$(dirname "${CYBERLOGIX_DB_PATH:-/app/data/cyberlogix.db}")" "${CYBERLOGIX_BACKUP_DIR:-}"; do
+  for dir in "$(dirname "${KRYOZYN_DB_PATH:-${CYBERLOGIX_DB_PATH:-/app/data/cyberlogix.db}}")" "${KRYOZYN_BACKUP_DIR:-${CYBERLOGIX_BACKUP_DIR:-}}"; do
     [ -n "$dir" ] || continue
     mkdir -p "$dir"
     chown -R cyberlogix:cyberlogix "$dir"

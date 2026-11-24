@@ -1,4 +1,13 @@
 "use strict";
+// The product's and the company's names, from the page: brand.py puts
+// them in <meta name="brand">, so no script spells them.
+const BRAND = (() => {
+  const m = typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="brand"]') : null;
+  const d = (m && m.dataset) || {};
+  return { app: (m && m.content) || "", short: d.short || "", company: d.company || "",
+    checklist: d.checklist || "" };
+})();
 
 const KEY_STORAGE = "cyberlogix.partner";
 const POLL_MS = 45000;
@@ -21,7 +30,7 @@ function toast(message, kind = "") {
 
 async function api(path) {
   const res = await fetch(path, {
-    headers: { "X-CyberLogix-Partner": state.key || "" },
+    headers: { "X-Kryozyn-Partner": state.key || "" },
   });
   const text = await res.text();
   let body = null;
@@ -139,7 +148,7 @@ function renderBook(book) {
         </tr>`;
       }).join("")
     : `<tr><td colspan="8"><div class="empty">No accounts yet.
-         <span class="sub">Ask CyberLogix to attach the estates you manage.
+         <span class="sub">Ask ${esc(BRAND.short)} to attach the estates you manage.
          </span></div></td></tr>`;
 }
 

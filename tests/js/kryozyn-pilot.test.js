@@ -1,5 +1,5 @@
-// CyberLogix's Pilot pack and console tools, run in Node:
-// `node --test tests/js/cyberlogix-pilot.test.js`. tests/test_pilot.py runs
+// Kryozyn's Pilot pack and console tools, run in Node:
+// `node --test tests/js/kryozyn-pilot.test.js`. tests/test_pilot.py runs
 // it too. The console API and the AI provider are both mocked: no request
 // leaves this machine.
 "use strict";
@@ -14,7 +14,10 @@ const Providers = require(core("pilot-providers.js"));
 globalThis.PilotProviders = Providers;
 const Engine = require(core("pilot-engine.js"));
 
+// The names, as main.pilot_facts puts them on Pilot's script tag (brand.py).
+const NAMES = { appName: "Kryozyn", appShort: "Kryozyn", companyName: "MTRX Horizyn", checklistApp: "Aegizyn" };
 const FACTS = {
+  ...NAMES,
   fromPrice: "59", starterUnits: "3", restaurantPrice: "149", pharmacyPrice: "199", unitsPerLocation: "10",
   extraUnit: "15", trialDays: "14", trialUnits: "5", trialCalls: "5", fridgeLimit: "41", freezerLimit: "10",
   offlineMinutes: "30", callAfterMinutes: "10", textWithinSeconds: "60",
@@ -79,7 +82,7 @@ function page({ where = "/today", signedIn = true, bridge = false } = {}) {
     PilotPanel: { screenText: () => "## Your fridges\nKitchen walk-in 47°" },
   };
   if (bridge) {
-    globalThis.window.CyberLogixConsole = {
+    globalThis.window.KryozynConsole = {
       signedIn: () => signedIn,
       api: async (p, init) => { const r = await fakeFetch(p, { ...init, headers: { Authorization: "Bearer session-token" } });
         const b = await r.json(); if (!r.ok) throw new Error(b.detail); return b; },
@@ -90,8 +93,8 @@ function page({ where = "/today", signedIn = true, bridge = false } = {}) {
       refresh: () => {},
     };
   }
-  delete require.cache[app("pilot-cyberlogix-pack.js")];
-  const pack = require(app("pilot-cyberlogix-pack.js"));
+  delete require.cache[app("pilot-kryozyn-pack.js")];
+  const pack = require(app("pilot-kryozyn-pack.js"));
   return { pack, calls, added, tools: Object.fromEntries(pack.tools().map((t) => [t.name, t])) };
 }
 
@@ -104,7 +107,7 @@ function engineWith(pack, { replies, confirmAnswers = [] }) {
   const host = { confirm: async (label) => { asked.push(label); return confirmAnswers.length ? confirmAnswers.shift() : false; },
     plan: async () => "cancel" };
   const engine = Engine.create({ store, providers, host,
-    config: { appName: "CyberLogix AI", knowledge: () => pack.knowledge, strengths: () => pack.strengths, tools: () => pack.tools(),
+    config: { appName: "Kryozyn", knowledge: () => pack.knowledge, strengths: () => pack.strengths, tools: () => pack.tools(),
       kidView: () => false, screen: () => ({ name: "Simple view" }) } });
   return { engine, sent, asked };
 }
@@ -283,7 +286,7 @@ test("never: plan changes, deleting, the on-call list, texts or calls are refuse
 test("core 1.4.0: on a new business's phone screen the robot stays at the bottom, with no header bar in the avoid list", () => {
   const fs = require("node:fs");
   const M = require(core("pilot-mascot.js"));
-  const config = fs.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+  const config = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   const list = config.slice(config.indexOf("avoid: ["), config.indexOf("],", config.indexOf("avoid: [")));
   const avoid = new Set(Array.from(list.matchAll(/"([^"]+)"/g), (m) => m[1]));
   for (const sel of [".top", ".demo-top", "#app > .nav"]) assert.ok(!avoid.has(sel), sel);
@@ -315,9 +318,9 @@ test("core 1.4.0: on a new business's phone screen the robot stays at the bottom
 const fsx = require("node:fs");
 const vmx = require("node:vm");
 const Words = require(app("words.js"));
-const CONFIG = fsx.readFileSync(app("pilot-cyberlogix.js"), "utf8");
+const CONFIG = fsx.readFileSync(app("pilot-kryozyn.js"), "utf8");
 const PANEL = (() => { const sb = { window: {}, document: {}, URL }; vmx.runInNewContext(fsx.readFileSync(core("pilot-panel.js"), "utf8"), sb); return sb.window.PilotPanel; })();
-const BASE = "https://cyberlogix.example";
+const BASE = "https://kryozyn.example";
 const DATA = { fromPrice: "59", starterUnits: "3", trialDays: "14", trialUnits: "5", trialCalls: "5", fridgeLimit: "41",
   freezerLimit: "10", offlineMinutes: "30", callAfterMinutes: "10", textWithinSeconds: "60", alertAfterFridge: "20",
   alertAfterFreezer: "30", alertAtOnceDegrees: "15" };
@@ -357,13 +360,13 @@ function mountAt(pathname, { data, signedIn = true, overview, did } = {}) {
   const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
     localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
   if (pathname === "/console") {
-    win.CyberLogixConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null),
-      // The console's own session, for "What CyberLogix did for you" only (3.33.0).
+    win.KryozynConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null),
+      // The console's own session, for "What Kryozyn did for you" only (3.33.0).
       api: async (url) => { if (url === "/api/console/did-for-you?period=week" && did) return did; throw new Error(`not mocked: ${url}`); } };
   }
-  if (pathname === "/today") win.CyberLogixToday = { overview: () => overview, did: () => did || null };
+  if (pathname === "/today") win.KryozynToday = { overview: () => overview, did: () => did || null };
   vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL,
-    document: { getElementById: () => ({ dataset: data || DATA }), title: "Restaurants" } });
+    document: { getElementById: () => ({ dataset: { ...NAMES, ...(data || DATA) } }), title: "Restaurants" } });
   return given;
 }
 const pills = (given, pathname) => PANEL.welcomePills(given.welcomePills, BASE + pathname);
@@ -497,7 +500,7 @@ test("1.4.0: signed out, the console's answers say where to look instead of gues
   // The pages hand over what they loaded, and nothing else is fetched for it.
   assert.ok(js.includes("overview: () => (state.token ? state.data : null),"));
   const simple = fsx.readFileSync(app("simple.js"), "utf8");
-  assert.ok(simple.includes("window.CyberLogixToday = Object.freeze({ overview: () => lastData,"));
+  assert.ok(simple.includes("window.KryozynToday = Object.freeze({ overview: () => lastData,"));
 });
 
 test("1.4.0: page suggestions that are facts are answered at once; open questions stay AI prompts; every answer is local", () => {
@@ -510,7 +513,7 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   assert.deepEqual(kinds("/for/restaurant"), ["ai", "ai", "answer"]);
   assert.deepEqual(kinds("/demo"), ["answer", "answer", "link"]);
   // "Log for the inspector" goes straight to the log once signed in (3.30.0).
-  // 3.32.0: "What CyberLogix did for you" in place of the proof report, which needed a key.
+  // 3.32.0: "What Kryozyn did for you" in place of the proof report, which needed a key.
   // 3.33.0: with an alert open, what it means and "It's fixed now" first; with none, the
   // week's summary (quoted, an answer now) and the power.
   assert.deepEqual(kinds("/console", { overview: overviewWith() }), ["answer", "answer", "link"]);
@@ -522,7 +525,7 @@ test("1.4.0: page suggestions that are facts are answered at once; open question
   assert.match(texts["Will a door left open wake us?"], /^No\. A door opened for a minute doesn't alert anybody/);
   assert.match(texts["Will a door left open wake us?"], /20 minutes for a food fridge, 30 for a freezer/);
   assert.match(texts["Wi-Fi or power goes off?"], /after 30 minutes with nothing from a sensor everyone on call is texted/);
-  assert.match(texts["Do you phone at night?"], /^Yes, on plans with calls\. If nobody answers the alert text within 10 minutes, CyberLogix phones the people on call/);
+  assert.match(texts["Do you phone at night?"], /^Yes, on plans with calls\. If nobody answers the alert text within 10 minutes, Kryozyn phones the people on call/);
   assert.match(texts["What's in the trial?"], /14 days for up to 5 sensors, needs no card, and includes 5 alert calls/);
   assert.match(texts["Set up step by step"], /^1\. Buy one sensor/);
   for (const [label, text] of Object.entries(texts)) {
@@ -627,7 +630,7 @@ test("1.4.1: the console's own answers never reach the AI provider once a key is
   const sent = [];
   const providers = { ...Providers, chat: async (st, req) => { sent.push(req); return { raw: {}, toolCalls: [], stop: "done", text: "Sure." }; } };
   const engine = Engine.create({ store, providers, host: { confirm: async () => false, plan: async () => "cancel" },
-    config: { appName: "CyberLogix AI", tools: () => [], kidView: () => false, screen: () => ({ name: "Console" }) } });
+    config: { appName: "Kryozyn", tools: () => [], kidView: () => false, screen: () => ({ name: "Console" }) } });
   await engine.send("And what should I check first?");
   assert.equal(sent.length, 1);
   const wire = JSON.stringify(sent[0].messages);
@@ -948,7 +951,7 @@ test("3.32.1: the unit asked about, when it needs you, ends its line with one fu
 // ---------------------------------------------------------------- 3.33.0 (round 11)
 
 const ROUND11 = [
-  ["Does this work with my sensor?", /^Most likely, yes\. CyberLogix works with any wireless sensor that can send its readings to a web address/],
+  ["Does this work with my sensor?", /^Most likely, yes\. Kryozyn works with any wireless sensor that can send its readings to a web address/],
   ["Does it work with Monnit?", /^Yes, \*\*Monnit\*\* works: .+\[The Monnit guide\]\(\/help\/sensors#monnit\)/],
   ["does it work with sensorpush", /^Yes, \*\*SensorPush\*\* works/],
   ["how do I add my chef to get texts", /\*\*Who gets alerts\*\* in the console \(the \*\*Team\*\* tab\): .*name and .*mobile number/],
@@ -999,28 +1002,28 @@ test("3.33.0: signed out, 'Is my walk-in fridge OK?' says to sign in, with the l
   }
 });
 
-test("3.33.0: 'What CyberLogix did for you', pressed or typed, quotes the week's summary line, an alert open or not", async () => {
+test("3.33.0: 'What Kryozyn did for you', pressed or typed, quotes the week's summary line, an alert open or not", async () => {
   const did = { period: "week", label: "This week", figures: { readings: 1, alerts: 2 },
     lines: ["Checked 1 reading from 1 fridge or freezer, 100% in range.", "2 alerts, 1 answered in 4 minutes.", "Every sensor is reporting."] };
   for (const pathname of ["/today", "/console"]) {
     for (const overview of [overviewWith({ none: true }), overviewWith()]) {
       const got = await Promise.resolve((() => {
         const given = mountAt(pathname, { overview, did });
-        const hit = PANEL.matchTyped("What CyberLogix did for you", typedItems(given, pathname));
-        return hit.answer({ facts: {}, ready: false, label: "What CyberLogix did for you" });
+        const hit = PANEL.matchTyped("What Kryozyn did for you", typedItems(given, pathname));
+        return hit.answer({ facts: {}, ready: false, label: "What Kryozyn did for you" });
       })());
       assert.ok(got.startsWith("**This week: 1 reading checked, 2 alerts.**"), `${pathname}: ${got}`);
       assert.ok(got.includes("- 2 alerts, 1 answered in 4 minutes."), got);
       // A link Pilot draws (a bare "#did" was printed as words).
-      assert.ok(got.endsWith("[Open What CyberLogix did for you](/today#did)"), got);
+      assert.ok(got.endsWith("[Open What Kryozyn did for you](/today#did)"), got);
     }
     // Pressed, with no alert open, the same.
-    const chip = chipOf(mountAt(pathname, { overview: overviewWith({ none: true }), did }), "What CyberLogix did for you");
+    const chip = chipOf(mountAt(pathname, { overview: overviewWith({ none: true }), did }), "What Kryozyn did for you");
     assert.ok((await ask(chip)).startsWith("**This week: 1 reading checked, 2 alerts.**"));
   }
   // Nothing loaded yet: where it is.
-  assert.match(await ask(chipOf(mountAt("/today", { overview: overviewWith({ none: true }) }), "What CyberLogix did for you")),
-    /^\*\*What CyberLogix did for you\*\* shows this week or this month/);
+  assert.match(await ask(chipOf(mountAt("/today", { overview: overviewWith({ none: true }) }), "What Kryozyn did for you")),
+    /^\*\*What Kryozyn did for you\*\* shows this week or this month/);
 });
 
 test("3.33.0: 'It's fixed now' and 'What does this alert mean?' are offered only while an alert is open", () => {
@@ -1028,7 +1031,7 @@ test("3.33.0: 'It's fixed now' and 'What does this alert mean?' are offered only
     const calm = mountAt(pathname, { overview: overviewWith({ none: true }) });
     const labels = J(typedItems(calm, pathname).map((x) => x.label));
     assert.ok(!labels.includes("It's fixed now") && !labels.includes("What does this alert mean?"), `${pathname}: ${labels}`);
-    assert.deepEqual(J(calm.chips(calm.screen()).map((c) => c.label)), ["Log for the inspector", "What CyberLogix did for you", "Wi-Fi or power goes off?"]);
+    assert.deepEqual(J(calm.chips(calm.screen()).map((c) => c.label)), ["Log for the inspector", "What Kryozyn did for you", "Wi-Fi or power goes off?"]);
     const live = mountAt(pathname, { overview: overviewWith() });
     assert.deepEqual(J(live.chips(live.screen()).map((c) => c.label)), ["What does this alert mean?", "It's fixed now", "Log for the inspector"]);
     // Not loaded yet counts as none open.

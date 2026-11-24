@@ -52,14 +52,14 @@ def test_the_returned_token_actually_works(api):
 
 def test_the_returned_api_key_actually_works(api):
     body = _signup(api).json()
-    headers = {"X-CyberLogix-Key": body["api_key"]}
+    headers = {"X-Kryozyn-Key": body["api_key"]}
     assert api.get("/api/licenses/me", headers=headers).status_code == 200
 
 
 def test_the_whole_first_run_works_end_to_end(api):
     """Sign up, add a contact, register a sensor, break it. No demo data."""
     body = _signup(api).json()
-    key = {"X-CyberLogix-Key": body["api_key"]}
+    key = {"X-Kryozyn-Key": body["api_key"]}
 
     assert api.post(
         "/api/contacts",
@@ -111,7 +111,7 @@ def test_the_first_steps_use_the_sector_that_was_chosen(api):
 def test_the_breach_command_actually_breaches(api):
     """The headline promise of the first run: step four opens an incident."""
     body = _signup(api, industry_vertical="restaurant").json()
-    key = {"X-CyberLogix-Key": body["api_key"]}
+    key = {"X-Kryozyn-Key": body["api_key"]}
     steps = body["next_steps"]["steps"]
 
     import json as jsonlib
@@ -182,7 +182,7 @@ def test_provisioning_a_paid_plan_needs_the_key(api):
 def test_a_wrong_provisioning_key_is_refused(api):
     resp = api.post(
         "/api/licenses/tenants",
-        headers={"X-CyberLogix-Provisioning": "not-the-key"},
+        headers={"X-Kryozyn-Provisioning": "not-the-key"},
         json={
             "company_name": "Free Enterprise Ltd",
             "contact_name": "A Chancer",
@@ -197,7 +197,7 @@ def test_a_wrong_provisioning_key_is_refused(api):
 def test_the_right_provisioning_key_is_accepted(api):
     resp = api.post(
         "/api/licenses/tenants",
-        headers={"X-CyberLogix-Provisioning": "test-provisioning-key"},
+        headers={"X-Kryozyn-Provisioning": "test-provisioning-key"},
         json={
             "company_name": "Real Customer Inc",
             "contact_name": "Dana",
@@ -224,7 +224,7 @@ def test_trials_come_only_from_the_limited_front_door(api):
     }
     assert api.post("/api/licenses/tenants", json=body).status_code == 403
     keyed = api.post("/api/licenses/tenants", json=body,
-                     headers={"X-CyberLogix-Provisioning": "test-provisioning-key"})
+                     headers={"X-Kryozyn-Provisioning": "test-provisioning-key"})
     assert keyed.status_code == 201
 
 
@@ -235,7 +235,7 @@ def test_no_key_configured_means_no_paid_plans_at_all(api, monkeypatch):
     monkeypatch.setattr(licenses, "PROVISIONING_KEY", "")
     resp = api.post(
         "/api/licenses/tenants",
-        headers={"X-CyberLogix-Provisioning": "anything"},
+        headers={"X-Kryozyn-Provisioning": "anything"},
         json={
             "company_name": "Nope",
             "contact_name": "Sam",
@@ -453,7 +453,7 @@ def test_signing_up_records_which_terms_were_accepted(api):
 
     body = _signup(api).json()
     headers = {
-        "X-CyberLogix-Key": body["api_key"],
+        "X-Kryozyn-Key": body["api_key"],
         "Authorization": f"Bearer {body['token']}",
     }
     status = api.get("/api/legal/acceptance/status", headers=headers).json()
@@ -483,7 +483,7 @@ def test_a_broken_legal_module_does_not_lose_the_signup(api, monkeypatch):
     # sign-up survived, not that a broken template stays broken.
     monkeypatch.undo()
     headers = {
-        "X-CyberLogix-Key": resp.json()["api_key"],
+        "X-Kryozyn-Key": resp.json()["api_key"],
         "Authorization": f"Bearer {resp.json()['token']}",
     }
     # And it says the acceptance is missing rather than pretending.

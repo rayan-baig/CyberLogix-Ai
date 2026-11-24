@@ -19,7 +19,7 @@ from store import STORE, add_months, utc_now
 @pytest.fixture()
 def admin_headers(monkeypatch):
     monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", "root-key")
-    return {"X-CyberLogix-Admin": "root-key"}
+    return {"X-Kryozyn-Admin": "root-key"}
 
 
 def _estate(api, tenant_factory, owner_headers, sensor_factory, units=5,
@@ -425,7 +425,7 @@ def test_a_part_paid_invoice_that_is_voided_earns_no_commission(
         "company_name": "Cold Chain Services", "contact_name": "P",
         "contact_email": "p@chain.example", "commission_percent": 20.0})
     assert made.status_code == 201, made.text
-    partner_key = {"X-CyberLogix-Partner": made.json()["api_key"]}
+    partner_key = {"X-Kryozyn-Partner": made.json()["api_key"]}
     api.post(f"/api/partners/{made.json()['partner_id']}/accounts",
              headers=admin_headers, json={"tenant_id": tenant["tenant_id"]})
 

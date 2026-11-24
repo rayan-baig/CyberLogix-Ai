@@ -117,7 +117,7 @@ services:
         value: "1"
 
       # Paste the service's own https address here after the first
-      # deploy -- https://cyberlogix.mtrxhorizyn.com once the custom
+      # deploy -- https://kryozyn.mtrxhorizyn.com once the custom
       # domain is added (DEPLOY.md section 1) -- then redeploy. Set in the
       # dashboard, not here, so a copy of this Blueprint never points
       # live customers' links at itself. Until it is set a voice call still goes
@@ -155,7 +155,7 @@ services:
       - key: CYBERLOGIX_ALLOWED_ORIGINS
         sync: false
 
-      # Optional: the same value as MTRX Horizyn's MTRX_STATS_KEY, so the
+      # Optional: the same value as the MTRX Horizyn console's stats key, so the
       # owner's console can show user counts. Unset, /api/stats does not exist.
       - key: STATS_KEY
         sync: false
@@ -171,7 +171,7 @@ services:
       - key: SMTP_PASSWORD
         sync: false
       - key: MAIL_FROM
-        sync: false          # live: no-reply@cyberlogix.mtrxhorizyn.com
+        sync: false          # live: no-reply@kryozyn.mtrxhorizyn.com
       - key: CYBERLOGIX_OPERATOR_EMAIL
         sync: false
       # Optional: where a short report of each server error (a 500) goes,
@@ -180,13 +180,13 @@ services:
       - key: CYBERLOGIX_ERRORS_EMAIL
         sync: false
       # Where the help page tells customers to write for help (live:
-      # help@cyberlogix.mtrxhorizyn.com). Unset, it uses MAIL_REPLY_TO, and
+      # help@kryozyn.mtrxhorizyn.com). Unset, it uses MAIL_REPLY_TO, and
       # with neither it points them at their invoice.
       - key: CYBERLOGIX_SUPPORT_EMAIL
         sync: false
-      # Signs each daily Kitchen Safety Bundle report to OmniArmor
-      # (X-CyberLogix-Signature). The same value as OmniArmor's
-      # KITCHEN_BUNDLE_SECRET; unset, reports go unsigned and OmniArmor
+      # Signs each daily Kitchen Safety Bundle report to Aegizyn
+      # (X-Kryozyn-Signature). The same value as Aegizyn's
+      # KITCHEN_BUNDLE_SECRET; unset, reports go unsigned and Aegizyn
       # does not waive its Pro fee. A secret: set it in the dashboard.
       - key: KITCHEN_BUNDLE_SECRET
         sync: false

@@ -49,7 +49,7 @@ def test_the_sign_up_sector_reaches_the_console_payload(api, mailbox):
         "contact_phone": "+1-555-0142", "industry_vertical": "restaurant",
     })
     assert resp.status_code == 201, resp.text
-    key = {"X-CyberLogix-Key": resp.json()["api_key"]}
+    key = {"X-Kryozyn-Key": resp.json()["api_key"]}
 
     overview = api.get("/api/console/overview", headers=key).json()
 

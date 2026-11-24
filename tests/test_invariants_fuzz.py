@@ -37,8 +37,8 @@ from store import MAIL_MAX_ATTEMPTS, PLAN_TIERS, STORE, add_months, utc_now
 SCENARIOS = int(os.environ.get("CYBERLOGIX_FUZZ_SCENARIOS", "40"))
 STEPS = int(os.environ.get("CYBERLOGIX_FUZZ_STEPS", "22"))
 
-ADMIN = {"X-CyberLogix-Admin": "test-admin-key"}
-PROVISIONING = {"X-CyberLogix-Provisioning": "test-provisioning-key"}
+ADMIN = {"X-Kryozyn-Admin": "test-admin-key"}
+PROVISIONING = {"X-Kryozyn-Provisioning": "test-provisioning-key"}
 VERTICALS = ["restaurant", "pharmacy", "cryostorage", "logistics",
              "country_club", "cybersecurity"]
 ADD_ONS = ["assurance", "vault", "benchmarks", "equipment_intelligence"]
@@ -71,7 +71,7 @@ class World:
             "contact_phone": "+15550100",
             "industry_vertical": self.vertical,
         }).json()
-        self.key = {"X-CyberLogix-Key": body["api_key"]}
+        self.key = {"X-Kryozyn-Key": body["api_key"]}
         self.bearer = {"Authorization": f"Bearer {body['token']}"}
         self.both = {**self.key, **self.bearer}
         self.tenant_id = body["tenant"]["tenant_id"]

@@ -26,13 +26,13 @@ import auth
 from contracts import run_billing
 from store import STORE
 
-ADMIN = {"X-CyberLogix-Admin": "walk-admin-key"}
+ADMIN = {"X-Kryozyn-Admin": "walk-admin-key"}
 PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture(autouse=True)
 def operator_key(monkeypatch):
-    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", ADMIN["X-CyberLogix-Admin"])
+    monkeypatch.setattr(auth, "PLATFORM_ADMIN_KEY", ADMIN["X-Kryozyn-Admin"])
 
 
 def _sign_up(api, company, email):
@@ -52,7 +52,7 @@ def test_a_partner_from_first_day_to_last(api):
         "contact_email": "ray@coldline.example", "commission_percent": 15})
     assert made.status_code == 201, made.text
     partner_id, key = made.json()["partner_id"], made.json()["api_key"]
-    portal = {"X-CyberLogix-Partner": key}
+    portal = {"X-Kryozyn-Partner": key}
     assert made.json()["commission_percent"] == 15
     assert key not in api.get("/api/partners", headers=ADMIN).text
 
@@ -156,7 +156,7 @@ def test_a_partner_from_first_day_to_last(api):
     rotated = api.post(f"/api/partners/{partner_id}/rotate-key", headers=ADMIN)
     assert rotated.status_code == 200
     assert api.get("/api/partners/me", headers=portal).status_code == 401
-    portal = {"X-CyberLogix-Partner": rotated.json()["api_key"]}
+    portal = {"X-Kryozyn-Partner": rotated.json()["api_key"]}
     assert api.get("/api/partners/me", headers=portal).status_code == 200
 
     # 12. Paused, and back.
@@ -183,7 +183,7 @@ def test_a_deleted_business_leaves_the_book_cleanly(api):
     made = api.post("/api/partners", headers=ADMIN, json={
         "company_name": "Coldline Service Co", "contact_name": "Ray Diaz",
         "contact_email": "ray@coldline.example"}).json()
-    portal = {"X-CyberLogix-Partner": made["api_key"]}
+    portal = {"X-Kryozyn-Partner": made["api_key"]}
     owner, tenant_id = _sign_up(api, "Short Lived Diner", "kim@shortlived.example")
     api.post(f"/api/partners/{made['partner_id']}/accounts", headers=ADMIN,
              json={"tenant_id": tenant_id})

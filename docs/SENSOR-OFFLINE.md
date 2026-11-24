@@ -1,6 +1,6 @@
 # A sensor is offline: what to check
 
-When a sensor stops reporting, CyberLogix cannot tell you if that fridge
+When a sensor stops reporting, Kryozyn cannot tell you if that fridge
 or freezer gets too warm. This page says what offline means, what we do
 about it, and what to check, in the order most likely to find the
 problem.

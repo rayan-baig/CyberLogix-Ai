@@ -21,6 +21,7 @@ who triggers the sweep; it does not make a second replica safe.
 
 from __future__ import annotations
 
+from brand import CHECKLIST_APP
 import asyncio
 import logging
 import os
@@ -115,7 +116,7 @@ def run_money_pass() -> dict:
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Licence alert pass failed (%s).", exc)
     try:
-        # Each connected business's finished day, to OmniArmor (the
+        # Each connected business's finished day, to Aegizyn (the
         # Kitchen Safety Bundle). Hourly is soon enough after a site's
         # midnight, and before the flush so a failure email it writes goes
         # out in the same hour.
@@ -123,7 +124,7 @@ def run_money_pass() -> dict:
 
         bundle = omniarmor.run_daily()
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
-        logger.exception("OmniArmor daily pass failed (%s).", exc)
+        logger.exception(f"{CHECKLIST_APP} daily pass failed (%s).", exc)
     paused = {"reminded": 0, "resumed": 0}
     try:
         # A reminder three days before a pause ends (retention.py). Before

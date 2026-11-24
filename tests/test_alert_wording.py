@@ -154,7 +154,7 @@ def test_the_call_says_which_unit_where_how_far_and_press_1(estate, vertical):
     script, source = build_voice_script(incident, tenant)
 
     assert source == "fallback_template"
-    assert script.startswith("This is CyberLogix AI with a temperature alarm for "
+    assert script.startswith("This is Kryozyn with a temperature alarm for "
                              f"{tenant.company_name}.")
     assert f"{LOCATION}, at {SITE}, is at " in script
     assert re.search(r"That is [\d.]+ degrees Fahrenheit (above|below) its limit of "

@@ -11,7 +11,7 @@ This page says how, what we keep afterwards, and why.
 Only an **owner** of the business. An operator or a viewer cannot.
 
 You must be **signed in as yourself**. The business's master key (the
-`X-CyberLogix-Key`) does not work here. So a leaked key cannot take a
+`X-Kryozyn-Key`) does not work here. So a leaked key cannot take a
 copy of your business, or wipe it out.
 
 ## Download everything
@@ -112,7 +112,7 @@ If any of these is wrong, **nothing is deleted**, and you are told why:
 ### People who work at other businesses too
 
 Someone on your team may also work at another business that uses
-CyberLogix. Deleting yours does not lock them out of the other one. They
+Kryozyn. Deleting yours does not lock them out of the other one. They
 keep their email and password there.
 
 ### With the API

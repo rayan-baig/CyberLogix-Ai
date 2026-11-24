@@ -3,7 +3,7 @@
 (Brokers and insurers who refer businesses are a different programme, and
 see nothing inside a business: [INSURANCE-PARTNERS.md](INSURANCE-PARTNERS.md).)
 
-A partner is a firm that sells and looks after CyberLogix for its own
+A partner is a firm that sells and looks after Kryozyn for its own
 customers: a refrigeration servicer, an installer, a facilities company.
 They already visit the sites and get the call when a freezer fails.
 
@@ -15,7 +15,7 @@ with a real partner key.
 
 In the commands below, `$ADMIN` is the platform operator's key
 (`CYBERLOGIX_ADMIN_KEY`), `$PARTNER_KEY` is the partner's key, and
-`cyberlogix.mtrxhorizyn.com` is CyberLogix's address.
+`kryozyn.mtrxhorizyn.com` is Kryozyn's address.
 
 ## What a partner gets
 
@@ -66,8 +66,8 @@ friend). The rule between the two is one business, one reward:
 ### 1. Make the partner
 
 ```
-curl -X POST https://cyberlogix.mtrxhorizyn.com/api/partners \
-  -H "X-CyberLogix-Admin: $ADMIN" -H 'Content-Type: application/json' \
+curl -X POST https://kryozyn.mtrxhorizyn.com/api/partners \
+  -H "X-Kryozyn-Admin: $ADMIN" -H 'Content-Type: application/json' \
   -d '{"company_name": "Coldline Service Co", "contact_name": "Ray Diaz",
        "contact_email": "ray@coldline.example", "commission_percent": 15}'
 ```
@@ -88,8 +88,8 @@ Attaching a business needs its account ID. Search by its name or the
 email it signed up with (at least two characters):
 
 ```
-curl -H "X-CyberLogix-Admin: $ADMIN" \
-  'https://cyberlogix.mtrxhorizyn.com/api/partners/businesses?search=bella+vista'
+curl -H "X-Kryozyn-Admin: $ADMIN" \
+  'https://kryozyn.mtrxhorizyn.com/api/partners/businesses?search=bella+vista'
 ```
 
 Each match shows `tenant_id`, the name, the plan, how many units it has,
@@ -98,8 +98,8 @@ and which partner already looks after it, if any.
 ### 4. Attach it
 
 ```
-curl -X POST https://cyberlogix.mtrxhorizyn.com/api/partners/PTR-000001/accounts \
-  -H "X-CyberLogix-Admin: $ADMIN" -H 'Content-Type: application/json' \
+curl -X POST https://kryozyn.mtrxhorizyn.com/api/partners/PTR-000001/accounts \
+  -H "X-Kryozyn-Admin: $ADMIN" -H 'Content-Type: application/json' \
   -d '{"tenant_id": "TEN-000007"}'
 ```
 
@@ -114,7 +114,7 @@ partner in `partner_name`.
 
 ### 6. The partner signs in
 
-They open `https://cyberlogix.mtrxhorizyn.com/partners` and paste the key.
+They open `https://kryozyn.mtrxhorizyn.com/partners` and paste the key.
 The portal keeps itself up to date while it is open.
 
 ## Each month
@@ -123,7 +123,7 @@ The portal keeps itself up to date while it is open.
    every partner's total with:
 
    ```
-   curl -H "X-CyberLogix-Admin: $ADMIN" https://cyberlogix.mtrxhorizyn.com/api/partners
+   curl -H "X-Kryozyn-Admin: $ADMIN" https://kryozyn.mtrxhorizyn.com/api/partners
    ```
 
    The two figures always agree: both are added up from the same
@@ -142,7 +142,7 @@ The portal keeps itself up to date while it is open.
 | A business deletes its account | It disappears from the partner's book. Nothing else to do. |
 | A partner stops working with us | Pause them, and take their businesses off them one by one. |
 
-Every one of these needs `X-CyberLogix-Admin`. A partner key cannot do
+Every one of these needs `X-Kryozyn-Admin`. A partner key cannot do
 any of them.
 
 ## What is not there yet

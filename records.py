@@ -12,6 +12,7 @@ keep working.
 
 from __future__ import annotations
 
+from brand import APP_SHORT
 import calendar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -47,11 +48,11 @@ def person_name(label: Optional[str]) -> Optional[str]:
     it ("Rosa Test <rosa@example.com>"), because that is the record. What
     a screen says is "Rosa is on it": the first name, or the part of an
     address before the @ when that is all there is. A machine's label
-    ("API key", "CyberLogix (back to normal)") is left as it is.
+    ("API key", "Kryozyn (back to normal)") is left as it is.
     """
     if not label:
         return None
-    text = str(label).strip()
+    text = renamed(str(label).strip())
     if text.startswith("phone keypad"):
         return "Somebody on the phone"
     # "Rosa Test, by text reply (+1555...)", "Dana, with site-wide alert ..."
@@ -62,7 +63,7 @@ def person_name(label: Optional[str]) -> Optional[str]:
         local = text.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
         text = local.split(" ")[0].capitalize() if local else text
         return text
-    if text in ("API key",) or text.startswith("CyberLogix"):
+    if text in ("API key",) or text.startswith(APP_SHORT):
         return text
     return text.split(" ")[0] if text else None
 
@@ -86,7 +87,7 @@ FOOD_CHANGE_HOURS = 24
 def food_answer_words(disposition: Optional[str],
                       auto_minutes: Optional[float] = None) -> Optional[str]:
     """"Food kept", "Thrown away" and so on, or None before any answer.
-    "Food safe: out for 4 minutes" when CyberLogix recorded it by itself
+    "Food safe: out for 4 minutes" when Kryozyn recorded it by itself
     for a short blip (3.32.0)."""
     if not disposition:
         return None
@@ -561,7 +562,7 @@ class Incident:
     # Jo, 4:09 PM" in the alert's history and on /today's month line.
     food_answered_by: Optional[str] = None
     food_answered_at: Optional[datetime] = None
-    # A short blip whose food CyberLogix recorded safe by itself (3.32.0,
+    # A short blip whose food Kryozyn recorded safe by itself (3.32.0,
     # food_value.auto_safe_minutes): the minutes it was out. None for an
     # answer a person gave. Cleared when somebody changes it.
     food_auto_minutes: Optional[float] = None
@@ -804,7 +805,7 @@ class Incident:
 
     def food_words(self) -> Optional[str]:
         """"Food kept", "Thrown away", or "Food safe: out for 4 minutes"
-        when CyberLogix recorded it by itself (3.32.0); None before."""
+        when Kryozyn recorded it by itself (3.32.0); None before."""
         return food_answer_words(self.product_disposition, self.food_auto_minutes)
 
     def food_change_until(self) -> Optional[datetime]:
@@ -1208,6 +1209,19 @@ class LoginSession:
         )
 
 
+# What the app wrote as itself before it was renamed (3.34.0): "CyberLogix
+# (automatic)", "CyberLogix (back to normal)", the audit trail's
+# "CyberLogix". Kept in the database as written; shown with today's name.
+_OLD_SELF = "Cyber" + "Logix"
+
+
+def renamed(label: str) -> str:
+    """A machine label written under the old name, in the current one."""
+    if label.startswith(_OLD_SELF):
+        return APP_SHORT + label[len(_OLD_SELF):]
+    return label
+
+
 @dataclass
 class AuditEntry:
     """One durable record of who did what.
@@ -1250,7 +1264,7 @@ class AuditEntry:
     def public(self) -> Dict[str, Any]:
         return {
             "entry_id": self.entry_id,
-            "actor": self.actor,
+            "actor": renamed(self.actor or ""),
             "actor_role": self.actor_role,
             "action": self.action,
             "detail": self.detail,
