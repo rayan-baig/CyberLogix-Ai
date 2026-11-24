@@ -37,4 +37,7 @@
   .sample-doc { border: none; background: #fff; padding: 0; color: #111; }
   .sample-mark { background: #ddd; }
   .sample-doc .drawer-title { color: #111; }
+  /* The page's own space under the pack printed a blank last page (3.36.0). */
+  .sample-page { padding-bottom: 0 !important; margin-bottom: 0 !important; min-height: 0 !important; }
+  .sample-doc .readout div { break-inside: avoid; }
 }

@@ -413,8 +413,9 @@ test("1.4.0: 'Will it work for my café?' is a short answer with the real figure
 test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from the page's own data, worst first, with no names of people", () => {
   for (const pathname of ["/console", "/today"]) {
     const p = pills(mountAt(pathname, { overview: overviewWith() }), pathname);
+    // 3.36.0: a sensor has reported, so no "How do I connect a sensor?".
     assert.deepEqual(J(p.map((x) => x.label)), ["Which fridges need me?", "Is the food still OK?",
-      "How do I connect a sensor?", "Who gets the texts?", "Add my AI key"], pathname);
+      "Who gets the texts?", "Do you phone us?", "Add my AI key"], pathname);
     const text = ask(p[0]);
     assert.match(text, /These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\*/);
     assert.match(text, /- \*\*Kitchen walk-in\*\* \(47°F\): Too warm for /);
@@ -605,12 +606,13 @@ test("1.4.1: after one of this app's own answers the welcome's pills come back u
     return J(PANEL.againPills(msgs, list, keyPill)).map((p) => p.label);
   };
   // The console and /today: Which fridges need me? leaves the other three (the key pill
-  // waits while the "Want more?" line right above offers the key).
+  // waits while the "Want more?" line right above offers the key). 3.36.0: the
+  // welcome of the situation (a sensor reports, an alert is live).
   for (const pathname of ["/console", "/today"]) {
-    assert.deepEqual(row(pathname, "Which fridges need me?"), ["Is the food still OK?", "How do I connect a sensor?", "Who gets the texts?"], pathname);
+    assert.deepEqual(row(pathname, "Which fridges need me?"), ["Is the food still OK?", "Who gets the texts?", "Do you phone us?"], pathname);
     // Under a later answer (no "Want more?" there: once per chat), the key pill comes back.
     assert.deepEqual(row(pathname, "Is the food still OK?", true),
-      ["Which fridges need me?", "How do I connect a sensor?", "Who gets the texts?", "Add my AI key"], pathname);
+      ["Which fridges need me?", "Who gets the texts?", "Do you phone us?", "Add my AI key"], pathname);
   }
   // A visitor: Will it work for my café? leaves the three links.
   for (const pathname of ["/", "/pricing", "/help/sensors", "/demo"]) {
@@ -698,10 +700,13 @@ test("1.4.2: with no key, a typed question finds this app's own answer on the co
   for (const pathname of ["/console", "/today"]) {
     for (const [words, want] of [["Is my walk-in fridge OK?", "Which fridges need me?"], ["why is my freezer warm", "Which fridges need me?"],
       ["What does the alert mean?", "What does this alert mean?"], ["Is the food safe?", "Is the food still OK?"],
-      ["Should I throw the food away?", "Is the food still OK?"], ["How do I add a new fridge?", "How do I connect a sensor?"],
+      ["Should I throw the food away?", "Is the food still OK?"],
       ["Where is the inspector log?", "Log for the inspector"], ["How do I close this alert?", "It's fixed now"], ["fridge", "Which fridges need me?"]]) {
       assert.equal(typed(pathname, words), want, `${pathname}: ${words}`);
     }
+    // 3.36.0: with a sensor reporting there is no connect pill; adding one
+    // more still gets the connect answer, through whichever item has its words.
+    assert.match(typedAnswer(pathname, "How do I add a new fridge?"), /^\*\*Connect your sensor\*\* walks you through it/, pathname);
   }
   // Signed out on the console: its own sign-in suggestions.
   assert.equal(typed("/console", "How do I sign in?", { signedIn: false }), "How do I sign in?");
@@ -739,8 +744,9 @@ test("1.4.2: anything else typed with no key still goes to key settings: no gues
         if (words === "Does this work for a bakery?") { assert.equal(got, "Will it work for my café?", pathname); continue; }
         if (words === "Does this work with my sensor?") { assert.equal(got, "What sensors do I need?", pathname); continue; }
       }
-      // 3.33.0: on the person's own pages too, through the connect pill (the sensors answer).
-      if (words === "Does this work with my sensor?") { assert.equal(got, "How do I connect a sensor?", pathname); continue; }
+      // 3.33.0: on the person's own pages too, the sensors answer (3.36.0: through
+      // whichever item carries its words, the connect pill being gone once a sensor reports).
+      if (words === "Does this work with my sensor?") { assert.match(typedAnswer(pathname, words), /^Most likely, yes\./, pathname); continue; }
       assert.equal(got, null, `${pathname}: ${words}`);
     }
   }
@@ -934,7 +940,7 @@ test("1.4.3: with no key, a question nothing fits gets the core's note in the ch
   const given = mountAt("/console", { overview: overviewWith() });
   const row = J(PANEL.noKeyItems(PANEL.ownPills(given.welcomePills, `${BASE}/console`), PANEL.cleanChips(given.chips(given.screen()), `${BASE}/console`), true));
   assert.deepEqual(row.map((x) => x.label), ["What does this alert mean?", "It's fixed now", "Log for the inspector",
-    "Which fridges need me?", "Is the food still OK?", "How do I connect a sensor?", "Add my AI key"]);
+    "Which fridges need me?", "Is the food still OK?", "Who gets the texts?", "Add my AI key"]);
 });
 
 test("3.32.1: the unit asked about, when it needs you, ends its line with one full stop", () => {
@@ -1087,16 +1093,18 @@ test("3.35.0: 'How do I make the insurance pack?' and 'How do I sign up?' are an
 
 test("3.35.0: while the loss headline shows, the welcome offers the pack first", async () => {
   for (const pathname of ["/today", "/console"]) {
+    // 3.36.0: the welcome's first pill, not a suggestion under it.
     const given = mountAt(pathname, { overview: lossOverview() });
-    const labels = J(given.chips(given.screen()).map((c) => c.label));
+    const labels = J(pills(given, pathname).map((c) => c.label));
     assert.equal(labels[0], "Make the insurance pack", `${pathname}: ${labels}`);
-    const chip = chipOf(given, "Make the insurance pack");
-    assert.match(await ask(chip), /#packet=INC-000009\)/);
-    // An alert open outranks it; nothing lost, the calm three.
+    assert.match(await ask(pills(given, pathname)[0]), /#packet=INC-000009\)/);
+    assert.ok(!J(given.chips(given.screen()).map((c) => c.label)).includes("Make the insurance pack"), "said once");
+    // An alert open outranks it; nothing lost, no pack pill.
     const live = mountAt(pathname, { overview: { ...lossOverview(), incidents: overviewWith().incidents } });
     assert.equal(J(live.chips(live.screen()).map((c) => c.label))[0], "What does this alert mean?");
+    assert.ok(!J(pills(live, pathname).map((c) => c.label)).includes("Make the insurance pack"));
     const calm = mountAt(pathname, { overview: overviewWith({ none: true }) });
-    assert.ok(!J(calm.chips(calm.screen()).map((c) => c.label)).includes("Make the insurance pack"));
+    assert.ok(!J(pills(calm, pathname).map((c) => c.label)).includes("Make the insurance pack"));
   }
 });
 
@@ -1138,6 +1146,129 @@ test("3.35.0: every item's words still fit the core's 20", () => {
       const given = mountAt(pathname, { overview });
       for (const item of [...given.welcomePills, ...given.chips(given.screen())]) {
         assert.ok(!item.match || item.match.length <= 20, `${pathname} ${item.label}: ${item.match && item.match.length}`);
+      }
+    }
+  }
+});
+
+// ---------------------------------------------------------------- 3.36.0
+
+// A business whose overview says what the welcome should follow.
+function situationOverview({ reported = true, food = "kept", loss = false, texts = "landed" } = {}) {
+  const data = overviewWith({ quiet: true });
+  if (!reported) data.sensors = [{ sensor_id: "NEW-1", location_name: "Walk-in fridge", last_temperature_display: null, condition: { state: "waiting_first" } }];
+  const closed = { incident_id: "INC-000020", sensor_id: "WALKIN-1", state: "resolved", opened_at: "2026-11-20T08:20:00Z",
+    out_since: "2026-11-20T08:00:00Z", resolved_at: "2026-11-20T09:00:00Z", peak_display: 52 };
+  if (food === "kept") Object.assign(closed, { product_disposition: "kept", food_answered_at: "2026-11-20T09:02:00Z" });
+  if (food === "waiting") closed.food_question = { word: "food", at_risk: true, words: "Food at risk: check it", out_since: closed.out_since, ask_on_today: true, note: "" };
+  if (texts === "off") Object.assign(closed, { texts_off: true, sms_fanout: [{ contact_name: "Dana Reyes", to: "+15550100", delivered: false, status: "not_configured" }] });
+  if (texts === "failed") Object.assign(closed, { alert_texts_failed: true, sms_fanout: [{ contact_name: "Dana Reyes", to: "+15550100", delivered: false, status: "failed" },
+    { contact_name: "Sam Lee", to: "+15550101", delivered: false, status: "failed" }] });
+  if (texts === "landed") Object.assign(closed, { texts_landed: true, sms_fanout: [{ contact_name: "Dana Reyes", to: "+15550100", delivered: true },
+    { contact_name: "Sam Lee", to: "+15550101", delivered: true }] });
+  data.incidents = food === "none" ? [] : [closed];
+  if (loss) return lossOverview();
+  return data;
+}
+const labelsOf = (pathname, overview) => J(pills(mountAt(pathname, { overview }), pathname).map((p) => p.label));
+
+test("3.36.0: the welcome follows the situation: the pack first after a loss, no connect pill once a sensor reports, no food pill once answered", () => {
+  for (const pathname of ["/today", "/console"]) {
+    // After food was thrown away: the pack first; the food answered and a sensor reporting, so neither of those.
+    const loss = labelsOf(pathname, lossOverview());
+    assert.equal(loss[0], "Make the insurance pack", `${pathname}: ${loss}`);
+    assert.ok(!loss.includes("Is the food still OK?") && !loss.includes("How do I connect a sensor?"), `${pathname}: ${loss}`);
+    // A new business, its sensor not heard from yet: how to connect it, and nothing about food.
+    const fresh = labelsOf(pathname, situationOverview({ reported: false, food: "none" }));
+    assert.ok(fresh.includes("How do I connect a sensor?"), `${pathname}: ${fresh}`);
+    assert.ok(!fresh.includes("Is the food still OK?"), `${pathname}: ${fresh}`);
+    // The food answered: no food pill. Still to answer: the food pill.
+    assert.ok(!labelsOf(pathname, situationOverview({ food: "kept" })).includes("Is the food still OK?"));
+    assert.ok(labelsOf(pathname, situationOverview({ food: "waiting" })).includes("Is the food still OK?"));
+    // An alert live: the food pill, whatever else.
+    assert.ok(labelsOf(pathname, overviewWith()).includes("Is the food still OK?"));
+    // Before the page has loaded: the four, as before.
+    assert.deepEqual(labelsOf(pathname, null), ["Which fridges need me?", "Is the food still OK?", "How do I connect a sensor?",
+      "Who gets the texts?", "Add my AI key"]);
+    // Always five at most, the key last, each once.
+    for (const ov of [lossOverview(), situationOverview(), situationOverview({ reported: false, food: "none" }), overviewWith()]) {
+      const l = labelsOf(pathname, ov);
+      assert.ok(l.length <= 5 && l[l.length - 1] === "Add my AI key" && new Set(l).size === l.length, `${pathname}: ${l}`);
+    }
+  }
+  // The visitor's welcome is unchanged.
+  assert.deepEqual(labelsOf("/", null), ["Will it work for my café?", "What does it cost?", "See it live", "What sensors do I need?", "Add my AI key"]);
+});
+
+test("3.36.0: signed out, the insurer, setting up, the food and Canada are answered with no key", () => {
+  for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/for/restaurant", "/demo", "/sample-insurance-pack"]) {
+    const insurer = typedAnswer(pathname, "What does my insurer get?", { signedIn: false, overview: null });
+    assert.match(insurer || "(none)", /^Your insurer gets an \*\*insurance pack\*\*: the readings around the alert, who was texted and when/, pathname);
+    assert.match(insurer, /\[See a sample pack\]\(\/sample-insurance-pack\)/);
+    const easy = typedAnswer(pathname, "Is it hard to set up?", { signedIn: false, overview: null });
+    assert.match(easy || "(none)", /^Not hard, and no coding\./, pathname);
+    assert.match(easy, /\[Step-by-step guides\]\(\/help\/sensors\)/);
+    const food = typedAnswer(pathname, "Is the food safe to eat?", { signedIn: false, overview: null });
+    assert.match(food || "(none)", /^The widely taught rule of thumb: under 2 hours above the limit/, pathname);
+    assert.match(food, /That is guidance, not a ruling/);
+    const canada = typedAnswer(pathname, "Does it work in Canada?", { signedIn: false, overview: null });
+    assert.match(canada || "(none)", /^Yes\. Kryozyn can show every reading in Celsius/, pathname);
+    assert.match(canada, /over 41°F \(5°C\) unless you set your own with \*\*Change limit\*\*/);
+    assert.match(canada, /Twilio to mobile numbers written with their country code; a Canadian number \(\+1\)/);
+    assert.match(canada, /Prices are in US dollars/);
+  }
+  // On the person's own pages too.
+  for (const pathname of ["/today", "/console"]) {
+    assert.match(typedAnswer(pathname, "Does it work in Canada?") || "", /Celsius/, pathname);
+    assert.match(typedAnswer(pathname, "Is it hard to set up?") || "", /^Not hard, and no coding\./, pathname);
+  }
+  // The limit is the server's.
+  assert.match(typedAnswer("/", "Does it work in Canada?", { data: { ...DATA, fridgeLimit: "40" } }), /over 40°F \(4°C\)/);
+  // The misses still miss.
+  for (const words of ["Write me a poem about fridges", "Tell me a joke", "How does this work?"]) assert.equal(typedAnswer("/", words), null, words);
+});
+
+test("3.36.0: signed in, what was thrown away, why nobody got a text, and the pack's address, from the page's own record", () => {
+  for (const pathname of ["/today", "/console"]) {
+    // The note, quoted.
+    const thrown = typedAnswer(pathname, "What was thrown away?", { overview: lossOverview() });
+    assert.match(thrown || "(none)", /^Recorded for \*\*Kitchen walk-in\*\* at .+: \u201cTwo trays of chicken\u201d/, pathname);
+    assert.match(thrown, /#packet=INC-000009\)/);
+    const bare = typedAnswer(pathname, "What was thrown away?", { overview: lossOverview({ note: null }) });
+    assert.match(bare, /nobody has written down what went yet/);
+    assert.match(typedAnswer(pathname, "What was thrown away?", { overview: situationOverview() }), /^Nothing has been recorded as thrown away/);
+    // Texts off: written, not delivered; never the people.
+    const off = typedAnswer(pathname, "why did nobody get a text", { overview: situationOverview({ texts: "off" }) });
+    assert.match(off || "(none)", /^The alert for \*\*Kitchen walk-in\*\* at .+ was written but not delivered: texts are off on this server, so nobody was texted\./, pathname);
+    assert.doesNotMatch(off, /Dana|Sam|Reyes|\+1555|Right now an alert text goes to/);
+    const failed = typedAnswer(pathname, "Why didn't I get a text?", { overview: situationOverview({ texts: "failed" }) });
+    assert.match(failed || "(none)", /went to 2 people and failed: none went through\./, pathname);
+    assert.doesNotMatch(failed, /Dana|Sam|Reyes|\+1555/);
+    const landed = typedAnswer(pathname, "nobody got the alert text", { overview: situationOverview({ texts: "landed" }) });
+    assert.match(landed || "(none)", /was texted to 2 people, and the phone network took both\./, pathname);
+    assert.match(landed, /\*\*Send a test alert\*\*/);
+    // The address: where the box is, with a link that opens it.
+    for (const overview of [overviewWith(), situationOverview(), lossOverview()]) {
+      const addr = typedAnswer(pathname, "How do I add my address to the pack?", { overview });
+      assert.match(addr || "(none)", /type it in \*\*Site address\*\* and press \*\*Save\*\*/, pathname);
+      assert.match(addr, /\[Add the address\]\([^)]*#site-address\)/);
+    }
+  }
+  // The console follows "#site-address" to the box.
+  const js = fsx.readFileSync(app("console.js"), "utf8");
+  assert.ok(js.includes('location.hash !== "#site-address"') && js.includes('goTo("address")'));
+});
+
+test("3.36.0: every item's words fit the core's 20 in every situation", () => {
+  const states = [overviewWith(), overviewWith({ none: true }), overviewWith({ ack: true, fixed: true }), lossOverview(), situationOverview(),
+    situationOverview({ reported: false, food: "none" }), situationOverview({ food: "waiting" }), null];
+  for (const pathname of EVERY.concat(["/sample-insurance-pack", "/for"])) {
+    for (const overview of states) {
+      for (const signedIn of [true, false]) {
+        const given = mountAt(pathname, { overview, signedIn });
+        for (const item of [...given.welcomePills, ...given.chips(given.screen())]) {
+          assert.ok(!item.match || item.match.length <= 20, `${pathname} ${item.label}: ${item.match && item.match.length}`);
+        }
       }
     }
   }

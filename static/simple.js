@@ -98,6 +98,9 @@ function renderNeeds(data, units) {
   const live = liveAlerts(data);
   const sitewide = (data.site_wide_alerts || []).filter((i) => i.state !== "resolved");
   $("needs-wrap").hidden = !live.length && !sitewide.length;
+  // Nothing more to press on any of them (3.36.0): waiting, not needing.
+  const heading = $("needs-h");
+  if (heading) heading.textContent = live.length && !sitewide.length && live.every(fixSaid) ? "Waiting to get cold" : "Needs you now";
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   const cards = sitewide.map((i) => `
     <div class="need">
@@ -111,8 +114,8 @@ function renderNeeds(data, units) {
       ? `${unit.last_temperature_display}°` : `${i.temperature_display}°`;
     const back = Boolean(((unit.condition || {}).back_in_range));
     const who = i.state === "acknowledged"
-      ? (i.fix_reported_at
-          ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed. It closes by itself once it is back in range.`
+      ? (fixSaid(i)
+          ? esc(fixWaitingShort(i))
           : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
       : CLXWords.nobodyYet(i);
     return `
@@ -129,7 +132,27 @@ function renderNeeds(data, units) {
   $("needs").innerHTML = cards;
 }
 
+/* "It's fixed" already pressed, and the unit not cold yet (3.36.0): there
+   is nothing more to press, so the card waits instead of offering the
+   same button again. It closes by itself once it is back in range. */
+function fixSaid(i) {
+  return i.state === "acknowledged" && Boolean(i.fix_reported_at);
+}
+
+function fixWaiting(i) {
+  return `${CLXWords.person(i.fix_reported_by_name, i.fix_reported_by)} said it's fixed. `
+    + "It closes by itself once it's cold.";
+}
+
+/* The card's own line under the headline that says the above. */
+function fixWaitingShort(i) {
+  const at = CLXWords.clock(i.fix_reported_at);
+  return `${CLXWords.person(i.fix_reported_by_name, i.fix_reported_by)} said it's fixed${at ? ` at ${at}` : ""}. `
+    + "Nothing more to press.";
+}
+
 function needButtons(i) {
+  if (fixSaid(i)) return "";
   return `<div class="need-acts">
       ${i.state === "open" ? `<button class="btn btn-primary" type="button"
           data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
@@ -221,7 +244,7 @@ function verdict(units, jobs, paused, live, food, loss) {
   const unanswered = live.filter((i) => i.state === "open").length;
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   const backAgain = live.length && !unanswered && live.every((i) =>
-    ((byId[i.sensor_id] || {}).condition || {}).back_in_range);
+    ((byId[i.sensor_id] || {}).condition || {}).back_in_range) && !live.every(fixSaid);
   if (backAgain) {
     // Somebody has it and the reading is back in range: the one thing
     // left is "It's fixed" (3.30.0), not "once it is cold again".
@@ -233,6 +256,14 @@ function verdict(units, jobs, paused, live, food, loss) {
     return false;
   }
   if (live.length) {
+    if (!unanswered && live.every(fixSaid)) {
+      // Said fixed, not cold yet (3.36.0): waiting, with nothing to press.
+      box.className = "verdict watch";
+      box.innerHTML = `<h1>Being dealt with</h1>
+         <p>${live.length === 1 ? esc(fixWaiting(live[0]))
+           : "Each was said to be fixed. Each closes by itself once it's cold."}</p>`;
+      return;
+    }
     box.className = "verdict bad";
     box.innerHTML = unanswered
       ? `<h1>${unanswered === 1 ? "An alert needs" : `${unanswered} alerts need`} you now</h1>

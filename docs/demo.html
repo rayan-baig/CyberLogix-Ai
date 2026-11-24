@@ -1067,6 +1067,22 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   border: 1px solid var(--border); border-radius: 8px; }
 .addr-label { font-size: 13px; color: var(--ink-2); }
 
+/* Who was texted or called, and what came of it (3.36.0): a table on a
+   wide page; on a phone, one small card a try with each cell's heading
+   beside it, so nothing hides off the right edge behind a sideways
+   scroll nobody finds. */
+.doc-channels { width: 100%; }
+@media (max-width: 560px) {
+  .doc-channels, .doc-channels tbody, .doc-channels tr, .doc-channels td { display: block; width: 100%; }
+  .doc-channels thead { display: none; }
+  .doc-channels tr { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .doc-channels td { display: flex; gap: 10px; padding: 2px 0; border: none; overflow-wrap: anywhere; }
+  .doc-channels td[data-label]::before {
+    content: attr(data-label); flex: 0 0 84px; color: var(--muted);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; padding-top: 2px;
+  }
+}
+
 /* "For the adjuster's IT team" (3.33.0): how to check the seal, small and
    last, so the people the pack is for read the food and the timeline,
    not a developer's instructions. */
@@ -1126,6 +1142,8 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-issuer-warn { color: #1F4E8A; }
   .doc-letter { color: #111; border-left-color: #999; }
   .doc-it { background: #fff; border-color: #ccc; color: #444; break-inside: avoid; }
+  /* The Recorded evidence box with its heading, on one page (3.36.0). */
+  .doc-keep { break-inside: avoid; }
   .doc-it-head, .doc-sub, .doc-issued-by { color: #555; }
   .doc-it a { color: #111; }
   .readout, .digest { border-color: #ccc; background: #fff; }
@@ -1844,6 +1862,14 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .food-dialog .food-acts { gap: 10px; }
 .food-dialog .food-acts .btn:not(.linkish) { flex: 1 1 130px; width: auto; min-width: 0; }
 .food-dialog .food-acts .linkish { flex: 1 0 100%; text-align: left; min-height: 36px; margin-top: 2px; }
+/* Every dialog's buttons (3.36.0): words wrap inside the button rather
+   than run out of it. "Thrown away. What next?" shares the food dialog's
+   rules, and at 375px its two long answers squeezed side by side with
+   "Make the insurance pack" running into "Add what was thrown away" and
+   off the edge (.btn never wraps its words). Each gets the whole width
+   when two do not fit, side by side when they do. */
+.confirm-dialog .btn { white-space: normal; text-align: center; max-width: 100%; }
+.loss-dialog .food-acts .btn:not(.linkish) { flex: 1 1 220px; }
 
 /* Pilot's robot sits in a bottom corner. On a phone the page's last lines
    and buttons keep clear of it: --pilot-gutter is set by the shared core
@@ -1976,11 +2002,13 @@ body.wall .needs-bar-acts { display: none; }
 .connect-list li { margin: 6px 0; line-height: 1.55; font-size: 14px; color: var(--ink-2);
                    overflow-wrap: anywhere; }
 .connect-list code { color: var(--ink); word-break: break-all; }
-.connect-serial { display: grid; gap: 6px; margin: 8px 0; }
+/* minmax(0, 1fr) (3.36.0): a plain column took the box's own width as
+   its least, and at 320px the serial row ran 50px past the dialog. */
+.connect-serial { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; }
 .connect-serial label { font-size: 13.5px; color: var(--ink); }
 .connect-serial label .sub { display: block; color: var(--muted); font-size: 12.5px; }
 .connect-serial-row { display: flex; gap: 8px; }
-.connect-serial-row input { flex: 1 1 auto; min-width: 0; min-height: 40px; }
+.connect-serial-row input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 40px; }
 .connect-serial-out:empty { display: none; }
 .connect-nokey { margin: 8px 0; padding: 10px 12px; border-radius: 10px;
                  border: 1px solid var(--border-lit); font-size: 13.5px; color: var(--ink-2); }
@@ -2033,7 +2061,6 @@ input[aria-invalid="true"] { border-color: var(--critical); }
   width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
   background: var(--bg); color: var(--ink); font: inherit; resize: vertical; min-height: 84px;
 }
-.loss-dialog .food-acts .btn { flex: 1 1 auto; }
 /* The food on an alert (console.js, 3.32.0): who said it, "Change" for 24
    hours, and after "Thrown away" the two next steps. */
 .food-change { font-size: 12.5px; margin-left: 6px; }
@@ -2486,7 +2513,7 @@ html .pilot-handle-l::before { right: 2px; }
   <p class="demo-small demo-error" id="error" hidden></p>
 </main>
 
-<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 37.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "over_index": 4, "alert_index": 7, "stay_ticks": 3, "real_stay_minutes": 20.0, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "Kryozyn: ALERT Walk-in cooler (WALK-IN-1) at Corner Bistro: 44.6F, 3.6F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is Kryozyn with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.9 degrees Fahrenheit. That is 5.9 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "Kryozyn: thanks, Sam. Walk-in cooler is yours. Nobody else will be called.", "ack_reply_called": "Kryozyn: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from Kryozyn: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://kryozyn.mtrxhorizyn.com/signup?sector=restaurant"}</script>
+<script type="application/json" id="demo-story">{"label": "Demo \u2014 pretend data", "notice": "Everything on this page is pretend. No texts or calls are sent, nothing is saved, and no account is made.", "business": "Corner Bistro", "people": [{"name": "Sam", "role": "Owner"}, {"name": "Alex", "role": "Head chef"}], "units": [{"id": "WALK-IN-1", "name": "Walk-in cooler", "kind": "fridge", "limit_f": 41.0, "start_f": 37.2}, {"id": "FREEZER-1", "name": "Freezer", "kind": "freezer", "limit_f": 10.0, "start_f": -1.5}, {"id": "PREP-1", "name": "Prep fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 36.4}, {"id": "BAR-1", "name": "Bar fridge", "kind": "fridge", "limit_f": 41.0, "start_f": 37.0}], "drifting": "WALK-IN-1", "tick_seconds": 2, "drift_starts_seconds": 60, "drift_f": [37.8, 38.7, 39.6, 40.5, 42.0, 43.1, 44.0, 44.6, 45.1, 45.5, 45.8, 46.1, 46.3, 46.5, 46.6, 46.7, 46.8, 46.9, 47.0, 47.1], "recover_f": [45.2, 43.4, 41.5, 39.8, 38.6, 37.9, 37.5, 37.3], "over_index": 4, "alert_index": 7, "stay_ticks": 3, "real_stay_minutes": 20.0, "demo_wait_seconds": 20, "ring_seconds": 8, "real_wait_minutes": 10, "messages": {"alert_text": "Kryozyn: Walk-in cooler (WALK-IN-1) at Corner Bistro: 44.6F, 3.6F above the 41F limit. Check the door and food now. Reply 1 if you are on it.", "call_script": "This is Kryozyn with a temperature alarm for Corner Bistro. Walk-in cooler, at Corner Bistro, is at 46.9 degrees Fahrenheit. That is 5.9 degrees Fahrenheit above its limit of 41 degrees Fahrenheit. It has been out of range for 10 minutes, and nobody has answered the text. Check the door and food now. Press 1 now to say you are dealing with it, and the calls will stop.", "ack_reply": "Kryozyn: thanks, Sam. Walk-in cooler is yours. Nobody else will be called.", "ack_reply_called": "Kryozyn: thanks, Sam. Walk-in cooler is yours. No more calls for this alert.", "test_text": "TEST from Kryozyn: nothing is wrong, no action needed. Real alerts for Corner Bistro will come from this number."}, "signup_href": "https://kryozyn.mtrxhorizyn.com/signup?sector=restaurant"}</script>
 <script>
 /* The background: a field of the mark, breathing.
  *

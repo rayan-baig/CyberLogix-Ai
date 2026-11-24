@@ -133,7 +133,9 @@ def test_a_closed_alert_says_closed_at_never_remains_open(api, break_gemini):
     assert pack["event"]["state"] == "resolved" and pack["event"]["closed_by_itself"] is True
     letter = pack["cover_letter"]
     assert "remains open" not in letter and "still open" not in letter
-    assert re.search(r"The alert closed at [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d\d [AP]M UTC, when the unit "
+    # 3.36.0: the date and the zone once, on when it went out; the same
+    # night's later times as a clock ("4:41 AM").
+    assert re.search(r"The alert closed at (?:[A-Z][a-z]{2} \d{1,2}, \d{4}, )?\d{1,2}:\d\d [AP]M(?: UTC)?, when the unit "
                      r"came back in range by itself\.", letter), letter
     # Open, it says so.
     _pulse(api, key, 37.5)
@@ -141,7 +143,8 @@ def test_a_closed_alert_says_closed_at_never_remains_open(api, break_gemini):
     open_pack = api.post(f"/api/claims/{live}/packet", headers=owner).json()
     assert "The alert was still open when this pack was issued." in open_pack["cover_letter"]
     assert "Closed" in [e["event"] for e in pack["response"]["timeline"]]
-    assert "closed at ${stamp(ev.resolved_at)}" in _function(CONSOLE_JS, "openPacket")
+    # 3.36.0: "Closed at 4:41 AM", the key saying it once.
+    assert 'const closedKey = ev.resolved_at ? "Closed at" : "Closed";' in _function(CONSOLE_JS, "openPacket")
 
 
 def test_dates_in_words_in_the_readers_clock_and_plurals(api, break_gemini):

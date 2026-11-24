@@ -43,7 +43,6 @@ from store import (
     Incident,
     Tenant,
     display_temperature,
-    format_temperature,
     iso,
     restate_temperatures,
     utc_now,
@@ -116,6 +115,35 @@ def when_words(moment: Optional[datetime], zone=timezone.utc) -> str:
             f"{hour}:{local.minute:02d} {'AM' if local.hour < 12 else 'PM'} {label}")
 
 
+def clock_words(moment: Optional[datetime], zone=timezone.utc, day: Optional[datetime] = None) -> str:
+    """"2:18 AM" when `moment` falls on the same day as `day` in the
+    reader's clock, else the whole of when_words (3.36.0): the summary
+    writes the date and the zone once, on when it went out of range, and
+    the times that follow that night as a person would."""
+    if moment is None:
+        return "not recorded"
+    if day is None:
+        return when_words(moment, zone)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    if day.tzinfo is None:
+        day = day.replace(tzinfo=timezone.utc)
+    local, ref = moment.astimezone(zone), day.astimezone(zone)
+    if local.date() != ref.date():
+        return when_words(moment, zone)
+    hour = local.hour % 12 or 12
+    return f"{hour}:{local.minute:02d} {'AM' if local.hour < 12 else 'PM'}"
+
+
+def pack_temperature(fahrenheit: Optional[float], unit: str) -> str:
+    """A reading on the pack, always with one decimal: "52.0°F", never
+    "52°F" beside "52.4°F" (3.36.0)."""
+    value = display_temperature(fahrenheit, unit)
+    if value is None:
+        return "not reported"
+    return f"{float(value):.1f}°{unit}"
+
+
 def plural(n: int, one: str, many: Optional[str] = None) -> str:
     """"1 reading", "6 readings": the count and the noun that goes with it."""
     return f"{n:,} {one if n == 1 else (many or one + 's')}"
@@ -152,9 +180,9 @@ def _breach_words(first_f: Optional[float], sensor, unit: str) -> Optional[str]:
         return None
     above, below = sensor.bounds()
     if above is not None and first_f > above:
-        return f"{format_temperature(first_f, unit)}: too warm, over the {plain_temperature(above, unit)} limit."
+        return f"{pack_temperature(first_f, unit)}: too warm, over the {plain_temperature(above, unit)} limit."
     if below is not None and first_f < below:
-        return f"{format_temperature(first_f, unit)}: too cold, under the {plain_temperature(below, unit)} limit."
+        return f"{pack_temperature(first_f, unit)}: too cold, under the {plain_temperature(below, unit)} limit."
     return None
 
 
@@ -299,6 +327,118 @@ def humidity_column(window) -> Dict[str, Any]:
             "note": None if shown else "Humidity: none was sent with these readings."}
 
 
+def _notified(incident: Incident, sensor) -> Dict[str, Any]:
+    """Who was told, when and whether it arrived, from the alert's own
+    delivery record (3.36.0). The summary said "The alert was sent
+    automatically at detection" whatever happened, on a server with texts
+    switched off too.
+
+    texts: "off" (written, not sent: no text service), "none" (nobody to
+    text), "sent" (tried: `delivered` of `texted` arrived). The wait is
+    the unit's own rule when it alerted after it ("after the 20-minute
+    wait"), None when it alerted at once."""
+    from domain import alert_after_minutes
+
+    first = list(incident.sms_fanout) or ([incident.sms_delivery] if incident.sms_delivery else [])
+    first = [r for r in first if r]
+    if incident.texts_off:
+        texts = "off"
+    elif not first:
+        texts = "none"
+    else:
+        texts = "sent"
+    out_before = max(0.0, (incident.opened_at - incident.started_at).total_seconds() / 60.0)
+    rule = alert_after_minutes(sensor) if sensor is not None else None
+    if rule and out_before >= rule - 0.5:
+        wait: Optional[float] = float(rule)
+    else:
+        wait = None
+    retries = []
+    for attempt in incident.sms_retries:
+        rows = [r for r in (attempt.get("deliveries") or []) if r]
+        retries.append({"at": attempt.get("at"), "texted": len(rows),
+                        "delivered": sum(1 for r in rows if r.get("delivered"))})
+    call = None
+    if incident.voice_escalated_at:
+        receipts = [a for a in (list(incident.voice_fanout) or [incident.voice_delivery]) if a]
+        reached = next((a for a in receipts if a.get("delivered")), None)
+        call = {
+            "at": iso(incident.voice_escalated_at),
+            "reached": bool(reached),
+            "off": incident.calls_off,
+            "tried": bool(receipts),
+        }
+    return {
+        "texts": texts,
+        "at": iso(incident.opened_at),
+        "texted": len(first),
+        "delivered": sum(1 for r in first if r.get("delivered")),
+        "wait_minutes": wait,
+        "out_minutes_before": round(out_before, 1),
+        "retries": retries,
+        "call": call,
+    }
+
+
+def told_words(packet: Dict[str, Any], zone=timezone.utc, day: Optional[datetime] = None) -> str:
+    """How people were told, in a sentence or two, true to the delivery
+    record (3.36.0): "The alert was texted to 2 people at 2:18 AM, after
+    the 20-minute wait; it was acknowledged 12 minutes later." Texts
+    switched off say "written but not delivered: texts are off"; texts
+    that failed say they failed."""
+    event = packet["event"]
+    told = (packet.get("response") or {}).get("notified")
+    ack = event.get("minutes_to_acknowledge")
+
+    def at(value):
+        return clock_words(_parsed(value), zone, day)
+
+    acked = None if ack is None else f"acknowledged {_minutes(ack)} later"
+    if not told:  # a pack built before 3.36.0's record: what is known
+        return (f"The alert opened at {at(event['opened_at'])}"
+                + (f"; it was {acked}." if acked else "."))
+    when = at(told["at"])
+    wait = told.get("wait_minutes")
+    after = (f", after the {wait:g}-minute wait" if wait
+             else "" if (told.get("out_minutes_before") or 0) < 1
+             else f", {_minutes(told['out_minutes_before'])} after it went out of range")
+    if told["texts"] == "off":
+        said = (f"The alert text was written at {when}{after}{',' if after else ''} but not delivered: "
+                "texts are off on this server, so nobody was texted.")
+    elif told["texts"] == "none":
+        said = f"No alert text went out at {when}: nobody was on the list to text."
+    else:
+        n, landed = told["texted"], told["delivered"]
+        people = plural(n, "person", "people")
+        if landed == n:
+            said = f"The alert was texted to {people} at {when}{after}"
+        elif landed:
+            said = (f"The alert was texted to {people} at {when}{after}; "
+                    f"{landed} went through and {n - landed} failed")
+        else:
+            said = f"The alert was texted to {people} at {when}{after}{',' if after else ''} and failed: none went through"
+        for again in told.get("retries") or []:
+            said += (f". It was sent again at {at(again.get('at'))}: "
+                     + (f"{again['delivered']} of {again['texted']} went through" if again["delivered"]
+                        else "it failed again"))
+        said += "."
+    call = told.get("call")
+    if call:
+        if call["reached"]:
+            said += f" A phone call got through at {at(call['at'])}."
+        elif call["off"]:
+            said += f" The call step came at {at(call['at'])}, but calls are off on this server, so no call was placed."
+        elif call["tried"]:
+            said += f" A phone call was tried at {at(call['at'])} and did not go through."
+    if acked:
+        if (said.endswith(".") and told["texts"] == "sent" and told["delivered"] == told["texted"]
+                and not told.get("retries") and not call):
+            said = said[:-1] + f"; it was {acked}."
+        else:
+            said += f" It was {acked.replace('later', 'after the alert opened')}."
+    return said
+
+
 def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[str, Any]:
     """Assemble the whole evidential record for one incident. `zone` is
     the reader's clock, for the dates written out in words."""
@@ -373,7 +513,7 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         timeline.append({
             "at": iso(incident.peak_at),
             "event": "Worst reading",
-            "detail": format_temperature(incident.peak_f, unit),
+            "detail": pack_temperature(incident.peak_f, unit),
         })
     sms_rows = _delivery_rows(incident.sms_fanout, incident.sms_delivery)
     if incident.texts_off:
@@ -450,6 +590,8 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         else None
     )
 
+    notified = _notified(incident, sensor)
+
     # Bounded at both ends, so the head covers exactly the readings the
     # packet shows. Without the upper bound it also covered readings
     # recorded after the window, and an adjuster re-deriving it would get
@@ -518,6 +660,10 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         # what went, and every change.
         "food": food_record(incident),
         "response": {
+            # How people were told, as it happened (3.36.0), for the
+            # summary: "texted to 2 people at 2:18 AM, after the 20-minute
+            # wait", or "written but not delivered: texts are off".
+            "notified": notified,
             "timeline": timeline,
             "sms_deliveries": sms_rows,
             "voice_deliveries": _delivery_rows(
@@ -620,8 +766,14 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
     def at(value: Optional[str]) -> str:
         return when_words(_parsed(value), zone)
 
+    # The night's later times without the date again (3.36.0).
+    day = _parsed(event.get("out_since") or event["opened_at"])
+
+    def later(value: Optional[str]) -> str:
+        return clock_words(_parsed(value), zone, day)
+
     if event["state"] == "resolved":
-        closed = (f"The alert closed at {at(event.get('resolved_at'))}"
+        closed = (f"The alert closed at {later(event.get('resolved_at'))}"
                   + (", when the unit came back in range by itself." if event.get("closed_by_itself") else "."))
     elif event["state"] == "acknowledged":
         closed = "The alert was still being dealt with when this pack was issued."
@@ -634,7 +786,7 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
         who = food.get("by")
         said = (f"The food was recorded as \u201c{food['answer']}\u201d"
                 + (f" by {who}" if who else "")
-                + (f" at {at(food.get('at'))}" if food.get("at") else "") + ".")
+                + (f" at {later(food.get('at'))}" if food.get("at") else "") + ".")
         if food.get("note"):
             note = food["note"].strip()
             said += f" The note of what went: \u201c{note}\u201d" + ("" if note.endswith((".", "!", "?")) else ".")
@@ -647,8 +799,9 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
         "window": f"{at(evidence['window_start'])} to {at(evidence['window_end'])}",
         "readings": plural(evidence["readings_in_window"], "reading"),
         "outside": _outside(evidence["readings_in_window"], evidence["excursions_in_window"]),
-        "peak": f"{peak}°{unit}" if peak is not None else "",
+        "peak": f"{float(peak):.1f}°{unit}" if peak is not None else "",
         "answered": answered,
+        "told": told_words(packet, zone, day),
         "closed": closed,
         "food": said,
     }
@@ -681,18 +834,22 @@ def build_cover_letter(tenant: Tenant, packet: Dict[str, Any], zone=timezone.utc
     location = packet["location"]
     facts = cover_facts(packet, zone)
     unit_name = location.get("asset_label") or location["asset"]
+    # The site's name and its address, or the address alone where the
+    # site has no name (3.36.0): the saved address was on the pack but
+    # never in its summary.
+    where = ", ".join(x for x in (location.get("site"), location.get("address")) if x)
 
     fallback = (
         f"{tenant.company_name} reports that {unit_name}"
-        + (f" at {location['site']}" if location["site"] else "")
+        + (f" at {where}" if where else "")
         + f" went out of its safe range at {facts['started']}. "
         + (f"Continuous monitoring recorded {facts['readings']} from {facts['window']}; "
            f"{facts['outside']} the documented safe band"
            + (f", the worst {facts['peak']}" if facts["peak"] else "")
            if evidence["readings_in_window"] else
            f"No readings were kept from {facts['window']}")
-        + f". The probable cause is {event['probable_cause'].lower()}. The alert "
-        f"was sent automatically at detection{facts['answered']}. "
+        + f". The probable cause is {event['probable_cause'].lower()}. "
+        + facts["told"] + " "
         + facts["closed"] + " " + facts["food"]
         + " All readings are hash-chained and independently verifiable."
     )
@@ -702,7 +859,7 @@ def build_cover_letter(tenant: Tenant, packet: Dict[str, Any], zone=timezone.utc
     insurance claim evidence packet. The reader is a loss adjuster.
 
     Insured: {tenant.company_name}
-    Location: {unit_name} at {location['site'] or 'unspecified site'}
+    Location: {unit_name} at {where or 'unspecified site'}
     Sector: {location['industry']}
     Went out of range: {facts['started']}
     Alert opened: {facts['opened']}
@@ -713,6 +870,7 @@ def build_cover_letter(tenant: Tenant, packet: Dict[str, Any], zone=timezone.utc
     Readings in window: {evidence['readings_in_window']}
     Excursions in window: {evidence['excursions_in_window']}
     Minutes to acknowledge: {event['minutes_to_acknowledge']}
+    How people were told: {facts['told']}
     How it ended: {facts['closed']}
     The food: {facts['food']}
     Prior incidents on this asset in 90 days: {len(packet['prior_incidents_90_days'])}
@@ -720,7 +878,8 @@ def build_cover_letter(tenant: Tenant, packet: Dict[str, Any], zone=timezone.utc
     Write three short paragraphs of plain prose: what happened, how it was
     detected and responded to and what happened to the food, and what
     evidence is attached. State only the figures given above, and write
-    dates exactly as given. Do not estimate the value of the loss, do not
+    dates exactly as given. Say how people were told exactly as given:
+    never say a text or a call went out, or arrived, unless it says so. Do not estimate the value of the loss, do not
     argue that the claim should be paid, and do not characterise the
     insured's conduct — an adjuster who catches one invented figure will
     discount the entire packet. No markdown, no headings, no bullet points.

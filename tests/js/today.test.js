@@ -294,3 +294,25 @@ test("3.33.0: the console's insurance-pack list: '1 alert', '2 alerts', each by 
   assert.match(box.innerHTML, /2 alerts an insurance pack can be made for:/);
   assert.match(box.innerHTML, /Nov 23 · closed/);
 });
+
+test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who said it, that it closes by itself, and no It's fixed button", async () => {
+  const live = { incident_id: "INC-3", sensor_id: "WALK-1", state: "acknowledged", opened_at: NOW, out_since: NOW,
+    acknowledged_by_name: "Maya", fix_reported_at: NOW, fix_reported_by_name: "Maya", temperature_display: 47 };
+  const { nodes } = await today(base({
+    sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [live],
+  }));
+  assert.match(nodes.verdict.innerHTML, /<h1>Being dealt with<\/h1>/);
+  assert.match(nodes.verdict.innerHTML, /Maya said it&#39;s fixed\. It closes by itself once it&#39;s cold\.|Maya said it's fixed\. It closes by itself once it's cold\./);
+  assert.doesNotMatch(nodes.verdict.innerHTML, /Press <b>It's fixed<\/b>/);
+  assert.equal(nodes.verdict.className, "verdict watch", "waiting, not alarm");
+  assert.match(nodes.needs.innerHTML, /Maya said it(&#39;|')s fixed at .+\. Nothing more to press\./);
+  assert.equal(nodes["needs-h"].textContent, "Waiting to get cold");
+  assert.doesNotMatch(nodes.needs.innerHTML, /data-fixed=/, "nothing more to press");
+  // Before anybody said fixed, the button is there.
+  const before = await today(base({
+    sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [{ ...live, fix_reported_at: null, fix_reported_by_name: null }],
+  }));
+  assert.match(before.nodes.needs.innerHTML, /data-fixed="INC-3"/);
+  assert.match(before.nodes.verdict.innerHTML, /Press <b>It's fixed<\/b> once it is cold again/);
+  assert.equal(before.nodes["needs-h"].textContent, "Needs you now");
+});
