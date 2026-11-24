@@ -149,6 +149,9 @@ class Tenant:
     # than "For restaurants & cafés". None before 3.25.0 and for accounts
     # made any other way.
     business_kind: Optional[str] = None
+    # The street address an insurance pack shows (3.35.0), optional. A
+    # location's own address comes first where the business has several.
+    site_address: str = ""
 
     @property
     def expired(self) -> bool:
@@ -177,6 +180,7 @@ class Tenant:
             "partner_id": self.partner_id,
             "industry_vertical": self.industry_vertical,
             "business_kind": self.business_kind,
+            "site_address": self.site_address,
         }
 
     @classmethod
@@ -197,6 +201,7 @@ class Tenant:
             partner_id=row.get("partner_id"),
             industry_vertical=row.get("industry_vertical"),
             business_kind=row.get("business_kind"),
+            site_address=row.get("site_address") or "",
         )
 
     def public(self, sensor_count: int) -> Dict[str, Any]:
@@ -218,6 +223,7 @@ class Tenant:
             "partner_id": self.partner_id,
             "industry_vertical": self.industry_vertical,
             "business_kind": self.business_kind,
+            "site_address": self.site_address or None,
             # What the console's "Add a fridge" says the limits are for,
             # when the sector's own name would be wrong for this business
             # (KIND_LIMIT_WORDS); None means the sector's name fits.

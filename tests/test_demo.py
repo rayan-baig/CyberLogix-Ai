@@ -103,7 +103,7 @@ def test_the_alert_says_exactly_what_a_real_one_would():
     business = type("B", (), {"company_name": demo.BUSINESS})()
     assert text == wording.alert_sms(
         business, walk_in, story["drift_f"][story["alert_index"]], "F")
-    assert text.startswith("ALERT Walk-in cooler")
+    assert text.startswith("Kryozyn: Walk-in cooler")
     assert "Reply 1" in text and len(text) <= wording.SMS_LIMIT
     assert "Press 1" in story["messages"]["call_script"]
     assert f"{story['real_wait_minutes']} minutes" in story["messages"]["call_script"]

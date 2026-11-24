@@ -183,7 +183,7 @@ class _StubModels:
 @pytest.fixture(autouse=True)
 def stub_gemini(monkeypatch):
     """Default every test to a working, offline Gemini stub."""
-    models = _StubModels(text="URGENT: equipment failing, attend the site now.")
+    models = _StubModels(text="URGENT: equipment failing, attend now.")
     monkeypatch.setattr(gemini, "client", type("C", (), {"models": models})())
     # The model's name is a setting with no default; the stub needs one.
     monkeypatch.setattr(gemini, "GEMINI_MODEL", "stub-model")

@@ -25,15 +25,16 @@ adjuster is reading precisely to find out which it is.
 
 from __future__ import annotations
 
-from brand import APP_SHORT
+from brand import APP_NAME, APP_SHORT, APP_URL, COMPANY_NAME
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
-from auth import require_tenant
+from auth import require_role_or_machine, require_tenant
 from gemini import safe_generate
 from records import person_name, renamed
 from store import (
@@ -199,12 +200,49 @@ def _load_incident(incident_id: str, tenant: Tenant) -> Incident:
     return incident
 
 
+# What each try at a text or a call came to, in words (3.35.0): the pack
+# said "sms / not_configured" to a loss adjuster.
+CHANNEL_WORDS = {"sms": "Text", "voice": "Phone call", "email": "Email"}
+OUTCOME_WORDS = {
+    "not_configured": "not switched on",
+    "budget_exceeded": "not sent: the day's limit was reached",
+    "call_failed": "the call did not connect",
+    "send_failed": "the phone network refused it",
+    "failed": "did not go through",
+    "undelivered": "did not arrive",
+    "blocked": "that number is blocked",
+    "invalid_number": "the number looks wrong",
+    "no-answer": "not answered",
+    "no_answer": "not answered",
+    "busy": "the line was busy",
+}
+
+
+def channel_words(channel: Optional[str]) -> str:
+    """"Text", "Phone call": never "sms"."""
+    key = str(channel or "").strip().lower()
+    return CHANNEL_WORDS.get(key, key.replace("_", " ").capitalize() or "Message")
+
+
+def outcome_words(delivered: bool, status_code: Optional[str], channel: Optional[str] = None) -> str:
+    """"delivered", "not switched on": never "not_configured"."""
+    if delivered:
+        return "delivered"
+    key = str(status_code or "").strip().lower()
+    if not key:
+        return "not sent"
+    return OUTCOME_WORDS.get(key, key.replace("_", " "))
+
+
 def _delivery_rows(fanout: List[Dict[str, Any]], single: Optional[Dict[str, Any]]):
-    """Delivery attempts as an adjuster needs to read them."""
+    """Delivery attempts as an adjuster needs to read them: the codes, and
+    the same in words ("Text", "not switched on") for the page."""
     rows = fanout or ([single] if single else [])
     return [
         {
             "channel": row.get("channel"),
+            "channel_words": channel_words(row.get("channel")),
+            "outcome_words": outcome_words(bool(row.get("delivered")), row.get("status")),
             "to": row.get("to"),
             "recipient": row.get("contact_name"),
             "delivered": bool(row.get("delivered")),
@@ -215,6 +253,50 @@ def _delivery_rows(fanout: List[Dict[str, Any]], single: Optional[Dict[str, Any]
         for row in rows
         if row
     ]
+
+
+# Where an adjuster's IT team reads how to check the chain (3.35.0): the
+# public verifier's entry in the API reference, on the product's address.
+VERIFY_DOCS_URL = f"{APP_URL}/developers#post-api-vault-verify"
+
+# What a missing humidity was stored as before 3.35.0.
+OLD_HUMIDITY_STAND_IN = 50.0
+
+
+def humidity_column(window) -> Dict[str, Any]:
+    """Whether the pack shows humidity, and why not (3.35.0).
+
+    {"shown", "placeholder", "note"}. Hidden when no reading in the window
+    has a humidity. Before 3.35.0 a sensor that sent none was stored as
+    50% (db.humidity_optional_since says until when). Those rows are sealed
+    and stay exactly as stored, in the verifiable list too; where every one
+    of them in the window says exactly 50%, the page shows "—" for them
+    and says why, rather than present a figure nobody may have measured.
+    """
+    from datetime import datetime as _dt
+
+    since = None
+    try:
+        raw = STORE._db.humidity_optional_since()
+        since = _dt.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
+    except Exception:  # noqa: BLE001 - no marker: nothing is treated as a stand-in
+        since = None
+    before = [r for r in window if r.humidity_percent is not None
+              and since is not None and r.recorded_at < since]
+    after = [r for r in window if r.humidity_percent is not None
+             and (since is None or r.recorded_at >= since)]
+    placeholder = bool(before) and not after and all(
+        r.humidity_percent == OLD_HUMIDITY_STAND_IN for r in before)
+    if placeholder:
+        return {
+            "shown": False, "placeholder": True,
+            "note": ("Humidity: not shown. These readings were stored with 50% humidity, which "
+                     "is what was written down when a sensor sent none, so it was probably not "
+                     "measured. The sealed record keeps the value as it was stored."),
+        }
+    shown = bool(before or after)
+    return {"shown": shown, "placeholder": False,
+            "note": None if shown else "Humidity: none was sent with these readings."}
 
 
 def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[str, Any]:
@@ -252,7 +334,14 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
     # the incident when it opens and when it resolves, and the incident
     # is kept for years.
     window = _evidence_window(incident, start, end)
+    # From the first reading, never before it (3.35.0): a window that
+    # opened twelve hours before a sensor added an hour earlier said the
+    # unit was watched when nothing was there to watch it. The same
+    # readings either way, so the chain head below covers exactly these.
+    if window and window[0].recorded_at > start:
+        start = window[0].recorded_at
     excursions = [r for r in window if r.breached]
+    humidity = humidity_column(window)
 
     # Where the operator was already told something was wrong before this
     # incident opened — an adjuster will look for prior warnings, and it is
@@ -383,7 +472,10 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         },
         "location": {
             "site": site.name if site else None,
-            "address": site.address if site else None,
+            # The site's own address, else the one the business gave for
+            # its packs (3.35.0); None means nobody has said, and the page
+            # asks for it.
+            "address": ((site.address if site else "") or tenant.site_address or "").strip() or None,
             "asset": sensor.location_name if sensor else incident.sensor_id,
             "asset_type": profile["asset_noun"],
             # "Walk-in fridge", with its kind only when the name lacks it.
@@ -453,11 +545,17 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
                 {
                     "at": iso(r.recorded_at),
                     "temperature": display_temperature(r.temperature_fahrenheit, unit),
-                    "humidity": r.humidity_percent,
+                    # None where nothing was measured (3.35.0), and where
+                    # the stored 50% was the old stand-in (humidity_column).
+                    "humidity": None if humidity["placeholder"] else r.humidity_percent,
                     "breached": r.breached,
                 }
                 for r in window
             ],
+            # Whether the page shows a humidity column at all, and why not
+            # (3.35.0): hidden when no reading has one.
+            "humidity_shown": humidity["shown"],
+            "humidity_note": humidity["note"],
             # For the verifier: the exact fields the chain was computed
             # over, in the unit it was computed in. The two lists are the
             # same readings; the human one is converted and rounded, and
@@ -486,18 +584,18 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         ],
         "attestation": attestation,
         "signing": signing_state(),
-        # Shown under "For the adjuster's IT team" at the end (3.33.0).
+        # Shown under "For the adjuster's IT team" at the end (3.33.0), cut
+        # to the chain head and where the check is explained (3.35.0).
         "verification": (
-            "The readings above are chained: each digest covers its reading "
-            "and the digest before it. To confirm independently that nothing "
-            "was altered after the event, POST the `evidence."
-            "verifiable_readings` list — not the display list, which is "
-            "converted and rounded — to /api/vault/verify together with "
-            "`attestation.chain_head`. That endpoint needs no account and "
-            "reads nothing: it only re-derives the digests from what you "
-            "send it."
+            "Every reading in this pack is sealed in a hash chain, so a "
+            "change made after the event would show. The chain head below "
+            "is what your IT team checks against; how to check it, with no "
+            "account needed, is at the address below."
         ),
+        "verification_url": VERIFY_DOCS_URL,
         "verification_heading": "For the adjuster's IT team",
+        # Who issued it (3.35.0), from brand.py: the header of every page.
+        "issuer": {"product": APP_NAME, "company": COMPANY_NAME, "url": APP_URL},
         # The dates the cover letter writes out, in the reader's clock.
         "clock": getattr(zone, "key", None) or "UTC",
     }
@@ -709,3 +807,28 @@ def claim_packet(
         packet["evidence"]["readings_in_window"],
     )
     return packet
+
+
+class SiteAddress(BaseModel):
+    address: str = Field("", max_length=300, description="The street address an insurance pack shows. Empty clears it.")
+
+
+@router.post("/site-address")
+def set_site_address(
+    payload: SiteAddress,
+    tenant: Tenant = Depends(require_tenant),
+    user=Depends(require_role_or_machine("operator")),
+):
+    """The address an insurance pack shows for this business (3.35.0).
+
+    Optional: asked for in the Insurance packs card and on a pack that has
+    none ("Site: not recorded" → "Add the site address"). A location's
+    own address, where one is set, comes first.
+    """
+    from auth import write_audit
+
+    address = " ".join((payload.address or "").split())
+    STORE.set_site_address(tenant, address)
+    write_audit(tenant, user, "business.site_address",
+                "Site address set." if address else "Site address cleared.")
+    return {"address": address or None}

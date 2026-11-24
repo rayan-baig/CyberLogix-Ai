@@ -277,3 +277,6 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
   .plan-pick { grid-template-columns: 1fr; gap: 8px; }
   .plan-pick-card { padding: 12px 14px; }
 }
+
+/* Pricing's link to the sample insurance pack (3.35.0). */
+.starter-panel .sample-link { margin: 12px 0 0; font-size: 14px; color: var(--muted); }

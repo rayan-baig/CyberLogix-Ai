@@ -1,0 +1,40 @@
+/* The sample insurance pack (3.35.0): the pack's own document styles
+   (theme.css, "packet as a document"), on a card, marked as a sample at
+   the top, on the page and on paper. */
+.sample-flag {
+  margin: 18px 0 0; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--ink-2); font-size: 14px; line-height: 1.55;
+}
+.sample-flag strong { color: var(--warning); }
+.sample-acts { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 0; }
+.sample-acts .btn { width: auto; }
+.sample-doc {
+  position: relative; overflow: hidden;
+  margin: 18px 0 0; padding: 22px 20px 20px; border-radius: 14px;
+  border: 1px solid var(--border-lit); background: var(--surface);
+}
+.sample-doc .drawer-title { font-size: 20px; font-weight: 650; margin: 2px 0 2px; }
+.sample-doc .drawer-sub { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.sample-doc .scrollx { margin-top: 10px; }
+.sample-mark {
+  position: absolute; top: 14px; right: -36px; transform: rotate(35deg);
+  padding: 3px 44px; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .2em; text-transform: uppercase;
+  background: var(--warning); color: #111; pointer-events: none;
+}
+.sample-foot { margin-top: 18px; }
+@media (max-width: 560px) {
+  .sample-doc { padding: 18px 14px 16px; }
+  .sample-doc .readout div { flex-wrap: wrap; gap: 2px 10px; }
+}
+@media print {
+  .top, footer.site, .sample-acts, .circuit, .circuit-veil, .sample-page > .kicker,
+  .sample-page > h1, .sample-page > .lede, .sample-foot { display: none !important; }
+  .sample-flag { border-color: #999; background: #fff; color: #111; }
+  .sample-flag strong { color: #111; }
+  .sample-doc { border: none; background: #fff; padding: 0; color: #111; }
+  .sample-mark { background: #ddd; }
+  .sample-doc .drawer-title { color: #111; }
+}

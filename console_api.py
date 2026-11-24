@@ -412,12 +412,31 @@ def console_overview(
         "this_month": month_summary(tenant, now),
         # The newest food thrown away in the last 24 hours, or None.
         "recent_loss": recent_loss,
+        # Who a text goes to right now, first names only (3.35.0), for
+        # Pilot's "Who gets the texts?" to the person signed in: in their
+        # browser, never sent anywhere.
+        "texted_first_names": texted_first_names(tenant),
         # A short blip's food is recorded safe by itself under this many
         # minutes out (food_value.SHORT_MINUTES, 3.32.0); 0 when it is off.
         "food_safe_minutes": food_value.SHORT_MINUTES,
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
     }
+
+
+def texted_first_names(tenant: Tenant, most: int = 6) -> list:
+    """First names of everyone an alert text goes to now, in ladder order,
+    each once: ["Maya", "Sam"]. Never a surname, a number or an email."""
+    names: list = []
+    try:
+        people = STORE.sms_recipients(tenant)
+    except Exception:  # noqa: BLE001 - a roster problem must not cost the overview
+        return names
+    for person in people:
+        first = (str(getattr(person, "full_name", "") or "").split() or [""])[0].strip()
+        if first and first not in names:
+            names.append(first)
+    return names[:most]
 
 
 # How long /today leads with food thrown away (3.33.0).
@@ -501,34 +520,38 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
             "note": i.corrective_action or None,
         })
 
-    # One short line (3.32.0): "3 alerts · all answered · 1 food answer
-    # missing". The figures behind it are below, for the weekly summary.
+    # One short line of two items (3.35.0): how many alerts, and the one
+    # thing that matters most about them: "2 alerts · 1 food answer
+    # missing". Four or five ran to three lines on a phone. Most pressing
+    # first: an alert nobody has answered, the food nobody has answered
+    # for, food thrown away, how fast it was answered, cold again by
+    # itself, the food kept. The figures behind it are below, for the
+    # weekly summary, and each answer is its own row under the line.
     n = len(alerts)
     if not n:
         words = "This month: no alerts. Every fridge and freezer stayed in range."
     else:
-        parts = [f"{n} alert{'' if n == 1 else 's'}"]
         waiting = sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is None)
         by_itself = sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is not None)
-        if len(answered) == n:
-            parts.append(f"answered in {minutes_words(typical)}" if n == 1 and typical is not None
-                         else "all answered")
-        else:
-            if answered:
-                parts.append(f"{len(answered)} answered")
-            if by_itself:
-                parts.append(f"{by_itself} cold again by itself" if by_itself < n
-                             else ("cold again by itself" if n == 1 else "all cold again by themselves"))
-            if waiting:
-                parts.append("not answered yet" if waiting == n else f"{waiting} not answered yet")
         missing = risky + unanswered
-        if missing:
-            parts.append(f"{missing} food answer{'' if missing == 1 else 's'} missing")
-        if thrown:
-            parts.append("food thrown away" if thrown == n else f"thrown away on {thrown}")
-        if not missing and not thrown and (kept or food["auto_safe"]):
-            parts.append("food kept" if not food["auto_safe"] else "food safe")
-        words = "This month: " + " · ".join(parts)
+        if waiting:
+            second = "not answered yet" if waiting == n else f"{waiting} not answered yet"
+        elif missing:
+            second = f"{missing} food answer{'' if missing == 1 else 's'} missing"
+        elif thrown:
+            second = "food thrown away" if thrown == n else f"food thrown away from {thrown}"
+        elif len(answered) == n:
+            second = (f"answered in {minutes_words(typical)}" if n == 1 and typical is not None
+                      else "all answered")
+        elif by_itself == n:
+            second = "cold again by itself" if n == 1 else "all cold again by themselves"
+        elif answered:
+            second = f"{len(answered)} answered"
+        elif kept or food["auto_safe"]:
+            second = "food kept" if not food["auto_safe"] else "food safe"
+        else:
+            second = ""
+        words = f"This month: {n} alert{'' if n == 1 else 's'}" + (f" · {second}" if second else "")
     return {
         "alerts": n,
         "answered": len(answered),

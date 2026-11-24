@@ -31,6 +31,12 @@ ACK_WORDS = ("1", "ACK", "ACKNOWLEDGE", "OK", "YES", "ON IT")
 
 SMS_ACK = "Reply 1 if you are on it."
 
+# Every alert text starts with who sent it (3.35.0), from brand.py:
+# "<App>: Walk-in fridge at ...: 63F, 22F above the 41F limit". A text from
+# an unknown number that starts "ALERT" reads as spam at 3am, and the name
+# takes the place of the word so the trade's own line still fits.
+SMS_HEAD = f"{APP_SHORT}: "
+
 # What to check, per trade, in that trade's own words. Short enough that
 # the whole text still fits one segment with a long unit name.
 ACTIONS = {
@@ -42,7 +48,7 @@ ACTIONS = {
     "logistics": "Check the reefer unit now.",
     "solar_infrastructure": "Check the enclosure cooling.",
     "medical_lab": "Check the cooler and samples.",
-    "cryostorage": "Check the tank's nitrogen now.",
+    "cryostorage": "Check the tank's nitrogen.",
     "private_aviation": "Check the hangar bay now.",
     "superyacht": "Check engine bay airflow now.",
     "country_club": "Check the kitchen walk-in now.",
@@ -143,7 +149,7 @@ def alert_sms(tenant, sensor, temperature_f: float, unit: str,
               action: Optional[str] = None) -> str:
     """The alert text, facts first, inside one segment.
 
-    ALERT Kitchen walk-in (WALKIN-1) at Harbor Grill: 58F, 26F above the
+    <App>: Kitchen walk-in (WALKIN-1) at Harbor Grill: 58F, 26F above the
     32F limit. Check the door and the food now. Reply 1 if you are on it.
     """
     from notifications import to_gsm7
@@ -161,18 +167,18 @@ def alert_sms(tenant, sensor, temperature_f: float, unit: str,
     # the euro sign are sent as two each, so a 160-character text with one
     # of them in it is billed as two segments.
     for what in (action or action_for(sensor), action_for(sensor), DEFAULT_ACTION, ""):
-        text = to_gsm7(f"ALERT {name} at {place}: {reading}, {out_by}. {what} {tail}")
+        text = to_gsm7(f"{SMS_HEAD}{name} at {place}: {reading}, {out_by}. {what} {tail}")
         if _septets(text) <= SMS_LIMIT:
             return text
     # Still too long: the names are what give. The reading, how far out,
     # and how to answer stay whole.
-    fixed = to_gsm7(f"ALERT : {reading}, {out_by}. {tail}")
+    fixed = to_gsm7(f"{SMS_HEAD}: {reading}, {out_by}. {tail}")
     room = max(SMS_LIMIT - _septets(fixed) - len(" at "), 12)
     name = to_gsm7(name)
     place = to_gsm7(place)
     keep_name = min(_septets(name), max(room - min(_septets(place), room // 3), room // 2))
     keep_place = max(room - keep_name, 0)
-    text = to_gsm7(f"ALERT {_cut(name, keep_name)} at {_cut(place, keep_place)}: "
+    text = to_gsm7(f"{SMS_HEAD}{_cut(name, keep_name)} at {_cut(place, keep_place)}: "
                    f"{reading}, {out_by}. {tail}")
     return _cut(text, SMS_LIMIT, mark="")
 
@@ -251,10 +257,10 @@ def back_to_normal_sms(tenant, sensor, temperature_f: float, unit: str,
     name, place = unit_name(sensor), place_of(sensor, tenant)
     reading = plain_temperature(temperature_f, unit)
     tail = f"back to {reading} after {minutes_words(minutes)}. Alert closed, no call."
-    text = to_gsm7(f"OK {name} at {place}: {tail}")
+    text = to_gsm7(f"{SMS_HEAD}OK {name} at {place}: {tail}")
     if _septets(text) <= SMS_LIMIT:
         return text
-    return _cut(to_gsm7(f"OK {name}: {tail}"), SMS_LIMIT, mark="")
+    return _cut(to_gsm7(f"{SMS_HEAD}OK {name}: {tail}"), SMS_LIMIT, mark="")
 
 
 def _septets(text: str) -> int:
@@ -422,14 +428,14 @@ def site_wide_sms(tenant, scope: str, count: int, total: int, site_names) -> str
     for causes, ack in ((SITE_WIDE_CAUSES_SMS, SMS_ACK),
                         (SITE_WIDE_CAUSES_SMS, "Reply 1 if on it."),
                         ("", SMS_ACK)):
-        text = to_gsm7(" ".join(part for part in (
+        text = to_gsm7(SMS_HEAD + " ".join(part for part in (
             f"{head}: {what}", causes, "Check now.", ack) if part))
         if _septets(text) <= SMS_LIMIT:
             return text
     # A very long site name is what gives; the count and "Reply 1" stay.
-    fixed = to_gsm7(f"Possible site-wide problem at : {what} Check now. {SMS_ACK}")
+    fixed = to_gsm7(f"{SMS_HEAD}Possible site-wide problem at : {what} Check now. {SMS_ACK}")
     room = max(SMS_LIMIT - _septets(fixed), 8)
-    return _cut(to_gsm7(f"Possible site-wide problem at {_cut(to_gsm7(place), room)}: "
+    return _cut(to_gsm7(f"{SMS_HEAD}Possible site-wide problem at {_cut(to_gsm7(place), room)}: "
                         f"{what} Check now. {SMS_ACK}"), SMS_LIMIT, mark="")
 
 

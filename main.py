@@ -403,6 +403,7 @@ INDUSTRY_HTML = STATIC_DIR / "industry.html"
 RESET_HTML = STATIC_DIR / "reset.html"
 PRICING_HTML = STATIC_DIR / "pricing.html"
 HELP_HTML = STATIC_DIR / "help.html"
+SAMPLE_PACK_HTML = STATIC_DIR / "sample-pack.html"
 SENSORS_HTML = STATIC_DIR / "help-sensors.html"
 SHEET_HTML = STATIC_DIR / "sheet.html"
 DEVELOPERS_HTML = STATIC_DIR / "developers.html"
@@ -513,7 +514,7 @@ API_DOCS_POLICY = "; ".join([
 # stay out as well. The sitemap lists exactly these (plus one page per
 # industry), and a test holds the two together.
 PUBLIC_PAGES = ("/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal",
-                "/insurance-partners", "/repair-partners")
+                "/insurance-partners", "/repair-partners", "/sample-insurance-pack")
 
 # A copy that is not the live product -- staging, a demo box -- asks to be
 # left out of search results entirely: every page noindex, robots.txt
@@ -1119,7 +1120,7 @@ def sitemap(request: Request):
     # The shorter pages for more trades with cold stock (trades.py): a
     # florist searches for "flower cooler alarm", not for our verticals.
     pages += [(f"/for/{slug}", "0.7") for slug in trades()]
-    pages += [("/help", "0.6"), ("/help/sensors", "0.6"),
+    pages += [("/help", "0.6"), ("/help/sensors", "0.6"), ("/sample-insurance-pack", "0.5"),
               ("/insurance-partners", "0.5"), ("/repair-partners", "0.5"),
               ("/legal", "0.4")]
     if NOINDEX:
@@ -1527,6 +1528,14 @@ def help_page(request: Request):
         "%%FAQ%%": render_faq(),
         "%%OFFLINE_STEPS%%": render_offline(),
     })
+
+
+@app.get("/sample-insurance-pack", include_in_schema=False)
+def sample_insurance_pack(request: Request):
+    """What your insurer gets (3.35.0): an insurance pack made with
+    pretend data, labelled as a sample at the top, linked from the front
+    page and the pricing page."""
+    return _serve_page(SAMPLE_PACK_HTML, request)
 
 
 @app.get("/help/sensors", include_in_schema=False)

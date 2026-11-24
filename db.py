@@ -94,6 +94,7 @@ class Database:
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.commit()
         self._note_install()
+        self._note_humidity_optional()
         logger.info("SQLite persistence open at %s", path)
 
     def _note_install(self) -> None:
@@ -150,6 +151,39 @@ class Database:
                 if oldest is None or when < oldest:
                     oldest = when
         return oldest
+
+    def _note_humidity_optional(self) -> None:
+        """Record, once, when this database first ran 3.35.0 or later.
+
+        Before 3.35.0 a reading sent without a humidity was stored as 50%,
+        so a sensor with no humidity probe has "50%" on every reading it
+        sent until then. Those rows are sealed in the hash chain and cannot
+        be rewritten without breaking it, and a real probe can read 50% as
+        well, so nothing is changed: readings before this moment that say
+        exactly 50% are marked as possibly not measured where a person
+        reads them (claims.humidity_column).
+        """
+        from datetime import datetime, timezone
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT data FROM records WHERE kind = ? AND rec_id = ?",
+                ("meta", "humidity_optional"),
+            ).fetchone()
+            if row is not None:
+                return
+            self._conn.execute(
+                "INSERT INTO records (kind, rec_id, data) VALUES (?, ?, ?)",
+                ("meta", "humidity_optional",
+                 _encode({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})),
+            )
+            self._conn.commit()
+
+    def humidity_optional_since(self) -> Optional[str]:
+        """When a missing humidity stopped being stored as 50%, as an ISO
+        instant (see _note_humidity_optional)."""
+        row = self.get("meta", "humidity_optional")
+        return row.get("at") if row else None
 
     def installed_at(self) -> Optional[str]:
         """When this deployment first existed, as an ISO instant."""
@@ -407,6 +441,9 @@ class Database:
             finally:
                 src.close()
             self._conn.commit()
+            # A snapshot from before 3.35.0 has no marker: it is stamped
+            # now, so its 50% stand-ins are still told apart.
+            self._note_humidity_optional()
 
     def close(self) -> None:
         with self._lock:

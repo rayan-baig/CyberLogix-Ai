@@ -117,7 +117,7 @@ def test_a_short_blip_records_food_safe_by_itself_with_no_question_and_no_dollar
     assert row["food_change_until"], "Change shows for 24 hours"
     assert [h["auto"] for h in row["food_history"]] == [True]
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 1 alert · cold again by itself · food safe"
+    assert month["words"] == "This month: 1 alert · cold again by itself"  # two items since 3.35.0
     assert month["food_usd"] == 0 and month["food_auto_safe"] == 1
     answer = month["food_answers"][0]
     assert answer["auto"] is True and answer["changeable"] is True and answer["by_name"] is None
@@ -256,10 +256,10 @@ def test_the_month_line_is_short(api):
     _blip(api, owner, key, minutes=4)
     severe = _blip(api, owner, key2, warm=62.5, minutes=6, sensor_id="PREP-1")
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 2 alerts · all cold again by themselves · 1 food answer missing"
+    assert month["words"] == "This month: 2 alerts · 1 food answer missing"  # two items since 3.35.0
     api.post(f"/api/voice/food/{severe}", headers=owner, json={"food": "thrown"})
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 2 alerts · all cold again by themselves · thrown away on 1"
+    assert month["words"] == "This month: 2 alerts · food thrown away from 1"
 
 
 # --- 5. What Kryozyn did for you --------------------------------------------------

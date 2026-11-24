@@ -116,7 +116,7 @@ def test_its_fixed_while_warm_then_closing_by_itself_asks_and_never_says_kept(ap
     _pulse(api, key, 38.0)                      # closes by itself, on Rosa's word
     _assert_unanswered(_row(api, owner, incident_id))
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 1 alert · answered in 12 minutes · 1 food answer missing"
+    assert month["words"] == "This month: 1 alert · 1 food answer missing"  # two items since 3.35.0
     assert month["food_usd"] == 0 and month["food_kept"] == 0
     assert "food kept" not in month["words"]
 
@@ -134,15 +134,15 @@ def test_an_alert_that_closed_by_itself_asks_too(api):
 def test_its_fixed_in_range_asks_and_the_answer_is_saved_with_who_and_when(api):
     owner = _sign_up(api)
     key = _sensor(api, owner)
-    incident_id = _warm(api, key)
+    # Out past a short blip, so "Food kept" carries a figure (3.35.0).
+    incident_id = _warm(api, key, minutes=45)
     _pulse(api, key, 45.0)                      # still warm, but not far: stays open
-    STORE.get_incident(incident_id)
     assert api.post(f"/api/voice/acknowledge/{incident_id}", headers=owner, json={}).status_code == 200
     _pulse(api, key, 38.0)
     closed = api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={})
     assert closed.status_code == 200, closed.text
     assert closed.json()["ask_food"] == {"word": "food"}
-    _assert_unanswered(_row(api, owner, incident_id))
+    _assert_unanswered(_row(api, owner, incident_id), "45 minutes")
 
     thrown = api.post(f"/api/voice/food/{incident_id}", headers=owner, json={"food": "thrown"})
     assert thrown.status_code == 200, thrown.text
@@ -156,7 +156,7 @@ def test_its_fixed_in_range_asks_and_the_answer_is_saved_with_who_and_when(api):
     again = STORE.get_incident(incident_id)
     assert again.food_answered_by and again.food_answered_at is not None
     month = _overview(api, owner)["this_month"]
-    assert month["words"] == "This month: 1 alert · answered in 12 minutes · food thrown away"
+    assert month["words"] == "This month: 1 alert · food thrown away"
     assert month["food_answers"][0]["words"] == "Thrown away"
     assert month["food_answers"][0]["by_name"] == "Rosa"
     assert month["food_answers"][0]["unit"] == "Walk-in fridge"
@@ -175,7 +175,7 @@ def test_its_fixed_in_range_asks_and_the_answer_is_saved_with_who_and_when(api):
     assert row["food_answer_words"] == "Food kept"
     assert row["food_protected"]["words"] == "Food protected: about $3,000"
     month = _overview(api, owner)["this_month"]
-    assert month["words"].endswith("· food kept")
+    assert month["words"] == "This month: 1 alert · answered in 45 minutes"
     assert month["food_usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
 
 

@@ -1057,6 +1057,18 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
 .doc-sub {
   font-size: 12.5px; color: var(--muted); margin: 14px 0 6px;
 }
+/* Who issued the pack (3.35.0): the product and the company, from
+   brand.py through the packet, under its title and on paper. */
+.doc-issued-by { margin: -4px 0 6px; font-size: 12.5px; color: var(--muted); }
+/* The site address, asked for in the Insurance packs card and on a pack
+   that has none (3.35.0). */
+.addr-form { display: grid; gap: 6px; }
+.addr-form input { min-width: 0; }
+#drawer .addr-form { grid-template-columns: 1fr auto; align-items: center; }
+#drawer .addr-form input { padding: 7px 9px; background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; }
+.addr-label { font-size: 13px; color: var(--ink-2); }
+
 /* "For the adjuster's IT team" (3.33.0): how to check the seal, small and
    last, so the people the pack is for read the food and the timeline,
    not a developer's instructions. */
@@ -1116,7 +1128,8 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-issuer-warn { color: #1F4E8A; }
   .doc-letter { color: #111; border-left-color: #999; }
   .doc-it { background: #fff; border-color: #ccc; color: #444; break-inside: avoid; }
-  .doc-it-head, .doc-sub { color: #555; }
+  .doc-it-head, .doc-sub, .doc-issued-by { color: #555; }
+  .doc-it a { color: #111; }
   .readout, .digest { border-color: #ccc; background: #fff; }
   .readout div { border-color: #eee; }
   .readout .k, .card-note, .drawer-sub, .timeline .when { color: #555; }
@@ -1128,7 +1141,12 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .timeline { border-left-color: #ccc; }
   .timeline li::before { background: #fff; border-color: #666; }
   .scrollx { overflow: visible !important; max-height: none !important; }
-  @page { margin: 14mm 12mm; }
+  /* Page numbers on every printed page (3.35.0): an adjuster who drops a
+     stapled pack can put it back in order, and sees none is missing. */
+  @page {
+    margin: 14mm 12mm 16mm;
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #555; }
+  }
   /* Long tables run on, with their headings again on each page. */
   thead { display: table-header-group; }
   .log-unit { margin-top: 18px; }
@@ -1822,6 +1840,12 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .confirm-out { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .confirm-out:empty { display: none; }
 .confirm-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+/* "Closed. What about the food?" (3.35.0): the two answers side by side
+   with a gap, and "Not sure yet" on a line of its own under them. On a
+   phone it ran into "Thrown away" with no space between. */
+.food-dialog .food-acts { gap: 10px; }
+.food-dialog .food-acts .btn:not(.linkish) { flex: 1 1 130px; width: auto; min-width: 0; }
+.food-dialog .food-acts .linkish { flex: 1 0 100%; text-align: left; min-height: 36px; margin-top: 2px; }
 
 /* Pilot's robot sits in a bottom corner. On a phone the page's last lines
    and buttons keep clear of it: --pilot-gutter is set by the shared core
@@ -2043,6 +2067,17 @@ body.wall .needs-bar:not([hidden]) ~ main { padding-top: 22px; }
 .adv-sec.open .adv-sec-title::after { content: " ▾"; }
 .adv-sec-n { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
 .adv-sec-say { display: block; margin-top: 3px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+
+/* Pilot's handle (the robot shown at the screen's edge while it steps
+   aside) wholly on the screen (3.35.0), this app's own rule over the
+   shared core's: the core lets half of it hang off the edge, and on the
+   Simple view at 375px that read as a robot cut in half. The tap square
+   (44px, placed by the core where it covers nothing pressed) is the same;
+   only the picture moves inside it. */
+html .pilot-handle-r .pilot-handle-robot { left: 1px; width: 42px; }
+html .pilot-handle-l .pilot-handle-robot { right: 1px; left: auto; width: 42px; }
+html .pilot-handle-r::before { left: 2px; }
+html .pilot-handle-l::before { right: 2px; }
 
 </style>
 <style>
@@ -2325,6 +2360,9 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
   .plan-pick { grid-template-columns: 1fr; gap: 8px; }
   .plan-pick-card { padding: 12px 14px; }
 }
+
+/* Pricing's link to the sample insurance pack (3.35.0). */
+.starter-panel .sample-link { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
 
 </style>
 <meta name="brand" content="Kryozyn" data-short="Kryozyn" data-company="MTRX Horizyn" data-checklist="Aegizyn">

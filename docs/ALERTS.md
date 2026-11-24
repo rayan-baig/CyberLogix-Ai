@@ -312,8 +312,14 @@ server's own rounding.
 order somebody half awake reads it: which unit, where, the reading, how
 far past its limit, what to check, how to answer.
 
-    ALERT Kitchen walk-in (WALKIN-1) at Main Street: 58F, 26F above the
-    32F limit. Check the door and food now. Reply 1 if you are on it.
+    Kryozyn: Kitchen walk-in (WALKIN-1) at Main Street: 58F, 26F
+    above the 32F limit. Check the door and food now. Reply 1 if you are
+    on it.
+
+Every text starts with the product's name (`wording.SMS_HEAD`, from
+`brand.py`, since 3.35.0), so a text from a number nobody saved still says
+who it is from: the alert, the all-clear ("Kryozyn: OK ...") and the
+site-wide alert alike.
 
 The text always fits **one SMS segment** (160 GSM-7 characters, no
 degree sign); `tests/test_alert_wording.py` holds every trade to that, in

@@ -57,6 +57,8 @@ STAGING_HOST = "staging." + APP_HOST
 CONTACT_EMAIL = (os.environ.get("CYBERLOGIX_SUPPORT_EMAIL") or "").strip()
 # The product's name as one token, for the User-Agent of requests it makes.
 UA_NAME = "".join(APP_SHORT.split()) or "app"
+# The start of a file the product hands out ("kryozyn-TEN-1.json", 3.35.0).
+FILE_STEM = "-".join("".join(ch if ch.isalnum() else " " for ch in APP_SHORT.lower()).split()) or "export"
 
 # The wordmark in a page's header: a two-word name has its last word set
 # apart ("Name <em>AI</em>"); one word is the word. Markup, from APP_NAME.

@@ -28,9 +28,9 @@ def test_breach_opens_incident_with_gemini_sms(
     assert body["sms_dispatch_source"] == "gemini"
     # Facts first, then the model's line, then how to answer.
     text = body["dispatched_sms_text"]
-    assert text.startswith("ALERT Austin DC / Hall B (RACK-01)")
+    assert text.startswith("Kryozyn: Austin DC / Hall B (RACK-01)")
     assert "94F, 16F above the 78F limit." in text
-    assert "URGENT: equipment failing, attend the site now." in text
+    assert "URGENT: equipment failing, attend now." in text
     assert text.endswith("Reply 1 if you are on it.")
     assert "Too warm: 94°F (limit 78°F)" in body["breach_details"]
     assert body["incident_id"].startswith("INC-")

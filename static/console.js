@@ -456,7 +456,8 @@ $("leave-download").addEventListener("click", async () => {
     const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `cyberlogix-${body.tenant_id}.json`;
+    // The server names it from brand.py (3.35.0): the product, then the id.
+    link.download = body.file_name || `export-${body.tenant_id}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -984,7 +985,7 @@ async function refresh(opts = {}) {
   paint("roster", () => renderRoster(got.roster));
   paint("rotations", () => renderRotations(got.rotations, got.roster));
   paint("forecast", () => renderForecast(got.forecast));
-  paint("claims", () => renderClaims(got.claims));
+  paint("claims", () => { renderClaims(got.claims); renderSiteAddress(); });
   paint("escalation", () => renderEscalation(got.escalation));
   paint("byodSeen", () => renderByodSamples(got.byodSeen));
   paint("knocking", () => renderKnocking(got.knocking));
@@ -4759,26 +4760,35 @@ async function openPacket(incidentId) {
       <span class="when">${esc(stamp(step.at))}</span>
     </li>`).join("");
 
+  // In words (3.35.0): "Text", "not switched on", never "sms /
+  // not_configured" on a page a loss adjuster reads.
   const deliveries = packet.response.sms_deliveries
     .concat(packet.response.voice_deliveries);
   const deliveryRows = deliveries.length
     ? deliveries.map((d) => `<tr>
-        <td>${esc(d.channel)}</td>
+        <td>${esc(d.channel_words || d.channel)}</td>
         <td>${esc(d.recipient || "—")}</td>
         <td>${esc(d.to)}</td>
-        <td>${d.delivered ? "delivered" : esc(d.status || "not sent")}</td>
+        <td>${esc(d.outcome_words || (d.delivered ? "delivered" : "not sent"))}</td>
         <td>${esc(d.provider_reference || "—")}</td>
       </tr>`).join("")
-    : `<tr><td colspan="5">No delivery was attempted.</td></tr>`;
+    : `<tr><td colspan="5">No text or call was tried.</td></tr>`;
 
+  // Humidity only where a sensor measured it (3.35.0): no column of "—",
+  // and never the 50% that stood in for "none" before.
+  const humid = evidence.humidity_shown !== undefined
+    ? Boolean(evidence.humidity_shown)
+    : evidence.readings.some((r) => r.humidity !== null && r.humidity !== undefined);
   const excursions = evidence.readings.filter((r) => r.breached);
   const readingRows = evidence.readings.map((r) => `<tr>
       <td>${esc(stamp(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical" : ""}">${
         esc(r.temperature)}°${esc(ev.temperature_unit)}</td>
-      <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
+      ${humid ? `<td class="num">${r.humidity === null || r.humidity === undefined ? "—" : esc(r.humidity) + "%"}</td>` : ""}
       <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
+  const issuer = packet.issuer || {};
+  const where = [loc.site, loc.address].filter(Boolean).join(", ");
 
   // What happened to the food (3.33.0): the answer, who and when, the
   // note of what went, and every change, oldest first.
@@ -4814,11 +4824,11 @@ async function openPacket(incidentId) {
       <button class="btn btn-sm" id="packet-print">Print</button>
       <button class="btn btn-sm" id="drawer-close">Close</button>
     </div>
+    ${issuer.product ? `<div class="doc-issued-by">Issued by ${esc(issuer.product)}, a product of ${
+      esc(issuer.company)}${issuer.url ? ` · ${esc(String(issuer.url).replace(/^https?:\/\//, ""))}` : ""}</div>` : ""}
 
     ${packet.cover_letter ? `<div class="doc-letter">
-      <div class="quote-label">Covering summary${
-        packet.cover_letter_source === "fallback_template"
-          ? " (template)" : ""}</div>
+      <div class="quote-label">Summary</div>
       ${esc(packet.cover_letter)}
     </div>` : ""}
 
@@ -4832,8 +4842,8 @@ async function openPacket(incidentId) {
       <div><span class="k">Contact</span><span class="v">${
         esc(packet.insured.contact_name)} · ${
         esc(packet.insured.contact_phone)}</span></div>
-      <div><span class="k">Site</span><span class="v">${
-        esc(loc.site || "not recorded")}</span></div>
+      <div><span class="k">Site</span><span class="v">${where ? esc(where)
+        : `not recorded <button class="linkish no-print" type="button" id="packet-add-address">Add the site address</button>`}</span></div>
       <div><span class="k">Unit</span><span class="v">${
         esc(loc.asset_label || loc.asset)}</span></div>
       <div><span class="k">Sector</span><span class="v">${
@@ -4884,9 +4894,10 @@ async function openPacket(incidentId) {
        No reading in this window was outside the band.</div>`}
     <div class="scrollx u-maxh-280 u-ovy-auto"><table>
       <thead><tr><th>When</th><th class="num">Reading</th>
-        <th class="num">Humidity</th><th>State</th></tr></thead>
+        ${humid ? `<th class="num">Humidity</th>` : ""}<th>State</th></tr></thead>
       <tbody>${readingRows}</tbody>
     </table></div>
+    ${evidence.humidity_note && evidence.readings.length ? `<div class="card-note u-mt-8">${esc(evidence.humidity_note)}</div>` : ""}
 
     <div class="doc-section">Prior incidents on this asset</div>
     ${packet.prior_incidents_90_days.length
@@ -4901,20 +4912,75 @@ async function openPacket(incidentId) {
 
     <div class="doc-it">
       <div class="doc-it-head">${esc(packet.verification_heading || "For the adjuster's IT team")}</div>
-      <p>Every reading in this pack is sealed so that a change made after the
-        event would show. Your IT team can check it with the details below.</p>
+      <p>${esc(packet.verification)}</p>
       <div class="digest">
         <span class="digest-label">Chain head at issue</span>
         <code>${esc(packet.attestation ? packet.attestation.chain_head : "—")}</code>
       </div>
-      <p>${esc(packet.verification)}</p>
-      <p>${esc(packet.signing.note)}</p>
+      ${packet.verification_url ? `<p>How to check it: <a href="${esc(packet.verification_url)}" rel="noopener">${
+        esc(String(packet.verification_url).replace(/^https?:\/\//, ""))}</a></p>` : ""}
     </div>
   `;
 
   showDrawer();
   $("drawer-close").addEventListener("click", closeDrawer);
   $("packet-print").addEventListener("click", () => window.print());
+  const addAddress = $("packet-add-address");
+  if (addAddress) addAddress.addEventListener("click", () => askSiteAddress(incidentId, addAddress));
+}
+
+/* "Site: not recorded" on a pack (3.35.0): the address asked for right
+   there, saved for every pack after, and the pack made again with it. */
+function askSiteAddress(incidentId, button) {
+  const cell = button.closest(".v");
+  if (!cell) return;
+  cell.innerHTML = `<form class="addr-form no-print" id="packet-address-form">
+      <label class="sr" for="packet-address">Site address</label>
+      <input id="packet-address" maxlength="300" autocomplete="street-address"
+             placeholder="e.g. 12 High Street, Springfield" required>
+      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+    </form>`;
+  const input = $("packet-address");
+  input.focus();
+  $("packet-address-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await saveSiteAddress(input.value);
+      openPacket(incidentId);
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
+
+/* The Insurance packs card's own address box (3.35.0), filled from the
+   business's saved address. */
+function renderSiteAddress() {
+  const input = $("claims-address");
+  if (!input || document.activeElement === input) return;
+  input.value = (state.data && state.data.tenant && state.data.tenant.site_address) || "";
+}
+
+const addressForm = $("claims-address-form");
+if (addressForm) {
+  addressForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = addressForm.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const got = await saveSiteAddress($("claims-address").value);
+      toast(got.address ? "Saved. Every insurance pack shows it now." : "Address removed.", "ok");
+    } catch (err) {
+      toast(err.message, "err");
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+async function saveSiteAddress(value) {
+  const got = await api("/api/claims/site-address", { method: "POST", body: JSON.stringify({ address: value }) });
+  if (state.data && state.data.tenant) state.data.tenant.site_address = got.address;
+  renderSiteAddress();
+  return got;
 }
 
 function stamp(iso) {

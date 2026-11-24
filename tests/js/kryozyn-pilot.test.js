@@ -1048,3 +1048,97 @@ test("3.33.0: the robot keeps off the opened summary's list on /today", () => {
   const avoid = J(mountAt("/today", { overview: overviewWith() }).avoid);
   for (const sel of ["#did-lines", "#did-sample-lines", ".did-tabs"]) assert.ok(avoid.includes(sel), sel);
 });
+
+// ---------------------------------------------------------------- 3.35.0
+
+// A day after food was thrown away: the alert closed, the answer
+// recorded, /today's headline saying to make the pack.
+function lossOverview({ note = "Two trays of chicken" } = {}) {
+  const data = overviewWith({ quiet: true });
+  data.incidents = [{ incident_id: "INC-000009", sensor_id: "WALKIN-1", state: "resolved", opened_at: "2026-11-20T08:00:00Z",
+    out_since: "2026-11-20T07:50:00Z", out_until: "2026-11-20T09:10:00Z", resolved_at: "2026-11-20T09:10:00Z", peak_display: 58,
+    product_disposition: "discarded", food_answered_at: "2026-11-20T09:12:00Z", food_answered_by_name: "Dana Reyes", food_auto: false }];
+  data.recent_loss = { incident_id: "INC-000009", unit: "Kitchen walk-in", at: "2026-11-20T09:12:00Z", by_name: "Dana", note };
+  data.texted_first_names = ["Dana", "Sam"];
+  return data;
+}
+
+test("3.35.0: 'How do I make the insurance pack?' and 'How do I sign up?' are answered with no key", () => {
+  for (const pathname of ["/", "/pricing", "/help", "/help/sensors", "/demo"]) {
+    const pack = typedAnswer(pathname, "How do I make the insurance pack?");
+    assert.match(pack || "(none)", /\[See a sample pack\]\(\/sample-insurance-pack\)/, pathname);
+    const signup = typedAnswer(pathname, "How do I sign up?");
+    assert.match(signup || "(none)", /^Press \[Start a free trial\]\(\/signup\): your business name/, pathname);
+    assert.match(signup, /14 days for up to 5 sensors/);
+  }
+  // Signed in, a day after a loss: straight to that alert's pack.
+  for (const pathname of ["/today", "/console"]) {
+    const got = typedAnswer(pathname, "How do I make the insurance pack?", { overview: lossOverview() });
+    assert.match(got || "(none)", /^For the food thrown away from \*\*Kitchen walk-in\*\*: \[Make the insurance pack\]\(\/console[^)]*#packet=INC-000009\)/, pathname);
+    assert.doesNotMatch(got, /Add a line saying what went/);
+    const bare = typedAnswer(pathname, "How do I make the insurance pack?", { overview: lossOverview({ note: null }) });
+    assert.match(bare, /Add a line saying what went in the bin first/);
+    // With no loss: where the button is.
+    assert.match(typedAnswer(pathname, "How do I make the insurance pack?", { overview: overviewWith({ none: true }) }) || "",
+      /open \*\*Insurance packs\*\* on the \*\*Proof\*\* tab/);
+  }
+  assert.match(typedAnswer("/today", "How do I sign up?", { overview: overviewWith() }) || "", /^You are already signed in\./);
+});
+
+test("3.35.0: while the loss headline shows, the welcome offers the pack first", async () => {
+  for (const pathname of ["/today", "/console"]) {
+    const given = mountAt(pathname, { overview: lossOverview() });
+    const labels = J(given.chips(given.screen()).map((c) => c.label));
+    assert.equal(labels[0], "Make the insurance pack", `${pathname}: ${labels}`);
+    const chip = chipOf(given, "Make the insurance pack");
+    assert.match(await ask(chip), /#packet=INC-000009\)/);
+    // An alert open outranks it; nothing lost, the calm three.
+    const live = mountAt(pathname, { overview: { ...lossOverview(), incidents: overviewWith().incidents } });
+    assert.equal(J(live.chips(live.screen()).map((c) => c.label))[0], "What does this alert mean?");
+    const calm = mountAt(pathname, { overview: overviewWith({ none: true }) });
+    assert.ok(!J(calm.chips(calm.screen()).map((c) => c.label)).includes("Make the insurance pack"));
+  }
+});
+
+test("3.35.0: 'Is the food safe to eat?' respects a recorded 'Thrown away'", () => {
+  for (const pathname of ["/today", "/console"]) {
+    const got = typedAnswer(pathname, "Is the food safe to eat?", { overview: lossOverview() });
+    assert.match(got || "(none)", /You recorded it as thrown away at \d{1,2}:\d\d [AP]M, so there is nothing left to decide about that food\./, pathname);
+    assert.doesNotMatch(got, /rule of thumb/, "no rule of thumb over food already in the bin");
+    assert.match(got, /#packet=INC-000009\)/);
+    assert.doesNotMatch(got, NO_PEOPLE);
+  }
+});
+
+test("3.35.0: 'Who gets the texts?' names the people on the list, first names only, when signed in", () => {
+  for (const pathname of ["/today", "/console"]) {
+    const got = typedAnswer(pathname, "Who gets the texts?", { overview: lossOverview() });
+    assert.match(got || "(none)", /^Right now an alert text goes to \*\*Dana and Sam\*\*\./, pathname);
+    assert.doesNotMatch(got, /Reyes|\+1555|@/);
+  }
+  // A visitor: no names.
+  assert.doesNotMatch(typedAnswer("/", "Who gets the texts?") || "", /Right now/);
+});
+
+test("3.35.0: 'What did Kryozyn do for me?' finds the summary, an alert open or not", () => {
+  for (const pathname of ["/today", "/console"]) {
+    for (const overview of [overviewWith({ none: true }), overviewWith(), lossOverview()]) {
+      const given = mountAt(pathname, { overview });
+      const hit = PANEL.matchTyped("What did Kryozyn do for me?", typedItems(given, pathname));
+      assert.ok(hit, `${pathname} (${overview.incidents.length}): no item`);
+      const got = hit.answer({ facts: {}, ready: false, label: "What did Kryozyn do for me?" });
+      assert.match(String(got && got.then ? "async" : got), /async|What Kryozyn did for you/, pathname);
+    }
+  }
+});
+
+test("3.35.0: every item's words still fit the core's 20", () => {
+  for (const pathname of EVERY.concat(["/sample-insurance-pack"])) {
+    for (const overview of [overviewWith(), overviewWith({ none: true }), lossOverview()]) {
+      const given = mountAt(pathname, { overview });
+      for (const item of [...given.welcomePills, ...given.chips(given.screen())]) {
+        assert.ok(!item.match || item.match.length <= 20, `${pathname} ${item.label}: ${item.match && item.match.length}`);
+      }
+    }
+  }
+});
