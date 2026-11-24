@@ -2740,6 +2740,13 @@ class HubStore:
             self._db.put("tenant", tenant.tenant_id, tenant.to_row())
             return tenant
 
+    def set_site_address(self, tenant: Tenant, address: str) -> Tenant:
+        """The address an insurance pack shows (3.35.0)."""
+        with self._lock:
+            tenant.site_address = address
+            self._db.put("tenant", tenant.tenant_id, tenant.to_row())
+            return tenant
+
     # ---- on-call roster --------------------------------------------------
 
     def add_contact(

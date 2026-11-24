@@ -294,3 +294,8 @@ details.more[open] > summary { display: none; }
   .band-head { margin-bottom: 20px; }
   .closer { padding: 44px 0 56px; }
 }
+
+/* The sample insurance pack's link under "The alert is the easy half"
+   (3.35.0), outside the fold so a phone sees it too. */
+.band-head .sample-link { margin-top: 14px; }
+.band-head .sample-link .btn { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; }

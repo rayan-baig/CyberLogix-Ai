@@ -80,8 +80,11 @@ class SensorReading(BaseModel):
     temperature_celsius: Optional[Finite] = Field(
         None, description="Current ambient temperature reading, in Celsius"
     )
+    # None when the sensor sends none (3.35.0). It used to be 50.0, so a
+    # sensor with no humidity probe put "50%" beside every reading in an
+    # insurance pack: a measurement nobody took, on evidence.
     humidity_percent: Optional[Finite] = Field(
-        50.0, ge=0.0, le=100.0, description="Optional relative humidity percentage"
+        None, ge=0.0, le=100.0, description="Optional relative humidity percentage; left out, none is recorded"
     )
     battery_percent: Optional[Finite] = Field(
         None, ge=0.0, le=100.0, description="Sensor battery level"

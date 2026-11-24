@@ -268,6 +268,10 @@ def test_a_closed_answered_alert_says_food_protected_as_an_estimate(api):
     row = lambda: next(i for i in api.get("/api/console/overview", headers=owner).json()["incidents"]
                        if i["incident_id"] == incident_id)
     assert row()["food_protected"] is None             # not while it is open
+    # Out long enough to put a figure on (3.35.0: none under a short blip).
+    held = STORE.get_incident(incident_id)
+    held.opened_at = held.out_since = utc_now() - timedelta(minutes=45)
+    STORE._save_incident(held)
     assert api.post(f"/api/voice/acknowledge/{incident_id}", headers=owner, json={}).status_code == 200
     _pulse(api, key, 38.0)
     assert api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={}).status_code == 200
@@ -291,6 +295,7 @@ def test_an_alert_nobody_answered_or_whose_food_was_binned_claims_nothing(operat
         tenant_id=tenant["tenant_id"], sensor=sensor, temperature_fahrenheit=50.0,
         breach_details="too warm", sms_text="too warm", sms_dispatch_source="test")
     incident.resolved_at = utc_now()
+    incident.out_since = incident.opened_at = utc_now() - timedelta(minutes=45)  # past a short blip (3.35.0)
     assert food_value.protected(incident, sensor) is None
     incident.acknowledged_at = utc_now() - timedelta(minutes=5)
     # Answered and quick is not "kept" until somebody says so (3.30.0).

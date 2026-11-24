@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 
+from brand import FILE_STEM
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,13 +51,16 @@ def export_business(user: User = Depends(require_role("owner"))):
         "tenant_id": tenant.tenant_id,
         "exported_at": iso(utc_now()),
         "note": "Everything stored for this business. Passwords, keys and tokens are left out.",
+        # What the download is called (3.35.0): the product's name, from
+        # brand.py, and the business's id.
+        "file_name": f"{FILE_STEM}-{tenant.tenant_id}.json",
         "records": STORE.export_tenant(tenant.tenant_id),
     }
     return Response(
         content=json.dumps(body, indent=2, default=str),
         media_type="application/json",
         headers={
-            "Content-Disposition": f'attachment; filename="cyberlogix-{tenant.tenant_id}.json"',
+            "Content-Disposition": f'attachment; filename="{FILE_STEM}-{tenant.tenant_id}.json"',
             "Cache-Control": "no-store",
         },
     )

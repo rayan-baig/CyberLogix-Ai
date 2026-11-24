@@ -6,6 +6,52 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.35.0 — 2026-11-24
+
+The insurance pack reads as evidence an adjuster can trust, Pilot helps at
+the moment food is lost, the phone screens are tidier, and you can see a
+sample pack before you ever need one. No price or plan term has changed.
+
+- **No made-up humidity.** A sensor that sends no humidity now has none
+  recorded. Before, it was written down as 50%, and that 50% went into
+  the pack beside every reading. The pack shows a humidity column only
+  when a reading really has one. Older readings that say exactly 50% are
+  left as they were sealed (changing them would break the seal); the pack
+  shows them as "—" and says why.
+- **The pack says who issued it.** "Issued by Kryozyn, a product of MTRX
+  Horizyn" under its title, and every printed page is numbered ("Page 2
+  of 3"). The first section is called "Summary".
+- **Plain words for who was told.** "Text: not switched on", never
+  "sms / not_configured".
+- **The site address.** You can give the address your packs show, in the
+  Insurance packs card (optional). A pack without one says "Site: not
+  recorded" with an "Add the site address" button right there.
+- **The window starts at the first reading,** not twelve hours before a
+  sensor existed.
+- **A shorter note for the adjuster's IT team:** the chain head, and a link
+  to how to check it.
+- **Pilot at the loss moment.** "How do I make the insurance pack?" and
+  "How do I sign up?" are answered without an AI key. While /today says to
+  make the pack, Pilot's welcome offers it first. "Is the food safe to
+  eat?" says "You recorded it as thrown away at ..." instead of the rule of
+  thumb. Signed in, "Who gets the texts?" names the people on the list, by
+  first name only. "What did Kryozyn do for me?" finds the summary.
+- **Phone layout.** In "Closed. What about the food?" the two answers have
+  a gap between them and "Not sure yet" sits on its own line. Pilot's robot
+  keeps off the quoted note of what was thrown away, and when it steps
+  aside at the screen's edge it stays wholly on the screen.
+- **What your insurer gets.** A sample insurance pack, made with pretend
+  data and labelled as a sample, linked from the front page and the
+  pricing page (/sample-insurance-pack).
+- **Honest numbers.** No "food protected: about $800" for an alert shorter
+  than the short-blip time (30 minutes unless the owner changed it): a
+  door held open for four minutes saved nothing. The month line on /today
+  is two items: "This month: 2 alerts · 1 food answer missing".
+- **Alert texts say who they are from.** Every alert, all-clear and
+  site-wide text starts "Kryozyn: ".
+- **Your download is named for the product:** kryozyn-<your id>.json.
+
+
 ## 3.34.0 — 2026-11-23
 
 Renamed to Kryozyn. The product is now Kryozyn (formerly CyberLogix AI),

@@ -261,7 +261,7 @@ def test_the_sitemap_lists_only_public_pages(api):
     body = api.get("/sitemap.xml").text
     listed = re.findall(r"<loc>http://testserver([^<]*)</loc>", body)
     allowed = {"/", "/signup", "/pricing", "/help", "/help/sensors", "/for", "/legal",
-               "/insurance-partners", "/repair-partners"}
+               "/insurance-partners", "/repair-partners", "/sample-insurance-pack"}
     allowed |= {f"/for/{v}" for v in known()}
     from trades import known as trades
 

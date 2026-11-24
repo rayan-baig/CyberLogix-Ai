@@ -389,20 +389,21 @@ def test_this_month_says_the_alerts_how_fast_and_the_food(api):
     opened = _pulse(api, key, 62.0)
     incident_id = opened["incident_id"]
     incident = STORE.get_incident(incident_id)
-    incident.opened_at = incident.out_since = utc_now() - timedelta(minutes=10)
+    # Past a short blip, so the kept food has a figure (3.35.0).
+    incident.opened_at = incident.out_since = utc_now() - timedelta(minutes=40)
     STORE._save_incident(incident)
     assert api.post(f"/api/voice/acknowledge/{incident_id}", headers=owner, json={}).status_code == 200
     _pulse(api, key, 38.0)
     assert api.post(f"/api/voice/resolve/{incident_id}", headers=owner, json={}).status_code == 200
     # Until somebody says, "food not answered yet", never "food kept" (3.30.0).
     month = api.get("/api/console/overview", headers=owner).json()["this_month"]
-    assert month["words"] == "This month: 1 alert · answered in 10 minutes · 1 food answer missing"
+    assert month["words"] == "This month: 1 alert · 1 food answer missing"  # two items since 3.35.0
     assert month["food_kept"] == 0 and month["food_usd"] == 0
     assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
                     json={"food": "kept"}).status_code == 200
     month = api.get("/api/console/overview", headers=owner).json()["this_month"]
     assert month["alerts"] == 1 and month["food_kept"] == 1
-    assert month["words"] == "This month: 1 alert · answered in 10 minutes · food kept"
+    assert month["words"] == "This month: 1 alert · answered in 40 minutes"
     assert month["food_usd"] == food_value.STOCK_USD["food"]["walk-in fridge"]
     assert "monthLine(data, units);" in SIMPLE_JS
     assert 'id="month-line"' in (STATIC / "simple.html").read_text()

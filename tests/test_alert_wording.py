@@ -76,7 +76,7 @@ def test_every_trades_text_fits_one_segment_with_the_facts_first(estate, vertica
     assert sms_segments(text) == 1, text
     assert notifications.to_gsm7(text) == text, "a character outside GSM-7"
     # The order a person reads it in.
-    assert text.startswith(f"ALERT {LOCATION} (UNIT-01) at {SITE}: ")
+    assert text.startswith(f"Kryozyn: {LOCATION} (UNIT-01) at {SITE}: ")
     facts = re.search(rf": (-?[\d.]+){unit}, ([\d.]+){unit} (above|below) "
                       rf"the (-?[\d.]+){unit} limit\. ", text)
     assert facts, text

@@ -32,6 +32,7 @@
     "/for": "Industries",
     "/demo": "See it live (a demo with pretend data)",
     "/today": "Simple view (Today)",
+    "/sample-insurance-pack": "A sample insurance pack, made with pretend data",
   };
 
   // Only the page's name and which tab is open: never a unit, a reading or
@@ -352,6 +353,15 @@
       const peak = degrees(closed.peak_display != null ? closed.peak_display : closed.temperature_display, u, dd);
       const long = outFor(closed.out_since || closed.opened_at, closed.out_until || closed.resolved_at);
       measured = `Nothing is out of range now. The last time, **${unitName(u)}** was out${long ? ` for ${long}` : ""}${peak ? `, at worst ${peak}` : ""}.`;
+      // What the business already recorded (3.35.0): never the rule of
+      // thumb again over food somebody said went in the bin.
+      const at = clock(closed.food_answered_at);
+      if (closed.product_disposition === "discarded") {
+        return `${measured} You recorded it as thrown away${at ? ` at ${at}` : ""}, so there is nothing left to decide about that food.\n\n${PACK_LINE(closed)}`;
+      }
+      if (closed.product_disposition && !closed.food_auto) {
+        measured += ` You recorded the food as kept${at ? ` at ${at}` : ""}.`;
+      }
     }
     const button = onConsole ? "\n\nThe alert's **Is the food still good?** button gives the exact hours from the readings." : "";
     return `${measured}\n\n${RULE}\n\n${NOT_A_RULING}${button}`;
@@ -412,6 +422,29 @@
   ].join("\n\n");
   const DEMO_WHAT = "A pretend kitchen with four sensors. In about a minute the walk-in starts to warm up, and you see exactly what would happen: the wait, the text, the phone call if nobody answers, and the record once it's fixed. No texts or calls are sent, and nothing is saved.";
   const SIGN_IN = "Use the email and password you signed up with, on [the console](/console). On a phone you can add it to your home screen. No account yet? [Start a free trial](/signup).";
+
+  // "How do I make the insurance pack?" (3.35.0): straight to the pack for
+  // the food thrown away in the last day, where there is one; else where
+  // the button is, and a sample with pretend data for a visitor.
+  const PACK_HREF = (id) => `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#packet=${encodeURIComponent(id)}`;
+  const PACK_LINE = (i) => `[Make the insurance pack](${PACK_HREF(i.incident_id)}): the readings, who was told and when, and what happened to the food, ready to print or save as a PDF for your insurer.`;
+  function lossNow() {
+    const dd = overview();
+    return dd && dd.recent_loss && dd.recent_loss.incident_id ? dd.recent_loss : null;
+  }
+  function packAnswer() {
+    const loss = (onConsole || onToday) && signedIn() ? lossNow() : null;
+    if (loss) {
+      return `For the food thrown away from **${words(loss.unit)}**: ${PACK_LINE(loss)}${loss.note ? "" : "\n\nAdd a line saying what went in the bin first, if you can: it makes the pack complete."}`;
+    }
+    const where = "In the console, open **Insurance packs** on the **Proof** tab (on a small account, under **More**), and press **Insurance pack** beside the alert. Or press **Make the insurance pack** on the alert itself after you say the food was thrown away.";
+    const what = "It holds the readings around the alert, who was texted and when, who answered, and what happened to the food, and it prints or saves as a PDF.";
+    if ((onConsole || onToday) && signedIn()) return `${where} ${what}\n\n[What a pack looks like](/sample-insurance-pack)`;
+    return `${what} Every plan has it: after a loss it is one button in the console.\n\n[See a sample pack](/sample-insurance-pack) with pretend data · [Start a free trial](/signup)`;
+  }
+  // "How do I sign up?" (3.35.0).
+  const SIGNUP = () => (signedIn() ? "You are already signed in. To add someone who can sign in too, use **People who can sign in** on the console's **Team** tab."
+    : `Press [Start a free trial](/signup): your business name, your name, your email, the mobile number alerts should reach, and a password. It takes about a minute, needs no card, and the trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors. Then add your first fridge or freezer.`);
 
   // "Sum up my fridges" (core 1.4.2's screenChip, on the console and
   // /today): the page in a few lines, from what it already loaded, in
@@ -520,8 +553,17 @@
   }
   // "How do I add my chef to get texts?" (3.33.0).
   const TEAM_LINK = onConsole ? `${window.location.pathname + (window.location.search || "")}#team` : "/console?view=full#team";
+  // Signed in (3.35.0): who gets them now, by first name, from the page's
+  // own overview (never a surname, a number or an email).
+  function textedNow() {
+    const dd = overview();
+    const names = dd && Array.isArray(dd.texted_first_names) ? dd.texted_first_names.map(words).filter(Boolean) : [];
+    if (!names.length) return "";
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return `Right now an alert text goes to **${list}**.\n\n`;
+  }
   const TEAM = () => ((onConsole || onToday) && signedIn()
-    ? `Add them under **Who gets alerts** in the console (the **Team** tab): their name and mobile number. Everyone on the list is texted when a fridge stays too warm, and on plans with calls, phoned in the order you set. Then press **Send a test alert** so they know what one looks like.\n\n[Add someone](${TEAM_LINK})`
+    ? `${textedNow()}To add someone, use **Who gets alerts** in the console (the **Team** tab): their name and mobile number. Everyone on the list is texted when a fridge stays too warm, and on plans with calls, phoned in the order you set. Then press **Send a test alert** so they know what one looks like.\n\n[Add someone](${TEAM_LINK})`
     : `Once you've signed up, add each person under **Who gets alerts** in the console (the **Team** tab): a name and a mobile number, as many people as you like. Everyone on the list is texted when a fridge stays too warm, and on plans with calls, phoned in the order you set. **Send a test alert** shows them what one looks like. [Start a free trial](/signup)`);
   // "How much for a pharmacy?" (3.33.0), from the plan figures.
   const PHARMACY = () => [
@@ -576,7 +618,9 @@
     "What sensors do I need?": ["sensor", "probe", "device", "hardware", "thermometer", "brand", "buy", "sell", "compatible", "kind", "type", "work"],
     "Log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "health", "audit", "history", "export"],
     "It's fixed now": ["fixed", "fix", "close", "closed", "resolve", "resolved", "sorted", "done", "finished", "alert"],
-    [DID_LABEL]: [F.appShort.toLowerCase(), "did", "summary", "week", "weekly", "worth", "value"],
+    // 3.35.0: "What did Kryozyn do for me?" ("did" and "do" are little
+    // words the matching leaves out, so the ones left must carry it).
+    [DID_LABEL]: [F.appShort.toLowerCase(), "summary", "week", "weekly", "worth", "value", "done"],
     "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute", "short", "quick", "delay", "wait"],
     "Wi-Fi or power goes off?": ["wifi", "internet", "power", "outage", "cut", "down", "offline", "signal", "connection", "electricity", "blackout"],
     "Do you phone at night?": ["phone", "call", "night", "ring", "voice", "escalate", "sleep", "weekend"],
@@ -627,7 +671,14 @@
     // What happens when a fridge is warm, for a visitor: on the person's
     // own pages "which fridges need me" says it with their own fridges.
     { id: "warm", labels: ["A fridge is warm: what now?", "What happens next?"], answer: WARM, only: () => !ownPage },
-    { id: "did", labels: [DID_LABEL], answer: didAnswer },
+    { id: "did", labels: [DID_LABEL], also: ["recap", "saved"], answer: didAnswer },
+    // 3.35.0: the insurance pack, and signing up.
+    // The loss chip itself is a link and carries no words of its own: the
+    // connect pill lends them, so the two never tie (a typed question goes
+    // to the pill, and from there to this answer).
+    { id: "pack", labels: ["Make the insurance pack"], also: ["packet", "claim", "insurer", "adjuster", "evidence", "paperwork"],
+      answer: packAnswer },
+    { id: "signup", labels: [], also: ["signup", "register", "registration", "join", "create"], answer: SIGNUP },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -643,7 +694,16 @@
 
   // The answer that best fits typed words, or null. `own` wins a tie: the
   // item the core matched was the right one.
+  // Phrases whose telling word is a little one the matching leaves out
+  // (3.35.0): "sign up" is "sign" alone, the same as "sign in".
+  const PHRASES = [
+    [/\bsign(?:ing)?[\s-]*up\b|\bregister\b|\bcreate (?:an |my )?account\b/i, "signup"],
+    [/\binsurance (?:pack|packet|claim)|\bclaim (?:pack|form)|\bfor (?:my|the) insurer\b/i, "pack"],
+    [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
+  ];
   function bestTopic(text, own) {
+    const phrased = PHRASES.find(([re, id]) => re.test(String(text || "")) && TOPICS.some((t) => t.id === id && (!t.only || t.only())));
+    if (phrased) return TOPICS.find((t) => t.id === phrased[1]);
     const asked = wordsIn(text);
     let best = null;
     let top = 0;
@@ -688,6 +748,7 @@
   // them, and the answer is still the closest of all (bestTopic). The
   // core keeps the first 20 words of an item, so each list fits: checked
   // by tests/js/kryozyn-pilot.test.js on every page.
+  const VISIT_WORDS = ["sign", "signup", "register", "insurance", "pack", "claim"];
   const PRICE_WORDS = ["cost", "price", "much", "pay", "expensive", "pharmacy", "pharmacist", "cancel", "subscription", "refund"];
   const LEND = {
     // The person's own pages (whatever the alerts): sensors on the connect
@@ -695,11 +756,22 @@
     "How do I connect a sensor?": ["work", "monnit", "sensorpush", "elitech", "dickson"],
     // "Is my freezer working?"; and "work" on two pills, so "How does this
     // work?" alone picks neither.
-    "Which fridges need me?": ["work", "working"],
+    "Which fridges need me?": ["work", "working",
+      // 3.35.0: signing up; "sign" on /today only, as the console's
+      // sign-in page has "How do I sign in?" and a word two items share
+      // matches neither. Each pill keeps to 20 words (the core's most).
+      "signup", "register", ...(onToday ? ["sign"] : [])],
     "Is the food still OK?": ["data", "privacy"],
-    "Who gets the texts?": [F.appShort.toLowerCase(), "summary"],
+    // Not the product's name (3.35.0): with no alert open the summary's
+    // own chip has it, and a word two items share matches neither, so
+    // "What did <name> do for me?" got the key note.
+    "Who gets the texts?": ["summary",
+      // 3.35.0: the insurance pack (the loss chip itself carries none).
+      "insurance", "pack", "claim"],
     // ...and on the chips of either state: an alert open, or not.
-    "What does this alert mean?": PRICE_WORDS,
+    // With an alert open the summary's chip is not on the page: the
+    // product's name rides on the alert's chip instead (3.35.0).
+    "What does this alert mean?": PRICE_WORDS.filter((w) => w !== "refund").concat(F.appShort.toLowerCase()),
     [DID_LABEL]: PRICE_WORDS,
     "It's fixed now": ["wifi", "power", "goes", "outage", "internet", "down", "door", "trial"],
     // With no alert open, the alert's own words too: typed, it says none is.
@@ -710,6 +782,13 @@
     "What sensors do I need?": ["monnit", "sensorpush", "elitech", "dickson", "chef", "staff", "team", "text"],
     "What does it cost?": ["pharmacy", "pharmacist", "cancel", "refund", "contract"],
     "Will it work for my café?": ["data", "privacy", "safe", "walk", "fridge", "freezer"],
+    // 3.35.0: signing up and the insurance pack, for a visitor, on one
+    // suggestion of each public page that has room (never a pill, so no
+    // two items on a page share them).
+    "Will a door left open wake us?": VISIT_WORDS,
+    "Which plan for a café?": VISIT_WORDS,
+    "Set up step by step": VISIT_WORDS,
+    "What am I seeing?": VISIT_WORDS,
     // The pages whose chips don't say it already: the power, the door,
     // the trial and the calls.
     "What's in the trial?": ["wifi", "power", "goes", "outage", "door"],
@@ -752,7 +831,16 @@
     const dd = overview();
     return Boolean(dd) && liveAlerts(dd).length > 0;
   }
-  const LIVE = () => (alertOpen() ? LIVE_ALERT : LIVE_CALM);
+  // Food thrown away in the last day, no alert open (3.35.0): the pack
+  // first, while /today's headline says to make it.
+  const lossList = () => [["Make the insurance pack", answer(packAnswer)],
+    ["Log for the inspector", link(LOG_HERE)],
+    [DID_LABEL, answer(didAnswer)]];
+  function LIVE() {
+    if (alertOpen()) return LIVE_ALERT;
+    const loss = lossNow();
+    return loss ? lossList() : LIVE_CALM;
+  }
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
   const CHIPS = {
@@ -774,6 +862,9 @@
     "/demo": [["What am I seeing?", answer(() => DEMO_WHAT)],
       ["What happens next?", answer(WARM)],
       ["Start a free trial", link("/signup")]],
+    // 3.35.0: the sample pack's page.
+    "/sample-insurance-pack": [["What's in the trial?", answer(TRIAL)],
+      ["Start a free trial", link("/signup")]],
     "/console-out": [["How do I sign in?", answer(() => SIGN_IN)],
       ["I forgot my password", link("/reset")],
       ["Start a free trial", link("/signup")]],
@@ -792,8 +883,8 @@
   // Every list of suggestions this page can show (the console's changes
   // when somebody signs in), for the words the pills must leave alone.
   function pageLists() {
-    if (onConsole) return [LIVE_ALERT, LIVE_CALM, CHIPS["/console-out"]];
-    if (onToday) return [LIVE_ALERT, LIVE_CALM];
+    if (onConsole) return [LIVE_ALERT, LIVE_CALM, lossList(), CHIPS["/console-out"]];
+    if (onToday) return [LIVE_ALERT, LIVE_CALM, lossList()];
     if (path.startsWith("/for/")) return [CHIPS["/for/*"]];
     return [CHIPS[path] || []];
   }
@@ -932,7 +1023,10 @@
       ".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need",
       // What Kryozyn did for you, opened on /today (3.33.0): at 375px
       // the robot waved over its first lines.
-      "#did-lines", "#did-sample-lines", ".did-tabs"],
+      "#did-lines", "#did-sample-lines", ".did-tabs",
+      // The note of what was thrown away, quoted under the month line
+      // (3.35.0): at 375px the robot sat on its last words.
+      ".answer-note", ".answer-what"],
     // Not the logo (3.31.0): it is a picture and words, not a link, on most
     // pages, so core 1.4.2's handle may peek in beside it at the screen's
     // left edge. At 320px and 375x667 on /today with an alert that is the

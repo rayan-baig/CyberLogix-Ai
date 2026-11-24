@@ -166,9 +166,9 @@ def test_three_units_warming_together_at_one_site_raise_one_urgent_alert(
     assert alert.group_scope == "site" and alert.group_total_units == 7
     assert alert.breach_details == ("Possible site-wide problem at Main Street: "
                                     "3 of 7 units warming at once.")
-    assert alert.sms_text == ("Possible site-wide problem at Main Street: 3 of 7 "
+    assert alert.sms_text == ("Kryozyn: Possible site-wide problem at Main Street: 3 of 7 "
                               "units warming at once. Power cut, open door or "
-                              "tampered controls? Check now. Reply 1 if you are on it.")
+                              "tampered controls? Check now. Reply 1 if on it.")
 
     # Everyone on call for the site, the estate-wide people, and the owner.
     texted = {to for to, _ in site_wide_texts(phones)}
@@ -307,7 +307,7 @@ def test_warming_at_several_sites_of_one_business_raises_one_alert_for_all(
     (alert,) = alerts(tenant)
     assert alert.group_scope == "business"
     assert sorted(alert.group_site_ids) == sorted(sites.values())
-    assert alert.sms_text.startswith("Possible problem across 2 sites: 4 units warming at once.")
+    assert alert.sms_text.startswith("Kryozyn: Possible problem across 2 sites: 4 units warming at once.")
     texted = {to for to, _ in site_wide_texts(phones)}
     assert {north.phone, south.phone, OWNER_PHONE} <= texted
 
@@ -506,7 +506,7 @@ def test_two_sweeps_at_once_open_and_send_it_once(tenant_factory, sensor_factory
         t.join(20)
 
     assert len(alerts(tenant)) == 1
-    texts = [to for to, body in sent if body.startswith("Possible site-wide")]
+    texts = [to for to, body in sent if body.startswith("Kryozyn: Possible site-wide")]
     assert sorted(texts) == sorted({"+1-555-0151", OWNER_PHONE})
     calls = [to for to, body in sent if "units started warming" in body]
     assert sorted(calls) == sorted({"+1-555-0151", OWNER_PHONE})
@@ -564,7 +564,7 @@ def test_the_text_always_fits_one_segment():
     assert wording._septets(text) <= wording.SMS_LIMIT
     assert "12 of 40 units warming at once" in text and "Reply 1" in text
     text = wording.site_wide_sms(None, "business", 9, 30, ["A", "B", "C"])
-    assert text.startswith("Possible problem across 3 sites: 9 units warming at once.")
+    assert text.startswith("Kryozyn: Possible problem across 3 sites: 9 units warming at once.")
     assert wording._septets(text) <= wording.SMS_LIMIT
 
 

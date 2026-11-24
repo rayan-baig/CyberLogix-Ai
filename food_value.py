@@ -165,8 +165,12 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
     if fate not in KEPT:
         return None
     # Recorded by itself for a short blip: nothing was at stake, so no
-    # dollars (3.32.0). A person's own "Food kept" counts again.
+    # dollars (3.32.0). A person's own "Food kept" counts again, but only
+    # after a meaningful time out (3.35.0): "about $800 of food protected"
+    # for a fridge out for four minutes claimed credit for a door.
     if getattr(incident, "food_auto_minutes", None) is not None:
+        return None
+    if too_short_for_dollars(incident):
         return None
     guess = estimate(sensor)
     if guess is None:
@@ -176,6 +180,22 @@ def protected(incident, sensor) -> Optional[Dict[str, Any]]:
         "words": f"{guess['label']}: about ${guess['usd']:,}",
         "note": f"An estimate: what a typical {guess['kind']} holds, not a count of this one.",
     }
+
+
+def minutes_out(incident) -> float:
+    """How long a closed alert's unit was out of range, in minutes."""
+    start = getattr(incident, "out_since", None) or incident.opened_at
+    return max(0.0, (incident.resolved_at - start).total_seconds() / 60.0)
+
+
+def too_short_for_dollars(incident) -> bool:
+    """Out for less than the short-blip time (SHORT_MINUTES, 3.35.0): no
+    dollar figure, whatever was said about the food. A unit closed while
+    still out of range was out for as long as anybody knows, so it counts.
+    With the short-blip rule off (0), every kept answer counts as before."""
+    if SHORT_MINUTES <= 0 or getattr(incident, "closed_out_of_range", False):
+        return False
+    return minutes_out(incident) < SHORT_MINUTES
 
 
 def at_risk(incident, sensor) -> Optional[Dict[str, Any]]:
@@ -333,6 +353,10 @@ def month_total(pairs: Iterable) -> Dict[str, Any]:
         fate = getattr(incident, "product_disposition", "") or ""
         if fate in KEPT and getattr(incident, "food_auto_minutes", None) is not None:
             auto += 1
+        elif fate in KEPT:
+            # Kept, after too short a spell to put a dollar figure on
+            # (3.35.0): counted as kept, with no dollars.
+            alerts += 1
         elif fate == "discarded":
             thrown += 1
         elif not fate:

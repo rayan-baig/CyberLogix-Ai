@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%%APP_NAME%% — A sample insurance pack</title>
+<meta name="description" content="What your insurer gets after a loss: a sample %%APP_NAME%% insurance pack, made with pretend data.">
+<!-- 3.35.0: what a real insurance pack looks like, with pretend data and
+     said so at the top, in the same order and words as the pack the
+     console makes (claims.py, console.js openPacket). Linked from the
+     front page and the pricing page ("What your insurer gets"). Nothing
+     here is a real business, a real person or a real number. -->
+<link rel="canonical" href="%%BASE_URL%%/sample-insurance-pack">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="%%APP_NAME%%">
+<meta property="og:title" content="What your insurer gets: a sample %%APP_NAME%% insurance pack">
+<meta property="og:description" content="The readings, who was told and when, and what happened to the food, in one document. Pretend data.">
+<meta property="og:url" content="%%BASE_URL%%/sample-insurance-pack">
+<meta property="og:image" content="%%BASE_URL%%/static/og.png">
+<meta name="theme-color" content="%%THEME_COLOR%%">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/static/logo-mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/pages.css">
+<link rel="stylesheet" href="/static/sample-pack.css">
+<script src="/static/circuit.js" defer></script>
+<script src="/static/signedin.js" defer></script>
+<script src="/static/sample-pack.js" defer></script>
+</head>
+<body>
+<canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
+<div class="circuit-veil" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="brand" href="/" aria-label="%%APP_NAME%% home">
+    <img src="/static/logo.svg" alt="" width="26" height="26">
+    <span class="brand-name">%%APP_NAME%%</span>
+  </a>
+  <nav aria-label="Elsewhere">
+    <a href="/">Home</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/help">Help</a>
+    <a class="btn btn-sm" href="/console">Sign in</a>
+  </nav>
+</header>
+
+<main class="wrap page sample-page">
+  <p class="kicker">What your insurer gets</p>
+  <h1>A sample insurance pack</h1>
+  <p class="lede">After a loss, one button in %%APP_NAME%% makes this document
+    for your insurer: the readings, who was told and when, and what happened
+    to the food. This one is made up, so you can see it before you need it.</p>
+
+  <p class="sample-flag" role="note"><strong>Sample, with pretend data.</strong>
+    The business, the people, the phone number and every reading below are
+    made up. Your own pack is made from your own sensors' sealed readings.</p>
+
+  <div class="sample-acts">
+    <button class="btn btn-sm" type="button" id="sample-print">Print or save as PDF</button>
+    <a class="btn btn-sm btn-primary" href="/signup">Start a free trial</a>
+  </div>
+
+  <article class="sample-doc" aria-label="Sample insurance pack">
+    <div class="sample-mark" aria-hidden="true">Sample</div>
+    <div class="doc-kicker">Insurance pack: loss event evidence · sample</div>
+    <div class="drawer-title">INC-0042</div>
+    <div class="drawer-sub">Rosa's Café (pretend) · issued Mar 15, 2026, 7:52 AM EST</div>
+    <div class="doc-issued-by">Issued by %%APP_NAME%%, a product of %%COMPANY_NAME%% · %%APP_HOST%%</div>
+
+    <div class="doc-letter">
+      <div class="quote-label">Summary</div>
+      Rosa's Café reports that Walk-in fridge at 12 Harbor Street went out of
+      its safe range at Mar 15, 2026, 1:58 AM EST. Continuous monitoring
+      recorded 38 readings from Mar 14, 2026, 7:00 PM EST to Mar 15, 2026,
+      7:52 AM EST; 9 of them were outside the documented safe band, the worst
+      56.4°F. The probable cause is fridge or freezer warming (door left open,
+      or the cooling failing). The alert was sent automatically at detection
+      and acknowledged 12 minutes after detection. The alert closed at Mar 15,
+      2026, 4:41 AM EST. The food was recorded as “Thrown away” by Rosa Diaz at
+      Mar 15, 2026, 4:44 AM EST. The note of what went: “Two trays of chicken,
+      a case of milk and the prepped salads.” All readings are hash-chained and
+      independently verifiable.
+    </div>
+
+    <div class="doc-section">What happened to the food</div>
+    <div class="readout">
+      <div><span class="k">Answer</span><span class="v">Thrown away</span></div>
+      <div><span class="k">Who</span><span class="v">Rosa Diaz</span></div>
+      <div><span class="k">When</span><span class="v">Mar 15, 2026, 4:44 AM</span></div>
+      <div><span class="k">What went</span><span class="v">Two trays of chicken, a case of milk and the prepped salads</span></div>
+    </div>
+
+    <div class="doc-section">Insured and location</div>
+    <div class="readout">
+      <div><span class="k">Insured</span><span class="v">Rosa's Café</span></div>
+      <div><span class="k">Contact</span><span class="v">Rosa Diaz · +1 555 010 0000</span></div>
+      <div><span class="k">Site</span><span class="v">12 Harbor Street, Springfield</span></div>
+      <div><span class="k">Unit</span><span class="v">Walk-in fridge</span></div>
+      <div><span class="k">Sector</span><span class="v">Restaurants &amp; Cafés</span></div>
+    </div>
+
+    <div class="doc-section">The event</div>
+    <div class="readout">
+      <div><span class="k">Out of range since</span><span class="v">Mar 15, 2026, 1:58 AM</span></div>
+      <div><span class="k">Alert sent</span><span class="v">Mar 15, 2026, 2:18 AM</span></div>
+      <div><span class="k">Reading at detection</span><span class="v">43.1°F</span></div>
+      <div><span class="k">Breach</span><span class="v">43.1°F: too warm, over the 41°F limit.</span></div>
+      <div><span class="k">Probable cause</span><span class="v">Fridge or freezer warming (door left open, or the cooling failing)</span></div>
+      <div><span class="k">Acknowledged after</span><span class="v">12 minutes</span></div>
+      <div><span class="k">Closed</span><span class="v">closed at Mar 15, 2026, 4:41 AM</span></div>
+    </div>
+
+    <div class="doc-section">Response</div>
+    <ul class="timeline">
+      <li><b>Breach detected</b> — 43.1°F: too warm, over the 41°F limit. <span class="when">Mar 15, 2026, 1:58 AM</span></li>
+      <li><b>Alert dispatched by SMS</b> — 2 on the roster texted, 2 delivered. <span class="when">Mar 15, 2026, 2:18 AM</span></li>
+      <li><b>Acknowledged</b> — Taken by Rosa Diaz. <span class="when">Mar 15, 2026, 2:30 AM</span></li>
+      <li><b>Worst reading</b> — 56.4°F <span class="when">Mar 15, 2026, 3:40 AM</span></li>
+      <li><b>Closed</b> — Closed by Rosa Diaz. <span class="when">Mar 15, 2026, 4:41 AM</span></li>
+    </ul>
+    <div class="scrollx"><table>
+      <thead><tr><th>Channel</th><th>Recipient</th><th>Number</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>Text</td><td>Rosa Diaz</td><td>+1 555 010 0000</td><td>delivered</td></tr>
+        <tr><td>Text</td><td>Sam Lee</td><td>+1 555 010 0001</td><td>delivered</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="doc-section">Recorded evidence</div>
+    <div class="readout">
+      <div><span class="k">Window</span><span class="v">Mar 14, 2026, 7:00 PM — Mar 15, 2026, 7:52 AM</span></div>
+      <div><span class="k">Readings</span><span class="v">38</span></div>
+      <div><span class="k">Out of band</span><span class="v">9</span></div>
+      <div><span class="k">Peak</span><span class="v">56.4°F</span></div>
+    </div>
+    <div class="scrollx"><table>
+      <thead><tr><th>When</th><th class="num">Reading</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>Mar 15, 2026, 1:40 AM</td><td class="num">38.2°F</td><td>in range</td></tr>
+        <tr><td>Mar 15, 2026, 1:58 AM</td><td class="num u-c-critical">43.1°F</td><td>out of range</td></tr>
+        <tr><td>Mar 15, 2026, 2:20 AM</td><td class="num u-c-critical">47.9°F</td><td>out of range</td></tr>
+        <tr><td>Mar 15, 2026, 3:00 AM</td><td class="num u-c-critical">53.0°F</td><td>out of range</td></tr>
+        <tr><td>Mar 15, 2026, 3:40 AM</td><td class="num u-c-critical">56.4°F</td><td>out of range</td></tr>
+        <tr><td>Mar 15, 2026, 4:20 AM</td><td class="num u-c-critical">44.7°F</td><td>out of range</td></tr>
+        <tr><td>Mar 15, 2026, 4:40 AM</td><td class="num">40.2°F</td><td>in range</td></tr>
+      </tbody>
+    </table></div>
+    <div class="card-note u-mt-8">A real pack lists every reading in the window. This sample shows a few.</div>
+
+    <div class="doc-section">Prior incidents on this asset</div>
+    <div class="card-note">None in the preceding 90 days.</div>
+
+    <div class="doc-it">
+      <div class="doc-it-head">For the adjuster's IT team</div>
+      <p>Every reading in this pack is sealed in a hash chain, so a change made
+        after the event would show. The chain head below is what your IT team
+        checks against; how to check it, with no account needed, is at the
+        address below.</p>
+      <div class="digest">
+        <span class="digest-label">Chain head at issue</span>
+        <code>sample-0000-not-a-real-chain-head</code>
+      </div>
+      <p>How to check it: <a href="/developers#post-api-vault-verify">%%APP_HOST%%/developers#post-api-vault-verify</a></p>
+    </div>
+  </article>
+
+  <p class="muted small sample-foot">We are a monitoring service, not an
+    insurer. What your insurer pays is up to them; the pack is the evidence,
+    put together for you. Insurance packs come with every plan, Starter
+    included. <a href="/pricing">See prices</a></p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span>%%APP_NAME%%</span>
+    <span class="lineage">A product of %%COMPANY_NAME%%</span>
+    <nav aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/legal">Agreements</a>
+      <a href="/console">Console</a>
+    </nav>
+  </div>
+</footer>
+<!--pilot-->
+</body>
+</html>
