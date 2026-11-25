@@ -15,7 +15,7 @@ other trade is priced by quote.
 | Restaurants & Cafés | **$149** / location / month | up to 10 units at that location |
 | Retail & Hospital Pharmacies | **$199** / pharmacy / month | up to 10 units at that pharmacy |
 | A unit past 10 at one location | **+$15** / unit / month | restaurants and pharmacies |
-| Kitchen Safety Bundle | **+$29** / location / month | the daily Aegizyn report, and Aegizyn Pro for that location |
+| Kitchen Safety Bundle | **+$29** / location / month | the daily OmniArmor report, and OmniArmor Pro for that location |
 | Every other trade | **Custom pricing — ask for a quote** | sized to what is run |
 | Setup | **No setup fee** | on any plan |
 | Paying yearly | **10 × the monthly price** for 12 months | everything recurring: "2 months free" |
@@ -404,21 +404,21 @@ for comparison rather than charged.
 | Certified Compliance Vault | per estate | $499 / month |
 | Sector Benchmarks | per estate | $299 / month |
 | Equipment Intelligence | per estate | $399 / month |
-| Kitchen Safety Bundle | per location | $29 / month, includes Aegizyn Pro for that location |
+| Kitchen Safety Bundle | per location | $29 / month, includes OmniArmor Pro for that location |
 
 The **Kitchen Safety Bundle** is the Kryozyn half of the bundle with
-Aegizyn ([AEGIZYN-CONNECTION.md](AEGIZYN-CONNECTION.md)). It is
-billed while the Aegizyn connection is switched on, not picked from a
+OmniArmor ([OMNIARMOR-CONNECTION.md](OMNIARMOR-CONNECTION.md)). It is
+billed while the OmniArmor connection is switched on, not picked from a
 list, so nobody pays for a connection they removed: connecting adds it to
 the next invoice at $29 for each location (the sites set up, or one),
-disconnecting takes it off. It **includes Aegizyn Pro for that
-location**: Aegizyn waives its own Pro fee for a workspace whose daily
+disconnecting takes it off. It **includes OmniArmor Pro for that
+location**: OmniArmor waives its own Pro fee for a workspace whose daily
 reports arrive signed by this server (`KITCHEN_BUNDLE_SECRET`,
-[AEGIZYN-CONNECTION.md](AEGIZYN-CONNECTION.md#the-signature)). It is
+[OMNIARMOR-CONNECTION.md](OMNIARMOR-CONNECTION.md#the-signature)). It is
 free on a trial, so a kitchen can try it first, and it is the one extra
 Starter takes. The figure the MTRX Horizyn bundle page shows is
 `pricing.bundle_price_label()`: "+$29 a month per location", and
-`bundle_includes_label()` is "Includes Aegizyn Pro for that location".
+`bundle_includes_label()` is "Includes OmniArmor Pro for that location".
 
 Every one is a fixed fee. A percentage of what a customer saved sounds
 aligned and is not: a quiet year pays nothing for the same standing

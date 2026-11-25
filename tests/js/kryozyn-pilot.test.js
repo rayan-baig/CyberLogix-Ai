@@ -15,7 +15,7 @@ globalThis.PilotProviders = Providers;
 const Engine = require(core("pilot-engine.js"));
 
 // The names, as main.pilot_facts puts them on Pilot's script tag (brand.py).
-const NAMES = { appName: "Kryozyn", appShort: "Kryozyn", companyName: "MTRX Horizyn", checklistApp: "Aegizyn" };
+const NAMES = { appName: "Kryozyn", appShort: "Kryozyn", companyName: "MTRX Horizyn", checklistApp: "OmniArmor" };
 const FACTS = {
   ...NAMES,
   fromPrice: "59", starterUnits: "3", restaurantPrice: "149", pharmacyPrice: "199", unitsPerLocation: "10",

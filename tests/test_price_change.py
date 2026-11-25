@@ -4,7 +4,7 @@ Starter $59 a month (1 location, up to 3 units). Restaurants $149 a month
 per location and pharmacies $199 a month per pharmacy, each for up to ten
 units at that location, with $15 a month for each unit past ten there.
 No setup fee anywhere. The Kitchen Safety Bundle stays +$29 a month per
-location and now includes Aegizyn Pro for that location. Every other
+location and now includes OmniArmor Pro for that location. Every other
 trade is "Custom pricing — ask for a quote" on every public page, and its
 rate stays in the code so the invoices of businesses already on it keep
 working. A business already on the old prices pays the new ones from its
@@ -399,14 +399,14 @@ def test_the_seat_limit_does_not_quote_a_custom_rate(api, tenant_factory, sensor
 
 def test_the_bundle_includes_omniarmor_pro_wherever_it_is_described(api):
     entry = pricing.ADD_ONS["kitchen_safety_bundle"]
-    assert entry["includes"] == "Aegizyn Pro for that location"
-    assert "Aegizyn Pro for that location included" in entry["description"]
-    assert pricing.bundle_includes_label() == "Includes Aegizyn Pro for that location"
+    assert entry["includes"] == "OmniArmor Pro for that location"
+    assert "OmniArmor Pro for that location included" in entry["description"]
+    assert pricing.bundle_includes_label() == "Includes OmniArmor Pro for that location"
 
     pricing_page = _words(api.get("/pricing").text)
     assert "+$29 a month per location" in pricing_page
-    assert "Includes Aegizyn Pro for that location." in pricing_page
+    assert "Includes OmniArmor Pro for that location." in pricing_page
     help_page = _words(api.get("/help").text)
-    assert "includes Aegizyn Pro for that location" in help_page
+    assert "includes OmniArmor Pro for that location" in help_page
     sheet = _words(api.get("/for/restaurant/sheet").text)
-    assert "Kitchen Safety Bundle: $29 a month per location, includes Aegizyn Pro" in sheet
+    assert "Kitchen Safety Bundle: $29 a month per location, includes OmniArmor Pro" in sheet

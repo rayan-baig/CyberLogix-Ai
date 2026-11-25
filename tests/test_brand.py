@@ -1,7 +1,8 @@
 """The names in one place (brand.py), and the old name kept working (3.34.0).
 
 The product is Kryozyn (it was CyberLogix AI); the checklist app its
-Kitchen Safety Bundle fills in is Aegizyn (it was OmniArmor); the company
+Kitchen Safety Bundle fills in is OmniArmor again (3.36.0; it was called
+Aegizyn in 3.34.0 and 3.35.0); the company
 is MTRX Horizyn until its new name is chosen. Three promises:
 
 * Every page, email, text, agreement and Pilot answer takes the names
@@ -36,7 +37,9 @@ import main
 ROOT = Path(__file__).resolve().parent.parent
 
 OLD_PRODUCT = "Cyber" + "Logix"
-OLD_CHECKLIST = "Omni" + "Armor"
+# 3.36.0: OmniArmor is the checklist app's name again; the old one is now
+# the name it had for two releases.
+OLD_CHECKLIST = "Aegi" + "zyn"
 OLD_HOST = "cyber" + "logix." + "mtrx" + "horizyn.com"
 OLD_STAGING = "staging." + OLD_HOST
 
@@ -159,7 +162,7 @@ print(json.dumps(out))
 
 def test_the_defaults():
     assert (brand.APP_NAME, brand.COMPANY_NAME, brand.CHECKLIST_APP) == (
-        "Kryozyn", "MTRX Horizyn", "Aegizyn")
+        "Kryozyn", "MTRX Horizyn", "OmniArmor")
     assert brand.APP_URL == "https://kryozyn.mtrxhorizyn.com"
     assert brand.STAGING_HOST == "staging.kryozyn.mtrxhorizyn.com"
     assert brand.fill("<head></head>%%APP_NAME%%|%%COMPANY_NAME%%").endswith(
@@ -195,9 +198,9 @@ def test_no_page_says_an_old_name(api):
         resp = api.get(path)
         text = resp.text
         # The old product name in any case (CYBERLOGIX_ setting names
-        # included: a page names the KRYOZYN_ ones); the old checklist name
-        # as a word (its lower-case form is in internal ids such as
-        # kitchen_safety_bundle_omniarmor).
+        # included: a page names the KRYOZYN_ ones); the checklist app's
+        # name of 3.34.0 and 3.35.0 as a word (its lower-case form is the
+        # old connection address the console no longer calls).
         found = sorted({m.group(0) for m in re.finditer(OLD_PRODUCT, text, re.I)}
                        | {m.group(0) for m in re.finditer(OLD_CHECKLIST, text)})
         if found:
@@ -373,11 +376,12 @@ def test_the_app_is_wired_with_both_middlewares():
 
 
 def test_the_connection_answers_at_its_old_address_too(api, tenant_factory, owner_headers):
-    """The console calls /api/connections/aegizyn; an installed console
-    that has not reloaded since the rename still calls the old address."""
+    """The console calls /api/connections/omniarmor again (3.36.0); an
+    installed console that has not reloaded since 3.34.0 or 3.35.0 still
+    calls the address of the name in between."""
     owner_headers = owner_headers(tenant_factory()[0])
-    old = "/api/connections/" + "omni" + "armor"
-    new = "/api/connections/aegizyn"
+    old = "/api/connections/" + "aegi" + "zyn"
+    new = "/api/connections/omniarmor"
     assert api.get(new, headers=owner_headers).json() == api.get(old, headers=owner_headers).json()
     for method in ("put", "delete"):
         assert getattr(api, method)(old).status_code == 401

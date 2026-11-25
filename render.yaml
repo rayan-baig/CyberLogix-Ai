@@ -184,9 +184,9 @@ services:
       # with neither it points them at their invoice.
       - key: CYBERLOGIX_SUPPORT_EMAIL
         sync: false
-      # Signs each daily Kitchen Safety Bundle report to Aegizyn
-      # (X-Kryozyn-Signature). The same value as Aegizyn's
-      # KITCHEN_BUNDLE_SECRET; unset, reports go unsigned and Aegizyn
+      # Signs each daily Kitchen Safety Bundle report to OmniArmor
+      # (X-Kryozyn-Signature). The same value as OmniArmor's
+      # KITCHEN_BUNDLE_SECRET; unset, reports go unsigned and OmniArmor
       # does not waive its Pro fee. A secret: set it in the dashboard.
       - key: KITCHEN_BUNDLE_SECRET
         sync: false

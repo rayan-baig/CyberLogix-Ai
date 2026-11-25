@@ -163,12 +163,12 @@ def _send_every_kind(api, tenant_factory, owner_headers, sensor_factory):
     last = today.replace(day=1) - timedelta(days=1)
     monthly.send_for(the_tenant, first, last)                        # monthly
 
-    # The daily report to Aegizyn has not got through for two days.
+    # The daily report to OmniArmor has not got through for two days.
     import omniarmor
 
     STORE._db.put(omniarmor.CONNECTION_KIND, the_tenant.tenant_id, {
-        "tenant_id": the_tenant.tenant_id, "base_url": "https://aegizyn.example.com",
-        "enabled": True, "last_detail": "Aegizyn answered 503."})
+        "tenant_id": the_tenant.tenant_id, "base_url": "https://omniarmor.example.com",
+        "enabled": True, "last_detail": "OmniArmor answered 503."})
     for back in (2, 1):
         day = (today - timedelta(days=back)).isoformat()
         STORE._db.put(omniarmor.DAY_KIND, f"{the_tenant.tenant_id}:{day}", {
@@ -457,11 +457,12 @@ def test_date_is_not_reread_as_a_placeholder():
 
 
 def test_no_email_says_an_old_name(every_email):
-    """3.34.0: the product is Kryozyn and the checklist app Aegizyn, in the
-    subject, the From name and both parts of every kind of email. (The
+    """3.34.0: the product is Kryozyn, and since 3.36.0 the checklist app is
+    OmniArmor again, in the subject, the From name and both parts of every
+    kind of email: never the old names. (The
     operator's digest may name a CYBERLOGIX_ setting: a setting's name, not
     the product's.)"""
-    old = re.compile("Cyber" + "Logix|Omni" + "Armor")
+    old = re.compile("Cyber" + "Logix|Aegi" + "zyn")
     for key, message in every_email:
         assert not old.search(message.as_string()), key
         assert "Kryozyn" in str(message["From"]), key

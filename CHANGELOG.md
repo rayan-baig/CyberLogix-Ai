@@ -46,6 +46,14 @@ once someone says a fridge is fixed. No price or plan term has changed.
   alert's record says: texts off, failed, or how many went, never a list
   of people) and "How do I add my address to the pack?" (with a link that
   opens the box).
+- **OmniArmor is called OmniArmor again.** The food-safety checklist app
+  the Kitchen Safety Bundle fills in was renamed Aegizyn in 3.34.0; its name
+  is back, everywhere it shows (the bundle, its price line, the console's
+  connection card, Pilot, the emails and the guides), from the one default
+  in brand.py. The console calls `/api/connections/omniarmor` again; the
+  `/api/connections/aegizyn` address of the last two releases still
+  answers, for a console that has not reloaded. A connection already set
+  up keeps working unchanged.
 - **/today waits after "It's fixed".** When someone said it is fixed while
   the fridge is still warming back down, the card says "Maya said it's
   fixed. It closes by itself once it's cold." with no "It's fixed" button

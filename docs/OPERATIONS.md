@@ -18,9 +18,9 @@ version in the README. The step-by-step runbook is
 | `CYBERLOGIX_ALLOWED_ORIGINS` | none | Exact origins whose pages may call the API from a browser; unset allows only this site's own pages. Never `*` or a sibling subdomain |
 | `PORT` | `8080` | Listen port |
 | `CYBERLOGIX_DB_PATH` | `cyberlogix.db` | SQLite file; use a mounted volume in production |
-| `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the Aegizyn key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
+| `CYBERLOGIX_CREDENTIAL_KEY` | none | Seals the connection keys businesses paste (the OmniArmor key) with AES-GCM; unset, nothing can be connected. Keep it in the secret store; changing it makes saved keys unreadable |
 | `CYBERLOGIX_KEY_ENCRYPTION_SECRET` | none | Encrypts the AI key a business may save for its alert wording (AES-GCM, a key derived from this, bound to the business). Unset, the console hides that option and says why. A secret: keep it in the secret store; changing it makes saved AI keys unreadable (those alerts use the service's own wording until re-saved). See [PILOT.md](PILOT.md) |
-| `KITCHEN_BUNDLE_SECRET` | none | Signs each daily Kitchen Safety Bundle report to Aegizyn (`X-Kryozyn-Signature`, HMAC-SHA256 over the timestamp and the exact body). The same value as Aegizyn's; Aegizyn waives its Pro fee for signed reports. Unset, reports go unsigned. A secret: keep it in the secret store |
+| `KITCHEN_BUNDLE_SECRET` | none | Signs each daily Kitchen Safety Bundle report to OmniArmor (`X-Kryozyn-Signature`, HMAC-SHA256 over the timestamp and the exact body). The same value as OmniArmor's; OmniArmor waives its Pro fee for signed reports. Unset, reports go unsigned. A secret: keep it in the secret store |
 | `CYBERLOGIX_MAX_AI_CALLS_PER_DAY` | `200` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_SMS_PER_DAY` | `100` | Per-tenant daily cap; `0` = unlimited |
 | `CYBERLOGIX_MAX_VOICE_CALLS_PER_DAY` | `30` | Per-tenant daily cap; `0` = unlimited |
@@ -177,7 +177,7 @@ Nothing the app sends can hold up an alert for long:
 | Customers' chat hooks | 5 s each, 12 s for all of them | Once, for a 5xx, 408, 429 or no answer; never for a wrong address |
 | The model that words the alert's "what to check" line, on our key or on a business's own saved key | 6 s (`CYBERLOGIX_AI_TIMEOUT_SECONDS`) | No: the alert goes out with the plain template line instead (a business's own key never falls back to ours) |
 | Sensor clouds we fetch from | 20 s | On the next sweep |
-| Aegizyn daily report | 20 s | With backoff, as their contract allows |
+| OmniArmor daily report | 20 s | With backoff, as their contract allows |
 | The dead man's switch ping | 5 s | On the next sweep |
 
 The model line used to have no time limit at all: a model service that

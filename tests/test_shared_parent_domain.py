@@ -1,6 +1,6 @@
 """Kryozyn on a subdomain of MTRX Horizyn's domain, beside its siblings.
 
-MTRX Horizyn owns the one domain. Kryozyn, Aegizyn and RankUp are its
+MTRX Horizyn owns the one domain. Kryozyn, OmniArmor and RankUp are its
 products, each on a subdomain of it, and the company's own site is on the
 apex. Separate subdomains are separate origins, and that is the point: one
 app's sign-in, storage and service worker never reach another.
@@ -32,7 +32,7 @@ OTHER_ORIGINS = (
     "https://example.com",
     "https://www.example.com",
     "https://rankup.example.com",
-    "https://aegizyn.example.com",
+    "https://omniarmor.example.com",
     "https://evil.example",
 )
 

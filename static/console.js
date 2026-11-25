@@ -911,7 +911,7 @@ async function refresh(opts = {}) {
     // Owners only. Anyone else is told so on the card, not shown an error.
     referrals: () => api("/api/referrals/me").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
-    omni: () => api("/api/connections/aegizyn").catch((err) =>
+    omni: () => api("/api/connections/omniarmor").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     aiKey: () => api("/api/ai-key").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
@@ -4007,14 +4007,14 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-/* ---------------- the Aegizyn connection ----------------
+/* ---------------- the OmniArmor connection ----------------
    The form is filled from the server only when what the server holds has
    changed and nobody is typing in it, so the poll never wipes a half
    pasted key. The key itself never comes back: only its last four. */
 
 let omniSignature = null;
 
-/* What the Aegizyn link costs, said once it is connected (3.26.0). While
+/* What the OmniArmor link costs, said once it is connected (3.26.0). While
    a business is still setting up on the free trial it is not offered a
    paid extra: "+$29 a month per location" sat in the middle of Setup on
    the first day. Connected, or on a paid plan, the price is always shown. */
@@ -4097,7 +4097,7 @@ $("omni-form").addEventListener("submit", async (event) => {
   if ($("omni-key").value.trim()) body.key = $("omni-key").value.trim();
   if ($("omni-tz").value.trim()) body.timezone = $("omni-tz").value.trim();
   try {
-    const seen = await api("/api/connections/aegizyn", {
+    const seen = await api("/api/connections/omniarmor", {
       method: "PUT", body: JSON.stringify(body),
     });
     $("omni-key").value = "";
@@ -4113,7 +4113,7 @@ $("omni-test").addEventListener("click", async () => {
   const button = $("omni-test");
   button.disabled = true;
   try {
-    const out = await api("/api/connections/aegizyn/test", { method: "POST" });
+    const out = await api("/api/connections/omniarmor/test", { method: "POST" });
     renderOmni(out.connection);
     toast(out.message, out.status === "ok" || out.status === "already_sent" ? "ok" : "err");
   } catch (err) {
@@ -4126,7 +4126,7 @@ $("omni-test").addEventListener("click", async () => {
 $("omni-remove").addEventListener("click", async () => {
   if (!confirm(`Disconnect ${BRAND.checklist}? The key is deleted and nothing more is sent.`)) return;
   try {
-    const out = await api("/api/connections/aegizyn", { method: "DELETE" });
+    const out = await api("/api/connections/omniarmor", { method: "DELETE" });
     omniSignature = null;
     renderOmni(out);
     toast(out.message, "ok");
