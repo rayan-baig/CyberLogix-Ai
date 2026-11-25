@@ -15,6 +15,8 @@
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   const onConsole = path === "/console";
   const onToday = path === "/today";
+  // The person's own pages: their fridges, once signed in.
+  const ownPage = onConsole || onToday;
 
   function signedIn() {
     if (onConsole) return Boolean(window.KryozynConsole && window.KryozynConsole.signedIn());
@@ -440,11 +442,110 @@
     const where = "In the console, open **Insurance packs** on the **Proof** tab (on a small account, under **More**), and press **Insurance pack** beside the alert. Or press **Make the insurance pack** on the alert itself after you say the food was thrown away.";
     const what = "It holds the readings around the alert, who was texted and when, who answered, and what happened to the food, and it prints or saves as a PDF.";
     if ((onConsole || onToday) && signedIn()) return `${where} ${what}\n\n[What a pack looks like](/sample-insurance-pack)`;
-    return `${what} Every plan has it: after a loss it is one button in the console.\n\n[See a sample pack](/sample-insurance-pack) with pretend data · [Start a free trial](/signup)`;
+    // "What does my insurer get?" (3.36.0): the sample first.
+    return `Your insurer gets an **insurance pack**: the readings around the alert, who was texted and when, who answered, and what happened to the food, ready to print or save as a PDF. [See a sample pack](/sample-insurance-pack), made with pretend data.\n\nEvery plan has it: after a loss it is one button in the console. [Start a free trial](/signup)`;
   }
   // "How do I sign up?" (3.35.0).
   const SIGNUP = () => (signedIn() ? "You are already signed in. To add someone who can sign in too, use **People who can sign in** on the console's **Team** tab."
     : `Press [Start a free trial](/signup): your business name, your name, your email, the mobile number alerts should reach, and a password. It takes about a minute, needs no card, and the trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors. Then add your first fridge or freezer.`);
+
+  // ---------------------------------------------------------------- 3.36.0
+  //
+  // "Is it hard to set up?", for anybody.
+  const EASY = () => [
+    "Not hard, and no coding. For each fridge or freezer:",
+    "1. Buy a wireless sensor that sends its readings to a web address, or one whose maker's cloud we read (Monnit, SensorPush).",
+    "2. Put it inside, away from the door, and connect it to your Wi-Fi as its maker says.",
+    `3. ${ownPage && signedIn() ? "" : "In the console, "}**Add a fridge or freezer**: the wizard shows your brand's few steps with your key filled in, and ticks when the first reading lands.`,
+    "",
+    ownPage && signedIn() ? `[Connect your sensor](${CONNECT})` : "[Step-by-step guides](/help/sensors) · [Start a free trial](/signup)",
+  ].join("\n");
+  // "Does it work in Canada?": only what the product does. Readings in
+  // Celsius (the console's °F/°C button, everything follows), a limit of
+  // the business's own, texts through Twilio to a number with its country
+  // code, prices in US dollars (docs/FEATURES.md, pricing).
+  const CANADA = () => {
+    const limit = Number(fig(F.fridgeLimit, "41"));
+    const celsius = Math.round(((limit - 32) * 5) / 9);
+    return [
+      `Yes. ${F.appShort} can show every reading in Celsius: press **°F** at the top of the console to switch to °C, and the alert texts, the inspector's log and the insurance packs follow.`,
+      `A fridge alarms over ${limit}°F (${celsius}°C) unless you set your own with **Change limit** on its card, for example 4°C.`,
+      "Alert texts go out through Twilio to mobile numbers written with their country code; a Canadian number (+1) works the same as a US one.",
+      `Prices are in US dollars, and sensors are bought separately. [See prices](/pricing)${ownPage && signedIn() ? "" : " · [Start a free trial](/signup)"}`,
+    ].join("\n\n");
+  };
+  // When it was said: "4:44 AM" today, else the day too.
+  function saidAt(iso) {
+    const w = W();
+    if (!w || !iso) return "";
+    const t = Date.parse(iso);
+    return Number.isFinite(t) && Date.now() - t < 20 * 3600000 ? w.clock(iso) : w.dateTime(iso);
+  }
+  // Signed in, "What was thrown away?": the business's own note, quoted,
+  // from the loss in the last day or else the newest food thrown away.
+  function thrownAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const loss = lossNow();
+    let found = loss ? { id: loss.incident_id, unit: words(loss.unit), note: loss.note, at: loss.at } : null;
+    if (!found) {
+      const i = (dd.incidents || []).filter((x) => x && !x.site_wide && x.product_disposition === "discarded")
+        .sort((a, b) => String(b.food_answered_at || b.opened_at).localeCompare(String(a.food_answered_at || a.opened_at)))[0];
+      if (i) {
+        found = { id: i.incident_id, unit: unitName(units.find((u) => u.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id }),
+          note: i.corrective_action, at: i.food_answered_at };
+      }
+    }
+    if (!found) {
+      return "Nothing has been recorded as thrown away. When an alert closes you are asked **Food kept** or **Thrown away**, and after Thrown away a line saying what went goes in the record, for the insurance pack.";
+    }
+    const when = saidAt(found.at);
+    const pack = PACK_LINE({ incident_id: found.id });
+    if (found.note) return `Recorded for **${found.unit}**${when ? ` at ${when}` : ""}: \u201c${words(found.note)}\u201d\n\n${pack}`;
+    return `**${found.unit}**: thrown away${when ? ` at ${when}` : ""}, but nobody has written down what went yet. Add a line on the alert with **Add what was thrown away**: it makes the insurance pack complete.\n\n${pack}`;
+  }
+  // Signed in, "Why did nobody get a text?": what the alert's own delivery
+  // record says (texts off, failed, or how many went), never a list of
+  // people.
+  function deliveryAnswer() {
+    const dd = overview();
+    if (!dd) {
+      return ownPage && signedIn() ? NOT_LOADED
+        : "Sign in to see what happened to an alert's texts: [sign in](/console). Each alert keeps a record of every text: who it went to, and whether it went through.";
+    }
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const mine = (dd.incidents || []).filter((i) => i && !i.site_wide);
+    const live = liveAlerts(dd).filter((i) => !i.site_wide);
+    const i = live[0] || mine.slice().sort((a, b) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
+    const check = `Check each number under **Who gets alerts**, then press **Send a test alert** to see one arrive. [Open Who gets alerts](${TEAM_LINK})`;
+    if (!i) return `No alert has gone out yet, so nobody has been texted.\n\n${check}`;
+    const name = unitName(units.find((u) => u.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id });
+    const at = clock(i.opened_at);
+    const sent = Array.isArray(i.sms_fanout) && i.sms_fanout.length ? i.sms_fanout : (i.sms_delivery ? [i.sms_delivery] : []);
+    const n = sent.length;
+    const through = sent.filter((r) => r && r.delivered).length;
+    const people = count(n, "person", "people");
+    let said;
+    if (i.texts_off) {
+      said = `The alert for **${name}**${at ? ` at ${at}` : ""} was written but not delivered: texts are off on this server, so nobody was texted. It showed here all the same.`;
+    } else if (!n) {
+      said = `Nobody was on the list to text when **${name}** alerted${at ? ` at ${at}` : ""}.`;
+    } else if (i.alert_texts_failed) {
+      const again = i.next_sms_retry_at ? ` It is sent again at ${clock(i.next_sms_retry_at)}.` : "";
+      said = `The alert text for **${name}**${at ? ` at ${at}` : ""} went to ${people} and failed: none went through.${again}`;
+    } else if (through === n) {
+      said = `The alert for **${name}**${at ? ` at ${at}` : ""} was texted to ${people}, and the phone network took ${n === 1 ? "it" : n === 2 ? "both" : "all of them"}. If a phone still shows nothing, its number may be wrong.`;
+    } else {
+      said = `The alert for **${name}**${at ? ` at ${at}` : ""} was texted to ${people}: ${through} went through and ${n - through} failed.`;
+    }
+    return `${said}\n\n${check}`;
+  }
+  // "How do I add my address to the pack?": the box in Insurance packs.
+  const ADDRESS_LINK = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#site-address`;
+  const ADDRESS = () => (ownPage && signedIn()
+    ? `Open **Insurance packs** in the console (the **Proof** tab; on a small account, under **More**), type it in **Site address** and press **Save**. Every pack shows it from then on. On a pack that has none, **Site: not recorded** has **Add the site address**, which does the same.\n\n[Add the address](${ADDRESS_LINK})`
+    : `Once you've signed up, **Insurance packs** in the console has a **Site address** box: saved once, every pack shows it. [See a sample pack](/sample-insurance-pack) · [Start a free trial](/signup)`);
 
   // "Sum up my fridges" (core 1.4.2's screenChip, on the console and
   // /today): the page in a few lines, from what it already loaded, in
@@ -679,6 +780,13 @@
     { id: "pack", labels: ["Make the insurance pack"], also: ["packet", "claim", "insurer", "adjuster", "evidence", "paperwork"],
       answer: packAnswer },
     { id: "signup", labels: [], also: ["signup", "register", "registration", "join", "create"], answer: SIGNUP },
+    // 3.36.0: how hard it is to set up, Canada, the note of what was thrown
+    // away, why nobody got a text, and the pack's address.
+    { id: "easy", labels: [], also: ["hard", "easy", "difficult", "complicated", "technical", "simple"], answer: EASY },
+    { id: "canada", labels: [], also: ["canada", "canadian", "celsius", "metric", "province"], answer: CANADA },
+    { id: "lossnote", labels: [], also: ["binned", "note", "went", "lost"], answer: thrownAnswer, only: () => ownPage && signedIn() },
+    { id: "delivery", labels: [], also: ["nobody", "didnt", "delivered", "arrive", "arrived", "received", "receive"], answer: deliveryAnswer },
+    { id: "address", labels: [], also: ["address", "street"], answer: ADDRESS },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -697,8 +805,15 @@
   // Phrases whose telling word is a little one the matching leaves out
   // (3.35.0): "sign up" is "sign" alone, the same as "sign in".
   const PHRASES = [
+    // 3.36.0, first: "my address on the insurance pack" is the address.
+    [/\b(?:site|street|shop|business|our|my|the) address\b|\baddress (?:to|on|in|for) (?:the |my |our )?(?:pack|insurance)/i, "address"],
     [/\bsign(?:ing)?[\s-]*up\b|\bregister\b|\bcreate (?:an |my )?account\b/i, "signup"],
     [/\binsurance (?:pack|packet|claim)|\bclaim (?:pack|form)|\bfor (?:my|the) insurer\b/i, "pack"],
+    [/\bwhat (?:was |got |were |did (?:we|you|they|i) )?(?:thrown|throw|binned|tossed)\b|\bwhat went in the bin\b/i, "lossnote"],
+    [/(?=.*\b(?:texts?|sms|messages?|alerts?)\b)(?:\b(?:nobody|no one|no-one)\b|\b(?:didn'?t|did not|never|wasn'?t|was not|weren'?t)\b.*\b(?:get|got|receive|received|arrive|arrived|come|came|sent|texted)\b)/i, "delivery"],
+    [/\b(?:hard|difficult|complicated|tricky|technical|easy)\b.*\bset(?:ting)?[\s-]*up\b|\bset(?:ting)?[\s-]*up\b.*\b(?:hard|difficult|complicated|tricky|easy)\b|\bhow (?:hard|easy|difficult) is it\b/i, "easy"],
+    [/\bcanad|\bcelsius\b/i, "canada"],
+    [/\b(?:my|the|our) insurer\b|\binsurance company\b/i, "pack"],
     [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
   ];
   function bestTopic(text, own) {
@@ -727,82 +842,121 @@
     };
   }
 
-  // A few words of the answers every page should reach, on an item that has
-  // room (3.32.0): the price on the console's alert pill, the café plan on
-  // the food pill and the visitor's café pill, sensors on the connect pill.
-  // Never a word another item on the same page already uses (in its label
-  // or its own words), so the two never tie on it.
-  const CARRY = {
-    "What does this alert mean?": ["starter", "growth", "month"],
-    [DID_LABEL]: ["starter", "growth", "month"],
-    "Is the food still OK?": ["plan", "best", "cafe", "café"],
-    "It's fixed now": ["phone", "call", "night"],
-    "Wi-Fi or power goes off?": ["phone", "call", "night"],
-    "Will it work for my café?": ["plan", "starter", "growth", "best", "choose"],
-    "How do I connect a sensor?": ["sell", "buy", "brand", "compatible"],
+  // ---------------------------------------------------------------- the words each item carries (3.36.0)
+  //
+  // The core takes a typed question to an item only when two of its words
+  // are that item's (one, if it is all that was typed and listed), and no
+  // other item has as many; from there routed() picks the closest answer
+  // of all. Since 3.36.0 the welcome follows the situation (the pack after
+  // a loss, no "How do I connect a sensor?" once a sensor reports, no
+  // "Is the food still OK?" once it is answered), so which items are on
+  // the page changes, and the words of an answer that has no item of its
+  // own here go to one that is: each group of words whole, on the item it
+  // fits best, never past the core's 20. The groups are in order of how
+  // much they matter; one that finds no room is left out. Hand-placed
+  // words (3.32.0 to 3.35.0, CARRY and LEND) could not follow a welcome
+  // that changes.
+  //
+  // An item's own words: its label's, MATCH, and a few more for answers
+  // only it gives (who was texted, the pack's address).
+  const OWN_WORDS = {
+    "Which fridges need me?": ["fridge", "freezer", "unit", "warm", "cold", "ok", "fine", "temperature", "temp", "walk", "hot",
+      "reading", "work", "working"],
+    "Is the food still OK?": ["food", "safe", "eat", "keep", "kept", "throw", "thrown", "away", "bin", "spoiled", "discard", "stock"],
+    "How do I connect a sensor?": ["sensor", "connect", "add", "setup", "set", "install", "new", "work", "monnit", "sensorpush",
+      "elitech", "dickson", "sell", "buy"],
+    "Who gets the texts?": ["text", "chef", "cook", "staff", "team", "manager", "person", "people", "someone", "add", "mobile",
+      "invite", "nobody", "didnt", "delivered"],
+    "Make the insurance pack": ["insurer", "claim", "adjuster", "evidence", "address", "packet", "paperwork"],
+    "Will a door left open wake us?": ["door", "open", "opened", "opening", "wake", "false", "alarm", "trigger", "set", "minute",
+      "short", "delay", "wait"],
+    "What does it cost?": ["cost", "price", "much", "pay", "month", "expensive", "subscription", "starter", "growth"],
+    "Will it work for my café?": ["cafe", "café", "restaurant", "bakery", "kitchen", "coffee", "shop", "small", "business"],
+    "What sensors do I need?": ["sensor", "probe", "device", "thermometer", "brand", "buy", "sell", "compatible", "work"],
+    "A log for the inspector": ["log", "inspector", "inspection", "record", "report", "print", "pdf", "haccp", "audit"],
   };
-  // 3.33.0: the words of this round's answers (sensor brands, a pharmacy's
-  // price, cancelling, who gets the texts, the data, the power), lent to
-  // an item that is on the page whatever state it is in, kept even where
-  // another item uses the word: the item they are on wins by having two of
-  // them, and the answer is still the closest of all (bestTopic). The
-  // core keeps the first 20 words of an item, so each list fits: checked
-  // by tests/js/kryozyn-pilot.test.js on every page.
-  const VISIT_WORDS = ["sign", "signup", "register", "insurance", "pack", "claim"];
-  const PRICE_WORDS = ["cost", "price", "much", "pay", "expensive", "pharmacy", "pharmacist", "cancel", "subscription", "refund"];
-  const LEND = {
-    // The person's own pages (whatever the alerts): sensors on the connect
-    // pill, the data on the food pill, the summary on the texts pill.
-    "How do I connect a sensor?": ["work", "monnit", "sensorpush", "elitech", "dickson"],
-    // "Is my freezer working?"; and "work" on two pills, so "How does this
-    // work?" alone picks neither.
-    "Which fridges need me?": ["work", "working",
-      // 3.35.0: signing up; "sign" on /today only, as the console's
-      // sign-in page has "How do I sign in?" and a word two items share
-      // matches neither. Each pill keeps to 20 words (the core's most).
-      "signup", "register", ...(onToday ? ["sign"] : [])],
-    "Is the food still OK?": ["data", "privacy"],
-    // Not the product's name (3.35.0): with no alert open the summary's
-    // own chip has it, and a word two items share matches neither, so
-    // "What did <name> do for me?" got the key note.
-    "Who gets the texts?": ["summary",
-      // 3.35.0: the insurance pack (the loss chip itself carries none).
-      "insurance", "pack", "claim"],
-    // ...and on the chips of either state: an alert open, or not.
-    // With an alert open the summary's chip is not on the page: the
-    // product's name rides on the alert's chip instead (3.35.0).
-    "What does this alert mean?": PRICE_WORDS.filter((w) => w !== "refund").concat(F.appShort.toLowerCase()),
-    [DID_LABEL]: PRICE_WORDS,
-    "It's fixed now": ["wifi", "power", "goes", "outage", "internet", "down", "door", "trial"],
-    // With no alert open, the alert's own words too: typed, it says none is.
-    "Wi-Fi or power goes off?": ["door", "trial", "alert", "alarm", "mean"],
-    // A visitor: the brands and the people on the sensors pill, a
-    // pharmacy and cancelling on the price pill, the data and their own
-    // fridge on the café pill.
-    "What sensors do I need?": ["monnit", "sensorpush", "elitech", "dickson", "chef", "staff", "team", "text"],
-    "What does it cost?": ["pharmacy", "pharmacist", "cancel", "refund", "contract"],
-    "Will it work for my café?": ["data", "privacy", "safe", "walk", "fridge", "freezer"],
-    // 3.35.0: signing up and the insurance pack, for a visitor, on one
-    // suggestion of each public page that has room (never a pill, so no
-    // two items on a page share them).
-    "Will a door left open wake us?": VISIT_WORDS,
-    "Which plan for a café?": VISIT_WORDS,
-    "Set up step by step": VISIT_WORDS,
-    "What am I seeing?": VISIT_WORDS,
-    // The pages whose chips don't say it already: the power, the door,
-    // the trial and the calls.
-    "What's in the trial?": ["wifi", "power", "goes", "outage", "door"],
-    "A log for the inspector": ["wifi", "power", "goes", "outage", "phone", "call", "night", "trial"],
-    "What happens next?": ["wifi", "power", "goes", "outage", "door", "trial"],
-    "How do I sign in?": ["wifi", "power", "goes", "down", "cost", "price", "much", "pharmacy", "cancel", "subscription", "phone", "trial"],
-  };
-  let PAGE_WORDS = new Set();
+  const ownWords = (label) => OWN_WORDS[label] || MATCH[label] || [];
+  // Signing up: "sign" only where no "How do I sign in?" is (the console's
+  // sign-in page), as a word two items share matches neither.
+  const signWords = () => ["signup", "register"].concat(onConsole && !signedIn() ? [] : ["sign"]);
+  // [words, the items that answer it themselves (then the group is not
+  // needed), the items it would rather sit on]. The person's own pages,
+  // then the public ones.
+  const OWN_GROUPS = () => [
+    [["sensor", "work", "connect", "add", "new", "monnit", "sensorpush", "sell", "buy"], ["How do I connect a sensor?"]],
+    [["food", "safe", "eat", "throw", "thrown", "away", "bin", "kept", "discard"], ["Is the food still OK?"]],
+    [["cost", "price", "much", "starter", "growth", "pharmacy", "cancel", "subscription", "refund"], [],
+      [DID_LABEL, "What does this alert mean?"]],
+    [["insurance", "pack", "claim", "insurer", "address"], ["Make the insurance pack"]],
+    [["data", "privacy", "safe"], []],
+    [["alert", "alarm", "mean"], ["What does this alert mean?"]],
+    [[F.appShort.toLowerCase(), "summary"], [DID_LABEL]],
+    [["wifi", "power", "goes", "outage", "down"], ["Wi-Fi or power goes off?"]],
+    [["phone", "call", "night"], ["Do you phone us?"]],
+    [["canada", "celsius", "work"], [], ["Which fridges need me?"]],
+    [["hard", "easy", "set"], [], ["How do I connect a sensor?"]],
+    [signWords(), []],
+    [["plan", "café", "cafe", "best"], []],
+    [["door", "trial"], ["Will a door left open wake us?"]],
+  ];
+  const VISIT_GROUPS = () => [
+    [["monnit", "sensorpush", "elitech", "dickson"], [], ["What sensors do I need?"]],
+    // Signed out, "Is my walk-in fridge OK?" says where to sign in.
+    [["walk", "fridge", "freezer"], [], ["Will it work for my café?"]],
+    // "plan" beside the café pill's own "café": "Which plan for my café?".
+    [["plan", "best"], ["Which plan for a café?"], ["Will it work for my café?"]],
+    [["chef", "staff", "team", "text"], []],
+    [["pharmacy", "cancel", "refund"], [], ["What does it cost?"]],
+    [["data", "privacy", "safe"], [], ["Will it work for my café?"]],
+    [["insurance", "pack", "claim", "insurer"], []],
+    [["food", "eat", "safe"], [], ["Will it work for my café?"]],
+    // "Does it work in Canada?" is two words wherever these go.
+    [["canada", "celsius", "work"], [], ["Will it work for my café?"]],
+    [["hard", "easy", "set"], [], ["Set up step by step"]],
+    [signWords(), []],
+    [["wifi", "power", "goes", "outage", "down"], ["Wi-Fi or power goes off?", "Power or Wi-Fi goes off?"]],
+    [["phone", "call", "night"], ["Do you phone at night?", "Do you phone us?"]],
+    [["door"], ["Will a door left open wake us?"]],
+    [["trial"], ["What's in the trial?", "Start a free trial"]],
+  ];
+  const MOST = 20;
+  // items: [{label, answers}] (answers: an answer of this app's, which a
+  // typed question can be routed from; a link cannot). Returns label ->
+  // words.
+  function allocate(items) {
+    const out = {};
+    const stems = {};
+    items.forEach(({ label }) => {
+      const list = [...new Set(ownWords(label))].slice(0, MOST);
+      out[label] = list;
+      stems[label] = new Set(list.map(stemWord).concat(wordsIn(label)));
+    });
+    const here = new Set(items.map((i) => i.label));
+    const hosts = items.filter((i) => i.answers);
+    (ownPage ? OWN_GROUPS() : VISIT_GROUPS()).forEach(([group, homes, prefer]) => {
+      if ((homes || []).some((l) => here.has(l))) return;
+      const need = (h) => group.filter((w) => !stems[h.label].has(stemWord(w)));
+      const room = (h) => MOST - out[h.label].length;
+      const liked = (h) => ((prefer || []).includes(h.label) ? 1 : 0);
+      const order = hosts.slice().sort((a, b) => liked(b) - liked(a) || room(b) - room(a));
+      const host = order.find((h) => room(h) >= need(h).length)
+        || order.slice().sort((a, b) => room(b) - room(a))[0];
+      if (!host) return;
+      need(host).slice(0, room(host)).forEach((w) => { out[host.label].push(w); stems[host.label].add(stemWord(w)); });
+    });
+    return out;
+  }
+  // The words for this page as it is now, worked out once a state.
+  let lastPlan = { key: "", words: {} };
+  function planWords() {
+    const items = pageItems();
+    const key = items.map((i) => `${i.label}${i.answers ? "+" : ""}`).join("|");
+    if (key !== lastPlan.key) lastPlan = { key, words: allocate(items) };
+    return lastPlan.words;
+  }
   function matching(label) {
-    const own = MATCH[label] || [];
-    if (!own.length) return {};
-    const others = new Set([...PAGE_WORDS].filter((w) => !wordsIn(label).includes(w) && !own.map(stemWord).includes(w)));
-    const extra = (CARRY[label] || []).filter((w) => !others.has(stemWord(w)));
-    return { match: [...new Set(own.concat(extra, LEND[label] || []))].slice(0, 20) };
+    const list = planWords()[label] || ownWords(label);
+    return list.length ? { match: list.slice(0, MOST) } : {};
   }
 
   // Each a label and what it does: words for the AI, or a {link} / {answer}
@@ -831,15 +985,10 @@
     const dd = overview();
     return Boolean(dd) && liveAlerts(dd).length > 0;
   }
-  // Food thrown away in the last day, no alert open (3.35.0): the pack
-  // first, while /today's headline says to make it.
-  const lossList = () => [["Make the insurance pack", answer(packAnswer)],
-    ["Log for the inspector", link(LOG_HERE)],
-    [DID_LABEL, answer(didAnswer)]];
+  // Food thrown away in the last day (3.35.0): since 3.36.0 the pack is
+  // the welcome's first pill, so the suggestions are the calm three.
   function LIVE() {
-    if (alertOpen()) return LIVE_ALERT;
-    const loss = lossNow();
-    return loss ? lossList() : LIVE_CALM;
+    return alertOpen() ? LIVE_ALERT : LIVE_CALM;
   }
   // Written for the person most of these pages are for: a café or small
   // restaurant with a few fridges and a freezer, reading on a phone.
@@ -880,22 +1029,24 @@
     "/help/sensors": "Help me set up this sensor: ",
   };
 
-  // Every list of suggestions this page can show (the console's changes
-  // when somebody signs in), for the words the pills must leave alone.
-  function pageLists() {
-    if (onConsole) return [LIVE_ALERT, LIVE_CALM, lossList(), CHIPS["/console-out"]];
-    if (onToday) return [LIVE_ALERT, LIVE_CALM, lossList()];
-    if (path.startsWith("/for/")) return [CHIPS["/for/*"]];
-    return [CHIPS[path] || []];
+  // This page's suggestions as they are now.
+  function chipList() {
+    if (ownPage && signedIn()) return LIVE();
+    if (onConsole) return CHIPS["/console-out"];
+    if (path.startsWith("/for/")) return CHIPS["/for/*"];
+    return CHIPS[path] || [];
+  }
+  // Every item on the page now, pills and suggestions, for the words each
+  // carries (allocate): [{label, answers}].
+  function pageItems() {
+    const pills = ownPage ? ownList() : VISITOR;
+    return pills.map(([, label, fn]) => ({ label, answers: Boolean(fn) }))
+      .concat(chipList().map(([label, what]) => ({ label, answers: typeof what !== "string" && Boolean(what.answer), prompt: typeof what === "string" })))
+      .filter((i) => !i.prompt);
   }
 
   function chips() {
-    let list;
-    if ((onConsole || onToday) && signedIn()) list = LIVE();
-    else if (onConsole) list = CHIPS["/console-out"];
-    else if (path.startsWith("/for/")) list = CHIPS["/for/*"];
-    else list = CHIPS[path] || [];
-    return list.map(([label, what]) => {
+    return chipList().map(([label, what]) => {
       if (typeof what === "string") return { label, prompt: what };
       const plain = what.answer ? { answer: routed(label, what.answer) } : what;
       return { label, ...plain, ...matching(label) };
@@ -916,27 +1067,52 @@
     ["bolt", "How do I connect a sensor?", CONNECT_HOW],
     ["help", "Who gets the texts?", TEAM],
   ];
+  // The welcome follows the situation (3.36.0). After food was thrown away
+  // (the day /today leads with it), "Make the insurance pack" comes first.
+  // "How do I connect a sensor?" goes once a sensor has reported, and "Is
+  // the food still OK?" once there is nothing left to answer: no alert
+  // live and no closed one waiting for Food kept or Thrown away. Their
+  // places go to two questions a business that is set up still asks.
+  // Before the page has loaded (or signed out) it is the four above.
+  const PACK_PILL = ["download", "Make the insurance pack", packAnswer];
+  const SPARE = [
+    ["spark", "Do you phone us?", CALLS],
+    ["help", "Will a door left open wake us?", DOOR],
+  ];
+  function ownList() {
+    const dd = signedIn() ? overview() : null;
+    if (!dd) return OWN;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const reported = units.some((u) => u && u.last_temperature_display !== null && u.last_temperature_display !== undefined);
+    const live = liveAlerts(dd).some((i) => !i.site_wide);
+    const waiting = (dd.incidents || []).some((i) => i && i.state === "resolved" && !i.site_wide
+      && i.food_question && i.food_question.ask_on_today);
+    const list = [];
+    if (lossNow() && !live) list.push(PACK_PILL);
+    list.push(OWN[0]);
+    if (live || waiting) list.push(OWN[1]);
+    if (!reported) list.push(OWN[2]);
+    list.push(OWN[3]);
+    SPARE.forEach((p) => { if (list.length < 4) list.push(p); });
+    return list;
+  }
   const VISITOR = [
     ["chat", "Will it work for my café?", cafeAnswer],
     ["bars", "What does it cost?", PRICE],
     ["spark", "See it live", null],
     ["help", "What sensors do I need?", SENSORS],
   ];
+  // Built once a situation, so a pill keeps one answer function (the core
+  // tells items apart by it).
+  const built = new Map();
   function pillsFor(list) {
-    // The words every suggestion on this page uses, labels included.
-    PAGE_WORDS = new Set();
-    pageLists().forEach((l) => l.forEach(([label]) => {
-      wordsIn(label).forEach((w) => PAGE_WORDS.add(w));
-      (MATCH[label] || []).forEach((w) => PAGE_WORDS.add(stemWord(w)));
-    }));
-    list.forEach(([, label]) => { wordsIn(label).forEach((w) => PAGE_WORDS.add(w)); (MATCH[label] || []).forEach((w) => PAGE_WORDS.add(stemWord(w))); });
-    return list.map(([icon, label, fn]) => (fn ? { ...pill(icon, label, fn), ...matching(label) }
-      : { icon, label, link: "/demo", ...matching(label) }))
-      .concat([{ icon: "key", label: "Add my AI key", action: "settings" }]);
+    return list.map(([icon, label, fn]) => {
+      if (!built.has(label)) built.set(label, fn ? pill(icon, label, fn) : { icon, label, link: "/demo" });
+      return { ...built.get(label), ...matching(label) };
+    }).concat([{ icon: "key", label: "Add my AI key", action: "settings" }]);
   }
-  const ownPage = onConsole || onToday;
-  const OWN_PILLS = ownPage ? pillsFor(OWN) : [];
-  const VISITOR_PILLS = ownPage ? [] : pillsFor(VISITOR);
+  const OWN_PILLS = () => pillsFor(ownList());
+  const VISITOR_PILLS = () => pillsFor(VISITOR);
 
   window.Pilot.mount({
     appName: F.appName,
@@ -945,7 +1121,9 @@
     // console's five on the person's own pages, the visitor's five on the
     // public ones (OWN_PILLS, VISITOR_PILLS above).
     tagline: "Your fridge-alarm helper",
-    welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS,
+    // Read when the window opens and for each typed question (3.36.0):
+    // the welcome of the situation the page is in then.
+    get welcomePills() { return ownPage ? OWN_PILLS() : VISITOR_PILLS(); },
     // Under the first answer Pilot gives without a key (core 1.4.0; once
     // per chat since core 1.4.1, and the welcome's pills come back under it).
     answerMore: "Want more? Add your AI key to ask anything.",

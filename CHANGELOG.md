@@ -6,6 +6,59 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.36.0 — 2026-11-24
+
+The insurance pack says exactly how people were told, every pop-up fits a
+phone, Pilot's welcome follows what is going on, and /today waits quietly
+once someone says a fridge is fixed. No price or plan term has changed.
+
+- **"Thrown away. What next?" fits a phone.** At 375px its two buttons ran
+  into each other and off the screen. Each now takes the whole width when
+  two do not fit, and the words in any pop-up's buttons wrap instead of
+  running out. Every pop-up in the app (the alert's three, the plan
+  confirmation, Connect your sensor and the insurance pack) is now opened
+  in a real browser at 320px and 375px by the tests, which is how the
+  serial box in Connect your sensor, 50px too wide at 320px, was found and
+  fixed too.
+- **An honest summary.** It used to say "The alert was sent automatically
+  at detection" whatever happened. Now it says what the alert's own record
+  says: "The alert was texted to 2 people at 2:18 AM, after the 20-minute
+  wait; it was acknowledged 12 minutes later", or "written but not
+  delivered: texts are off", or that the texts failed (and each try
+  again). The saved site address is in it, on its own when the site has no
+  name. The event's "Alert sent" row says "Alert texted" only when a text
+  went through, else "Alert opened". The sample pack says the same.
+- **The pack reads better.** "Closed at 4:41 AM", never "Closed: closed at
+  4:41 AM"; every reading with one decimal ("52.0°F"); the time zone on the
+  issued line; on a phone the table of texts and calls stacks into small
+  cards instead of hiding off the right edge; on paper the Recorded
+  evidence box stays on one page; and the sample no longer prints a blank
+  last page.
+- **Pilot follows the situation.** After food was thrown away, "Make the
+  insurance pack" is the first button in its welcome. "How do I connect a
+  sensor?" goes once a sensor has sent a reading, and "Is the food still
+  OK?" once there is nothing left to answer about the food. New answers
+  with no AI key: "What does my insurer get?" (with the sample pack), "Is
+  it hard to set up?", "Is the food safe to eat?" and "Does it work in
+  Canada?" (readings in Celsius, your own limit, texts to Canadian
+  numbers, prices in US dollars) for anyone; and signed in, "What was
+  thrown away?" (your note, quoted), "Why did nobody get a text?" (what the
+  alert's record says: texts off, failed, or how many went, never a list
+  of people) and "How do I add my address to the pack?" (with a link that
+  opens the box).
+- **OmniArmor is called OmniArmor again.** The food-safety checklist app
+  the Kitchen Safety Bundle fills in was renamed Aegizyn in 3.34.0; its name
+  is back, everywhere it shows (the bundle, its price line, the console's
+  connection card, Pilot, the emails and the guides), from the one default
+  in brand.py. The console calls `/api/connections/omniarmor` again; the
+  `/api/connections/aegizyn` address of the last two releases still
+  answers, for a console that has not reloaded. A connection already set
+  up keeps working unchanged.
+- **/today waits after "It's fixed".** When someone said it is fixed while
+  the fridge is still warming back down, the card says "Maya said it's
+  fixed. It closes by itself once it's cold." with no "It's fixed" button
+  to press again; the bar on the console does the same.
+
 ## 3.35.0 — 2026-11-24
 
 The insurance pack reads as evidence an adjuster can trust, Pilot helps at

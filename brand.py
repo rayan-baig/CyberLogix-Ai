@@ -15,13 +15,17 @@ Each value may be set without a code change:
 * CYBERLOGIX_APP_HOST        the product's own address, a subdomain of the
                              company's ("kryozyn.mtrxhorizyn.com")
 * CYBERLOGIX_CHECKLIST_APP   the company's food-safety checklist app, which
-                             the Kitchen Safety Bundle fills in ("Aegizyn")
+                             the Kitchen Safety Bundle fills in ("OmniArmor";
+                             it was called Aegizyn in 3.34.0 and 3.35.0)
 * CYBERLOGIX_SUPPORT_EMAIL   where customers write for help (live:
                              help@kryozyn.mtrxhorizyn.com; unset, the mail
                              reply-to address, see helpdesk.py)
 
 Every setting also works as KRYOZYN_ plus the same rest (formerly.py), and
 the KRYOZYN_ one wins when both are set.
+
+The product's own name is to change again: APP_NAME (and APP_HOST, which
+follows it unless set) below is the whole change, as for the company.
 
 The product was called CyberLogix AI until 3.34.0, at
 cyberlogix.mtrxhorizyn.com; formerly.py keeps what was set up under that
@@ -51,7 +55,7 @@ APP_SHORT = _setting("CYBERLOGIX_APP_SHORT_NAME", APP_NAME)
 COMPANY_NAME = _setting("CYBERLOGIX_COMPANY_NAME", "MTRX Horizyn")
 COMPANY_DOMAIN = _setting("CYBERLOGIX_COMPANY_DOMAIN", "mtrxhorizyn.com").lower()
 APP_HOST = _setting("CYBERLOGIX_APP_HOST", "kryozyn." + COMPANY_DOMAIN).lower()
-CHECKLIST_APP = _setting("CYBERLOGIX_CHECKLIST_APP", "Aegizyn")
+CHECKLIST_APP = _setting("CYBERLOGIX_CHECKLIST_APP", "OmniArmor")
 APP_URL = "https://" + APP_HOST
 STAGING_HOST = "staging." + APP_HOST
 CONTACT_EMAIL = (os.environ.get("CYBERLOGIX_SUPPORT_EMAIL") or "").strip()

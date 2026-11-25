@@ -187,7 +187,7 @@ def test_no_price_moved():
 # --- Pilot ----------------------------------------------------------------------
 
 def test_pilot_greets_a_visitor_on_the_public_pages():
-    assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in PILOT_APP
+    assert "get welcomePills() { return ownPage ? OWN_PILLS() : VISITOR_PILLS(); }," in PILOT_APP
     assert "const ownPage = onConsole || onToday;" in PILOT_APP
     # Run, not read (3.32.0): a visitor's five on a public page, the
     # console's five on the person's own pages.

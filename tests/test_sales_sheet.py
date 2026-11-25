@@ -124,7 +124,7 @@ def test_the_plans_terms_and_trial_are_the_codes(api):
     for add_on in pricing.ADD_ONS.values():
         assert f"{add_on['name']}: {_money(add_on['monthly_usd'])} a month" in words
     assert ("Kitchen Safety Bundle: $29 a month per location, includes "
-            "Aegizyn Pro for that location") in words
+            "OmniArmor Pro for that location") in words
 
 
 def test_a_per_location_price_says_so_and_a_custom_one_offers_a_quote(api):

@@ -66,21 +66,21 @@
     <div class="sample-mark" aria-hidden="true">Sample</div>
     <div class="doc-kicker">Insurance pack: loss event evidence · sample</div>
     <div class="drawer-title">INC-0042</div>
-    <div class="drawer-sub">Rosa's Café (pretend) · issued Mar 15, 2026, 7:52 AM EST</div>
+    <div class="drawer-sub">Rosa's Café (pretend) · issued Mar 15, 2026, 7:52 AM EDT</div>
     <div class="doc-issued-by">Issued by %%APP_NAME%%, a product of %%COMPANY_NAME%% · %%APP_HOST%%</div>
 
     <div class="doc-letter">
       <div class="quote-label">Summary</div>
-      Rosa's Café reports that Walk-in fridge at 12 Harbor Street went out of
-      its safe range at Mar 15, 2026, 1:58 AM EST. Continuous monitoring
-      recorded 38 readings from Mar 14, 2026, 7:00 PM EST to Mar 15, 2026,
-      7:52 AM EST; 9 of them were outside the documented safe band, the worst
-      56.4°F. The probable cause is fridge or freezer warming (door left open,
-      or the cooling failing). The alert was sent automatically at detection
-      and acknowledged 12 minutes after detection. The alert closed at Mar 15,
-      2026, 4:41 AM EST. The food was recorded as “Thrown away” by Rosa Diaz at
-      Mar 15, 2026, 4:44 AM EST. The note of what went: “Two trays of chicken,
-      a case of milk and the prepped salads.” All readings are hash-chained and
+      Rosa's Café reports that Walk-in fridge at 12 Harbor Street, Springfield
+      went out of its safe range at Mar 15, 2026, 1:58 AM EDT. Continuous
+      monitoring recorded 38 readings from Mar 14, 2026, 7:00 PM EDT to Mar 15,
+      2026, 7:52 AM EDT; 9 of them were outside the documented safe band, the
+      worst 56.4°F. The probable cause is fridge or freezer warming (door left
+      open, or the cooling failing). The alert was texted to 2 people at
+      2:18 AM, after the 20-minute wait; it was acknowledged 12 minutes later.
+      The alert closed at 4:41 AM. The food was recorded as “Thrown away” by
+      Rosa Diaz at 4:44 AM. The note of what went: “Two trays of chicken, a case
+      of milk and the prepped salads.” All readings are hash-chained and
       independently verifiable.
     </div>
 
@@ -104,12 +104,12 @@
     <div class="doc-section">The event</div>
     <div class="readout">
       <div><span class="k">Out of range since</span><span class="v">Mar 15, 2026, 1:58 AM</span></div>
-      <div><span class="k">Alert sent</span><span class="v">Mar 15, 2026, 2:18 AM</span></div>
+      <div><span class="k">Alert texted</span><span class="v">Mar 15, 2026, 2:18 AM</span></div>
       <div><span class="k">Reading at detection</span><span class="v">43.1°F</span></div>
       <div><span class="k">Breach</span><span class="v">43.1°F: too warm, over the 41°F limit.</span></div>
       <div><span class="k">Probable cause</span><span class="v">Fridge or freezer warming (door left open, or the cooling failing)</span></div>
       <div><span class="k">Acknowledged after</span><span class="v">12 minutes</span></div>
-      <div><span class="k">Closed</span><span class="v">closed at Mar 15, 2026, 4:41 AM</span></div>
+      <div><span class="k">Closed at</span><span class="v">Mar 15, 2026, 4:41 AM</span></div>
     </div>
 
     <div class="doc-section">Response</div>
@@ -120,20 +120,22 @@
       <li><b>Worst reading</b> — 56.4°F <span class="when">Mar 15, 2026, 3:40 AM</span></li>
       <li><b>Closed</b> — Closed by Rosa Diaz. <span class="when">Mar 15, 2026, 4:41 AM</span></li>
     </ul>
-    <div class="scrollx"><table>
-      <thead><tr><th>Channel</th><th>Recipient</th><th>Number</th><th>Outcome</th></tr></thead>
+    <table class="doc-channels">
+      <thead><tr><th>Channel</th><th>Recipient</th><th>Number</th><th>Outcome</th><th>Reference</th></tr></thead>
       <tbody>
-        <tr><td>Text</td><td>Rosa Diaz</td><td>+1 555 010 0000</td><td>delivered</td></tr>
-        <tr><td>Text</td><td>Sam Lee</td><td>+1 555 010 0001</td><td>delivered</td></tr>
+        <tr><td data-label="Channel">Text</td><td data-label="Recipient">Rosa Diaz</td><td data-label="Number">+1 555 010 0000</td><td data-label="Outcome">delivered</td><td data-label="Reference">SM-sample-0001</td></tr>
+        <tr><td data-label="Channel">Text</td><td data-label="Recipient">Sam Lee</td><td data-label="Number">+1 555 010 0001</td><td data-label="Outcome">delivered</td><td data-label="Reference">SM-sample-0002</td></tr>
       </tbody>
-    </table></div>
+    </table>
 
+    <div class="doc-keep">
     <div class="doc-section">Recorded evidence</div>
     <div class="readout">
       <div><span class="k">Window</span><span class="v">Mar 14, 2026, 7:00 PM — Mar 15, 2026, 7:52 AM</span></div>
       <div><span class="k">Readings</span><span class="v">38</span></div>
       <div><span class="k">Out of band</span><span class="v">9</span></div>
       <div><span class="k">Peak</span><span class="v">56.4°F</span></div>
+    </div>
     </div>
     <div class="scrollx"><table>
       <thead><tr><th>When</th><th class="num">Reading</th><th>State</th></tr></thead>

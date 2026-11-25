@@ -61,7 +61,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | [docs/ALERTS.md](docs/ALERTS.md) | Who gets alerted, rotations and quiet hours, the escalation ladder and "press 1", the site-wide alert when many units warm at once, the sweep, Slack/Teams/PagerDuty channels, Twilio delivery and retries, what a message costs, spend caps |
 | [docs/API.md](docs/API.md) | The three credentials, roles and the audit trail, password resets, provisioning paid accounts, security headers, numbers the API refuses |
 | [docs/BILLING.md](docs/BILLING.md) | The prices, the eleventh unit at a location, the trades priced by quote, what changed for existing customers, plans (Starter included), paying yearly (2 months free), chain discounts, cancelling, pausing instead and the one-time offer to stay, founding member codes, add-ons, account credit, bring a friend, ROI, invoices, contracts that bill themselves, collections, taking payment, the books, margins, resellers |
-| [docs/AEGIZYN-CONNECTION.md](docs/AEGIZYN-CONNECTION.md) | The Kitchen Safety Bundle: connecting Aegizyn, what the daily report says (roles, never names), the signature that unlocks Aegizyn Pro, retries, corrections, and the price |
+| [docs/OMNIARMOR-CONNECTION.md](docs/OMNIARMOR-CONNECTION.md) | The Kitchen Safety Bundle: connecting OmniArmor, what the daily report says (roles, never names), the signature that unlocks OmniArmor Pro, retries, corrections, and the price |
 | [docs/MAIL.md](docs/MAIL.md) | The mail transport and its guards, the one look every email shares, trial-conversion emails, the daily and weekly digests, the monthly compliance summary |
 | [docs/VAULT-INTERNALS.md](docs/VAULT-INTERNALS.md) | How the hash-chained vault works, compliance reports, evidence kept past the rolling window, insurance claim packets |
 | [docs/PILOT.md](docs/PILOT.md) | Pilot, the MTRX Horizyn assistant on the user's own AI key: where it is, what it knows, the console tools (and what it never does), and a business's own AI key for the alert line |
@@ -121,7 +121,7 @@ each version; the number in use is in `VERSION` and at `/api/health`.
 | API reference | `/developers` | Every customer-facing endpoint, its credential, parameters and an example body, rendered from the schema with no script |
 | Pricing page | `/pricing` | Every rate, the Starter plan and a calculator, rendered from the rate card |
 | Bring a friend | `/api/referrals` | A referral code per business, a longer trial for the friend, a month's credit when they pay |
-| Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to Aegizyn, which fills in its temperature-log check |
+| Kitchen Safety Bundle | `/api/connections/omniarmor` | Each day's fridge record sent to OmniArmor, which fills in its temperature-log check |
 | Repair partners | `/api/repair-partners`, `/api/repairs` | "Get a repair quote" on a failing unit, one lead to one technician covering the address, a fee per lead billed by hand |
 | Pause or cancel | `/api/leaving` | Pause for 1 to 3 months (no bills, no alerts), a one-time offer to stay, cancel one press away, and the counts |
 | Founding member code | `/api/founder-code` | A launch discount as our own invoice line: a percentage off the first months, once per business, entered at sign-up or before the first paid invoice |

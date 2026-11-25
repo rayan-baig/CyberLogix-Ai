@@ -75,7 +75,7 @@ in spam for a fortnight.
 and MTRX Horizyn owns the one domain: its own site on the apex (and
 `www`), each product on a subdomain. Kryozyn lives at
 `kryozyn.mtrxhorizyn.com`, beside `rankup.mtrxhorizyn.com` and
-`aegizyn.mtrxhorizyn.com`; MTRX Horizyn's own site is `mtrxhorizyn.com`.
+`omniarmor.mtrxhorizyn.com`; MTRX Horizyn's own site is `mtrxhorizyn.com`.
 
 A subdomain, not a path (`mtrxhorizyn.com/kryozyn`), on purpose: each
 subdomain is its own origin, so a sign-in, the browser's storage and the
@@ -152,8 +152,8 @@ both are set, the `KRYOZYN_` one wins. The API's headers are now
 `X-Kryozyn-Key`, `X-Kryozyn-Sensor-Key`, `X-Kryozyn-Admin` and so on;
 devices and scripts that send the old `X-CyberLogix-` names keep working,
 and when a request sends both, the new one wins. The daily report to
-Aegizyn carries its signature under both `X-Kryozyn-Signature` and the
-`X-CyberLogix-Signature` Aegizyn has read until now. The Render service,
+OmniArmor carries its signature under both `X-Kryozyn-Signature` and the
+`X-CyberLogix-Signature` OmniArmor has read until now. The Render service,
 its disk, the database file, the backup file names and this repository
 keep their old names: renaming any of them would mean a new service or a
 lost disk, and nobody outside sees them.
@@ -200,7 +200,7 @@ them. In this order:
    Google Search Console (add the new address), and any sensor maker's
    cloud set up with the old address (it keeps working; move it when
    convenient). Customers' Kitchen Safety Bundle connections keep the
-   Aegizyn address they pasted, which keeps working for as long as that
+   OmniArmor address they pasted, which keeps working for as long as that
    old address does.
 8. **When the company's new name is chosen.** Change `COMPANY_NAME` and
    `COMPANY_DOMAIN` in `brand.py` (or set `CYBERLOGIX_COMPANY_NAME` and

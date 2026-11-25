@@ -36,8 +36,15 @@ jobs:
       # a wrong bill, and it is cheaper to find here than on one.
       - name: Types in the money code
         run: python -m mypy
+      # A real browser for the tests that open every dialog at a phone's
+      # width (tests/test_round13_dialogs_fit.py). Here they are required:
+      # a browser that failed to install fails the run instead of skipping.
+      - name: A browser for the phone-width tests
+        run: pip install playwright==1.64.1 && python -m playwright install --with-deps --only-shell chromium
       - name: Tests
         run: python -m pytest -q
+        env:
+          KRYOZYN_BROWSER_TESTS: required
       - name: Known security holes in dependencies
         # The whole locked set, not just the direct packages.
         run: pip-audit -r constraints.txt

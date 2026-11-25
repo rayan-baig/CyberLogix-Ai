@@ -13,7 +13,7 @@
    It's fixed", not "Too warm" beside 38°.
 4. "No more calls for this alert" only once a call really went out; the
    demo asks about the food after "Mark it fixed".
-5. A small account's Setup folds the Aegizyn connection, "Things to do"
+5. A small account's Setup folds the OmniArmor connection, "Things to do"
    and the activity log under Advanced; the plan buttons say what
    /pricing says; three figures on a desktop too.
 6. Pilot's "Log for the inspector" links straight to the log (Node).

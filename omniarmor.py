@@ -1,21 +1,21 @@
-"""The Kitchen Safety Bundle: each day's fridge record, sent to Aegizyn.
+"""The Kitchen Safety Bundle: each day's fridge record, sent to OmniArmor.
 
-Aegizyn (MTRX Horizyn's food-safety checklist app) keeps a temperature-
+OmniArmor (MTRX Horizyn's food-safety checklist app) keeps a temperature-
 log check that somebody has to fill in by hand. With the bundle, this app
-fills it in: once a day, after the site's day has ended, it sends Aegizyn
+fills it in: once a day, after the site's day has ended, it sends OmniArmor
 one combined report for the business (`POST /api/connect/cyberlogix/daily`)
-and Aegizyn ticks the check on a clean day or leaves a note for a person
+and OmniArmor ticks the check on a clean day or leaves a note for a person
 on a day something went out of range.
 
-The contract is Aegizyn's docs/CYBERLOGIX-CONNECTION.md, and this module
-is built exactly to it. tests/omniarmor_contract.py carries Aegizyn's own
+The contract is OmniArmor's docs/CYBERLOGIX-CONNECTION.md, and this module
+is built exactly to it. tests/omniarmor_contract.py carries OmniArmor's own
 validation, ported, and the tests send every report through it, so a
 field that drifts fails here before it fails there.
 
 What it promises:
 
 * **No names.** A report carries temperatures, unit and site names, times
-  and roles. Who acknowledged an alarm is sent as a role from Aegizyn's
+  and roles. Who acknowledged an alarm is sent as a role from OmniArmor's
   fixed list ("on-call staff", "manager"...), never the person; what was
   done, as one of its fixed action codes. A unit or site whose name holds
   somebody's name is sent as "Unit 2" instead.
@@ -24,9 +24,9 @@ What it promises:
   logged, never shown again after it is pasted (the last four characters
   are). Without that setting nothing can be connected.
 * **Signed.** With KITCHEN_BUNDLE_SECRET set (the same value as
-  Aegizyn's), every report carries `X-Kryozyn-Signature:
+  OmniArmor's), every report carries `X-Kryozyn-Signature:
   t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + body)>` over the
-  exact bytes sent. Aegizyn waives its Pro fee for a workspace whose
+  exact bytes sent. OmniArmor waives its Pro fee for a workspace whose
   reports arrive signed, which only a server billing the bundle can do.
   Unset, no header is sent and reports work as before.
 * **One send per day.** Each day is claimed before it is sent, under the
@@ -35,7 +35,7 @@ What it promises:
   acknowledged after midnight, a corrective action written up the next
   morning): that is a correction, and the contract says a correction
   replaces the earlier report.
-* **Patient with Aegizyn.** 429 and 5xx, and a network that fails, are
+* **Patient with OmniArmor.** 429 and 5xx, and a network that fails, are
   retried with backoff, waiting at least as long as Retry-After asks; a
   wait longer than a pass can hold is picked up by the next pass. 401
   stops sending until the owner pastes a new key. 422 is our bug: it is
@@ -76,10 +76,12 @@ from store import STORE, Tenant, User, display_temperature, iso, utc_now
 
 logger = logging.getLogger("cyberlogix.omniarmor")
 
-router = APIRouter(prefix="/api/connections/aegizyn", tags=["Kitchen Safety Bundle"])
-# The address before the checklist app was renamed (3.34.0), still answered
-# for an installed console that has not reloaded, and left out of the docs.
-old_router = APIRouter(prefix="/api/connections/" + "omni" + "armor", include_in_schema=False)
+router = APIRouter(prefix="/api/connections/omniarmor", tags=["Kitchen Safety Bundle"])
+# The address the console used while the checklist app was called by
+# another name (3.34.0 and 3.35.0), still answered for an installed console
+# that has not reloaded since, and left out of the docs. The name is back
+# (3.36.0), and so is the address it always had.
+old_router = APIRouter(prefix="/api/connections/" + "aegi" + "zyn", include_in_schema=False)
 
 CONNECTION_KIND = "omniarmor_connection"
 DAY_KIND = "omniarmor_day"
@@ -91,20 +93,20 @@ PATH = "/api/connect/cyberlogix/daily"
 # of it) is the thing the contract asks us not to do.
 CREDENTIAL_KEY = os.environ.get("CYBERLOGIX_CREDENTIAL_KEY", "").strip()
 
-# Signs every daily report, so Aegizyn can tell a report from a real
+# Signs every daily report, so OmniArmor can tell a report from a real
 # Kryozyn server -- which bills the +$29 Kitchen Safety Bundle -- from
-# one anybody could post with a key. Aegizyn waives its own Pro fee for
+# one anybody could post with a key. OmniArmor waives its own Pro fee for
 # a workspace whose reports arrive signed. The same value is set in both
-# apps. Unset, reports go unsigned: they still work, and Aegizyn charges
+# apps. Unset, reports go unsigned: they still work, and OmniArmor charges
 # its Pro fee as usual.
 KITCHEN_BUNDLE_SECRET = os.environ.get("KITCHEN_BUNDLE_SECRET", "").strip()
 SIGNATURE_HEADER = "X-Kryozyn-Signature"
-# The same value under the name Aegizyn has read since before the rename
+# The same value under the name OmniArmor has read since before the rename
 # (its docs/CYBERLOGIX-CONNECTION.md), so a signed report is recognised
 # whichever name that server reads.
 OLD_SIGNATURE_HEADER = "X-" + "Cyber" + "Logix-Signature"
 
-# ---- the contract (Aegizyn docs/CYBERLOGIX-CONNECTION.md) --------------
+# ---- the contract (OmniArmor docs/CYBERLOGIX-CONNECTION.md) --------------
 KEY_RE = re.compile(r"^clx_[A-Za-z0-9_-]{43}$")
 ROLES = ("owner", "manager", "chef", "shift lead", "on-call staff",
          "kitchen staff", "maintenance", "technician")
@@ -141,7 +143,7 @@ CLAIM_LEASE = timedelta(minutes=10)
 FAILED_DAYS_BEFORE_EMAIL = 2
 TIMEOUT_SECONDS = 20
 
-# Kryozyn roles onto Aegizyn's. A person's name never leaves; their
+# Kryozyn roles onto OmniArmor's. A person's name never leaves; their
 # role in the account does.
 USER_ROLES = {"owner": "owner", "operator": "manager", "viewer": "kitchen staff"}
 DEFAULT_ROLE = "on-call staff"
@@ -202,7 +204,7 @@ def _save(row: Dict[str, Any]) -> None:
 
 
 def normalise_address(raw: str) -> str:
-    """Aegizyn's address as scheme and host: https only, public only."""
+    """OmniArmor's address as scheme and host: https only, public only."""
     import pollers
 
     value = (raw or "").strip().rstrip("/")
@@ -270,7 +272,7 @@ def safe_text(value: Optional[str], words: List[str]) -> Optional[str]:
 
 
 def role_for(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]:
-    """Who acknowledged, as one of Aegizyn's roles. Never a name."""
+    """Who acknowledged, as one of OmniArmor's roles. Never a name."""
     if not acknowledged_by:
         return None
     text = acknowledged_by.split(", with site-wide alert")[0]
@@ -291,7 +293,7 @@ def role_for(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]:
 
 
 def action_for(incident) -> Optional[str]:
-    """What was done, as one of Aegizyn's action codes.
+    """What was done, as one of OmniArmor's action codes.
 
     What happened to the food first, because that is what an inspector
     reads the note for; then what was done to the unit. Something written
@@ -514,7 +516,7 @@ def signature_headers(body: bytes) -> Dict[str, str]:
 def _post(url: str, key: str, body: bytes,
           extra_headers: Optional[Dict[str, str]] = None
           ) -> Tuple[int, Dict[str, str], bytes]:
-    """One POST to Aegizyn. Raises on a network failure.
+    """One POST to OmniArmor. Raises on a network failure.
 
     Through the poller's opener, so it follows no redirect (a redirect
     would carry the key to an address nobody checked), uses no proxy, and
@@ -537,7 +539,7 @@ def _post(url: str, key: str, body: bytes,
         return exc.code, dict(exc.headers or {}), exc.read(65536)
 
 
-# Replaced by the tests with a fake Aegizyn.
+# Replaced by the tests with a fake OmniArmor.
 TRANSPORT: Transport = _post
 
 
@@ -687,7 +689,7 @@ def _finish_day(tenant_id: str, day: date, digest: str, kind: str,
                 "breaches": len(report["breaches"]),
             }
         else:
-            # A correction that fails leaves the day as sent: what Aegizyn
+            # A correction that fails leaves the day as sent: what OmniArmor
             # holds is the earlier report, and the next pass tries again.
             row["state"] = "sent" if row.get("sent_fingerprint") else "failed"
             row["detail"] = result.get("detail", "")
@@ -1002,7 +1004,7 @@ def _owner_tenant(owner: User) -> Tenant:
 @router.get("")
 @old_router.get("")
 def read_connection(owner: User = Depends(require_role("owner"))):
-    """The Aegizyn connection: where it sends, how it is doing, what it
+    """The OmniArmor connection: where it sends, how it is doing, what it
     costs. The key is never shown, only its last four characters."""
     return overview(_owner_tenant(owner))
 
@@ -1011,7 +1013,7 @@ def read_connection(owner: User = Depends(require_role("owner"))):
 @old_router.put("")
 def save_connection(payload: ConnectionSettings,
                     owner: User = Depends(require_role("owner"))):
-    """Connect to Aegizyn, or change the connection. Owner only."""
+    """Connect to OmniArmor, or change the connection. Owner only."""
     import oncall
 
     tenant = _owner_tenant(owner)
@@ -1096,8 +1098,8 @@ def remove_connection(owner: User = Depends(require_role("owner"))):
 def send_test_report(owner: User = Depends(require_role("owner"))):
     """Send the last finished day's real report now, to see it arrive.
 
-    Aegizyn has no test mode, so this is the real report for that day;
-    sending it again is safe (Aegizyn answers "unchanged"), and the
+    OmniArmor has no test mode, so this is the real report for that day;
+    sending it again is safe (OmniArmor answers "unchanged"), and the
     daily job will not send it a second time.
     """
     tenant = _owner_tenant(owner)

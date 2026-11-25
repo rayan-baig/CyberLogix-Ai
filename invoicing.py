@@ -285,7 +285,7 @@ def build_lines(
 
     subscription = build_subscription(tenant)
     # Picked add-ons, then any billed because they are switched on (the
-    # Kitchen Safety Bundle while Aegizyn is connected), each once.
+    # Kitchen Safety Bundle while OmniArmor is connected), each once.
     add_on_keys = list(dict.fromkeys(list(add_on_keys) + auto_add_ons(tenant)))
     places = locations_billed(tenant)
     lines: List[Dict[str, Any]] = []

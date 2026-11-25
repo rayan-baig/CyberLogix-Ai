@@ -1068,6 +1068,22 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   border: 1px solid var(--border); border-radius: 8px; }
 .addr-label { font-size: 13px; color: var(--ink-2); }
 
+/* Who was texted or called, and what came of it (3.36.0): a table on a
+   wide page; on a phone, one small card a try with each cell's heading
+   beside it, so nothing hides off the right edge behind a sideways
+   scroll nobody finds. */
+.doc-channels { width: 100%; }
+@media (max-width: 560px) {
+  .doc-channels, .doc-channels tbody, .doc-channels tr, .doc-channels td { display: block; width: 100%; }
+  .doc-channels thead { display: none; }
+  .doc-channels tr { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .doc-channels td { display: flex; gap: 10px; padding: 2px 0; border: none; overflow-wrap: anywhere; }
+  .doc-channels td[data-label]::before {
+    content: attr(data-label); flex: 0 0 84px; color: var(--muted);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; padding-top: 2px;
+  }
+}
+
 /* "For the adjuster's IT team" (3.33.0): how to check the seal, small and
    last, so the people the pack is for read the food and the timeline,
    not a developer's instructions. */
@@ -1127,6 +1143,8 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-issuer-warn { color: #1F4E8A; }
   .doc-letter { color: #111; border-left-color: #999; }
   .doc-it { background: #fff; border-color: #ccc; color: #444; break-inside: avoid; }
+  /* The Recorded evidence box with its heading, on one page (3.36.0). */
+  .doc-keep { break-inside: avoid; }
   .doc-it-head, .doc-sub, .doc-issued-by { color: #555; }
   .doc-it a { color: #111; }
   .readout, .digest { border-color: #ccc; background: #fff; }
@@ -1560,7 +1578,7 @@ body[data-stale] #offline-banner {
 .adv-note b { color: var(--ink-2); font-weight: 600; }
 
 /* Inputs laid out in a row inside a card (Fetch from a sensor cloud, the
-   Aegizyn connection, Change password, Things to do) had no styling at
+   OmniArmor connection, Change password, Things to do) had no styling at
    all and rendered as the browser's white boxes on a dark card. The same
    look as a .field input, without its label. */
 .card form .row > input:not([type="checkbox"]):not([type="radio"]),
@@ -1845,6 +1863,14 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 .food-dialog .food-acts { gap: 10px; }
 .food-dialog .food-acts .btn:not(.linkish) { flex: 1 1 130px; width: auto; min-width: 0; }
 .food-dialog .food-acts .linkish { flex: 1 0 100%; text-align: left; min-height: 36px; margin-top: 2px; }
+/* Every dialog's buttons (3.36.0): words wrap inside the button rather
+   than run out of it. "Thrown away. What next?" shares the food dialog's
+   rules, and at 375px its two long answers squeezed side by side with
+   "Make the insurance pack" running into "Add what was thrown away" and
+   off the edge (.btn never wraps its words). Each gets the whole width
+   when two do not fit, side by side when they do. */
+.confirm-dialog .btn { white-space: normal; text-align: center; max-width: 100%; }
+.loss-dialog .food-acts .btn:not(.linkish) { flex: 1 1 220px; }
 
 /* Pilot's robot sits in a bottom corner. On a phone the page's last lines
    and buttons keep clear of it: --pilot-gutter is set by the shared core
@@ -1977,11 +2003,13 @@ body.wall .needs-bar-acts { display: none; }
 .connect-list li { margin: 6px 0; line-height: 1.55; font-size: 14px; color: var(--ink-2);
                    overflow-wrap: anywhere; }
 .connect-list code { color: var(--ink); word-break: break-all; }
-.connect-serial { display: grid; gap: 6px; margin: 8px 0; }
+/* minmax(0, 1fr) (3.36.0): a plain column took the box's own width as
+   its least, and at 320px the serial row ran 50px past the dialog. */
+.connect-serial { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; }
 .connect-serial label { font-size: 13.5px; color: var(--ink); }
 .connect-serial label .sub { display: block; color: var(--muted); font-size: 12.5px; }
 .connect-serial-row { display: flex; gap: 8px; }
-.connect-serial-row input { flex: 1 1 auto; min-width: 0; min-height: 40px; }
+.connect-serial-row input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 40px; }
 .connect-serial-out:empty { display: none; }
 .connect-nokey { margin: 8px 0; padding: 10px 12px; border-radius: 10px;
                  border: 1px solid var(--border-lit); font-size: 13.5px; color: var(--ink-2); }
@@ -2034,7 +2062,6 @@ input[aria-invalid="true"] { border-color: var(--critical); }
   width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
   background: var(--bg); color: var(--ink); font: inherit; resize: vertical; min-height: 84px;
 }
-.loss-dialog .food-acts .btn { flex: 1 1 auto; }
 /* The food on an alert (console.js, 3.32.0): who said it, "Change" for 24
    hours, and after "Thrown away" the two next steps. */
 .food-change { font-size: 12.5px; margin-left: 6px; }
@@ -2364,7 +2391,7 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
 .starter-panel .sample-link { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
 
 </style>
-<meta name="brand" content="Kryozyn" data-short="Kryozyn" data-company="MTRX Horizyn" data-checklist="Aegizyn">
+<meta name="brand" content="Kryozyn" data-short="Kryozyn" data-company="MTRX Horizyn" data-checklist="OmniArmor">
 </head>
 <body>
 <canvas id="circuit" class="circuit" aria-hidden="true"></canvas>
@@ -2402,7 +2429,7 @@ details.calc-fold > summary { cursor: pointer; color: var(--accent); margin: 10p
 <details class="qa" id="hardware"><summary>Do I need to buy sensors? Do you sell them?</summary><div class="qa-body"><p>We do not sell sensors. You buy a wireless temperature sensor for each fridge or freezer from a sensor maker, and set it to send its readings to us. <a href="sensors.html#what-you-need">What you need, roughly what it costs, and how to set it up</a>.</p></div></details>
 <details class="qa" id="price"><summary>What does it cost?</summary><div class="qa-body"><p>Restaurants: $149 a month per location; Pharmacies: $199 a month per pharmacy. Each price covers up to 10 fridges and freezers at that location; each one past 10 at the same location is $15 a month.</p><p>A small café or shop can take Starter instead: $59 a month for one location and up to 3 fridges or freezers.</p><p>Every other trade: custom pricing — ask for a quote. <a class="talk-link" href="help.html#help">Talk to us</a>.</p><p>Chain discounts for restaurants and pharmacies: 10% off each location from 5 locations, 20% off from 20. For example, 20 restaurants pay $119.20 each, $2,384 a month. It comes off automatically, on its own line of the invoice.</p><p>There is no setup fee. The published prices are on the pricing page, with a calculator that works out your monthly or yearly price.</p></div></details>
 <details class="qa" id="yearly"><summary>Can I pay yearly, and what if I cancel?</summary><div class="qa-body"><p>Yes. Paying yearly costs 10 times the monthly price and covers 12 months: 2 months free. It covers everything on the bill, after any chain discount. You get one invoice for the year and nothing until it renews, except a prorated charge for the rest of the year if you add a location or units.</p><p>We email 30 and 7 days before the year renews. You can switch between monthly and yearly at renewal: an owner changes it under Money, Contract, and the change starts when what you have paid for runs out.</p><p><b>Cancelling:</b> Cancel any time. Nothing more is billed after you cancel, and the service carries on to the end of the month or year you have already paid for. What you have already paid is not refunded, in part or in full.</p></div></details>
-<details class="qa" id="extras"><summary>Are there extras, or a share of what you save me?</summary><div class="qa-body"><p>Never a share of savings. The optional extras are flat monthly fees: Certified Compliance Vault ($499 a month), Sector Benchmarks ($299 a month), Equipment Intelligence ($399 a month), Kitchen Safety Bundle ($29 a month per location).</p><p>The Kitchen Safety Bundle sends each day's fridge and freezer record to Aegizyn, which fills in its temperature-log checks, and includes Aegizyn Pro for that location. Connect it under Setup, Aegizyn connection. It is free during the trial and billed while it is connected.</p><p>Paying yearly makes the extras 2 months free too, like everything else on the bill.</p></div></details>
+<details class="qa" id="extras"><summary>Are there extras, or a share of what you save me?</summary><div class="qa-body"><p>Never a share of savings. The optional extras are flat monthly fees: Certified Compliance Vault ($499 a month), Sector Benchmarks ($299 a month), Equipment Intelligence ($399 a month), Kitchen Safety Bundle ($29 a month per location).</p><p>The Kitchen Safety Bundle sends each day's fridge and freezer record to OmniArmor, which fills in its temperature-log checks, and includes OmniArmor Pro for that location. Connect it under Setup, OmniArmor connection. It is free during the trial and billed while it is connected.</p><p>Paying yearly makes the extras 2 months free too, like everything else on the bill.</p></div></details>
 <details class="qa" id="plans"><summary>What is the difference between the plans?</summary><div class="qa-body"><p>Plans set how many sensors you can run and whether we phone people. Trial: up to 5 sensors, text alerts only. Starter: up to 3 sensors, text alerts only. Growth: up to 50 sensors, with phone calls. Enterprise: up to 1,000 sensors, with phone calls.</p><p>Starter is $59 a month for one location, with texts and the site-wide alert. A unit past 3, or a second location, asks you to move to Growth first; nothing is charged until you do, and then only from the day you move.</p></div></details>
 <details class="qa" id="alerts"><summary>What happens when a fridge goes out of range?</summary><div class="qa-body"><p>Every reading is checked against the safe range for your trade, or the one you set for that unit. A door opened for a minute does not alert anybody: a unit has to STAY out of range, 20 minutes for a food fridge, 30 for a freezer and 10 for a vaccine or lab fridge, before we open one problem for it and text everyone on call, within 60 seconds. A reading far past the limit (15°F or more over) is sent at once. More readings from the same fridge update that problem instead of sending more texts.</p><p>If it comes back to normal before anybody answers, the alert closes on its own with a note saying so, the people texted get a short all-clear, and nobody is phoned. You can change how long a unit waits on its card in the console.</p><p>If your team uses Slack, Teams or PagerDuty, a copy goes there as well.</p></div></details>
 <details class="qa" id="escalation"><summary>What if nobody answers the text?</summary><div class="qa-body"><p>If nobody acknowledges the problem within 10 minutes, we phone the people on call, in the order you set, until one of them answers and presses 1. Phone calls come with the Growth and Enterprise plans; the Trial and Starter plans send texts only. The free trial includes 5 phone calls in all (about a minute each), so you can hear what an alert call sounds like.</p><p>If a text fails to send, we try it again 1, 5 and 15 minutes after the problem opened.</p></div></details>

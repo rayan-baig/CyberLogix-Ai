@@ -198,6 +198,31 @@ corner, hidden rather than over the search box or tabs at 320px. On a phone it i
 often than before, by design: at the top of `/help`, and on parts of `/pricing` and
 `/help/sensors`, every corner has a link, so it waits for a scroll.
 
+**3.36.0: a welcome that follows the situation.** Still core 1.4.3. What changes in
+`static/pilot-kryozyn.js`:
+
+- **The welcome's pills on the console and `/today`** are chosen when the window opens, from the
+  page's overview (`ownList`): after food was thrown away (the day `/today` leads with it) "Make
+  the insurance pack" comes first; "How do I connect a sensor?" goes once any sensor has sent a
+  reading; "Is the food still OK?" shows only while an alert is live or a closed one waits for
+  Food kept or Thrown away. Free places go to "Do you phone us?" and "Will a door left open wake
+  us?". Before the overview has loaded, or signed out, it is the four as before. `welcomePills`
+  is a getter, read when the window opens and for each typed question.
+- **The words each item carries are worked out for the page as it is** (`allocate`): an item's
+  own words (`OWN_WORDS`, else `MATCH`), then each group of words of an answer that has no item
+  of its own on the page, whole, on the item it fits best (an item it prefers, else the one with
+  the most room), never past the core's 20. `OWN_GROUPS` on the person's pages, `VISIT_GROUPS`
+  on the public ones, in order of how much they matter. This replaces `CARRY` and `LEND`, which
+  were placed by hand and could not follow a welcome that changes.
+- **New answers with no key.** Signed out: "What does my insurer get?" (an insurance pack, with
+  the sample first), "Is it hard to set up?" (three steps, no coding), "Is the food safe to eat?"
+  (the rule of thumb and its note) and "Does it work in Canada?" (readings in Celsius with the
+  console's °F/°C button, a limit of your own with Change limit, texts through Twilio to a
+  number with its country code, prices in US dollars). Signed in: "What was thrown away?" quotes
+  the note; "Why did nobody get a text?" says what the alert's delivery record says (texts off,
+  failed, or how many went through), never who is on the list; "How do I add my address to the
+  pack?" points at the Site address box, with a link the console follows (`#site-address`).
+
 **3.33.0: more answers with no key, and nothing about an alert when none is open.** Still
 core 1.4.3. What changes in `static/pilot-kryozyn.js`:
 

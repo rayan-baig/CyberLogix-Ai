@@ -411,6 +411,7 @@ async function enter(token, user) {
   followConnectLink();
   followPacketLink();
   followTeamLink();
+  followAddressLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -910,7 +911,7 @@ async function refresh(opts = {}) {
     // Owners only. Anyone else is told so on the card, not shown an error.
     referrals: () => api("/api/referrals/me").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
-    omni: () => api("/api/connections/aegizyn").catch((err) =>
+    omni: () => api("/api/connections/omniarmor").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
     aiKey: () => api("/api/ai-key").catch((err) =>
       (err && err.status === 403 ? { notOwner: true } : Promise.reject(err))),
@@ -2363,7 +2364,7 @@ function renderNeedsBar(d) {
         esc(CLXWords.outFor(i.out_since || i.opened_at))}.`;
   const who = i.state === "acknowledged"
     ? (i.fix_reported_at
-        ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it is fixed; it closes once it is back in range.`
+        ? `${esc(CLXWords.person(i.fix_reported_by_name, i.fix_reported_by))} said it's fixed. It closes by itself once it's cold.`
         : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
     : CLXWords.nobodyYet(i);
   const more = all.length - 1;
@@ -2373,7 +2374,8 @@ function renderNeedsBar(d) {
       <span class="needs-bar-acts">
         ${i.state === "open" ? `<button class="btn btn-sm btn-primary" type="button"
             data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
-        <button class="btn btn-sm" type="button" data-resolve="${esc(i.incident_id)}">It's fixed</button>
+        ${i.fix_reported_at && i.state === "acknowledged" ? ""
+          : `<button class="btn btn-sm" type="button" data-resolve="${esc(i.incident_id)}">It's fixed</button>`}
         ${more ? `<button class="btn btn-sm linkish" type="button" data-needs-more="1">${
           more} more</button>` : ""}
       </span>
@@ -4005,14 +4007,14 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-/* ---------------- the Aegizyn connection ----------------
+/* ---------------- the OmniArmor connection ----------------
    The form is filled from the server only when what the server holds has
    changed and nobody is typing in it, so the poll never wipes a half
    pasted key. The key itself never comes back: only its last four. */
 
 let omniSignature = null;
 
-/* What the Aegizyn link costs, said once it is connected (3.26.0). While
+/* What the OmniArmor link costs, said once it is connected (3.26.0). While
    a business is still setting up on the free trial it is not offered a
    paid extra: "+$29 a month per location" sat in the middle of Setup on
    the first day. Connected, or on a paid plan, the price is always shown. */
@@ -4095,7 +4097,7 @@ $("omni-form").addEventListener("submit", async (event) => {
   if ($("omni-key").value.trim()) body.key = $("omni-key").value.trim();
   if ($("omni-tz").value.trim()) body.timezone = $("omni-tz").value.trim();
   try {
-    const seen = await api("/api/connections/aegizyn", {
+    const seen = await api("/api/connections/omniarmor", {
       method: "PUT", body: JSON.stringify(body),
     });
     $("omni-key").value = "";
@@ -4111,7 +4113,7 @@ $("omni-test").addEventListener("click", async () => {
   const button = $("omni-test");
   button.disabled = true;
   try {
-    const out = await api("/api/connections/aegizyn/test", { method: "POST" });
+    const out = await api("/api/connections/omniarmor/test", { method: "POST" });
     renderOmni(out.connection);
     toast(out.message, out.status === "ok" || out.status === "already_sent" ? "ok" : "err");
   } catch (err) {
@@ -4124,7 +4126,7 @@ $("omni-test").addEventListener("click", async () => {
 $("omni-remove").addEventListener("click", async () => {
   if (!confirm(`Disconnect ${BRAND.checklist}? The key is deleted and nothing more is sent.`)) return;
   try {
-    const out = await api("/api/connections/aegizyn", { method: "DELETE" });
+    const out = await api("/api/connections/omniarmor", { method: "DELETE" });
     omniSignature = null;
     renderOmni(out);
     toast(out.message, "ok");
@@ -4764,13 +4766,15 @@ async function openPacket(incidentId) {
   // not_configured" on a page a loss adjuster reads.
   const deliveries = packet.response.sms_deliveries
     .concat(packet.response.voice_deliveries);
+  // Each cell carries its heading (3.36.0): on a phone the table stacks,
+  // one card a try, instead of scrolling sideways out of sight.
   const deliveryRows = deliveries.length
     ? deliveries.map((d) => `<tr>
-        <td>${esc(d.channel_words || d.channel)}</td>
-        <td>${esc(d.recipient || "—")}</td>
-        <td>${esc(d.to)}</td>
-        <td>${esc(d.outcome_words || (d.delivered ? "delivered" : "not sent"))}</td>
-        <td>${esc(d.provider_reference || "—")}</td>
+        <td data-label="Channel">${esc(d.channel_words || d.channel)}</td>
+        <td data-label="Recipient">${esc(d.recipient || "—")}</td>
+        <td data-label="Number">${esc(d.to)}</td>
+        <td data-label="Outcome">${esc(d.outcome_words || (d.delivered ? "delivered" : "not sent"))}</td>
+        <td data-label="Reference">${esc(d.provider_reference || "—")}</td>
       </tr>`).join("")
     : `<tr><td colspan="5">No text or call was tried.</td></tr>`;
 
@@ -4783,7 +4787,7 @@ async function openPacket(incidentId) {
   const readingRows = evidence.readings.map((r) => `<tr>
       <td>${esc(stamp(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical" : ""}">${
-        esc(r.temperature)}°${esc(ev.temperature_unit)}</td>
+        esc(oneDecimal(r.temperature))}°${esc(ev.temperature_unit)}</td>
       ${humid ? `<td class="num">${r.humidity === null || r.humidity === undefined ? "—" : esc(r.humidity) + "%"}</td>` : ""}
       <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
@@ -4809,9 +4813,15 @@ async function openPacket(incidentId) {
     ${(food.history || []).length > 1 ? `<div class="doc-sub">Change history</div><ul class="timeline">${foodHistory}</ul>` : ""}`
     : `<div class="card-note">Nobody has said yet whether the food was kept or thrown away.
        Answer it on the alert (Food kept or Thrown away), then make this pack again.</div>`;
+  // "Alert texted" only when a text went through (3.36.0): the row said
+  // sent for alerts written on a server with texts switched off.
+  const told = packet.response.notified;
+  const sentKey = told && told.texts === "sent" && told.delivered ? "Alert texted" : "Alert opened";
+  // "Closed at 4:41 AM", never "Closed: closed at 4:41 AM" (3.36.0).
+  const closedKey = ev.resolved_at ? "Closed at" : "Closed";
   const closedWords = ev.resolved_at
-    ? `closed at ${stamp(ev.resolved_at)}${ev.closed_by_itself ? ", back in range by itself" : ""}`
-    : ev.state === "acknowledged" ? "someone is on it, not closed yet" : "still open";
+    ? `${stamp(ev.resolved_at)}${ev.closed_by_itself ? ", back in range by itself" : ""}`
+    : ev.state === "acknowledged" ? "not yet: someone is on it" : "not yet: still open";
 
   $("drawer").innerHTML = `
     <div class="drawer-head">
@@ -4819,7 +4829,7 @@ async function openPacket(incidentId) {
         <div class="doc-kicker">Insurance pack: loss event evidence</div>
         <div class="drawer-title" id="drawer-title">${esc(ev.incident_id)}</div>
         <div class="drawer-sub">${esc(packet.insured.company_name)} ·
-          issued ${esc(stamp(packet.issued_at))}</div>
+          issued ${esc(stampZone(packet.issued_at))}</div>
       </div>
       <button class="btn btn-sm" id="packet-print">Print</button>
       <button class="btn btn-sm" id="drawer-close">Close</button>
@@ -4854,10 +4864,10 @@ async function openPacket(incidentId) {
     <div class="readout">
       <div><span class="k">Out of range since</span><span class="v">${
         esc(stamp(ev.out_since || ev.opened_at))}</span></div>
-      <div><span class="k">Alert sent</span><span class="v">${
+      <div><span class="k">${sentKey}</span><span class="v">${
         esc(stamp(ev.opened_at))}</span></div>
       <div><span class="k">Reading at detection</span><span class="v">${
-        esc(ev.detected_reading)}°${esc(ev.temperature_unit)}</span></div>
+        esc(oneDecimal(ev.detected_reading))}°${esc(ev.temperature_unit)}</span></div>
       <div><span class="k">Breach</span><span class="v">${
         esc(ev.breach_details)}</span></div>
       <div><span class="k">Probable cause</span><span class="v">${
@@ -4866,17 +4876,18 @@ async function openPacket(incidentId) {
         ev.minutes_to_acknowledge === null
           ? "not acknowledged"
           : esc(CLXWords.minutes(ev.minutes_to_acknowledge))}</span></div>
-      <div><span class="k">Closed</span><span class="v">${esc(closedWords)}</span></div>
+      <div><span class="k">${closedKey}</span><span class="v">${esc(closedWords)}</span></div>
     </div>
 
     <div class="doc-section">Response</div>
     <ul class="timeline">${timeline}</ul>
-    <div class="scrollx"><table>
+    <table class="doc-channels">
       <thead><tr><th>Channel</th><th>Recipient</th><th>Number</th>
         <th>Outcome</th><th>Reference</th></tr></thead>
       <tbody>${deliveryRows}</tbody>
-    </table></div>
+    </table>
 
+    <div class="doc-keep">
     <div class="doc-section">Recorded evidence</div>
     <div class="readout">
       <div><span class="k">Window</span><span class="v">${
@@ -4888,7 +4899,8 @@ async function openPacket(incidentId) {
         esc(evidence.excursions_in_window)}</span></div>
       <div><span class="k">Peak</span><span class="v">${
         evidence.peak_reading === null ? "—"
-          : esc(evidence.peak_reading) + "°" + esc(ev.temperature_unit)}</span></div>
+          : esc(oneDecimal(evidence.peak_reading)) + "°" + esc(ev.temperature_unit)}</span></div>
+    </div>
     </div>
     ${excursions.length ? "" : `<div class="card-note u-mt-8">
        No reading in this window was outside the band.</div>`}
@@ -4988,6 +5000,27 @@ function stamp(iso) {
   return CLXWords.dateTime(iso, { year: true });
 }
 
+/* The same with the reader's time zone, "Nov 24, 2026, 1:52 AM EST", for
+   the line that says when a document was issued (3.36.0). */
+function stampZone(iso) {
+  const when = stamp(iso);
+  if (!iso) return when;
+  let zone = "";
+  try {
+    const part = new Intl.DateTimeFormat([], { timeZoneName: "short" }).formatToParts(new Date(iso))
+      .find((p) => p.type === "timeZoneName");
+    zone = part ? part.value : "";
+  } catch (_) { zone = ""; }
+  return zone ? `${when} ${zone}` : when;
+}
+
+/* A reading on a pack with one decimal (3.36.0): "52.0", never "52"
+   beside "52.4". */
+function oneDecimal(value) {
+  const n = Number(value);
+  return value === null || value === undefined || value === "" || !Number.isFinite(n) ? String(value == null ? "—" : value) : n.toFixed(1);
+}
+
 /* ---------------- the inspector's log ----------------
    One click: the log for the chosen dates opens as a document and the
    print dialog comes up over it (print or save as PDF). On paper only the
@@ -5085,10 +5118,19 @@ function followTeamLink() {
   goTo("oncall");
 }
 
+/* "/console#site-address" opens Insurance packs at its Site address box
+   (3.36.0), once. */
+function followAddressLink() {
+  if (location.hash !== "#site-address" || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  goTo("address");
+}
+
 // A link followed while the console is already open changes only the hash.
 window.addEventListener("hashchange", () => {
   if (!state.token) return;
   followTeamLink();
+  followAddressLink();
   followConnectLink();
   followPacketLink();
   followInspectorLink().catch(() => { /* the estate is the page */ });
@@ -6026,6 +6068,9 @@ const GO = {
   plans:  { card: "find-subscription", field: "" },
   alerts: { card: "find-incidents", field: "" },
   pollers: { card: "find-vendor-clouds", field: "poller-name" },
+  // The address every insurance pack shows (3.36.0): Pilot's "How do I
+  // add my address to the pack?" links here (#site-address).
+  address: { card: "find-claim-packets", field: "claims-address" },
 };
 const GO_LABEL = {
   site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",

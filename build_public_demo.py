@@ -64,7 +64,7 @@ PATHS = [
     "/api/simulator",
     "/api/help/sensor-offline",
     "/api/referrals/me",
-    "/api/connections/aegizyn",
+    "/api/connections/omniarmor",
     "/api/ai-key",
     "/api/proof-reports",
     "/api/leaving",
@@ -95,7 +95,7 @@ NOT_FETCHED = {
     "/api/licenses/tenants", "/api/sensor-pulse", "/api/signup",
     "/api/contacts/test-alert", "/api/simulator/units",
     "/api/tasks/from-meeting",
-    "/api/connections/aegizyn/test", "/api/ai-key/test",
+    "/api/connections/omniarmor/test", "/api/ai-key/test",
     "/api/v1/bridge/preview", "/api/v1/bridge/sensor-webhook-ingest",
     "/api/v1/bridge/summarize-transcript",
     # Pause or cancel, a founding member code and a repair quote: pressed,
@@ -414,8 +414,8 @@ def refuse_model_names(data) -> None:
 def _bundle_and_referrals(client, head, home: str) -> None:
     """The two money cards with something on them.
 
-    The Aegizyn connection, with last night's report sent to a stand-in
-    that answers the way Aegizyn's contract says it does (nothing leaves
+    The OmniArmor connection, with last night's report sent to a stand-in
+    that answers the way OmniArmor's contract says it does (nothing leaves
     this build), and two businesses that joined with the referral code,
     one of which has paid its first invoice.
     """
@@ -429,8 +429,8 @@ def _bundle_and_referrals(client, head, home: str) -> None:
     if not omniarmor.CREDENTIAL_KEY:
         # A throwaway, for this build's throwaway database only.
         omniarmor.CREDENTIAL_KEY = secrets.token_urlsafe(32)
-    client.put("/api/connections/aegizyn", headers=head, json={
-        "address": "https://aegizyn.example.com",
+    client.put("/api/connections/omniarmor", headers=head, json={
+        "address": "https://omniarmor.example.com",
         "key": "clx_" + secrets.token_urlsafe(32)[:43].ljust(43, "x"),
         "site_label": "Main kitchen", "timezone": "America/New_York",
     }).raise_for_status()

@@ -116,7 +116,7 @@ def run_money_pass() -> dict:
     except Exception as exc:  # noqa: BLE001 - the watchdog must not die
         logger.exception("Licence alert pass failed (%s).", exc)
     try:
-        # Each connected business's finished day, to Aegizyn (the
+        # Each connected business's finished day, to OmniArmor (the
         # Kitchen Safety Bundle). Hourly is soon enough after a site's
         # midnight, and before the flush so a failure email it writes goes
         # out in the same hour.

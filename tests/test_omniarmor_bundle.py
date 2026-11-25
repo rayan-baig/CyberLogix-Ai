@@ -1,8 +1,8 @@
-"""The Kitchen Safety Bundle: each day's report, sent to Aegizyn exactly
-as its contract (Aegizyn docs/CYBERLOGIX-CONNECTION.md) says.
+"""The Kitchen Safety Bundle: each day's report, sent to OmniArmor exactly
+as its contract (OmniArmor docs/CYBERLOGIX-CONNECTION.md) says.
 
-Every report here goes through tests/omniarmor_contract.FakeAegizyn,
-which validates with Aegizyn's own validation code, ported: a field
+Every report here goes through tests/omniarmor_contract.FakeOmniArmor,
+which validates with OmniArmor's own validation code, ported: a field
 built wrong is a 422 here, as it would be there.
 """
 
@@ -20,14 +20,14 @@ import omniarmor
 import pricing
 from omniarmor_contract import ACTIONS as CONTRACT_ACTIONS
 from omniarmor_contract import ROLES as CONTRACT_ROLES
-from omniarmor_contract import FakeAegizyn, validate
+from omniarmor_contract import FakeOmniArmor, validate
 import omniarmor_contract as contract
 from store import STORE, utc_now
 
 ROOT = Path(__file__).resolve().parent.parent
 OMNIARMOR_SOURCE = ROOT.parent / "omniarmor.ai" / "omniarmor_app" / "connections.py"
 KEY = "clx_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v"
-ADDRESS = "https://aegizyn.example.com"
+ADDRESS = "https://omniarmor.example.com"
 assert len(KEY) == 47
 
 
@@ -41,7 +41,7 @@ def _at(day, hour, minute=0):
 
 @pytest.fixture()
 def kitchen(api, operator_factory, sensor_factory):
-    """A restaurant with two units, connected to Aegizyn, on UTC."""
+    """A restaurant with two units, connected to OmniArmor, on UTC."""
     owner, tenant, user = operator_factory(plan="growth", company_name="Harbor Grill",
                                            email="robin@harborgrill.example",
                                            full_name="Robin Vale")
@@ -52,7 +52,7 @@ def kitchen(api, operator_factory, sensor_factory):
     for sensor in STORE.sensors_for(tenant["tenant_id"]):    # installed a while ago
         sensor.registered_at = utc_now() - timedelta(days=20)
         STORE._db.put("sensor", sensor.sensor_id, sensor.to_row())
-    saved = api.put("/api/connections/aegizyn", headers=owner, json={
+    saved = api.put("/api/connections/omniarmor", headers=owner, json={
         "address": ADDRESS, "key": KEY, "timezone": "UTC", "site_label": "Main kitchen"})
     assert saved.status_code == 200, saved.text
     return {"owner": owner, "tenant": STORE.get_tenant(tenant["tenant_id"]), "key": key,
@@ -61,7 +61,7 @@ def kitchen(api, operator_factory, sensor_factory):
 
 @pytest.fixture()
 def fake(monkeypatch):
-    server = FakeAegizyn(KEY, _today_utc())
+    server = FakeOmniArmor(KEY, _today_utc())
     monkeypatch.setattr(omniarmor, "TRANSPORT", server)
     return server
 
@@ -113,9 +113,9 @@ def test_the_lists_and_limits_are_the_contracts():
 
 
 @pytest.mark.skipif(not OMNIARMOR_SOURCE.exists(),
-                    reason="Aegizyn's code is not checked out beside this repository")
+                    reason="OmniArmor's code is not checked out beside this repository")
 def test_the_ported_validation_is_still_omniarmors():
-    """Where Aegizyn's code is beside this one, read its lists and limits
+    """Where OmniArmor's code is beside this one, read its lists and limits
     and its validate() and hold the port to them."""
     tree = ast.parse(OMNIARMOR_SOURCE.read_text())
     values = {}
@@ -164,7 +164,7 @@ def test_a_clean_day_is_exactly_the_contracts_shape(kitchen, fake, mailbox):
     assert body["warmest_reading"] == 33.0 and body["unit_of_measure"] == "°F"
     assert body["log_url"].startswith("https://hub.example/console#inspector-log?")
     assert f"from={day.isoformat()}&to={day.isoformat()}" in body["log_url"]
-    validate(body, _today_utc())                   # Aegizyn's own check
+    validate(body, _today_utc())                   # OmniArmor's own check
     assert fake.accepted[0]["units_total"] == 2
     row = omniarmor.day_row(kitchen["tenant"].tenant_id, day)
     assert row["state"] == "sent" and row["answer"]["ticked"] == 1
@@ -173,7 +173,7 @@ def test_a_clean_day_is_exactly_the_contracts_shape(kitchen, fake, mailbox):
 # ---- the signature (KITCHEN_BUNDLE_SECRET) ---------------------------------
 #
 # X-Kryozyn-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret,
-# f"{t}." + raw body bytes)>. Aegizyn checks it the same way and waives
+# f"{t}." + raw body bytes)>. OmniArmor checks it the same way and waives
 # its Pro fee for a workspace whose reports arrive signed. Verified here
 # with the algorithm written out again, not by calling sign().
 
@@ -217,7 +217,7 @@ def test_every_report_is_signed_over_the_exact_bytes_sent(kitchen, fake, mailbox
 
 def test_a_retry_is_signed_again(kitchen, monkeypatch, mailbox):
     monkeypatch.setattr(omniarmor, "KITCHEN_BUNDLE_SECRET", SECRET)
-    server = FakeAegizyn(KEY, _today_utc(), script=[(503, {})])
+    server = FakeOmniArmor(KEY, _today_utc(), script=[(503, {})])
     monkeypatch.setattr(omniarmor, "TRANSPORT", server)
     day = _today_utc() - timedelta(days=1)
     _clean_day(day)
@@ -283,7 +283,7 @@ def test_the_real_sender_puts_the_header_on_the_request(monkeypatch):
     omniarmor._post(ADDRESS + omniarmor.PATH, KEY, body, omniarmor.signature_headers(body))
     assert seen["body"] == body
     assert _verify(seen["headers"]["x-kryozyn-signature"], body)[1]
-    # And under the name Aegizyn read before the rename, the same value.
+    # And under the name OmniArmor read before the rename, the same value.
     assert seen["headers"]["x-cyberlogix-signature"] == seen["headers"]["x-kryozyn-signature"]
     assert seen["headers"]["authorization"] == f"Bearer {KEY}"
 
@@ -291,7 +291,7 @@ def test_the_real_sender_puts_the_header_on_the_request(monkeypatch):
 def test_the_secret_is_a_documented_secret_setting():
     env = (ROOT / ".env.example").read_text()
     blueprint = (ROOT / "render.yaml").read_text()
-    docs = (ROOT / "docs" / "AEGIZYN-CONNECTION.md").read_text()
+    docs = (ROOT / "docs" / "OMNIARMOR-CONNECTION.md").read_text()
     assert "\nKITCHEN_BUNDLE_SECRET=\n" in env
     assert re.search(r"- key: KITCHEN_BUNDLE_SECRET\n\s+sync: false", blueprint)
     assert "KITCHEN_BUNDLE_SECRET" in docs and "X-Kryozyn-Signature" in docs
@@ -323,7 +323,7 @@ def test_a_breach_day_carries_the_breach_mapped_to_the_lists(kitchen, fake, mail
 def test_celsius_and_the_sites_own_clock(api, kitchen, fake, mailbox):
     api.post("/api/licenses/me/temperature-unit", headers=kitchen["owner"],
              json={"temperature_unit": "C"})
-    api.put("/api/connections/aegizyn", headers=kitchen["owner"],
+    api.put("/api/connections/omniarmor", headers=kitchen["owner"],
             json={"address": ADDRESS, "timezone": "America/New_York"})
     day = _today_utc() - timedelta(days=2)
     # 02:10 in New York is 07:10 UTC in November.
@@ -449,7 +449,7 @@ def test_no_persons_name_email_or_phone_leaves(api, kitchen, fake, mailbox):
     walkin = STORE.get_sensor("HG-WALKIN")
     walkin.location_name = "Ash's freezer"
     STORE._db.put("sensor", walkin.sensor_id, walkin.to_row())
-    api.put("/api/connections/aegizyn", headers=kitchen["owner"],
+    api.put("/api/connections/omniarmor", headers=kitchen["owner"],
             json={"address": ADDRESS, "site_label": "Call 555 010 0142"})
     day = _today_utc() - timedelta(days=1)
     _clean_day(day)
@@ -506,7 +506,7 @@ def test_a_retry_after_given_as_a_date_is_understood():
 
 
 def test_a_network_failure_is_retried(kitchen, monkeypatch, mailbox):
-    server = FakeAegizyn(KEY, _today_utc())
+    server = FakeOmniArmor(KEY, _today_utc())
     calls = []
 
     def flaky(url, key, body, headers=None):
@@ -535,16 +535,16 @@ def test_giving_up_records_the_failure_per_day(kitchen, fake, mailbox):
 
 
 def test_401_stops_sending_until_a_new_key(api, kitchen, fake, mailbox):
-    fake.key = "clx_" + "Z" * 43                     # Aegizyn regenerated its key
+    fake.key = "clx_" + "Z" * 43                     # OmniArmor regenerated its key
     day = _today_utc() - timedelta(days=1)
     _clean_day(day)
     omniarmor.run_daily(now=_now_after(day), sleep=lambda s: None)
     assert len(fake.calls) == 1                      # no retry on 401
-    seen = api.get("/api/connections/aegizyn", headers=kitchen["owner"]).json()
+    seen = api.get("/api/connections/omniarmor", headers=kitchen["owner"]).json()
     assert seen["key_rejected"] and "paste a new one" in seen["status"]
     omniarmor.run_daily(now=_now_after(day, 3), sleep=lambda s: None)
     assert len(fake.calls) == 1                      # stopped
-    api.put("/api/connections/aegizyn", headers=kitchen["owner"],
+    api.put("/api/connections/omniarmor", headers=kitchen["owner"],
             json={"address": ADDRESS, "key": fake.key})
     omniarmor.run_daily(now=_now_after(day, 4), sleep=lambda s: None)
     assert fake.accepted
@@ -592,7 +592,7 @@ def test_a_day_another_pass_holds_is_left_alone(kitchen, fake, mailbox):
 
 
 def test_two_passes_at_once_send_once(kitchen, monkeypatch, mailbox):
-    server = FakeAegizyn(KEY, _today_utc())
+    server = FakeOmniArmor(KEY, _today_utc())
 
     def slow(url, key, body, headers=None):
         time.sleep(0.2)
@@ -679,13 +679,13 @@ def test_two_days_of_failure_email_the_owners_once(kitchen, monkeypatch, mailbox
     first = _today_utc() - timedelta(days=2)
     _clean_day(first)
     omniarmor.run_daily(now=_now_after(first), sleep=lambda s: None)
-    assert not [m for m in mailbox if "Aegizyn" in m["Subject"]]
+    assert not [m for m in mailbox if "OmniArmor" in m["Subject"]]
 
     second = first + timedelta(days=1)
     _clean_day(second)
     omniarmor.run_daily(now=_now_after(second), sleep=lambda s: None)
     omniarmor.run_daily(now=_now_after(second, 5), sleep=lambda s: None)
-    emails = [m for m in mailbox if "Aegizyn" in m["Subject"]]
+    emails = [m for m in mailbox if "OmniArmor" in m["Subject"]]
     assert len(emails) == 1
     assert emails[0]["To"] == kitchen["user"]["email"]
     body = emails[0].get_body(preferencelist=("plain",)).get_content()
@@ -710,7 +710,7 @@ def test_a_success_ends_the_run_and_a_new_run_emails_again(kitchen, monkeypatch,
         STORE._db.put(omniarmor.DAY_KIND, f"{tid}:{d}", {"tenant_id": tid, "date": d,
                       "state": "failed", "last_outcome": "failed", "sent_fingerprint": None})
     assert omniarmor.maybe_email_owners(tenant)
-    assert len([m for m in mailbox if "Aegizyn" in m["Subject"]]) == 2
+    assert len([m for m in mailbox if "OmniArmor" in m["Subject"]]) == 2
 
 
 # ---- the key is kept encrypted --------------------------------------------------------
@@ -726,7 +726,7 @@ def test_the_key_is_stored_sealed_and_never_shown(api, kitchen):
         omniarmor.unseal("TEN-OTHER", row["key_ciphertext"])
     for kind in STORE._db.kinds():
         assert KEY not in json.dumps(STORE._db.all(kind)), kind
-    seen = api.get("/api/connections/aegizyn", headers=kitchen["owner"]).json()
+    seen = api.get("/api/connections/omniarmor", headers=kitchen["owner"]).json()
     assert KEY not in json.dumps(seen) and seen["key_hint"] == KEY[-4:]
     exported = api.get("/api/accounts/business/export", headers=kitchen["owner"]).json()
     assert "key_ciphertext" not in json.dumps(exported)
@@ -734,7 +734,7 @@ def test_the_key_is_stored_sealed_and_never_shown(api, kitchen):
 
 def test_without_the_server_secret_nothing_is_connected(api, kitchen, monkeypatch):
     monkeypatch.setattr(omniarmor, "CREDENTIAL_KEY", "")
-    refused = api.put("/api/connections/aegizyn", headers=kitchen["owner"],
+    refused = api.put("/api/connections/omniarmor", headers=kitchen["owner"],
                       json={"address": ADDRESS, "key": KEY})
     assert refused.status_code == 503
     # 3.26.0: said to the owner, so no server setting's name in it.
@@ -751,17 +751,17 @@ def test_a_changed_server_secret_cannot_open_an_old_key(kitchen, monkeypatch):
 
 def test_the_key_and_address_are_checked(api, kitchen):
     owner = kitchen["owner"]
-    assert api.put("/api/connections/aegizyn", headers=owner,
+    assert api.put("/api/connections/omniarmor", headers=owner,
                    json={"address": ADDRESS, "key": "clx_short"}).status_code == 422
-    assert api.put("/api/connections/aegizyn", headers=owner,
-                   json={"address": "http://aegizyn.example.com"}).status_code == 422
-    assert api.put("/api/connections/aegizyn", headers=owner,
+    assert api.put("/api/connections/omniarmor", headers=owner,
+                   json={"address": "http://omniarmor.example.com"}).status_code == 422
+    assert api.put("/api/connections/omniarmor", headers=owner,
                    json={"address": "https://127.0.0.1"}).status_code == 422
-    assert api.put("/api/connections/aegizyn", headers=owner,
-                   json={"address": "https://user:pw@aegizyn.example.com"}).status_code == 422
-    assert api.put("/api/connections/aegizyn", headers=owner,
+    assert api.put("/api/connections/omniarmor", headers=owner,
+                   json={"address": "https://user:pw@omniarmor.example.com"}).status_code == 422
+    assert api.put("/api/connections/omniarmor", headers=owner,
                    json={"address": ADDRESS, "timezone": "Mars/Base"}).status_code == 422
-    assert api.put("/api/connections/aegizyn", headers=owner,
+    assert api.put("/api/connections/omniarmor", headers=owner,
                    json={"address": ADDRESS, "site_ids": ["SITE-NOPE"]}).status_code == 404
 
 
@@ -778,12 +778,12 @@ def test_only_an_owner_can_see_or_change_the_connection(api, kitchen):
         token = api.post("/api/accounts/login", json={
             "email": email, "password": "correct-horse-battery"}).json()["token"]
         them = {"Authorization": f"Bearer {token}"}
-        assert api.get("/api/connections/aegizyn", headers=them).status_code == 403
-        assert api.put("/api/connections/aegizyn", headers=them,
+        assert api.get("/api/connections/omniarmor", headers=them).status_code == 403
+        assert api.put("/api/connections/omniarmor", headers=them,
                        json={"address": ADDRESS, "key": KEY}).status_code == 403
-        assert api.post("/api/connections/aegizyn/test", headers=them).status_code == 403
-        assert api.delete("/api/connections/aegizyn", headers=them).status_code == 403
-    assert api.get("/api/connections/aegizyn", headers=kitchen["key"]).status_code == 401
+        assert api.post("/api/connections/omniarmor/test", headers=them).status_code == 403
+        assert api.delete("/api/connections/omniarmor", headers=them).status_code == 403
+    assert api.get("/api/connections/omniarmor", headers=kitchen["key"]).status_code == 401
 
 
 # ---- the console, the test button and the status line -------------------------------
@@ -792,10 +792,10 @@ def test_only_an_owner_can_see_or_change_the_connection(api, kitchen):
 def test_the_test_button_sends_yesterday_and_says_so(api, kitchen, fake, mailbox):
     tz_day = _today_utc() - timedelta(days=1)
     _clean_day(tz_day)
-    out = api.post("/api/connections/aegizyn/test", headers=kitchen["owner"]).json()
-    assert out["status"] == "ok" and "Aegizyn took it" in out["message"]
+    out = api.post("/api/connections/omniarmor/test", headers=kitchen["owner"]).json()
+    assert out["status"] == "ok" and "OmniArmor took it" in out["message"]
     assert out["connection"]["status"] == f"Last sent {tz_day.isoformat()} · OK"
-    again = api.post("/api/connections/aegizyn/test", headers=kitchen["owner"]).json()
+    again = api.post("/api/connections/omniarmor/test", headers=kitchen["owner"]).json()
     assert again["status"] == "already_sent"
     assert len(fake.calls) == 1
     # The daily job does not send it a second time either.
@@ -807,19 +807,19 @@ def test_the_console_card_is_owner_only_and_never_holds_the_key():
     page = (ROOT / "static" / "console.html").read_text()
     script = (ROOT / "static" / "console.js").read_text()
     assert 'id="find-omniarmor"' in page and "Send a test report" in page
-    assert "/api/connections/aegizyn/test" in script
+    assert "/api/connections/omniarmor/test" in script
     assert 'id="find-referrals"' in page and "/api/referrals/me" in script
     assert "notOwner" in script and "omni-not-owner" in page
     assert not re.search(r"style=", page)
 
 
 def test_disconnecting_deletes_the_key_and_stops_the_bundle(api, kitchen, fake):
-    resp = api.delete("/api/connections/aegizyn", headers=kitchen["owner"])
+    resp = api.delete("/api/connections/omniarmor", headers=kitchen["owner"])
     assert resp.status_code == 200
     assert omniarmor.connection(kitchen["tenant"].tenant_id) is None
     assert not omniarmor.bundle_active(kitchen["tenant"].tenant_id)
-    assert api.delete("/api/connections/aegizyn", headers=kitchen["owner"]).status_code == 404
-    assert api.post("/api/connections/aegizyn/test",
+    assert api.delete("/api/connections/omniarmor", headers=kitchen["owner"]).status_code == 404
+    assert api.post("/api/connections/omniarmor/test",
                     headers=kitchen["owner"]).status_code == 404
 
 
@@ -847,10 +847,10 @@ def test_connected_is_billed_per_location_and_the_trial_is_not(
     headers, trial = tenant_factory(plan="trial", company_name="Trial Cafe")
     both = {**headers, **owner_headers(headers, email="t@trialcafe.example")}
     sensor_factory(headers, sensor_id="TC-1", vertical="restaurant", location="Fridge", above=32.0)
-    assert api.put("/api/connections/aegizyn", headers=both,
+    assert api.put("/api/connections/omniarmor", headers=both,
                    json={"address": ADDRESS, "key": KEY}).status_code == 200
     assert pricing.auto_add_ons(STORE.get_tenant(trial["tenant_id"])) == []
-    seen = api.get("/api/connections/aegizyn", headers=both).json()
+    seen = api.get("/api/connections/omniarmor", headers=both).json()
     assert seen["price"]["free_now"] is True
 
 

@@ -593,13 +593,13 @@ ADD_ONS: Dict[str, Dict[str, Any]] = {
             "whole fleet, for anyone specifying what to buy next."
         ),
     },
-    # The Kryozyn half of the Kitchen Safety Bundle with Aegizyn
+    # The Kryozyn half of the Kitchen Safety Bundle with OmniArmor
     # (omniarmor.py). Billed while the connection is switched on rather
     # than chosen from a list, so nobody pays for a connection they took
     # off and nobody runs one that is not on the bill. Free on a trial,
     # like everything else, so it can be tried before it is bought.
     #
-    # It includes Aegizyn Pro for each location: Aegizyn waives its own
+    # It includes OmniArmor Pro for each location: OmniArmor waives its own
     # Pro fee for a workspace whose daily reports arrive signed by a
     # Kryozyn server (KITCHEN_BUNDLE_SECRET, omniarmor.py), which is
     # how only a connection on this bill unlocks it.
@@ -664,7 +664,7 @@ def locations_billed(tenant: Tenant) -> int:
 
 def auto_add_ons(tenant: Tenant) -> List[str]:
     """Add-ons billed because something is switched on, not because they
-    were picked: today, the Kitchen Safety Bundle while Aegizyn is
+    were picked: today, the Kitchen Safety Bundle while OmniArmor is
     connected. Imported late: omniarmor imports this module."""
     if tenant.plan == "trial":
         return []  # included in the trial, so it can be tried first

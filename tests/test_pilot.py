@@ -481,7 +481,7 @@ def test_cyberlogixs_own_welcome():
         # Each that needs no key carries its own words for a typed question.
         assert all(has == (kind != "settings") for _i, _l, kind, has in labels)
     assert 'answerMore: "Want more? Add your AI key to ask anything.",' in config
-    assert "welcomePills: ownPage ? OWN_PILLS : VISITOR_PILLS," in config
+    assert "get welcomePills() { return ownPage ? OWN_PILLS() : VISITOR_PILLS(); }," in config
     assert 'hideKeySections: ["image", "video"],' in config
     assert 'modals: [".menu[open] > nav"],' in config
     # 3.33.0: two lists, one while an alert is open and one when none is.
