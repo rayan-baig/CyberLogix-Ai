@@ -26,6 +26,9 @@ const state = {
   // Sensor keys shown since this page loaded, by unit: in memory only,
   // for the connect wizard to fill in. Never stored, never sent anywhere.
   issuedKeys: {},
+  // The notices line opened with Details, and Getting started opened
+  // again once it is one line (3.37.0): for this page's life only.
+  noticesOpen: false, firstDayOpen: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -144,7 +147,7 @@ function toast(message, kind = "") {
 async function checkTerms() {
   const banner = $("terms-banner");
   const status = await api("/api/legal/acceptance/status");
-  if (status.all_current) { banner.hidden = true; return; }
+  if (status.all_current) { banner.hidden = true; mergeNotices(); return; }
 
   const never = status.documents.filter((d) => !d.accepted);
   const stale = status.documents.filter((d) => d.accepted && !d.current);
@@ -160,6 +163,7 @@ async function checkTerms() {
        + ". You are still on the version you accepted."
        + (owner ? "" : " An owner needs to accept the new one."));
   $("terms-accept").hidden = !owner;
+  banner.dataset.short = never.length ? "Agreements to accept" : "An agreement changed";
   banner.hidden = false;
 }
 
@@ -1070,12 +1074,14 @@ function render(d, health) {
       "Signed in as a viewer. You can see everything here and change " +
       "nothing — registering sensors, changing alarm limits and the " +
       "licence all need an operator or owner.";
+    roleBanner.dataset.short = "Signed in as a viewer";
     roleBanner.hidden = false;
   } else if (state.user && state.user.must_change_password) {
     // Whoever invited them chose this password, so they know it.
     roleBanner.textContent =
       "Your password was set by whoever added you. Change it under Team " +
       "below so only you know it.";
+    roleBanner.dataset.short = "Change the password you were given";
     roleBanner.hidden = false;
   } else {
     roleBanner.hidden = true;
@@ -1083,9 +1089,9 @@ function render(d, health) {
   // Whether this account is on the text that is live today. Loaded on
   // its own and allowed to fail: the console is how somebody watches a
   // freezer, and a legal check that 500s must not take that away.
-  checkTerms().catch(() => { /* the estate is the page */ });
+  checkTerms().catch(() => { /* the estate is the page */ }).finally(mergeNotices);
 
-  $("chip-company").textContent = `${t.company_name} ▾`;
+  companyChip(t.company_name);
   // A small account's bar: the business (its menu holds the plan, the
   // activity log and the TV screen), °F, Simple view, Help, Sign out.
   document.body.classList.toggle("acct-small", smallAccount(d));
@@ -1143,9 +1149,11 @@ function render(d, health) {
       + "show here but nobody is texted.";
     banner.title = "For whoever runs it: set TWILIO_ACCOUNT_SID, "
       + "TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER.";
+    banner.dataset.short = "Texts are off";
   } else {
     banner.hidden = true;
   }
+  mergeNotices();
 
   // A small account on a phone (3.28.0): the three tiles that answer "is
   // my food OK", not six. "Readings in range: shown after 24 hours", "Flat
@@ -1172,7 +1180,7 @@ function render(d, health) {
     calm && !(s.compliance_ready && s.compliance_percent !== null) ? "" :
     tile("Readings in range",
          s.compliance_ready && s.compliance_percent !== null ? `${s.compliance_percent}%` : "—",
-         s.compliance_ready ? `last ${s.compliance_days} days`
+         s.compliance_ready ? inRangeNote(s)
            : `shown after ${s.compliance_after_hours || 24} hours of readings`),
     calm && !s.low_battery ? "" :
     tile("Flat batteries", `${s.low_battery ?? 0}`,
@@ -1372,6 +1380,63 @@ function noun(count) {
 function Noun(count) {
   const word = noun(count);
   return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/* Under "Readings in range" (3.37.0): the days it covers, and whatever
+   is out of range now, so "100%" never sits beside an open alert. The
+   figure itself never rounds up to 100% while any reading was out
+   (console_api.in_range_percent). */
+function inRangeNote(s) {
+  const days = `last ${s.compliance_days} days`;
+  const live = s.open_incidents || 0;
+  if (live) return `${days} · ${CLXWords.count(live, "alert")} open now`;
+  if (s.sensors_breaching) return `${days} · ${s.sensors_breaching} out of range now`;
+  if (s.readings_breached) return `${days} · ${CLXWords.count(s.readings_breached, "reading")} out`;
+  return days;
+}
+
+/* The business's name in the bar, cut with "…" when it is long (3.37.0):
+   "Juniper & Vine Kitc" was cut mid-word with nothing to say so. The
+   whole name is the button's title and its accessible name. */
+function companyChip(name) {
+  const chip = $("chip-company");
+  const words = document.createElement("span");
+  words.className = "chip-name";
+  words.textContent = name || "";
+  const caret = document.createElement("span");
+  caret.className = "chip-caret";
+  caret.setAttribute("aria-hidden", "true");
+  caret.textContent = "▾";
+  chip.replaceChildren(words, caret);
+  chip.title = `${name || ""}: your businesses`;
+}
+
+/* The notices that are not emergencies, said in one line (3.37.0): who
+   you are signed in as, texts switched off, agreements to accept. Details
+   opens the boxes themselves (with Read and accept); the cross puts the
+   line away until what it says changes. Called whenever one of them is
+   shown or hidden. */
+const NOTICE_BANNERS = ["role-banner", "delivery-banner", "terms-banner"];
+const NOTICE_GONE = "cyberlogix.notices.dismissed";
+function mergeNotices() {
+  const line = $("notice-line");
+  const box = $("notices");
+  if (!line || !box) return;
+  const shown = NOTICE_BANNERS.map((id) => $(id)).filter((b) => b && !b.hidden);
+  const words = shown.map((b) => b.dataset.short || b.textContent.trim().split(/[.:]/)[0]);
+  const key = words.join(" · ");
+  let gone = "";
+  try { gone = localStorage.getItem(NOTICE_GONE) || ""; } catch (_) { gone = ""; }
+  gone = gone || state.noticesGone || "";
+  const away = !shown.length || (key === gone && !state.noticesOpen);
+  line.hidden = away;
+  box.hidden = away;
+  if (away) return;
+  $("notice-words").textContent = key;
+  box.classList.toggle("folded", !state.noticesOpen);
+  const more = $("notice-more");
+  more.textContent = state.noticesOpen ? "Hide" : "Details";
+  more.setAttribute("aria-expanded", String(state.noticesOpen));
 }
 
 /* Under the "Open alerts" figure: who has the ones somebody is handling,
@@ -4801,12 +4866,18 @@ async function openPacket(incidentId) {
       <b>${esc(row.changed ? `Changed to ${row.words}` : row.words)}</b>${row.by ? " — " + esc(row.by) : ""}
       <span class="when">${esc(stamp(row.at))}</span>
     </li>`).join("");
+  // A note that starts with its own answer ("Thrown away from the
+  // walk-in: ...") is the answer, said once (3.37.0), not "Thrown away"
+  // above "Thrown away from ...".
+  const flat = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const repeats = Boolean(food.note && flat(food.answer)
+    && (flat(food.note) === flat(food.answer) || flat(food.note).startsWith(`${flat(food.answer)} `)));
   const foodBlock = food.answer ? `
     <div class="readout">
-      <div><span class="k">Answer</span><span class="v">${esc(food.answer)}</span></div>
+      <div><span class="k">Answer</span><span class="v">${esc(repeats ? food.note : food.answer)}</span></div>
       <div><span class="k">Who</span><span class="v">${esc(food.by || "not recorded")}</span></div>
       <div><span class="k">When</span><span class="v">${esc(stamp(food.at))}</span></div>
-      ${food.note ? `<div><span class="k">What went</span><span class="v">${esc(food.note)}</span></div>` : ""}
+      ${food.note && !repeats ? `<div><span class="k">What went</span><span class="v">${esc(food.note)}</span></div>` : ""}
     </div>
     ${food.note ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet.${
       food.thrown ? " Add one from the alert: it makes this pack complete." : ""}</div>`}
@@ -4839,7 +4910,8 @@ async function openPacket(incidentId) {
 
     ${packet.cover_letter ? `<div class="doc-letter">
       <div class="quote-label">Summary</div>
-      ${esc(packet.cover_letter)}
+      ${String(packet.cover_letter).split(/\n\s*\n/).map((para) => para.trim()).filter(Boolean)
+        .map((para) => `<p>${esc(para)}</p>`).join("")}
     </div>` : ""}
 
     <div class="doc-section">What happened to the food</div>
@@ -4881,6 +4953,7 @@ async function openPacket(incidentId) {
 
     <div class="doc-section">Response</div>
     <ul class="timeline">${timeline}</ul>
+    <div class="doc-sub">Who was told</div>
     <table class="doc-channels">
       <thead><tr><th>Channel</th><th>Recipient</th><th>Number</th>
         <th>Outcome</th><th>Reference</th></tr></thead>
@@ -6168,7 +6241,18 @@ function renderFirstDay(fd) {
     return;
   }
   card.hidden = false;
-  $("first-day-note").textContent = `${fd.done} of ${fd.total} done`;
+  // Readings are arriving (3.37.0): the rest can wait, so the card is one
+  // line, "3 of 4 done · next: Send a test alert", with "Show the steps".
+  const arriving = fd.steps.some((step) => step.key === "reading" && step.done);
+  const next = fd.steps.find((step) => !step.done);
+  const line = arriving && !state.firstDayOpen;
+  card.classList.toggle("first-day-line", line);
+  $("first-day-note").textContent = line && next
+    ? `${fd.done} of ${fd.total} · next: ${next.label}` : `${fd.done} of ${fd.total} done`;
+  const more = $("first-day-more");
+  more.hidden = !arriving;
+  more.textContent = state.firstDayOpen ? "Hide" : "Show";
+  more.setAttribute("aria-expanded", String(!line));
   const t = (state.data && state.data.tenant) || {};
   const actions = (step) => {
     if (step.done) return `<span class="sr">done</span>`;
@@ -7325,6 +7409,21 @@ $("shape-form").addEventListener("submit", async (event) => {
 $("terms-accept").addEventListener("click", () => {
   acceptTerms().catch((err) => toast(err.message || "That did not work."));
 });
+$("notice-more").addEventListener("click", () => {
+  state.noticesOpen = !state.noticesOpen;
+  mergeNotices();
+});
+$("notice-close").addEventListener("click", () => {
+  state.noticesOpen = false;
+  state.noticesGone = $("notice-words").textContent;
+  try { localStorage.setItem(NOTICE_GONE, $("notice-words").textContent); } catch (_) { /* private mode: gone for now */ }
+  $("notice-line").hidden = true;
+  $("notices").hidden = true;
+});
+$("first-day-more").addEventListener("click", () => {
+  state.firstDayOpen = !state.firstDayOpen;
+  renderFirstDay(state.data && state.data.first_day);
+});
 $("run-sweep").addEventListener("click", () => {
   act(async () => {
     const out = await api("/api/autopilot/sweep", { method: "POST" });
@@ -7862,15 +7961,17 @@ CLXAnswer.setup({
   packet: (id) => openPacket(id),
 });
 
-/* "Thrown away from Walk-in fridge after 2 hours out (worst 52°F): ",
+/* "From the Walk-in fridge after 2 hours out (worst 52°F): ",
    for the person to finish with what went in the bin (3.32.0). */
 function discardNote(id) {
   const i = ((state.data && state.data.incidents) || []).find((x) => x.incident_id === id);
-  if (!i) return "Thrown away: ";
+  if (!i) return "";
   const long = CLXWords.outFor(i.out_since || i.opened_at, i.out_until || i.resolved_at);
   const worst = i.peak_display != null ? ` (worst ${i.peak_display}°${i.temperature_unit || state.unit})` : "";
   // A plain string for a text box, never markup.
-  return "Thrown away from " + unitNameFor(i.sensor_id) + (long ? " after " + long + " out" : "") + worst + ": ";
+  // Not "Thrown away from ..." (3.37.0): the pack shows the answer beside
+  // the note, and a note starting with it said "Thrown away" twice.
+  return "From the " + unitNameFor(i.sensor_id) + (long ? " after " + long + " out" : "") + worst + ": ";
 }
 
 /* ---------------- Pilot ----------------

@@ -82,7 +82,11 @@ UNITS = [
 # Limits in Fahrenheit (None leaves the restaurant default, 32F above, for
 # a freezer), and the temperature a healthy unit sits at.
 KINDS = {
-    "freezer": {"above": None, "below": None, "normal": -1.0, "spread": 1.6},
+    # A freezer alarms over 10°F, as the product sets one (3.37.0): with no
+    # limit of its own the demo's walk-in freezer took the sector's 41°F,
+    # so its "door left open" alert had no reading out of range in its
+    # own insurance pack.
+    "freezer": {"above": 10.0, "below": None, "normal": -1.0, "spread": 1.6},
     "ice_cream": {"above": 10.0, "below": None, "normal": 2.0, "spread": 1.4},
     "cooler": {"above": 41.0, "below": 32.0, "normal": 36.5, "spread": 1.0},
     "fridge": {"above": 41.0, "below": 32.0, "normal": 37.5, "spread": 1.2},
@@ -194,8 +198,9 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         for step in range(steps):
             temp = _temperature(rng, kind, step)
             if sensor_id == HANDLED and handled_at <= step < handled_at + 3:
-                # Door left open after a delivery: three readings warm.
-                temp = (36.5, 41.0, 37.0)[step - handled_at]
+                # Door left open after a delivery: three readings warm,
+                # the stock still frozen solid.
+                temp = (12.5, 21.0, 11.5)[step - handled_at]
             if sensor_id == STILL_OPEN and step >= steps - 4:
                 # Warming now, and still warm at the last reading.
                 temp = (40.0, 43.5, 45.0, 46.5)[step - (steps - 4)]
@@ -209,19 +214,35 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     sensor = sensors[HANDLED]
     opened = first + timedelta(minutes=EVERY_MINUTES * (handled_at + 1))
     incident = STORE.open_incident(
-        tenant_id=tid, sensor=sensor, temperature_fahrenheit=41.0,
-        breach_details="Too warm: 41°F (limit 32°F).",
-        sms_text=f"{sensor.location_name} at {COMPANY} is 41°F, 9°F above the limit.",
+        tenant_id=tid, sensor=sensor, temperature_fahrenheit=21.0,
+        breach_details="Too warm: 21°F (limit 10°F).",
+        sms_text=f"{sensor.location_name} at {COMPANY} is 21°F, 11°F above the limit.",
         sms_dispatch_source="fallback_template", opened_at=opened)
+    # Texted to the people on call, as a real alert is (3.37.0): the pack
+    # said "nobody was on the list to text" beside an alert answered in 7
+    # minutes. Made-up receipts for the made-up numbers below.
+    incident.sms_fanout = [
+        {"channel": "sms", "contact_name": name, "to": phone, "delivered": True,
+         "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}"}
+        for n, (name, phone) in enumerate(CONTACTS, 1)]
     who = f"{OPERATOR[0]} <{OPERATOR[1]}>"
     incident, _ = STORE.acknowledge_incident(incident, who)
     incident.acknowledged_at = opened + timedelta(minutes=7)
+    # The note says the stock was kept, so the answer is recorded as kept
+    # with it (3.37.0): the demo's /today asked "Food kept or Thrown
+    # away?" about a freezer whose own note already said "Kept."
     STORE.record_corrective_action(
         incident, who,
         "Door left ajar after the morning delivery. Closed it, checked the "
-        "gasket, probed the stock: everything still frozen solid. Kept.")
+        "gasket, probed the stock: everything still frozen solid. Kept.",
+        disposition="unaffected")
     incident = STORE.resolve_incident(incident, who)
     incident.resolved_at = opened + timedelta(minutes=52)
+    # Written the moment it closed, not the moment the demo was seeded.
+    answered = opened + timedelta(minutes=50)
+    incident.corrective_action_at = answered
+    incident.food_answered_at = answered
+    incident.food_history = [dict(row, at=iso(answered)) for row in incident.food_history]
     STORE._db.put("incident", incident.incident_id, incident.to_row())
 
     # The problem still open: warm for the last hour and a half, and

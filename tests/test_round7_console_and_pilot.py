@@ -132,7 +132,8 @@ def test_on_a_phone_the_account_bar_is_two_rows():
     narrow = THEME[THEME.index("The account bar in two rows, not three"):]
     narrow = narrow[:narrow.index("}\n\n") if "}\n\n" in narrow[:2000] else 2000]
     assert "#wall-mode { display: none; }" in narrow
-    assert "#chip-company { max-width: 9.5em;" in narrow
+    # 3.37.0: the name itself is cut with "…" (#chip-company .chip-name).
+    assert "#chip-company { max-width: 10.5em;" in narrow
 
 
 # --- 3. out of the customer console ---------------------------------------------

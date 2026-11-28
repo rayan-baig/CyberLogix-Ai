@@ -45,7 +45,11 @@ function nameOf(unit) {
 function whichOne(unit, all) {
   const name = nameOf(unit);
   const shared = all.filter((other) => nameOf(other) === name).length > 1;
-  return shared && unit.site_name ? `${name} at ${unit.site_name}` : name;
+  // On an account with more than one site, always (3.37.0): "Prep fridge,
+  // bakery is 46.5°" at the top of the page did not say which kitchen to
+  // run to.
+  const sites = new Set(all.map((other) => other.site_name).filter(Boolean)).size;
+  return (shared || sites > 1) && unit.site_name ? `${name} at ${unit.site_name}` : name;
 }
 
 /* How long until it is a problem, in units a person uses. Rounding
@@ -172,17 +176,19 @@ CLXAnswer.setup({
   discardNote: (id) => discardNote(id),
 });
 
-/* "Thrown away from Walk-in fridge after 2 hours out (worst 52°F): ",
+/* "From the Walk-in fridge after 2 hours out (worst 52°F): ",
    for the person to finish with what went in the bin (3.32.0). */
 function discardNote(id) {
   const data = lastData || {};
   const i = (data.incidents || []).find((x) => x.incident_id === id);
-  if (!i) return "Thrown away: ";
+  if (!i) return "";
   const unit = (data.sensors || []).find((u) => u.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
   const long = CLXWords.outFor(i.out_since || i.opened_at, i.out_until || i.resolved_at);
   const worst = i.peak_display != null ? ` (worst ${i.peak_display}°${i.temperature_unit || ""})` : "";
   // A plain string for a text box, never markup.
-  return "Thrown away from " + nameOf(unit) + (long ? " after " + long + " out" : "") + worst + ": ";
+  // "From the ...", never "Thrown away from ..." (3.37.0): the pack shows
+  // the answer beside the note, and said "Thrown away" twice.
+  return "From the " + nameOf(unit) + (long ? " after " + long + " out" : "") + worst + ": ";
 }
 
 function onAnswerClick(event) {

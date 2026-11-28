@@ -111,8 +111,9 @@ def test_the_pack_says_what_happened_to_the_food(api, break_gemini):
     assert food["note_by"] == "Maya Okafor" and food["note_at"]
     assert [(h["words"], h["changed"]) for h in food["history"]] == [("Thrown away", False)]
     letter = pack["cover_letter"]
-    assert "The food was recorded as \u201cThrown away\u201d by Maya Okafor at " in letter
-    assert "The note of what went: \u201cThrown away from Walk-in fridge: two trays of chicken\u201d." in letter
+    # 3.37.0: a note that starts with its answer says it once, in its own words.
+    assert re.search(r"Maya Okafor recorded at (?:\w{3} \d{1,2}, )?\d{1,2}:\d\d [AP]M: \u201cThrown away from Walk-in fridge: two trays of chicken\.\u201d", letter), letter
+    assert "recorded as \u201cThrown away\u201d" not in letter
     # Nothing answered yet: said so, in the letter and the section.
     other = _blip(api, key, warm=62.5, minutes=40)
     bare = api.post(f"/api/claims/{other}/packet", headers=owner).json()
@@ -142,7 +143,8 @@ def test_a_closed_alert_says_closed_at_never_remains_open(api, break_gemini):
     live = _pulse(api, key, 50.0)["incident_id"]
     open_pack = api.post(f"/api/claims/{live}/packet", headers=owner).json()
     assert "The alert was still open when this pack was issued." in open_pack["cover_letter"]
-    assert "Closed" in [e["event"] for e in pack["response"]["timeline"]]
+    # 3.37.0: closed by the reading, said so.
+    assert "Closed by itself" in [e["event"] for e in pack["response"]["timeline"]]
     # 3.36.0: "Closed at 4:41 AM", the key saying it once.
     assert 'const closedKey = ev.resolved_at ? "Closed at" : "Closed";' in _function(CONSOLE_JS, "openPacket")
 

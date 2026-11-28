@@ -394,9 +394,8 @@ def console_overview(
             "at_risk": at_risk,
             "readings_logged": logged,
             "readings_breached": breached,
-            "compliance_percent": (
-                round((logged - breached) / logged * 100, 1) if logged else None
-            ),
+            "compliance_percent": in_range_percent(
+                logged, breached, live=bool(live_alerts) or any(s["breaching"] for s in sensors)),
             "compliance_days": compliance_days,
             "compliance_ready": compliance_ready,
             "compliance_after_hours": COMPLIANCE_AFTER_HOURS,
@@ -565,6 +564,20 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
         "food_answers": answers,
         "words": words,
     }
+
+
+def in_range_percent(logged: int, breached: int, live: bool = False) -> Optional[float]:
+    """The share of readings in range, to one decimal, that never rounds up
+    to 100% while any reading was out of range or anything is out of range
+    or alerting now (3.37.0): 1 warm reading in 2,000 is 99.95%, which
+    rounded to "100%" beside an open alert. 99.9% is the most it says
+    then."""
+    if not logged:
+        return None
+    share = round((logged - breached) / logged * 100, 1)
+    if (breached or live) and share >= 100.0:
+        return 99.9
+    return share
 
 
 # Hours of readings before the console shows a compliance percentage.

@@ -393,6 +393,27 @@ answer an alert; on a phone every page keeps its last lines clear of the robot w
 The suggestions on the welcome and above the conversation, and what a task fills in, are
 written for a café or small restaurant first.
 
+**3.37.0: what a typed question is after, and every miss answered (app config only, no core
+change).**
+
+- **Sure answers.** `pilot-kryozyn.js` listens (capture) for the chat box's own submit, and for
+  that one moment works out the answer the question is surely after: a phrase (`PHRASES`: a
+  price with a number of fridges or places, the Wi-Fi or power dropping or "No signal", a door
+  left open, the night / "3am" / "do you call", a metal walk-in or the signal), or two words one
+  answer has that are half of what was typed. The item that answers it carries the question's
+  own words for that question (`matching`), and no other item does, so the core's `matchTyped`
+  takes it. A price for a number is worked out from the plan figures on the script tag (`QUOTE`,
+  with `data-chain-from` / `data-chain-percent` added to `main.pilot_facts`).
+- **Every miss.** `noKeyReply` is a getter (`missNote`): the note names the question, says the
+  two closest answers are first below, and a second miss says so in other words. Until anything
+  is answered the page's suggestions are the two closest answers (`closest`), so they lead the
+  row under the note.
+- **Why a second miss showed nothing (a core matter, worked around here).** Core 1.4.3's
+  `noKeyReply()` (pilot-panel.js) takes the last "nokey" note off and puts a new one on with the
+  same fixed words, and never adds the typed question to the chat (it waits in the box). So a
+  second miss left the chat exactly as it was. The app's words now differ per question; the core
+  could also show the typed question as the person's message on a miss.
+
 ## The files
 
 | File | What it is |

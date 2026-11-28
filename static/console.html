@@ -171,6 +171,17 @@
     <!-- First, because it is the only banner that can mean the estate is
          about to stop being watched. -->
     <div id="account-banner" class="banner warn" role="status" hidden></div>
+    <!-- The notices that are worth knowing but are not an emergency (who
+         you are signed in as, texts switched off, agreements to accept):
+         one line that says them all, with Details and a dismiss button
+         (3.37.0), instead of three boxes filling a phone's first screen
+         every visit. The line comes back once what it says changes. -->
+    <div id="notice-line" class="notice-line" role="status" hidden>
+      <span class="notice-words" id="notice-words"></span>
+      <button type="button" class="linkish notice-more" id="notice-more" aria-expanded="false" aria-controls="notices">Details</button>
+      <button type="button" class="notice-close" id="notice-close" aria-label="Dismiss these notices">&times;</button>
+    </div>
+    <div id="notices" class="notices folded">
     <div id="role-banner" class="banner warn" hidden></div>
     <div id="delivery-banner" class="banner warn" hidden></div>
     <!-- Sign-up records which exact text was agreed to, pinned by hash.
@@ -178,15 +189,16 @@
          nothing asked again: record_acceptance's own comment says "the
          acceptance can be taken again from the console", and until this
          banner there was no console that offered it. -->
+    <div id="terms-banner" class="banner warn" hidden>
+      <span id="terms-text"></span>
+      <button type="button" id="terms-accept">Read and accept</button>
+    </div>
+    </div>
     <!-- First of all the banners on purpose. Every figure below it is
          from the last successful load, and on a page about whether a
          freezer is cold, "this is not live" outranks everything else
          the page has to say. -->
     <div id="offline-banner" class="banner" role="status" hidden></div>
-    <div id="terms-banner" class="banner warn" hidden>
-      <span id="terms-text"></span>
-      <button type="button" id="terms-accept">Read and accept</button>
-    </div>
 
     <!-- Getting started: four things, and the first fridge is protected
          once a reading has actually arrived. The server ticks each one
@@ -195,6 +207,10 @@
       <div class="card-head">
         <span class="card-title">Getting started</span>
         <span class="card-note" id="first-day-note"></span>
+        <!-- Once readings arrive the card is one line (3.37.0): what is
+             left, and this to see the steps again. -->
+        <button type="button" class="linkish first-day-more" id="first-day-more"
+                aria-expanded="false" aria-controls="first-day-list" hidden>Show</button>
       </div>
       <p class="card-plain">Four steps. Your first fridge is protected once
          its sensor&rsquo;s readings are arriving. Each one ticks itself when

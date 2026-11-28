@@ -40,4 +40,6 @@
   /* The page's own space under the pack printed a blank last page (3.36.0). */
   .sample-page { padding-bottom: 0 !important; margin-bottom: 0 !important; min-height: 0 !important; }
   .sample-doc .readout div { break-inside: avoid; }
+  /* Each box whole on one page (3.37.0), as on a real pack. */
+  .sample-doc .readout, .sample-doc .doc-letter p, .sample-doc .timeline li { break-inside: avoid; }
 }
