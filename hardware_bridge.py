@@ -667,6 +667,31 @@ def _ingest_any(payload, k, authorization, x_kryozyn_key, x_signature):
             scoped, STORE.sensor_by_device(verdict["serial"] or "", tenant.tenant_id))
 
     unit = verdict["unit"]
+    known = STORE.sensor_by_device(verdict["serial"] or "", tenant.tenant_id) if unit is None else None
+    if unit is None and known is not None:
+        # A sensor already set up (3.44.0): never back under Devices
+        # knocking as "not set up yet". The reading is held all the same,
+        # and the unit's card says what to do: say the unit in the
+        # sensor's own settings.
+        byod.remember(tenant.tenant_id, payload, verdict, "unit_unknown")
+        byod.hold_for_unit(tenant.tenant_id, known.sensor_id, verdict["value"])
+        raise HTTPException(
+            status_code=status.HTTP_202_ACCEPTED,
+            detail={
+                "message": (
+                    "The reading was found but the payload does not say "
+                    "whether it is Celsius or Fahrenheit, so it is being "
+                    "held rather than watched."
+                ),
+                "reading": verdict["value"],
+                "sensor_id": known.sensor_id,
+                "next": (
+                    "Say the unit in your sensor's settings, so each reading "
+                    "it sends says C or F (for example \"unit\": \"F\"). The "
+                    "unit's card in the console says the same until it does."
+                ),
+            },
+        )
     if unit is None:
         byod.remember(tenant.tenant_id, payload, verdict, "unit_unknown")
         # Onto the doorstep, not into the bin. The unit is still not

@@ -222,6 +222,23 @@ def _breach_words(first_f: Optional[float], sensor, unit: str) -> Optional[str]:
     return None
 
 
+def close_reason(incident: Incident) -> Optional[str]:
+    """Why a person closed it ("Close anyway: Called for a repair"), or
+    None (3.43.0, food_record)."""
+    return ((incident.close_note or "").strip() or None) if incident.resolved_by else None
+
+
+def went_note(incident: Incident) -> Optional[str]:
+    """The note of what was thrown away, or None (3.44.0). "Close anyway"
+    copies its reason into the corrective action, so the corrective action
+    is the note of what went only where it differs from the close reason:
+    the console's alert card and /today quoted "Called for a repair" as
+    what went, and hid "Add what was thrown away"."""
+    note = (incident.corrective_action or "").strip() or None
+    reason = close_reason(incident)
+    return None if note and reason and note == reason else note
+
+
 def food_record(incident: Incident) -> Dict[str, Any]:
     """What happened to the food, for the pack (3.33.0): the answer, who
     gave it and when, the note of what went, and every change, oldest
@@ -244,10 +261,8 @@ def food_record(incident: Incident) -> Dict[str, Any]:
     # corrective action, and the pack showed it as "What went" beside
     # "Thrown away". "What went" is only the note added with "Add what was
     # thrown away"; the close reason is "Why it was closed".
-    reason = ((incident.close_note or "").strip() or None) if incident.resolved_by else None
-    note = (incident.corrective_action or "").strip() or None
-    if note and reason and note == reason:
-        note = None
+    reason = close_reason(incident)
+    note = went_note(incident)
     return {
         "answer": incident.food_words(),
         "disposition": incident.product_disposition,

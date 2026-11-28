@@ -366,7 +366,8 @@ def test_a_small_accounts_header_extras_are_in_the_business_menu():
     assert 'document.body.classList.toggle("acct-small", smallAccount(d));' in CONSOLE_JS
     assert "body.acct-small #term-toggle, body.acct-small #wall-mode" in THEME
     box = _function(CONSOLE_JS, "thisAccountBox")
-    assert 'id="biz-log">Activity log' in box and 'id="biz-tv">TV screen' in box
+    # "Recent activity" since 3.44.0, the name the panel itself has.
+    assert 'id="biz-log">Recent activity' in box and 'id="biz-tv">TV screen' in box
     assert '"biz-log": "term-toggle", "biz-tv": "wall-mode"' in CONSOLE_JS
 
 

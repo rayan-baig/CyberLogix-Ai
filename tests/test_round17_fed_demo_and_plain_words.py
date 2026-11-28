@@ -288,8 +288,9 @@ def test_one_date_style_on_the_team_tab_the_agreement_and_the_pause(demo, api):
     assert "function date(iso)" in WORDS_JS and "date, person" in WORDS_JS
     assert "esc(s.starts_local)" not in CONSOLE_JS and "schedule[0].ends_local" not in CONSOLE_JS
     # A turn has its date: "Fri 2:00 PM to Fri 2:00 PM" said nothing.
-    assert "CLXWords.dateTime(s.starts_at)" in CONSOLE_JS
-    assert "until ${esc(CLXWords.clock(schedule[0].ends_at))}" in CONSOLE_JS
+    # In the rotation's own clock since 3.44.0, labelled (round 21).
+    assert "CLXWords.dateTime(s.starts_at, r.timezone ? { zone: r.timezone } : undefined)" in CONSOLE_JS
+    assert "until ${esc(rotaWhen(schedule[0].ends_at, r.timezone))}" in CONSOLE_JS
     assert "Next invoice ${esc(CLXWords.date(c.next_billing_at))}" in CONSOLE_JS
     assert "Ends ${esc(CLXWords.date(c.ends_at))}" in CONSOLE_JS
     assert ".slice(0, 10))}, when what you have paid" not in CONSOLE_JS

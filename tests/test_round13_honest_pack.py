@@ -204,7 +204,9 @@ def test_dialog_buttons_wrap_and_thrown_away_stacks_on_a_phone():
 
 
 def test_after_its_fixed_today_and_the_console_bar_wait():
-    assert "if (fixSaid(i)) return \"\";" in _function(SIMPLE_JS, "needButtons")
+    # 3.44.0: It's fixed stays on /today's card while the alert is open,
+    # so Close anyway is never out of reach (round 21).
+    assert 'data-fixed="${esc(i.incident_id)}">It\'s fixed</button>' in _function(SIMPLE_JS, "needButtons")
     assert "It closes by itself once it's cold." in _function(SIMPLE_JS, "fixWaiting")
     bar = _function(CONSOLE_JS, "renderNeedsBar")
     assert '${i.fix_reported_at && i.state === "acknowledged" ? ""' in bar

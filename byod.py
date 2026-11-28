@@ -205,6 +205,45 @@ def unit_from(value: Any, key: str) -> Optional[str]:
     return None
 
 
+# A unit said in a field of its own beside the reading (3.44.0):
+# {"temperature": 37.8, "unit": "F"} was held as "unit not stated".
+UNIT_KEYS = ("unit", "units", "scale", "tempunit", "temperatureunit")
+
+
+def unit_word(value: Any) -> Optional[str]:
+    """"C", "F", "°C", "°F", "celsius" or "fahrenheit" (any case), as a
+    metric; anything else is None, never a guess."""
+    if not isinstance(value, str):
+        return None
+    word = re.sub(r"[\s°º.]", "", value.strip().lower())
+    word = word[3:] if word.startswith("deg") and len(word) > 3 else word
+    if word in ("c", "celsius", "centigrade"):
+        return "temperature_c"
+    if word in ("f", "fahrenheit"):
+        return "temperature_f"
+    return None
+
+
+def sibling_unit(flat: Dict[str, Any], value_path: Optional[str]) -> Optional[str]:
+    """The unit in a unit/units/scale/temp_unit/temperature_unit field
+    beside the reading, or, failing that, the one such field anywhere in
+    the payload when they all agree."""
+    if not value_path:
+        return None
+    def parent(path: str) -> str:
+        return path.rsplit(".", 1)[0] if "." in path else ""
+    def leaf(path: str) -> str:
+        return _norm(path.split(".")[-1].split("[")[0])
+    beside = [unit_word(v) for p, v in flat.items()
+              if leaf(p) in UNIT_KEYS and parent(p) == parent(value_path)]
+    beside = [u for u in beside if u]
+    if beside:
+        return beside[0]
+    anywhere = {unit_word(v) for p, v in flat.items() if leaf(p) in UNIT_KEYS}
+    anywhere.discard(None)
+    return anywhere.pop() if len(anywhere) == 1 else None
+
+
 def detect(payload: Any) -> Dict[str, Any]:
     """Read a payload without being told what sent it."""
     flat = flatten(payload)
@@ -245,6 +284,8 @@ def _apply(flat, preset, source) -> Dict[str, Any]:
             unit = unit_from(declared, str(declared))
     if unit is None and value_path:
         unit = unit_from(raw, value_path)
+    if unit is None and value_path:
+        unit = sibling_unit(flat, value_path)
 
     missing = []
     if not serial:
@@ -336,3 +377,30 @@ def samples_for(tenant_id: str, limit: int = 25) -> List[Dict[str, Any]]:
     # Cleaned on the way out as well, for samples kept before credentials
     # were removed on the way in.
     return [{**r, "payload": _without_secrets(r.get("payload"))} for r in mine[:limit]]
+
+
+# --- a set-up sensor's reading held for want of a unit (3.44.0) -------------
+
+HELD_KIND = "unit_held"
+
+
+def hold_for_unit(tenant_id: str, sensor_id: str, value: Optional[float]) -> None:
+    """A reading from a sensor already set up, held because its payload
+    did not say C or F: noted for that unit's card, not the doorstep."""
+    now = utc_now()
+    with STORE._lock:
+        STORE._db.put(HELD_KIND, f"{tenant_id}:{sensor_id}", {
+            "tenant_id": tenant_id, "sensor_id": sensor_id,
+            "value": value, "at": iso(now)})
+
+
+def held_for_unit(tenant_id: str, sensor_id: str, last_seen: Any = None) -> Optional[Dict[str, Any]]:
+    """The newest held reading for a unit, while nothing newer has been
+    recorded from it; None once a reading with its unit arrived."""
+    row = STORE._db.get(HELD_KIND, f"{tenant_id}:{sensor_id}")
+    if not row:
+        return None
+    seen = iso(last_seen) if last_seen is not None and not isinstance(last_seen, str) else last_seen
+    if seen and str(seen) >= str(row.get("at") or ""):
+        return None
+    return {"value": row.get("value"), "at": row.get("at")}

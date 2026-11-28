@@ -227,7 +227,7 @@
     // 3.43.0: the place asked about, and a name nobody here has, said so
     // ("Is the Harbourside walk-in ok?" listed the Old Mill walk-in too).
     const scope = typed.length ? scopeOf(ctx.label, dd) : null;
-    if (scope && scope.unknown) return notHere(scope, dd);
+    if (scope && (scope.unknown || scope.ambiguous.length)) return notHere(scope, dd);
     const units = scope && scope.places.length ? scope.here : (Array.isArray(dd.sensors) ? dd.sensors : []);
     const atWhere = scope && scope.places.length ? `At **${placeWord(scope)}**:\n\n` : "";
     // "Which fridges need me right now?" (3.41.0) is the pill's question:
@@ -434,6 +434,17 @@
         : about.units.length > 3 ? `${shown.join(", ")} and ${about.units.length - 3} more` : listed(shown);
       const when = about.dayWord ? (about.dayWord === "today" || about.dayWord === "yesterday" ? ` ${about.dayWord}` : ` on ${about.dayWord}`) : "";
       if (!hit) {
+        // Over its limit now with no alert open yet (3.44.0): never "it
+        // stayed in range" beside a reading over the limit.
+        const over = about.units.filter((u) => {
+          const now = Number(u.last_temperature_display);
+          const top = Number(u.danger_above_display);
+          return u.last_temperature_display != null && u.danger_above_display != null && Number.isFinite(now) && Number.isFinite(top) && now > top;
+        });
+        if (over.length && (!about.dayWord || about.dayWord === "today")) {
+          const u = over[0];
+          return `**${unitName(u)}** is at ${degrees(u.last_temperature_display, u, dd)} now, over its ${limitDegrees(u.danger_above_display, u, dd)} limit; no alert has opened yet, because it waits to see if it comes back.\n\n${RULE}\n\n${NOT_A_RULING}`;
+        }
         return `No alert on ${which}${when}: ${about.units.length === 1 ? "it" : "they"} stayed in range, so there is nothing to weigh up.`;
       }
       const u = unit(hit);
@@ -641,7 +652,7 @@
     const units = Array.isArray(dd.sensors) ? dd.sensors : [];
     // 3.43.0: within the place named, and a name nobody has, said so.
     const scope = scopeOf(typed, dd);
-    if (scope.unknown) return notHere(scope, dd);
+    if (scope.unknown || scope.ambiguous.length) return notHere(scope, dd);
     const named = scope.units;
     const live = liveAlerts(dd);
     const near = named.length ? named : scope.places.length ? scope.here : null;
@@ -844,11 +855,31 @@
     const h = Number(m[4]);
     return `${m[1]} ${m[3]} ${Number(m[2])}, ${h % 12 || 12}:${m[5]} ${h < 12 ? "AM" : "PM"}`;
   }
-  const shiftEnd = (r) => shiftWords((r.schedule && r.schedule[0] && r.schedule[0].ends_local) || "");
-  function oncallAnswer() {
+  // Labelled with the rotation's own zone where it has one (3.44.0), as
+  // the Team tab now says it: "Sat Dec 5, 8:00 AM Central".
+  function zoneWord(zone) {
+    if (!zone) return "";
+    try {
+      const part = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "longGeneric" }).formatToParts(new Date())
+        .find((x) => x.type === "timeZoneName");
+      const place = part ? part.value.replace(/ Time$/, "") : "";
+      return place && !/^GMT|^UTC/.test(place) ? place : String(zone).split("/").pop().replace(/_/g, " ");
+    } catch (_) { return ""; }
+  }
+  const shiftEnd = (r) => {
+    const end = shiftWords((r.schedule && r.schedule[0] && r.schedule[0].ends_local) || "");
+    return end && r.timezone ? `${end} ${zoneWord(r.timezone)}`.trim() : end;
+  };
+  // "How do I change the rotation?", "can someone else cover nights":
+  // where it is changed (the Team tab's On call now card: Change, the
+  // order, the turn length, the hand-over time; quiet hours).
+  const ROTA_HOW = () => `To change it: on the ${onConsole ? "" : "console's "}**Team** tab, under **On call now**, press **Change** on the rotation (or make one): who takes turns and in what order, the days per turn and the hand-over time, then **Save rotation**. There's no swap for one shift: change the order. **Quiet hours** there keep someone from being texted at night while somebody else would be.`;
+  const ROTA_CHANGE = /\b(?:change|changing|swap|switch|edit|move|reorder|set|setting|cover\w*|take over|someone else|somebody else|instead|how (?:do|can) (?:i|we))\b/i;
+  function oncallAnswer(ctx) {
     if (!(ownPage && signedIn())) {
       return `Once you've signed up, everyone under **Who gets alerts** is on call, or set a rotation on the **Team** tab (**On call now**): people take turns by the day or the week, handing over at a time you choose, and the card shows who is on now and who is next. [Start a free trial](/signup)`;
     }
+    const change = ROTA_CHANGE.test(said(ctx));
     const dd = overview();
     if (!dd) return NOT_LOADED;
     const rotations = rotationsNow();
@@ -868,7 +899,8 @@
     const names = Array.isArray(dd.texted_first_names) ? dd.texted_first_names.map(words).filter(Boolean) : [];
     if (names.length) lines.push(`An alert text goes to **${listed(names)}** right now.`);
     if (!lines.length) return `Nobody is on the list yet, so nobody would be texted. Add people under **Who gets alerts** on the **Team** tab. [Add someone](${TEAM_LINK})`;
-    if (!rotations) lines.push("The week's turns are on the **Team** tab, under **On call now**.");
+    if (!rotations && !change) lines.push("The week's turns are on the **Team** tab, under **On call now**.");
+    if (change) lines.push(ROTA_HOW());
     return `${lines.join("\n\n")}\n\n[Open On call now](${TEAM_LINK})`;
   }
   // "How much am I paying?": the plan and the month from the overview.
@@ -953,7 +985,7 @@
     // 3.43.0: the units named, within the place named; a name nobody here
     // has is said so, never another unit's limit.
     const scope = dd ? scopeOf(typed, dd) : null;
-    if (scope && scope.unknown) {
+    if (scope && (scope.unknown || scope.ambiguous.length)) {
       return `${notHere(scope, dd).replace(/ Ask \*\*Which fridges need me\?\*\* for all of them\.$/, "")} Press **Change limit** on the unit's card${onConsole ? "" : " in the console"} (the **Fridges** tab) to change its limit.`;
     }
     const named = scope ? (scope.units.length ? scope.units : scope.places.length ? scope.here : []) : [];
@@ -1131,8 +1163,11 @@
   // "Is there a contract?" (3.38.0): the answer to that first.
   const LOCK_IN = /\bcontract\b|\bcommitment\b|\block(?:ed)?[\s-]*in\b|\btied in\b|\bleave\b|\bany ?time\b/i;
   const CANCEL = (ctx) => [
+    // 3.44.0: "can I get my money back?" first, as checkout says it.
+    ...(ctx && typeof ctx.label === "string" && /\brefund\w*|\bmoney back\b|\breimburs\w*/i.test(ctx.label)
+      ? ["**No refunds for time already paid**, in part or in full: canceling stops the next bill, and the service runs to the end of what you paid for. The free trial costs nothing, so there's nothing to refund there."] : []),
     ...(ctx && typeof ctx.label === "string" && LOCK_IN.test(ctx.label)
-      ? ["No lock-in: you pay by the month, or by the year if you choose, and can leave any time. A signed term sets your price and renews by itself, but cancelling still stops the bills, with no fee for leaving early."] : []),
+      ? ["No lock-in: you pay by the month, or by the year if you choose, and can leave any time. A signed term sets your price and renews by itself, but canceling still stops the bills, with no fee for leaving early."] : []),
     "In the console: **Money** tab, **Pause or cancel**, then **Cancel my plan**. One press, never hidden behind another screen. You can pause for 1 to 3 months instead.",
     fig(F.cancelRule, "Cancel any time. Nothing more is billed after you cancel, and the service carries on to the end of the month or year you have already paid for. What you have already paid is not refunded, in part or in full."),
     "A free trial has nothing to cancel: it ends by itself, and nothing moves you to a paid plan unless you choose one.",
@@ -1323,13 +1358,18 @@
       const at = clock(i.opened_at);
       const answered = i.acknowledged_at ? outFor(i.opened_at, i.acknowledged_at) : "";
       const worst = !i.site_wide && i.peak_display != null ? degrees(i.peak_display, u, dd) : "";
-      const how = i.state === "resolved" ? `closed${answered ? `, answered in ${answered}` : ""}`
+      // How it closed, as the pack says it (3.44.0): "closed by hand
+      // while still out of range at 46.5°F" when that is what happened.
+      const shut = i.closed_out_of_range ? `closed by hand while still out of range${i.close_display != null ? ` at ${degrees(i.close_display, u, dd)}` : ""}`
+        : i.closed_how === "itself" ? "back in range by itself" : i.closed_how === "fixed_then_itself" ? "said fixed, then back in range by itself"
+          : i.closed_how === "person" ? "closed by hand once back in range" : "closed";
+      const how = i.state === "resolved" ? `${shut}${answered ? `, answered in ${answered}` : ""}`
         : i.state === "acknowledged" ? "open, someone is on it" : "open, nobody has answered yet";
       const food = i.product_disposition === "discarded" ? ", food thrown away" : i.product_disposition === "unaffected" ? ", food kept" : "";
       return `- **${name}**${at ? `, ${at}` : ""}${worst ? ` (worst ${worst})` : ""}: ${how}${food}`;
     };
     const scope = typed ? scopeOf(typed, dd) : null;
-    if (scope && scope.unknown) return notHere(scope, dd);
+    if (scope && (scope.unknown || scope.ambiguous.length)) return notHere(scope, dd);
     const day = typed ? dayIn(typed) : null;
     const narrowed = Boolean(scope && (scope.units.length || scope.places.length));
     if (narrowed || day) {
@@ -1361,7 +1401,7 @@
     if (!dd) return NOT_LOADED;
     const typed = said(ctx);
     const scope = typed ? scopeOf(typed, dd) : null;
-    if (scope && scope.unknown) return notHere(scope, dd);
+    if (scope && (scope.unknown || scope.ambiguous.length)) return notHere(scope, dd);
     const pool = scope && scope.units.length ? scope.units : scope && scope.places.length ? scope.here : (Array.isArray(dd.sensors) ? dd.sensors : []);
     const units = pool.filter((u) => Number.isFinite(Number(u.last_temperature_display))
       && u.last_temperature_display !== null && stateOf(u).state !== "offline");
@@ -1399,10 +1439,13 @@
   // The limits a food fridge and freezer start on (domain._FOOD_KINDS).
   const LIMITS = () => `**A fridge: under ${fig(F.fridgeLimit, "41")}°F. A freezer: under ${fig(F.freezerLimit, "10")}°F.** Those are the limits ${F.appShort} starts a food fridge and freezer on, and it alerts when one stays over its limit past its wait (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer).\n\nYour food safety plan or local code may ask for a tighter one: set it per unit with **Change limit** on its card${onConsole ? "" : " in the console"}.`;
   // "My freezer is at 15 degrees": that kind's limit, and what to do.
-  const READING_RE = /\b(fridges?|freezers?|coolers?|walk-?ins?|refrigerators?|chillers?)\b[^?\d-]*?\b(?:is|was|at|reads?|reading|says|shows?|showing|sitting at|sits at)\s+(?:at\s+|about\s+|around\s+)?(-?\d{1,3}(?:\.\d+)?)(?!\s*(?:locations?|sites?|restaurants?|stores?|places?|pharmac|branch|kitchens?|shops?|cafes?|bars?|of\b))\s*(°\s*[cf]?|degrees?(?:\s*[cf]\b|\s*(?:celsius|fahrenheit))?|deg\b|[cf]\b)?/i;
+  // 3.44.0: never a time ("if the freezer packs in at 3am" got "3°F is
+  // under a freezer's 10°F limit"): a number before am, pm, o'clock or a
+  // colon is a time of day.
+  const READING_RE = /\b(fridges?|freezers?|coolers?|walk-?ins?|refrigerators?|chillers?)\b[^?\d-]*?\b(?:is|was|at|reads?|reading|says|shows?|showing|sitting at|sits at|hit|hits|reached|reaches|got to|gets to|goes (?:up )?to|went (?:up )?to|climbed to|climbs to|dropped to|drops to)\s+(?:at\s+|about\s+|around\s+)?(-?\d{1,3}(?:\.\d+)?)(?![\d.:]|\s*(?:[:.]\d|am\b|pm\b|a\.m|p\.m|o['’]?\s?clock|in the (?:morning|evening|afternoon|night)))(?!\s*(?:locations?|sites?|restaurants?|stores?|places?|pharmac|branch|kitchens?|shops?|cafes?|bars?|of\b))\s*(°\s*[cf]?|degrees?(?:\s*[cf]\b|\s*(?:celsius|fahrenheit))?|deg\b|[cf]\b)?/i;
   // "Is 38 ok for a fridge?", "is 5 degrees too warm for a freezer?"
   // (3.42.0): the number first, then the kind.
-  const READING_FOR = /\b(?:is|are|isn'?t)\s+(-?\d{1,3}(?:\.\d+)?)\s*(°\s*[cf]?|degrees?(?:\s*[cf]\b|\s*(?:celsius|fahrenheit))?|deg\b|[cf]\b)?\s*(?:ok|okay|fine|safe|alright|too (?:warm|hot|cold|high|low)|warm|cold|bad|good|normal|high|low)\b[^?]*?\b(?:for|in) (?:a |an |the |my |our )?(fridges?|freezers?|coolers?|walk-?ins?|refrigerators?|chillers?)\b/i;
+  const READING_FOR = /\b(?:is|are|isn'?t)\s+(-?\d{1,3}(?:\.\d+)?)(?![\d.:]|\s*(?:am\b|pm\b|o['’]?\s?clock))\s*(°\s*[cf]?|degrees?(?:\s*[cf]\b|\s*(?:celsius|fahrenheit))?|deg\b|[cf]\b)?\s*(?:ok|okay|fine|safe|alright|too (?:warm|hot|cold|high|low)|warm|cold|bad|good|normal|high|low)\b[^?]*?\b(?:for|in) (?:a |an |the |my |our )?(fridges?|freezers?|coolers?|walk-?ins?|refrigerators?|chillers?)\b/i;
   function readingAnswer(ctx) {
     const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
     const f = READING_FOR.exec(typed);
@@ -1416,6 +1459,12 @@
     const u = celsius ? "C" : "F";
     const at = Number(m[2]);
     const what = freezer ? "a freezer" : "a fridge";
+    // A fridge below freezing (3.44.0) is not "fine": "fridge at 2.5
+    // degrees" got "under a fridge's 41°F limit, so that's fine".
+    const freezing = celsius ? 0 : 32;
+    if (!freezer && at < freezing) {
+      return `**${m[2]}°${u} is below freezing for a fridge.** It's under the ${limit}°${u} top limit, so ${F.appShort} doesn't alert on its own, but food in a fridge that cold freezes. Check the thermostat, and that the sensor is in the fridge you think it is. To be alerted when a fridge gets too cold, give it a bottom limit with **Change limit** on its card${onConsole ? "" : " in the console"}.`;
+    }
     if (at <= limit) {
       return `**${m[2]}°${u} is under ${what}'s ${limit}°${u} limit**, so that's fine: ${F.appShort} alerts only when one stays over its limit. If yours has a limit of its own, it is on its card.`;
     }
@@ -1751,13 +1800,53 @@
   //
   // The places a question names, from the business's own list (its sites
   // and each unit's site): "Old Mill", "Harbourside".
-  function placesIn(text, dd) {
-    const asked = stemsOf(text);
-    const has = (seq) => seq.length > 0 && asked.some((_, k) => seq.every((w, j) => asked[k + j] === w));
+  // 3.44.0: by the words that tell each apart. The demo's sites are
+  // "Juniper Harbourside", "Juniper Old Mill" and "Juniper Commissary":
+  // "the Harbourside walk-in" named none of them, so it was answered with
+  // every walk-in, the Old Mill one included. A site is named by all its
+  // own words, by the words no other site has ("Harbourside", "Old Mill"),
+  // by the longest of those alone ("the mill"), or by the place a unit's
+  // name starts with ("Harbourside / Walk-in cooler"). A word several
+  // sites share ("Juniper") names none of them: placeAmbiguity says so.
+  const PLACE_COMMON = new Set(["the", "and", "of", "at", "in", "on", "a", "an", "st", "street", "road", "lane", "new", "old", "north",
+    "south", "east", "west", "main", "high", "upper", "lower", "kitchen", "restaurant", "cafe", "site", "location", "store", "shop",
+    "branch", "bar", "unit", "fridge", "freezer", "walk", "cooler", "prep", "line", "hot", "display"]);
+  function sitesOf(dd) {
     const names = [];
     (Array.isArray(dd.sites) ? dd.sites : []).forEach((x) => { if (x && x.name) names.push(String(x.name)); });
     (Array.isArray(dd.sensors) ? dd.sensors : []).forEach((u) => { if (u && u.site_name) names.push(String(u.site_name)); });
-    return [...new Set(names)].filter((n) => has(stemsOf(n)));
+    const all = [...new Set(names)];
+    const counts = {};
+    all.forEach((n) => [...new Set(stemsOf(n))].forEach((w) => { counts[w] = (counts[w] || 0) + 1; }));
+    return all.map((name) => {
+      const stems = stemsOf(name);
+      const own = stems.filter((w) => counts[w] === 1 && !SMALL.has(w));
+      // The place a unit's name starts with: "Harbourside / Walk-in cooler".
+      const prefixes = [...new Set((Array.isArray(dd.sensors) ? dd.sensors : [])
+        .filter((u) => u && sameLabel(u.site_name, name) && /\s\/\s/.test(String(u.location_name || "")))
+        .map((u) => stemsOf(String(u.location_name).split(/\s\/\s/)[0]).join(" ")).filter(Boolean))];
+      const longest = own.filter((w) => w.length >= 4 && !PLACE_COMMON.has(w)).sort((a, b) => b.length - a.length)[0] || "";
+      return { name, stems, own, prefixes, longest, shared: stems.filter((w) => counts[w] > 1 && !SMALL.has(w) && !PLACE_COMMON.has(w)) };
+    });
+  }
+  function placesIn(text, dd) {
+    const asked = stemsOf(text);
+    const has = (seq) => seq.length > 0 && asked.some((_, k) => seq.every((w, j) => asked[k + j] === w));
+    return sitesOf(dd).filter((x) => has(x.stems) || (x.own.length && has(x.own)) || x.prefixes.some((p) => has(p.split(" ")))
+      || (x.longest && asked.includes(x.longest))).map((x) => x.name);
+  }
+  // A word some sites share, and none of their own words: "the Juniper
+  // walk-in" with three Junipers. The names it could be, or [] (3.44.0).
+  // A word every site shares is the business's own name ("is everything
+  // ok at Juniper"), only when the question is about everything.
+  function placeAmbiguity(text, dd) {
+    if (placesIn(text, dd).length) return [];
+    const asked = new Set(stemsOf(text));
+    const sites = sitesOf(dd);
+    const hit = sites.filter((x) => x.shared.some((w) => asked.has(w)));
+    if (hit.length < 2) return [];
+    if (hit.length === sites.length && /\b(?:everything|every|all|anything|any)\b/i.test(String(text || ""))) return [];
+    return hit.map((x) => x.name);
   }
   const atPlace = (u, place) => sameLabel(u.site_name, place)
     || stemsOf(u.location_name).join(" ").startsWith(`${stemsOf(place).join(" ")} `);
@@ -1782,6 +1871,12 @@
       const telling = said.filter((w) => !NOT_A_NAME.has(w.toLowerCase().replace(/['’]s$/, "")) && !placeWords.has(stemWord(w)));
       const parts = [].concat(...telling.map((w) => wordsIn(w)));
       if (parts.length && !parts.some((w) => known.has(w) || GENERIC.has(w))) return `${telling.join(" ")} ${unit[2].replace(/s$/i, "")}`;
+    }
+    // 3.44.0: "what's happening at the commissary" with no Commissary.
+    const at = /\b(?:at|in) (?:the )?((?:[A-Za-z][\w'’-]+\s+)?[A-Za-z][\w'’-]{3,})\s*[?.!]*\s*$/i.exec(t);
+    if (at && at[1].split(/\s+/).every((w) => !NOT_A_NAME.has(w.toLowerCase()) && !known.has(stemWord(w)) && !placeWords.has(stemWord(w))
+      && !UNIT_NOUN.test(w) && !/^(?:night|tonight|moment|minute|weekend|weekends|work|home|once|least|first|last|morning|evening|afternoon|midnight|noon|time|times|range|limit|limits|total|general|future|past|week|month|year|today|yesterday|tomorrow|place|places|location|locations|site|sites|kitchen|restaurant|business|shop|store|fridges?|freezers?|units?|coolers?|walk-?ins?|chillers?|alerts?|alarms?|console|dashboard|app|phone|bar|front|back|corner|middle|cellar|basement|office|plan|trial)$/i.test(w))) {
+      return `${at[1]} location`;
     }
     const place = /\b([A-Za-z][\w'’-]*)\s+(?:site|location|branch|store|restaurant)\b/i.exec(t);
     if (place && !NOT_A_NAME.has(place[1].toLowerCase()) && !known.has(stemWord(place[1]))
@@ -1810,14 +1905,24 @@
       named = here.filter((u) => kindOf(u) === kind || wordsIn(u.location_name || "").includes(kind));
       byKind = named.length ? kind : "";
     }
-    // "the walk-in freezer" is the walk-ins called freezer, where some are.
+    // "the walk-in freezer" is the walk-ins called freezer, where some are;
+    // "the walk-in cooler" (3.44.0) the ones called cooler.
     if (kind && named.some((u) => wordsIn(u.location_name || "").includes(kind))) named = named.filter((u) => wordsIn(u.location_name || "").includes(kind));
+    ["cooler", "chiller"].forEach((w) => {
+      if (asked.includes(w) && named.some((u) => wordsIn(u.location_name || "").includes(w))) named = named.filter((u) => wordsIn(u.location_name || "").includes(w));
+    });
     const unknown = named.length ? "" : unknownIn(text, dd, placeWords);
-    return { places, here, units: named, unknown, byKind };
+    const ambiguous = placeAmbiguity(text, dd);
+    return { places, here, units: named, unknown, byKind, ambiguous };
   }
   const placeWord = (scope) => scope.places.map(words).join(" or ");
   // "I can't find a unit called “sushi fridge”" with the ones there are.
+  // 3.44.0: a word several sites share ("Juniper") is asked which one,
+  // never answered with all of them.
   function notHere(scope, dd) {
+    if (scope.ambiguous && scope.ambiguous.length) {
+      return `Which location? More than one of yours has that in its name: ${listed(scope.ambiguous.map((n) => `**${words(n)}**`))}. Ask again with the one you mean, for example “${words(scope.ambiguous[0])} walk-in”, so I don't answer with another one's numbers.`;
+    }
     const units = (scope.places.length ? scope.here : (Array.isArray(dd.sensors) ? dd.sensors : []));
     const names = units.slice(0, 8).map((u) => unitName(u));
     const where = scope.places.length ? ` at **${placeWord(scope)}**` : "";
@@ -1831,6 +1936,8 @@
     const ms = (iso) => Date.parse(iso || "");
     const today = new Date();
     const midnight = (back) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - back).getTime();
+    // "Earlier this week" (3.44.0) is the week, never today alone.
+    if (/\b(?:this|past|last) week\b|\blast (?:7|seven) days\b|\bpast (?:7|seven) days\b/.test(lower) && day < 0) return null;
     if (day >= 0) {
       return { word: DAYS[day][0].toUpperCase() + DAYS[day].slice(1), on: true,
         test: (iso) => { const t = ms(iso); return Number.isFinite(t) && new Date(t).getDay() === day && Date.now() - t < 7 * 24 * 3600 * 1000; } };
@@ -1880,6 +1987,38 @@
   const EMAIL = () => [
     `Alerts go by text to the people on call${F.callAfterMinutes ? ", and on plans with calls by phone" : ""}, because a text wakes someone at 3 AM and an inbox usually doesn't. There's no email-only choice for a person: **Who gets alerts** takes mobile numbers.`,
     "Each alert is also emailed once, as a copy, to the business's own email address (the one on the account), and a weekly summary comes by email too.",
+  ].join("\n\n");
+
+  // ---------------------------------------------------------------- 3.44.0
+  //
+  // A unit failing at night, on a Sunday or a holiday (how the alerts
+  // work then, never this week's list), a test alert, a past day's
+  // readings, and a manager kept to one location.
+  const signedOwn = () => (onConsole || onToday) && signedIn();
+  const IF_WARM = () => [
+    `It works the same at 3 AM, on a Sunday or on a holiday: the alerts go out from our servers, not from somebody watching a screen.`,
+    `- Once a unit stays out of range past its wait (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer; ${fig(F.alertAtOnceDegrees, "15")}°F or more over its limit alerts at once), whoever is on call is texted within ${fig(F.textWithinSeconds, "60")} seconds with which unit and how warm it is.`,
+    "- With a **rotation**, that is whoever's turn it is; anyone in no rotation is always on call. Someone in their **quiet hours** is texted only if nobody else would be, so an alert always reaches someone.",
+    `- On plans with calls, if nobody answers the text within ${fig(F.callAfterMinutes, "10")} minutes, ${F.appShort} phones the people on call in the order you set until one presses 1.`,
+    `- If the power or the Wi-Fi goes off, the sensor goes quiet, and after ${fig(F.offlineMinutes, "30")} minutes the people on call are texted about that too.`,
+    "",
+    signedOwn() ? `Who is on call, the rotation and quiet hours are on the **Team** tab, under **On call now**. [Open On call now](${TEAM_LINK})`
+      : "[See it live](/demo) with pretend fridges, or [start a free trial](/signup).",
+  ].join("\n");
+  const TEST_ALERT = () => [
+    `Press **Send a test alert** on the ${onConsole ? "" : "console's "}**Team** tab, under **Who gets alerts**. Everyone on the list gets a text that starts **TEST** and says nothing is wrong; no alert is opened and nobody is chased.${F.callAfterMinutes ? " On a plan with calls, or on the free trial, you can tick **and ring the first person** to hear a call too." : ""}`,
+    `Pilot doesn't send texts itself.${signedOwn() ? ` [Open Who gets alerts](${TEAM_LINK})` : " Once you've signed up, it's one press. [Start a free trial](/signup)"}`,
+  ].join("\n\n");
+  const HISTORY = () => [
+    `Yesterday's readings, or any day's: open **Log for an inspector** on the ${onConsole ? "" : "console's "}**Proof** tab (on a small account, under **More**) and pick the dates. It lists every unit's temperatures, each time one went out of range and who answered it, ready to print or save as a PDF.`,
+    `A unit's **History** button on its card (the **Fridges** tab) shows its latest readings. Pilot reads only what is on this page now, so it doesn't list past readings itself; **How many alerts this week?** lists the week's alerts.${signedOwn() ? ` [Open the log for the last 7 days](${LOG_HERE})` : " [Sign in](/console)"}`,
+  ].join("\n\n");
+  // users.role is the whole business's (accounts.py): no sign-in sees one
+  // location only. A person on the alert list can be tied to one
+  // location (contacts.site_id: store._roster_for_site), through the API.
+  const SITE_SCOPE = () => [
+    "**Not for signing in.** Everyone who can sign in sees every location of the business: a role (owner, operator or viewer) sets what someone can change, not which location they see.",
+    "**For the alerts, yes.** Someone on **Who gets alerts** can be tied to one location, and is then texted only for that location's units; a location with nobody of its own falls back to the people who cover them all. The console's form adds people for every location, so tying someone to one is done with the API (`site_id` when adding a contact): see [the API reference](/developers).",
   ].join("\n\n");
 
   // Words a typed question may use for each answer or link that needs no
@@ -2056,6 +2195,12 @@
     { id: "whycall", labels: [], ask: "Why wasn't I called?", answer: whyCallAnswer },
     { id: "training", labels: [], ask: "Can my staff use it without training?", also: ["training", "train", "trained", "learn"], answer: TRAINING },
     { id: "email", labels: [], ask: "Can I get alerts by email?", also: ["email", "mail", "inbox"], answer: EMAIL },
+    // 3.44.0: a failure at night or on a holiday, a test alert, a past
+    // day's readings, a manager kept to one location. By phrase only.
+    { id: "ifwarm", labels: [], ask: "What happens if a fridge fails at night?", answer: IF_WARM },
+    { id: "testalert", labels: [], ask: "How do I send a test alert?", answer: TEST_ALERT },
+    { id: "history", labels: [], ask: "Where are yesterday's readings?", answer: HISTORY },
+    { id: "sitescope", labels: [], ask: "Can someone see only one location?", answer: SITE_SCOPE },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -2100,7 +2245,12 @@
     const m = FOOD_SHOP.exec(text);
     const x = m ? null : sectorIn(text);
     if (!m && !x) return false;
+    // 3.44.0: the food in it is the food's ("is the food in the bakery
+    // fridge still safe" got the alarm's answer).
+    if (/\b(?:food|stock|safe|eat|serve|sell|keep|kept|throw|thrown|bin)\b/i.test(text)) return false;
     if (ALARM_RE.test(text) || WARM_WORDS.test(text)) return true;
+    // "Commissary bakery fridge now" is how it is now, not an alarm.
+    if (!/\bwhat (?:should|do|can|now)\b|\bhelp\b|\bwhat to do\b/i.test(text)) return false;
     // A bakery, a butcher's or a deli in a unit's own name ("Prep fridge,
     // bakery"); another trade only with an alarm or warm word ("What
     // about ice cream shops?" is not the ice-cream freezer).
@@ -2146,7 +2296,7 @@
   // Something in the past: the 7-day history, or for a visitor the honest
   // note, never the alert open now or which unit needs you now.
   const PAST_STRONG = /\b(?:yesterday|last night|last week|this week|past week|(?:last|past) (?:7|seven) days|last month|earlier(?: today| on)?|this morning|ago|over the weekend|last weekend|(?:mon|tues|wednes|thurs|fri|satur|sun)day(?!s))\b/i;
-  const PAST_WEAK = /\b(?:was|were|did|had)\b(?:(?!\b(?:will|would|should|could|can|if)\b)[^?])*\b(?:handled|answered|acknowledged|closed|dealt with|responded(?: to)?|sorted|picked up|happen(?:ed)?)\b|\b(?:last|previous|latest|most recent) (?:alert|alarm|warning)s?\b|\bhow many times (?:did|has|have|was)\b|\b(?:any|were there|was there)\b[^?]*\b(?:alerts?|alarms?|problems?|issues?|warm)\b[^?]*\bovernight\b|\b(?:was|were|did)\b[^?]*\b(?:warm|alarm\w*|alert\w*|go off|went off)\b[^?]*\bovernight\b/i;
+  const PAST_WEAK = /\bwho (?:closed|shut|resolved)\b|\b(?:was|were|did|had)\b(?:(?!\b(?:will|would|should|could|can|if)\b)[^?])*\b(?:handled|answered|acknowledged|closed|dealt with|responded(?: to)?|sorted|picked up|happen(?:ed)?)\b|\b(?:last|previous|latest|most recent) (?:alert|alarm|warning)s?\b|\bhow many times (?:did|has|have|was)\b|\b(?:any|were there|was there)\b[^?]*\b(?:alerts?|alarms?|problems?|issues?|warm)\b[^?]*\bovernight\b|\b(?:was|were|did)\b[^?]*\b(?:warm|alarm\w*|alert\w*|go off|went off)\b[^?]*\bovernight\b/i;
   const PAST_NOT = /\b(?:pay|paid|bill|billed|billing|invoice|charged?|price|cost|cancel\w*|trial|refund|will|going to|next|tomorrow|tonight|on[\s-]*call|rota|rotation|shift|plan|every|wi-?fi|internet|power|outage|router|electricity|blackout|logs?|inspectors?|inspections?|health|records?|reports?|export|print|pdf|download|summary|saved?|nobody|no one|no-one)\b|\bwhat happens\b|\bdo for (?:me|us)\b|\bdone for\b/i;
   const pastAsked = (t) => {
     const text = String(t || "");
@@ -2174,13 +2324,118 @@
   // and Mute. The calls answer only when calls or phoning are asked about.
   const NIGHT_WORDS = /\bday ?time\b|\bduring the day\b|\bnights?\b|\bovernight\b|\bmidnight\b|\b\d{1,2}\s?(?:am|a\.m)\b|\basleep\b|\bsleep(?:ing)?\b|\bbuzz(?:es|ing|ed)?\b|\bwak(?:e|es|ing)\b|\bwoken\b|\bwoke\b|\bweekends?\b|\bbed(?:time)?\b|\bdo not disturb\b|\bbusiness hours\b|\b(?:off|opening|working)[\s-]?hours\b|\bdays? off\b|\bannoying\b/i;
   const CALL_ASK = /\b(?:calls?|calling|called|phoned|phoning|rang)\b|\bring(?:s|ing)? (?:me|us|my|our|the|people|someone|them)\b|\b(?:do|will|would|can|does|could) (?:you|it|they) (?:also )?(?:phone|ring)\b|\bphone (?:me|us|people|someone|them)\b/i;
+  // 3.44.0: a time or "overnight" alone is not about quiet hours ("what
+  // was the freezer at 3am" got quiet hours): something about being
+  // woken, a stop, or someone else is.
+  const QUIET_INTENT = /\b(?:stop\w*|no|not|don'?t|dont|without|avoid|quiet|mute|only|asleep|sleep\w*|woken|woke|wak(?:e|es|ing)|buzz\w*|disturb\w*|annoy\w*|instead|else|between|daytime|day ?time|business hours|bed(?:time)?|baby|partner|family|wife|husband|kids|skip|hold|silence|rather|off duty|days? off|weekends?|too early|bother\w*)\b/i;
   function nightAsked(t) {
     const text = String(t || "");
-    return NIGHT_WORDS.test(text) && !CALL_ASK.test(text) && !NOBODY_ANSWERS.test(text)
+    return NIGHT_WORDS.test(text) && QUIET_INTENT.test(text) && !CALL_ASK.test(text) && !NOBODY_ANSWERS.test(text)
       && !/\bwhy\b|\bwhat happens\b|\bdoors?\b|\b(?:nobody|no one|no-one|didn'?t|did not|never|wasn'?t|weren'?t)\b|\b(?:wi-?fi|internet|broadband|network|power|outage|router|electricity|connection|signal)\b|\bfood\b|\b(?:price|cost|trial)\b|\bon[\s-]*call\b|\brota\b|\brotation\b|\bshift\b|\bturns\b|\bcover\b/i.test(text);
   }
   // Alerts by email.
   const EMAIL_ASK = /\b(?:alerts?|notifications?|warnings?|texts?|messages?)\b[^?]*\b(?:by|via|to|through|on|in|over) (?:my |our |an? |the )?e-?mail\b|\be-?mail (?:alerts?|notifications?|instead)\b|\b(?:send|get|receive|do)\b[^?]*\be-?mails?\b|\be-?mails?\b[^?]*\b(?:instead of|rather than|not) (?:a )?(?:texts?|sms)\b|\be-?mail (?:me|us)\b/i;
+  // ---------------------------------------------------------------- precision first (3.44.0)
+  //
+  // Four reviews in a row each found five to seven new confident wrong
+  // answers among questions nobody had written yet, and a wrong answer
+  // costs far more than an honest "no built-in answer". So an answer from
+  // the business's own data (its units now, a reading, the week, the
+  // warmest, the places, the alert, the food, who is on call) is given
+  // only when the question is plainly about that data:
+  //   - a what-if ("if the freezer packs in at 3am", "what if the walk-in
+  //     fails on a saturday night", "a Sunday") is how the alerts work
+  //     then, the calls, the power, or the honest note, never today's data;
+  //   - a time of day ("3am", "2:30", "o'clock", "at 2 this morning") is
+  //     never read as a temperature, and gets no guess at the data then;
+  //   - a change asked for ("how do I", "can someone else", "can I
+  //     change") is the how-to answer, never the status;
+  //   - several questions at once get the honest note.
+  // Places and units it can't pin down exactly are said so by the answers
+  // themselves (scopeOf: notHere).
+  const DATA_TOPICS = new Set(["status", "reading", "week", "warmest", "sites", "alarm", "alert", "food", "oncall", "forecast", "lossnote", "delivery"]);
+  const TIME_OF_DAY = /\b\d{1,2}(?:[:.]\d{2})?\s?(?:am|pm|a\.m\b\.?|p\.m\b\.?)(?![a-z])|\b\d{1,2}:\d{2}\b|\bo['’]?\s?clock\b|^\s*at (?:[1-9]|1[0-2])\b(?![.\d])|\bat (?:[1-9]|1[0-2])(?:[:.][0-5]\d)?\b(?![.\d])(?=[^?]*\b(?:morning|evening|afternoon|tonight|last night|in the night|midnight)\b)|\b\d{1,2} in the (?:morning|evening|afternoon|night)\b|\b(?:from|between) \d{1,2} (?:till|until|to|and) \d{1,2}\b/i;
+  const DAY_NAME = "(?:mon|tues|wednes|thurs|fri|satur|sun)day";
+  const IF_ASK_RE = new RegExp(`\\bif\\b|\\bwhat if\\b|\\bwould\\b|\\bsuppos(?:e|ing)\\b|\\bimagin(?:e|ing)\\b|\\bin case\\b|\\bshould (?:the|a|an|my|our|it|any|one)\\b[^?]*\\b(?:fail|die|break|stop|go|warm|pack)|\\bwhen(?:ever)? (?:the |a |an |my |our |one |any )?[\\w ,'’-]{0,40}?\\b(?:fails?|dies|breaks?(?: down)?|stops? working|packs? (?:in|up)|conks? out|goes (?:off|down|warm|wrong)|gets? (?:warm|too warm)|loses? power)\\b|\\b(?:a|on a|any) ${DAY_NAME}\\b|\\bon a (?:bank )?holiday\\b|\\bon christmas\\b`, "i");
+  // "wants to know if the walk-in is cold enough" asks, it doesn't
+  // suppose: those words before "if" are taken out first (no lookbehind,
+  // which older iPhones can't read).
+  const IF_ASK = { test: (t) => IF_ASK_RE.test(String(t || "").replace(/\b(know|knows|wonder|wondering|asking|ask|asked|check|checking|tell me|see|sure|curious|find out)\s+if\b/gi, "$1 whether")) };
+  const FAIL_ASK = /\b(?:fail\w*|die[sd]?|dying|dead|break(?:s|ing)?(?: down)?|broke(?:n)?(?: down)?|stops? working|stopped working|stops?(?= (?:overnight|at night|tonight|on|at|while|when))|packs? (?:in|up)|packed (?:in|up)|conks? out|goes (?:off|down|warm|wrong)|went (?:off|warm|down)|gets? (?:warm|hot|too warm)|warms? up|is warm|too warm|go(?:es)? off|out of range|over (?:its |the )?limit|alarm\w*|alert\w* goes)\b/i;
+  const CHANGE_ASK = /\bhow (?:do|can|would|should|could) (?:i|we|you|they)\b|\bhow to\b|\b(?:can|could) (?:i|we|you|someone|somebody|anyone|another person|my \w+)(?: else)? (?:change|set|swap|switch|move|edit|adjust|stop|turn|make|take|cover|mute|rename|update|reset|put)\b|\b(?:change|swap|switch|edit|adjust|update|alter|raise|lower|rename|reset|stop|silence|mute|turn (?:it |that |the \w+ )?off|switch (?:it |that )?off|dismiss)\b|\bsomeone else\b|\bsomebody else\b/i;
+  const MULTI_ASK = /\?\s*\S|\b(?:and|also|plus|then|but)\s+(?:is|are|was|were|what|whats|what's|who|whose|how|can|could|when|where|why|do|does|did|will|which|should)\b/i;
+  // The how-to answer for a change asked about, or null.
+  function howToFor(text) {
+    const t = String(text || "");
+    if (/\blimits?\b|\bthresholds?\b|\balarm temp(?:erature)?\b|\b(?:alert|alarm|go off|trigger)s? at \d/i.test(t)) return "limit";
+    if (/\bwait\b|\bdelay\b|\blater\b|\blonger before\b/i.test(t)) return "wait";
+    if (/\bnights?\b|\bsleep\w*|\bwoken\b|\bwoke\b|\bwak(?:e|es|ing)\b|\bquiet\b|\bmute\b|\b\d{1,2}\s?am\b/i.test(t)) return "quiet";
+    if (/\b(?:stop|turn (?:\w+ )*off|switch (?:\w+ )*off|silence|close|clear|dismiss)\b[^?]*\b(?:alerts?|alarms?|alerting|alarming|beep\w*)\b|\b(?:turn|switch) (?:the |my |our )?[\w -]{0,30}?(?:alerts?|alarms?) off\b/i.test(t)) return "fixed";
+    if (/\bon[\s-]*call\b|\brota\b|\brotation\b|\bshifts?\b|\bhand ?over\b|\bcover\w*\b|\bswap\b|\btake over\b|\btake turns\b|\bwhose turn\b|\bweekends?\b|\bsomeone else\b|\bsomebody else\b/i.test(t)) return "oncall";
+    if (/\b(?:who gets|gets? the|get the|receives?|texted|text)\b[^?]*\b(?:alerts?|texts?)\b/i.test(t)) return "team";
+    return null;
+  }
+  // What a what-if is after: the calls, the power, the door, how the
+  // alerts work when a unit fails, or nothing built in.
+  function ifTopicFor(text) {
+    const t = String(text || "");
+    if (NOBODY_ANSWERS.test(t) || /\b(?:ignore|miss(?:ed)?|sleep through)\b[^?]*\b(?:texts?|alerts?|calls?)\b|\bphone is off\b|\bwho(?:'s|’s| is)? next\b/i.test(t)) return "calls";
+    if (/\b(?:power|wi-?fi|internet|broadband|electricity|router|connection)\b/i.test(t)) return "power";
+    if (/\bbatter(?:y|ies)\b/i.test(t)) return "battery";
+    if (/\bdoors?\b/i.test(t)) return "door";
+    if (/\b(?:sensor|readings?)\b[^?]*\b(?:offline|loses? (?:signal|connection))\b/i.test(t)) return "power";
+    if (/\b(?:sensor|readings?)\b[^?]*\b(?:stops? sending|stops? working|stops? reporting|goes quiet)\b/i.test(t)) return "noreadings";
+    if (/\bhow (?:soon|quick(?:ly)?|fast|long until|long before|long till)\b/i.test(t)) return "speed";
+    if (/\bwho\b[^?]*\b(?:texted|alerted|notified|gets? (?:the )?(?:texts?|alerts?|alarms?))\b/i.test(t)) return "team";
+    if (/\b(?:food|stock)\b/i.test(t)) return null;
+    if (CALL_ASK.test(t) && !/\bon[\s-]*call\b/i.test(t)) return FAIL_ASK.test(t) ? "ifwarm" : "calls";
+    if (UNIT_WORDS.test(t) && /\b(?:goes|went|go)\b(?! (?:to|up|in|into|on (?:the|my|our) (?:list|rota)))/i.test(t)) return "ifwarm";
+    if (FAIL_ASK.test(t) || /\b(?:who|anyone|anybody|someone)\b[^?]*\b(?:finds? out|knows?|told|deals? with|gets? (?:it|told|the text|texted))\b/i.test(t)) return "ifwarm";
+    return null;
+  }
+  // A reading said with its unit ("15 degrees", "-5", "38°F"), not a time.
+  const SAID_DEGREES = /(?:^|\s)-\d|\d\s*(?:°|degrees?\b|deg\b|[cf]\b)/i;
+  function gated(text, topic) {
+    if (!topic) return topic;
+    const t = String(text || "");
+    const to = (id) => (id ? TOPICS.find((x) => x.id === id && (!x.only || x.only())) || null : null);
+    if (!DATA_TOPICS.has(topic.id)) return topic;
+    // A what-if: never today's data. "If the freezer reads 15, what
+    // happens?" is the reading's, said with its figure.
+    if (IF_ASK.test(t) && !(topic.id === "reading" && !TIME_OF_DAY.test(t) && !CALL_ASK.test(t))) return to(ifTopicFor(t));
+    // A change asked for: the how-to answer. Who is on call keeps its own
+    // answer, which says how to change the rotation when asked.
+    if (CHANGE_ASK.test(t) && !(topic.id === "status" && /\b(?:see|show|check|view|look at)\b/i.test(t) && !/\b(?:change|set|swap|switch|edit|adjust|stop|turn)\b/i.test(t))) {
+      const how = howToFor(t);
+      return how === topic.id ? topic : to(how);
+    }
+    // A time of day is not a temperature, and there's no reading for it
+    // here; who is on call says until when.
+    if (TIME_OF_DAY.test(t) && topic.id !== "oncall" && !(topic.id === "reading" && SAID_DEGREES.test(t.replace(TIME_OF_DAY, " ")))) return null;
+    if (MULTI_ASK.test(t.replace(/\?\s*$/, ""))) return null;
+    return topic;
+  }
+
+  // A what-if about a unit failing, the calls, the power or a sensor:
+  // its answer's id, or "" (never a price, the trial or a count).
+  function whatIf(t) {
+    const text = String(t || "");
+    if (!IF_ASK.test(text)) return "";
+    if (/\b(?:price|prices|cost|costs|pay|paid|charged?|trial|cancel\w*|plans?|sign(?:ing)? up|fees?|contract|refund|money|card|bill\w*|have \d|had \d|\d+ (?:fridges?|freezers?|units?|sensors?|locations?|sites?|restaurants?))\b/i.test(text)) return "";
+    return ifTopicFor(text) || "";
+  }
+  const placeNamedNow = (t) => { const dd = own(); return Boolean(dd) && placesIn(String(t || ""), dd).length > 0; };
+  // "Can my Harbourside manager see only her site?", "can the Old Mill
+  // chef get only Old Mill alerts", "access to just Harbourside".
+  function siteScopeAsked(t) {
+    const text = String(t || "");
+    if (!/\b(?:only|just|own)\b/i.test(text)) return false;
+    if (!/\b(?:see|sees|view|access|get|gets|receive|alerts?|texts?|log ?in|sign ?in|dashboard|console)\b/i.test(text)) return false;
+    return /\b(?:only|just|own)\b[^?]*\b(?:sites?|locations?|branch(?:es)?|stores?|restaurants?|kitchens?|venues?)\b/i.test(text)
+      || /\b(?:only|just)\s+(?:(?:see|view|access|get|have)\s+)?(?:the\s+)?[A-Z][a-z]+/.test(text) || (placeNamedNow(text) && /\b(?:only|just)\b/i.test(text) && /\b(?:managers?|chefs?|staff|team|people|person|her|his|their)\b/i.test(text));
+  }
+  // A past day's readings (3.44.0): the log, never the week's alerts.
+  const HISTORY_ASK = /\b(?:temp(?:erature)?s?|readings?|graphs?|charts?|data)\b[^?]*\b(?:yesterday|last (?:night|week|month)|this week|earlier|past (?:week|days?)|previous|history|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b|\b(?:yesterday|last week|last night|this week)(?:'|’)?s? (?:temp(?:erature)?s?|readings?)\b|\b(?:history|graph|chart) of (?:the |my |our )?(?:temp(?:erature)?s?|readings?|fridges?|freezers?|units?)\b|\breadings? history\b|\bpast readings?\b|\bold readings?\b/i;
   const PHRASES = [
     // 3.40.0, first: hello on its own; what Kryozyn is; the sensor key; a
     // reading typed in and the limits ("should" is never which fridge
@@ -2207,6 +2462,33 @@
     // (quiet hours, never "Yes, on plans with calls"); adding someone;
     // and the common questions that had no answer.
     [WHY_NO_CALL, "whycall"],
+    // 3.44.0, first: a what-if (how the alerts work when a unit fails at
+    // night or on a holiday, the calls, the power), a manager kept to one
+    // location, a test alert, a past day's readings, who is covering,
+    // seeing it without signing up, and the basics that had no answer.
+    [{ test: (t) => whatIf(t) === "calls" }, "calls"], [{ test: (t) => whatIf(t) === "power" }, "power"],
+    [{ test: (t) => whatIf(t) === "battery" }, "battery"], [{ test: (t) => whatIf(t) === "door" }, "door"],
+    [{ test: (t) => whatIf(t) === "noreadings" }, "noreadings"], [{ test: (t) => whatIf(t) === "ifwarm" }, "ifwarm"],
+    [{ test: (t) => /\bpaus\w*|\bsnooze\w*|\bholidays?\b|\bclos(?:ed|ing)\b/i.test(String(t || "")) && placeNamedNow(t) && !UNIT_WORDS.test(String(t || "")) }, "miss"],
+    [/\bmove\b[^?]*\b(?:sensors?|units?|fridges?|freezers?)\b[^?]*\b(?:to|between) (?:another|a different|the other|other|a new)\b|\brename\b|\bchange (?:the |a |its )?name\b/i, "miss"],
+    [{ test: siteScopeAsked }, "sitescope"],
+    [{ test: (t) => /\b(?:warmest|hottest|coldest)\b/i.test(String(t || "")) && !(ownPage && signedIn()) }, "miss"],
+    [/\bcosts? extra\b|\bextra (?:for|per) (?:texts?|sms|messages?|calls?|alerts?)\b|\bpay (?:for|per) (?:each |every )?(?:texts?|sms|messages?|alerts?)\b/i, "fees"],
+    [/\b(?:check|make sure|see if|test|know)\b[^?]*\b(?:texts?|alerts?)\b[^?]*\b(?:reach\w*|arriv\w*|gets? to|come through|comes through|get through|work(?:s|ing)?)\b/i, "testalert"],
+    [/\bmore time before\b|\b(?:longer|more time) (?:before|until|till) (?:it )?(?:alerts?|texts?|alarms?|warns?)\b/i, "wait"],
+    [/\bwho (?:gets?|is|are) (?:texted|alerted|called|woken|the (?:alerts?|texts?))\b[^?]*(?:\bat night\b|\bnights?\b|\bovernight\b|\b\d{1,2}\s?am\b)/i, "quiet"],
+    [/\btest (?:alerts?|texts?|messages?|sms|calls?)\b|\bsend (?:me |us |a )?(?:a )?test\b|\btest(?:ing)? (?:the |my |our )?(?:alerts?|texts?|notifications?|alarms?)\b|\b(?:check|make sure|see if|know if|know that) (?:the |my |our )?(?:alerts?|texts?) (?:work|works|arrive|come through|get through|are working)\b/i, "testalert"],
+    [{ test: (t) => !/\b(?:highest|warmest|hottest|peak|max(?:imum)?|lowest|coldest|minimum|worst|alerts?|alarms?|inspect\w*|health|department|log|records?|print|pdf|download|export|food)\b/i.test(String(t || "")) && HISTORY_ASK.test(String(t || "")) }, "history"],
+    [/\b(?:who(?:'s|’s| is| are)?|anyone|anybody|someone|somebody|is there)\b[^?]*\bon[\s-]*call\b|\bwho(?:'s|’s| is)? covering\b|\bcovering (?:tonight|tomorrow|this weekend|the weekend|nights?)\b|\bhand ?over\b|\bhandover\b|\bswap (?:shifts?|turns?|with)\b|\bshift swap\b|\b(?:someone|somebody|anyone) else\b[^?]*\b(?:get|take|cover|receive|have|answer)\b[^?]*\b(?:alerts?|texts?|nights?|weekends?|calls?|on call|over)\b/i, "oncall"],
+    [/\bhook(?:ing)? (?:up|in)\b|\bhook (?:it|my|the|a|our) [\w ]{0,20}?(?:up|in)\b|\blink (?:up )?(?:my|the|a|our) (?:sensor|thermometer|probe)\b|\bget (?:my|the|our) (?:sensor|probe)s? (?:working|going|connected|online|set up)\b|\bconnect (?:my|the|a|our) (?:sensor|thermometer|probe)s?\b/i, "connect"],
+    [/\bhow many\b[^?]*\b(?:fridges?|freezers?|units?|sensors?|coolers?)\b[^?]*\btrial\b|\btrial\b[^?]*\bhow many\b|\btrial\b[^?]*\b(?:covers?|limit|allows?)\b|\b(?:fridges?|freezers?|units?|sensors?) (?:on|in|with) (?:the |a )?(?:free )?trial\b/i, "trial"],
+    [/\b(?:once|when|after) (?:the |my |our )?(?:14|fourteen|\d+) days\b|\b(?:14|fourteen) days (?:are|is) (?:up|over|done|finished)\b|\bforget to cancel\b/i, "trialafter"],
+    [/\bmoney back\b|\brefund\w*\b|\breimburs\w*/i, "cancel"],
+    [/\b(?:special|particular|specific|certain) (?:thermometers?|sensors?|probes?|hardware)\b|\bdo (?:i|we) need (?:new |special |my own |our own )?(?:thermometers?|sensors?|probes?)\b|\bwhat (?:kind|type|sort|brand) of (?:sensors?|thermometers?|probes?)\b|\b(?:my own|existing|our own|the ones? (?:i|we) have) (?:sensors?|thermometers?|probes?)\b/i, "sensors"],
+    [/^\s*(?:please\s+)?sign (?:me|us) up\b/i, "signup"],
+    [/\bwithout (?:signing up|registering|an account|creating an account|a log ?in|joining)\b|\bshow me how it works\b|\b(?:have|take) a (?:look|peek|nosey|nose)\b|\blook around\b|\bis the demo free\b|\b(?:see|watch|open|try) the demo\b/i, "demo"],
+    [/\bonly\b[^?]*\b(?:after|before|between|during|in the)\b[^?]*(?:\d\s?(?:am|pm)\b|\bday(?:time)?\b|\bnight\b|\bmorning\b|\bevening\b)/i, "quiet"],
+    [/\b(?:get|gets|receive|have) (?:the )?(?:alerts?|texts?|alarms?)\b[^?]*\b(?:too|as well|also)\b|\b(?:can|could) (?:my|our|the) [a-z]+(?: [a-z]+)? (?:also )?(?:get|receive) (?:the )?(?:alerts?|texts?)\b/i, "team"],
     [{ test: unitPauseAsked }, "unitpause"],
     [{ test: limitChangeAsked }, "limit"],
     [/\b(?:change|set|adjust|alter|make|increase|decrease|lengthen|shorten|extend)\b(?![\s-]*up\b)[^?]*\bhow long\b[^?]*\b(?:before|until|till)\b[^?]*\b(?:alert|alerts|alerting|texts?|texting|warns?)\b|\b(?:wait|waits) longer before\b|\b(?:longer|shorter) (?:wait|delay) before\b|\b(?:different|own|separate|individual) (?:alert )?(?:waits?|delays?)\b/i, "wait"],
@@ -2231,8 +2513,8 @@
     [/\bbatter(?:y|ies)\b(?! (?:storage|banks?|rooms?|backup|back-up|systems?))/i, "battery"],
     [/\bhaccp\b|\bhazard analysis\b|\bfood safety (?:compliance|plans?|regulations?|rules|law|standards?|audits?|inspections?|checks?|requirements?)\b|\bcomplian(?:t|ce)\b/i, "haccp"],
     [/\bhow long (?:do|does|will|is|are|can)\b[^?]*\b(?:keep|kept|store|stored|save|saved|retain|retained|hold|held)\b(?![^?]*\b(?:food|stock|fridge|freezer|chicken|milk|meat|fish|cold|door)\b)|\b(?:data|readings|records?|history|information)\b[^?]*\b(?:kept|stored|retained|deleted|erased|wiped)\b|\bwhat happens to (?:(?:all|my|our|the)\s+){1,3}(?:temp(?:erature)?\s+)?(?:data|readings|records?|history|logs?|alerts?|account|information|info)\b|\bhow far back\b|\bhow long (?:do|does|will|are|is)\b[^?]*\b(?:readings?|data|records?|history|alerts?)\b[^?]*\b(?:stay|last|remain|around)\b|\b(?:delete|deleting|erase|wipe)\b[^?]*\b(?:data|readings|records?|history|everything|account)\b|\bmonths? of (?:history|data|readings|records)\b|\b(?:keep|store|retain)\b[^?]*\b(?:data|readings|records?|history|alerts?|logs?)\b[^?]*\b(?:years?|months?|forever|long)\b|\blose (?:my|our|the|all) (?:data|readings|records?|history)\b|\bdata retention\b|\bexport\b[^?]*\b(?:data|readings|records?|everything)\b|\bdownload (?:all|everything|my data|our data)\b/i, "retention"],
-    [/\b(?:record|log|mark|note|enter|write down|put down|report)\b[^?]*\b(?:thrown|threw|throw (?:it |them |the \w+ )?(?:away|out)|binned|tossed|discarded|wasted|disposed)\b|\b(?:thrown|threw|binned|tossed|discarded|disposed of)\b[^?]*\b(?:record|log|mark|note|enter|write)\b|\b(?:record|log|mark|say|enter|note|tell)\b(?=[^?]*\bkept\b)(?=[^?]*\b(?:food|stock|it|them)\b)|\b(?:thrown|threw|binned|tossed|discarded)\b[^?]*\b(?:where|how) (?:do|can|should) (?:i|we)\b|\b(?:food|stock) kept\b[^?]*\b(?:button|press|where)\b/i, "foodrecord"],
-    [/\bquiet (?:hours?|times?|periods?|nights?)\b|\bdo not disturb\b|\bmute\b|\bunmute\b|\b(?:stop|stopping|no|not|don'?t|dont|doesn'?t|doesnt|without|avoid|turn off|switch off|silence|block)\b[^?]*\b(?:texts?|texting|texted|alerts?|messages?|calls?|calling|woken|waking|wake|buzz\w*|ringing|going off|disturb\w*|bother\w*)\b[^?]*(?:\bnights?\b|\b\d{1,2}\s?(?:am|a\.m)\b|\bmidnight\b|\bovernight\b|\basleep\b|\bsleep(?:ing)?\b|\bweekends?\b|\bdays? off\b|\boff duty\b|\bbed\b)|(?:\bnights?\b|\b\d{1,2}\s?am\b|\bsleep\b)[^?]*\b(?:stop|without|no|don'?t want)\b[^?]*\b(?:texts?|alerts?)\b/i, "quiet"],
+    [/\b(?:record|log|mark|note|enter|write down|put down|report|say|tell (?:you|it|the system))\b[^?]*\b(?:thrown|threw|throw (?:it |them |the \w+ )?(?:away|out)|binned|tossed|discarded|wasted|disposed)\b|\b(?:thrown|threw|binned|tossed|discarded|disposed of)\b[^?]*\b(?:record|log|mark|note|enter|write)\b|\b(?:record|log|mark|say|enter|note|tell)\b(?=[^?]*\bkept\b)(?=[^?]*\b(?:food|stock|it|them)\b)|\b(?:thrown|threw|binned|tossed|discarded)\b[^?]*\b(?:where|how) (?:do|can|should) (?:i|we)\b|\b(?:food|stock) kept\b[^?]*\b(?:button|press|where)\b/i, "foodrecord"],
+    [/\bquiet (?:hours?|times?|periods?|nights?)\b|\bdo not disturb\b|\bmute\b|\bunmute\b|\b(?:stop|stopping|no|not|don'?t|dont|doesn'?t|doesnt|without|avoid|turn off|switch off|silence|block)\b[^?]*\b(?:texts?|texting|texted|alerts?|messages?|calls?|calling|woken|waking|wake|buzz\w*|ringing|going off|disturb\w*|bother\w*)\b[^?]*(?:\bnights?\b|\b\d{1,2}\s?(?:am|a\.m)\b|\bin the morning\b|\bmidnight\b|\bovernight\b|\basleep\b|\bsleep(?:ing)?\b|\bweekends?\b|\bdays? off\b|\boff duty\b|\bbed\b)|(?:\bnights?\b|\b\d{1,2}\s?am\b|\bsleep\b)[^?]*\b(?:stop|without|no|don'?t want)\b[^?]*\b(?:texts?|alerts?)\b/i, "quiet"],
     [{ test: (t) => !personNamed(t) && /\b(?:remove|removing|delete|deleting|get rid of|got rid of|retire|decommission|take off|stop monitoring|stop watching|unregister)\b[^?]*\b(?:fridges?|freezers?|coolers?|units?|sensors?|walk-?ins?|chillers?|refrigerators?)\b(?![^?]*\b(?:food|stock|chicken|meat|milk|key)\b)/i.test(String(t || ""))
       || /\b(?:sold|scrapped|replaced|got rid of|threw out|retired|binned)\b[^?]*\b(?:fridges?|freezers?|coolers?|units?|sensors?|walk-?ins?|chillers?)\b[^?]*\b(?:remove|delete|take (?:it |them )?off)\b/i.test(String(t || "")) }, "removeunit"],
     [/\b(?:own|separate|individual|another|second|extra) (?:logins?|log[\s-]ins?|sign[\s-]?ins?|user accounts?|users?|passwords?)\b|\b(?:add|invite|create|set up|make|give)\b[^?]*\b(?:logins?|log[\s-]ins?|sign[\s-]?ins?|user accounts?|users?)\b|\bcan (?:my|our) (?:staff|team|managers?|chefs?|employees?|partner)\b[^?]*\b(?:see|view|use|open|access)\b[^?]*\b(?:dashboard|console|account)\b|\bwho can (?:log|sign) in\b|\bcan (?:my|our|the|a|another|other|more|staff|managers?|chefs?)\b[^?]*\b(?:log|sign)[\s-]?in\b(?! (?:on|from|with) (?:my|a|the|their) (?:phone|mobile|tablet|ipad))|\bmore than one (?:person|user|people)\b[^?]*\b(?:log|sign|use it|access)\b|\bgive\b[^?]*\baccess\b|\baccess to (?:the |my |our )?(?:console|account|dashboard|business)\b|\binvite\b(?![^?]*\b(?:friend|business|referral)\b)/i, "addlogin"],
@@ -2256,10 +2538,18 @@
     [{ test: (t) => (READING_RE.test(String(t || "")) || READING_FOR.test(String(t || ""))) && !isQuote(t) }, "reading"],
     // 3.42.0: an alert text got, or who answered it: that alert.
     [/\b(?:got|get|getting|received?|had)\b[^?]*\b(?:texts?|alerts?|messages?|alarms?)\b[^?]*\b(?:what (?:do|should|now|does)|saying|says|said|but)\b|\b(?:the |an |my |this )?(?:alert|text|alarm) (?:says|said|shows|showing|reads)\b/i, "alarm"],
-    [/\bwhy (?:did|do|does|was|am|have) (?:i|we|my phone|someone|everyone)\b[^?]*\b(?:get|got|getting|receive|received|texted|woken|called|phoned)\b/i, "alert"],
+    [/\bwhy (?:did|do|does|was|am|have) (?:i|we|my phone|someone|everyone)\b[^?]*\b(?:get|got|getting|receive|received|texted|woken|called|phoned|go|go off|went|buzz(?:ed)?|ring|rang|beep(?:ed)?)\b/i, "alert"],
     [/\b(?:did|has|have) (?:anyone|anybody|someone|somebody|any ?one)\b[^?]*\b(?:answer(?:ed)?|ack(?:nowledged?)?|respond(?:ed)?|picked up|seen it)\b|\bwho (?:answered|acknowledged|responded|is on it|has it|took it)\b|\bis (?:anyone|someone|anybody|somebody) on it\b/i, "alert"],
     [/\bhow long (?:has|have|was|is|did) (?:the |my |our |it |this )?[\w ,-]{0,40}?\b(?:been )?(?:warm|too warm|too cold|out|out of range|over)\b/i, "alert"],
     [/\bhow long\b[^?]*\bwait\b|\bwait (?:before|until) (?:an |the |it )?(?:alert|alerts|text|texts)\b/i, "door"],
+    // 3.44.0: "Harbourside ice cream freezer ok?", "Old Mill walk-in
+    // cooler now", "how's Juniper Old Mill doing", "is anything warm at
+    // Juniper Commissary": that unit or place now.
+    [{ test: (t) => !/\b(?:food|stock|chicken|meat|milk|fish|should|vaccines?|plan|price|trial|limits?|alarms?|alerts?|change|set|ideal|right|correct|safe|recommended|proper|best|normal|usual|typical|good)\b/i.test(String(t || "")) && !NOT_STATUS.test(String(t || ""))
+      && (/^\s*(?:(?:the|my|our|is the|is my|is our)\s+)?[\w ,'’-]{0,50}?\b(?:fridges?|freezers?|coolers?|walk[\s-]?ins?|units?|chillers?|displays?)(?: \d+)?\s+(?:ok|okay|fine|alright|all right|good|working|now|right now|temp(?:erature)?s?|reading|status)\s*[?.!]*\s*$/i.test(String(t || ""))
+        || /\bhow (?:is|are|(?:'|’)?s) (?:the |my |our )?[\w ,'’-]{0,40}?\b(?:fridges?|freezers?|coolers?|walk[\s-]?ins?|units?|chillers?|displays?)\b(?: \d+)? (?:doing|looking|going)\b/i.test(String(t || ""))
+        || (placeNamedNow(t) && /^\s*(?:how(?:'|’)?s|how is|how are(?: things)?(?: at)?|is everything ok(?:ay)? at|is all ok(?:ay)? at)\b[^?]*\b(?:doing|going|looking|ok|okay|fine)?\s*[?.!]*\s*$/i.test(String(t || "")))
+        || /\b(?:is|are) (?:anything|something|any(?: of (?:them|the units))?|any units?) (?:warm|too warm|hot|out of range|over (?:its|the|their) limits?)\b/i.test(String(t || ""))) }, "status"],
     // 3.43.0: "how's the old mill bar fridge", "are all the Old Mill units
     // fine", "is the blast chiller 2 working": that unit or place now.
     [{ test: (t) => !/\b(?:food|stock|chicken|meat|milk|fish|should|vaccines?|plan|price|trial)\b/i.test(String(t || ""))
@@ -2374,7 +2664,8 @@
   // means no built-in answer fits and the honest note is right (3.42.0).
   const phraseFor = (text) => PHRASES.find(([re, id]) => re.test(String(text || ""))
     && (id === "miss" || TOPICS.some((t) => t.id === id && (!t.only || t.only()))));
-  function bestTopic(text, own) {
+  function bestTopic(text, own) { return gated(text, rawBestTopic(text, own)); }
+  function rawBestTopic(text, own) {
     const phrased = phraseFor(text);
     if (phrased) return phrased[1] === "miss" ? null : TOPICS.find((t) => t.id === phrased[1]);
     const asked = wordsIn(text);
@@ -2425,11 +2716,14 @@
   function sureTopic(text) {
     const typed = String(text || "");
     const phrased = phraseFor(typed);
-    if (phrased) return phrased[1] === "miss" ? null : TOPICS.find((t) => t.id === phrased[1]);
+    if (phrased) return phrased[1] === "miss" ? null : gated(typed, TOPICS.find((t) => t.id === phrased[1]));
     const asked = wordsIn(typed);
     if (!asked.length) return null;
-    const best = bestTopic(typed, null);
+    const raw = rawBestTopic(typed, null);
+    const best = gated(typed, raw);
     if (!best) return null;
+    // Sent somewhere else by the gate (3.44.0): sure of that one.
+    if (best !== raw) return best;
     const hits = asked.filter((w) => best.words.includes(w)).length;
     return (hits >= 2 && hits * 2 >= asked.length) || (asked.length === 1 && hits === 1 && !VAGUE_ONE.has(asked[0])) ? best : null;
   }
@@ -3012,6 +3306,9 @@
       // the screen, and a big area to avoid lets the robot tuck over its
       // edge only (core 1.4.0 docs, "Moving an app to core 1.4.0").
       ".checklist-acts", ".btn-go",
+      // The Recent activity panel's title and Clear (3.44.0): the robot
+      // sat on "Recent activity" at the bottom of a desktop console.
+      ".term-head",
       // A fridge's status label ("Too warm", "No signal", "Fine") on its
       // card, in Problems, on /today and in the demo, and the alert's
       // own heading: the robot must never hide whether a fridge is OK.

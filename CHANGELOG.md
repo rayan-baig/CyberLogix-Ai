@@ -6,6 +6,78 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.44.0 — 2026-11-28
+
+Pilot answers from your data only when the question is plainly about
+it; after Close anyway the alert still asks what was thrown away;
+It's fixed stays on /today; a unit said beside the reading is read; a
+sensor already set up is never "not set up yet"; Recent activity looks
+like the rest of the console; a rotation's turns in its own clock. No
+price, plan, brand or sector offered has changed.
+
+- **Pilot: precision first.** For four reviews each new batch of
+  questions found five to seven new confident wrong answers, so an
+  answer from the business's own data (units now, a reading, the week,
+  the warmest, a place, the alert, the food, who is on call) is now
+  given only when the question is plainly about it. A what-if ("if the
+  freezer packs in at 3am will you ring me", "if the freezer dies on a
+  sunday night who finds out") gets how the alerts work at night, on a
+  Sunday or a holiday: the text, the rotation, quiet hours, the call.
+  A time of day ("3am", "2:30", "at 2 this morning") is never read as a
+  temperature. A change asked for ("I keep getting woken at 2am, can
+  someone else cover nights") gets how to change it, never the status.
+  Several questions at once, or a place it can't pin down, get the
+  honest note with two suggestions.
+- **Pilot: a place is that place, by its own words.** The demo's sites
+  are "Juniper Harbourside", "Juniper Old Mill" and "Juniper
+  Commissary", and "the Harbourside walk-in freezer" named none of them,
+  so it got the Old Mill freezer or every site. A site is now named by
+  the words no other site has ("Harbourside", "the mill"); "the Juniper
+  walk-in" asks which location instead of answering with all three.
+  "Earlier this week" is the 7-day list, not today alone.
+- **Pilot answers more:** a test alert ("send me a test text"), where
+  yesterday's temperatures are (the inspector's log and a unit's
+  History), hooking up a sensor, the trial's count and its end, refunds
+  (none for time already paid, as checkout says), special thermometers,
+  someone else getting the alerts too, and whether a manager can see
+  only her site (not for signing in; for the alerts, yes, through the
+  API). The food in a unit over its limit with no alert yet says so;
+  an alert closed by hand while still out of range says so; a fridge
+  below freezing is never "fine". "Canceling", in US spelling.
+- **Checked against 342 new questions** (262 written and scored first,
+  then 80 unseen), as a visitor, an owner on /today, a business on the
+  trial, and the demo's console with its rotation, in the JavaScript
+  tests; the demo's console is now the real demo account as the server
+  makes it. Before: 692 of 1,048 right, 247 of them confident wrong
+  answers; the unseen 80, scored once before any fix, 299 of 320 right,
+  8 confident wrong. After: all of them, and every earlier table still;
+  two earlier answers about a time of day ("why did I get a text at
+  3am") may now be the honest note, and two get the new, closer answer.
+- **The alert card after Close anyway.** The reason given for closing
+  ("Called for a repair") was quoted as what was thrown away, and "Add
+  what was thrown away" hid. The reason is its own "Why it was closed"
+  line, on the console's card and on /today, and the button stays until
+  a note of what went is added. The pack's "No note of what was thrown
+  away yet" shows only when food was thrown away.
+- **It's fixed stays on /today** while the alert is open: once its
+  dialog was dismissed there was no way back to Close anyway there.
+- **A unit in its own field.** `{"temperature": 37.8, "unit": "F"}` was
+  held as "unit not stated". A unit, units, scale, temp_unit or
+  temperature_unit field beside the reading saying C, F, °C, °F,
+  celsius or fahrenheit is read; anything else is still never guessed.
+- **A sensor already set up** whose reading came without a unit went
+  back under Devices knocking as "not set up yet". The reading is held,
+  and the unit's own card says to say the unit in the sensor's settings.
+- **Recent activity** is plain timestamped rows in the console's own
+  type, with no "> " and no monospace; the header's button says "Recent
+  activity", as the panel does, and Pilot keeps off its title.
+- **A rotation's turns in its own clock.** The Team tab said "hands over
+  at 8:00 AM Central" and listed each turn at "2:00 PM" in the browser's
+  clock; every time on the card is now the rotation's, labelled.
+- **The console's search box** says "Search…", which fits a 320px phone
+  (its label still says "Search the console").
+
+
 ## 3.43.0 — 2026-11-28
 
 Pilot tells the past from the present, a change from a status, and the

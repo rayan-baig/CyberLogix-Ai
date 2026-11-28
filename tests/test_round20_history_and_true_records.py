@@ -235,7 +235,8 @@ def test_money_says_what_the_contract_really_does():
     assert "Cancel any time: nothing more is billed after you cancel, with no fee" in block
     assert '"renews automatically"' not in block
     # Pilot says the same.
-    assert "A signed term sets your price and renews by itself, but cancelling still stops the bills" in PILOT
+    # "canceling", in US spelling, since 3.44.0.
+    assert "A signed term sets your price and renews by itself, but canceling still stops the bills" in PILOT
     assert "a signed term's price rises 5% a year after its first year" in PILOT
 
 
@@ -274,5 +275,5 @@ def test_the_industry_pages_have_pricing_and_sign_in_on_every_screen(api):
 
 
 def test_the_changelog_and_version_say_3_43_0():
-    assert (ROOT / "VERSION").read_text().strip() == "3.43.0"
-    assert (ROOT / "CHANGELOG.md").read_text().split("## ")[1].startswith("3.43.0")
+    # 3.44.0 followed; its entry stays in the changelog.
+    assert "## 3.43.0" in (ROOT / "CHANGELOG.md").read_text()
