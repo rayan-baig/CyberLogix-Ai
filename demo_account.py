@@ -99,10 +99,12 @@ STILL_OPEN = "COM-PREP-2"  # the problem that is open right now
 DAYS = 7
 EVERY_MINUTES = 30
 
+# Full-length made-up numbers in the 555-01xx fiction range (3.38.0): the
+# pack printed "+15550141", which no phone has ever had.
 CONTACTS = [
-    ("Morgan Hale", "+15550141"),
-    ("Priya Lund", "+15550142"),
-    ("Ade Okoro", "+15550143"),
+    ("Morgan Hale", "+15550100141"),
+    ("Priya Lund", "+15550100142"),
+    ("Ade Okoro", "+15550100143"),
 ]
 
 
@@ -142,6 +144,8 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
          seed_value: int = 2026) -> Dict[str, Any]:
     """Build the demo business in the store. Raises RefusedDatabase first
     if the store holds anything at all."""
+    import firstday
+    import legal
     import oncall
     from contracts import bill_period
     from domain import evaluate_breach
@@ -245,17 +249,10 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     incident.food_history = [dict(row, at=iso(answered)) for row in incident.food_history]
     STORE._db.put("incident", incident.incident_id, incident.to_row())
 
-    # The problem still open: warm for the last hour and a half, and
-    # nobody has answered yet.
-    sensor = sensors[STILL_OPEN]
-    STORE.open_incident(
-        tenant_id=tid, sensor=sensor, temperature_fahrenheit=46.5,
-        breach_details="Too warm: 46.5°F (limit 41°F).",
-        sms_text=f"{sensor.location_name} at {COMPANY} is 46.5°F, 5.5°F above the limit.",
-        sms_dispatch_source="fallback_template",
-        opened_at=now - timedelta(minutes=EVERY_MINUTES * 2))
-
-    # Who gets called, taking turns a week at a time.
+    # Who gets called, taking turns a week at a time. Before the open
+    # alert (3.38.0): opened with nobody on the list, its pack said "nobody
+    # was on the list to text" while "Who was told" named the person
+    # phoned.
     contacts = [STORE.add_contact(tid, name, phone, escalation_order=n)
                 for n, (name, phone) in enumerate(CONTACTS, 1)]
     tz = oncall.zone("America/Chicago")
@@ -267,6 +264,22 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         starts_on=starts.isoformat(), members=[c.contact_id for c in contacts],
         updated_at=iso(now))
     STORE._db.put(oncall.ROTATION_KIND, rotation.rec_id, rotation.to_row())
+
+    # The problem still open: warm for the last hour and a half, and
+    # nobody has answered yet. Texted to whoever a real alert texts now,
+    # the person on call this week, as the handled one was.
+    sensor = sensors[STILL_OPEN]
+    still = STORE.open_incident(
+        tenant_id=tid, sensor=sensor, temperature_fahrenheit=46.5,
+        breach_details="Too warm: 46.5°F (limit 41°F).",
+        sms_text=f"{sensor.location_name} at {COMPANY} is 46.5°F, 5.5°F above the limit.",
+        sms_dispatch_source="fallback_template",
+        opened_at=now - timedelta(minutes=EVERY_MINUTES * 2))
+    still.sms_fanout = [
+        {"channel": "sms", "contact_name": person.full_name, "to": person.phone,
+         "delivered": True, "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}"}
+        for n, person in enumerate(STORE.sms_recipients(tenant), len(CONTACTS) + 1)]
+    STORE._db.put("incident", still.incident_id, still.to_row())
 
     # A signed contract, its first month billed, and paid.
     sub = STORE.create_subscription(
@@ -282,6 +295,23 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
                        "contract.signed", "1-year term, 5% escalator, monthly.")
     STORE.record_audit(tid, who, "operator", "incident.resolved",
                        f"{incident.incident_id} on {HANDLED}.")
+
+    # A business a week in has done its first day (3.38.0): the demo
+    # still said "Getting started 3 of 4" and "Agreements to accept"
+    # beside a signed contract and a paid invoice. The owner accepted the
+    # terms live today, by their hashes, as the console's Accept button
+    # records them, and sent a test alert on day one.
+    owner_label = f"{owner.full_name} <{owner.email}>"
+    signed_at = now - timedelta(days=DAYS + 1)
+    accepted = ", ".join(f"{slug}@{legal.document(slug)['sha256'][:12]}"
+                         for slug in sorted(legal.DOCUMENTS))
+    for action, detail, at in (
+            ("legal.accepted", f"{OWNER[0]} accepted v{legal.TERMS_VERSION}: {accepted}", signed_at),
+            (firstday.SENT, f"Test alert: {len(CONTACTS)} of {len(CONTACTS)} sent. "
+                            "No incident was opened.", first + timedelta(hours=2))):
+        entry = STORE.record_audit(tid, owner_label, "owner", action, detail)
+        entry.at = at
+        STORE._db.put("audit", entry.entry_id, entry.to_row())
 
     return {
         "tenant_id": tid,

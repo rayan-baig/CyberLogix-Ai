@@ -408,6 +408,9 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
   display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px;
 }
 .tiles > .tile { flex: 1 1 168px; }
+/* The console sets --per-row so its rows come out even (3.38.0): seven
+   tiles on a screen with room for six read 4 + 3, not 6 + 1. */
+#tiles > .tile { flex-basis: max(168px, calc((100% - (var(--per-row, 12) - 1) * 14px) / var(--per-row, 12) - 1px)); }
 .tile {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 20px 22px 18px;

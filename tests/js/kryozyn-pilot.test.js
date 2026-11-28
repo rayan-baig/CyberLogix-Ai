@@ -289,7 +289,10 @@ test("core 1.4.0: on a new business's phone screen the robot stays at the bottom
   const config = fs.readFileSync(app("pilot-kryozyn.js"), "utf8");
   const list = config.slice(config.indexOf("avoid: ["), config.indexOf("],", config.indexOf("avoid: [")));
   const avoid = new Set(Array.from(list.matchAll(/"([^"]+)"/g), (m) => m[1]));
-  for (const sel of [".top", ".demo-top", "#app > .nav"]) assert.ok(!avoid.has(sel), sel);
+  // 3.38.0: the console's header is listed (the robot sat in it beside
+  // °F at 375px with the alert bar showing); the other headers are not.
+  for (const sel of [".top", ".demo-top"]) assert.ok(!avoid.has(sel), sel);
+  assert.ok(avoid.has("#app > .nav"));
   const view = { width: 375, height: 812 };
   const size = { width: 56, height: 54 };
   const page = [
@@ -459,8 +462,9 @@ test("1.4.0: 'What does this alert mean?' explains the open alert from its own r
   assert.doesNotMatch(ack, NO_PEOPLE);
   const fixed = ask(meaningOf("/today", overviewWith({ ack: true, fixed: true })));
   assert.match(fixed, /Someone on your team said it is fixed\. It closes by itself once it is back in range\./);
-  // On /today the buttons are under Needs you now.
-  assert.match(ask(meaningOf("/today", overviewWith())), /\*\*I'm on it\*\* under Needs you now/);
+  // On /today the buttons are on the alert at the top of the page (3.38.0:
+  // its card has no "Needs you now" heading under the alert's headline).
+  assert.match(ask(meaningOf("/today", overviewWith())), /\*\*I'm on it\*\* on the alert at the top of the page/);
   // No alert open (3.33.0): no such suggestion, but typed it says so, and the last one in a line.
   assert.equal(meaningOf("/console", overviewWith({ none: true })), undefined);
   const none = typedAnswer("/console", "What does this alert mean?", { overview: overviewWith({ none: true }) });
@@ -544,7 +548,7 @@ test("3.28.0: 'It's fixed now' points at the real button, and never closes anyth
     assert.equal(chip.prompt, undefined, "not an AI prompt any more");
     const text = ask(chip);
     assert.match(text, /^Press \*\*It's fixed\*\* on \*\*Kitchen walk-in\*\*/);
-    assert.match(text, pathname === "/today" ? /under \*\*Needs you now\*\*/ : /top of the page/);
+    assert.match(text, pathname === "/today" ? /on the alert at the top of the page/ : /top of the page/);
     assert.match(text, /was the food kept or thrown away/);
     assert.doesNotMatch(text, NO_PEOPLE);
   }
@@ -1293,7 +1297,8 @@ function chatAt(pathname, opts = {}) {
   const overview = opts.overview !== undefined ? opts.overview : overviewWith();
   const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
     localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
-  if (pathname === "/console") win.KryozynConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null) };
+  if (pathname === "/console") win.KryozynConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null),
+    rotations: () => (signedIn && opts.rotations !== undefined ? opts.rotations : null) };
   if (pathname === "/today") win.KryozynToday = { overview: () => overview, did: () => null };
   const doc = { getElementById: () => ({ dataset: { ...NAMES, ...DATA, restaurantPrice: "149", pharmacyPrice: "199",
     unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10" } }), title: "Restaurants",
@@ -1413,6 +1418,112 @@ test("3.37.0: the earlier typed answers still go where they did, and every item'
     const chat = chatAt(pathname);
     chat.send("how much for 2 fridges?");
     for (const item of typedItems(chat.given, pathname)) assert.ok(!item.match || item.match.length <= 20, `${pathname}: ${item.label}`);
+    await chat.tick();
+  }
+});
+
+// ---------------------------------------------------------------- 3.38.0: the core questions with no key
+
+// An account as the overview gives it, with the plan, the people texted
+// now and the sites (first names only ever reach an answer).
+function accountOverview({ trial = false, paused = false } = {}) {
+  const o = overviewWith();
+  o.sensors[1].location_name = "Harbourside / Bar fridge";
+  o.sensors[1].site_name = "Harbourside";
+  o.sensors[1].danger_above_display = 41;
+  o.sensors[0].site_name = "Old Mill";
+  o.sites = [{ site_id: "SITE-1", name: "Harbourside" }, { site_id: "SITE-2", name: "Old Mill" }];
+  o.texted_first_names = ["Morgan"];
+  o.account = { on_trial: trial, plan: trial ? "trial" : "growth", collections: { overdue_usd: 0 },
+    paused: paused ? { resume_on: "1 February 2027", words: "Paused until 1 February 2027. No bills and no alerts until then." } : null };
+  o.subscription = trial
+    ? { plan: "trial", plan_name: "Trial", units_total: 3, monthly_total_usd: 149,
+      after_trial: { plan_name: "Starter", monthly_total_usd: 59 }, line_items: [] }
+    : { plan: "growth", plan_name: "Growth", units_total: 20, monthly_total_usd: 447,
+      line_items: [{ description: "3 locations (20 sensors)" }] };
+  return o;
+}
+const ROTA_NOW = [{ scope: "estate", on_shift_now: { contact_id: "C1", full_name: "Morgan Hale" },
+  schedule: [{ full_name: "Morgan Hale", ends_local: "Fri 04 Dec 08:00 CST" }, { full_name: "Priya Lund", ends_local: "Fri 11 Dec 08:00 CST" }] }];
+
+test("3.38.0: a visitor's nobody answering, a contract, and an electrician are answered with no key, on every page", async () => {
+  for (const pathname of EVERY) {
+    const chat = chatAt(pathname, { signedIn: pathname === "/console" || pathname === "/today" });
+    for (const words of ["What happens if nobody answers?", "what if no one answers the text", "And if the chef doesn't answer?"]) {
+      assert.match(chat.send(words).text || "(missed)", /^If nobody answers the alert text within 10 minutes, Kryozyn phones the people on call/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    for (const words of ["Is there a contract or can I leave any time?", "Is there a commitment?", "am I locked in?"]) {
+      const got = chat.send(words).text || "(missed)";
+      assert.match(got, /^No lock-in: you pay by the month, or by the year if you choose, and can leave any time\.\n\nIn the console: \*\*Money\*\* tab/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    for (const words of ["Do I need an electrician?", "is it hard to install?", "Is there any wiring?"]) {
+      assert.match(chat.send(words).text || "(missed)", /^Not hard, and no coding\. No electrician either: the sensors are wireless/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+  }
+  // Pressed, "How do I cancel?" stays as it was: no lock-in line it wasn't asked for.
+  const chat = chatAt("/pricing", { signedIn: false });
+  assert.match(chat.send("How do I cancel my subscription?").text, /^In the console: \*\*Money\*\* tab/);
+});
+
+test("3.38.0: signed in, what's wrong, who is on call, the bill, a pause and a limit come from the page's own data", async () => {
+  for (const pathname of ["/console", "/today"]) {
+    const overview = accountOverview();
+    const chat = chatAt(pathname, { overview, rotations: ROTA_NOW });
+    const wrong = chat.send("What's wrong right now?");
+    assert.equal(wrong.label !== null, true, pathname);
+    assert.match(wrong.text, /^These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\* \(47°F\)/, pathname);
+    await chat.tick();
+    assert.match(chat.send("status").text, /^These 2 need you/, pathname);
+    await chat.tick();
+
+    const oncall = chat.send("Who is on call this week?").text || "(missed)";
+    if (pathname === "/console") assert.match(oncall, /^On call now: \*\*Morgan\*\* until Fri 04 Dec 08:00 CST, then \*\*Priya\*\*\./);
+    else assert.match(oncall, /^An alert text goes to \*\*Morgan\*\* right now\.\n\nThe week's turns are on the \*\*Team\*\* tab, under \*\*On call now\*\*\./);
+    assert.match(oncall, /\[Open On call now\]\(/);
+    assert.doesNotMatch(oncall, /Hale|Lund|\+1555/);
+    await chat.tick();
+
+    const bill = chat.send("How much am I paying?").text || "(missed)";
+    assert.match(bill, /^You're on \*\*Growth: \$447 a month\*\*, for 3 locations \(20 sensors\)\. Nothing is overdue\./, `${pathname}: ${bill}`);
+    await chat.tick();
+
+    const pause = chat.send("We're closed for Christmas, can I pause alerts?").text || "(missed)";
+    assert.match(pause, /^There's no pause for a few days\. The shortest is the account pause, 1, 2 or 3 months/);
+    assert.match(pause, /\*\*Money\*\* tab, under \*\*Pause or cancel\*\*/);
+    assert.match(pause, /\*\*Mute\*\*/);
+    await chat.tick();
+
+    const limit = chat.send("change the bar fridge limit to 38").text || "(missed)";
+    assert.match(limit, /^For \*\*Bar fridge\*\* at Harbourside \(now over 41°F\): Press \*\*Change limit\*\* on its card/, `${pathname}: ${limit}`);
+    assert.match(limit, /type 38 under \*\*Text us if it goes over\*\*, and press \*\*Save\*\*/);
+    await chat.tick();
+  }
+  // A trial is never billed; a paused account says until when.
+  assert.match(chatAt("/today", { overview: accountOverview({ trial: true }) }).send("how much am I paying?").text,
+    /^You're on the free trial: nothing is billed\. Your 3 units would be \*\*Starter, \$59 a month\*\* after it\./);
+  assert.match(chatAt("/console", { overview: accountOverview({ paused: true }) }).send("closed for the holidays: can I pause alerts?").text,
+    /^Paused until 1 February 2027\./);
+  // A visitor asking what they pay gets the prices; who is on call, how it works.
+  assert.match(chatAt("/pricing", { signedIn: false }).send("How much am I paying?").text || "", /^\*\*Starter \$59 a month/);
+  assert.match(chatAt("/", { signedIn: false }).send("Who is on call this week?").text || "", /set a rotation on the \*\*Team\*\* tab/);
+  assert.match(chatAt("/", { signedIn: false }).send("Can I change the limit to 38?").text || "", /^Every fridge and freezer has its own limit\. Press \*\*Change limit\*\*/);
+});
+
+test("3.38.0: '3 restaurants with about 8 fridges each' is 24 fridges across 3, priced at each location's share", async () => {
+  for (const pathname of ["/", "/pricing", "/console"]) {
+    const chat = chatAt(pathname);
+    for (const words of ["How much for 3 restaurants with about 8 fridges each?", "price for 3 restaurants, 8 fridges per restaurant"]) {
+      assert.match(chat.send(words).text || "(missed)", /^\*\*24 fridges across 3 locations: Growth, \$447 a month\*\*/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    // A total over the places is shared out: 20 over 3 is under 10 at each, no extras.
+    assert.match(chat.send("how much for 20 fridges across 3 restaurants").text || "", /^\*\*20 fridges across 3 locations: Growth, \$447 a month\*\*\./);
+    await chat.tick();
+    // 12 at each of 2 is 2 past the allowance at each.
+    assert.match(chat.send("2 restaurants with 12 fridges each, how much?").text || "", /^\*\*24 fridges across 2 locations: Growth, \$358 a month\*\*/);
     await chat.tick();
   }
 });

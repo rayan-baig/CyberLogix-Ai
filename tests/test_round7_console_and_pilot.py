@@ -79,8 +79,11 @@ def test_the_robot_avoids_only_the_checklist_buttons_and_no_header_bar():
     avoid = PILOT_APP[PILOT_APP.index("avoid: ["):PILOT_APP.index("],", PILOT_APP.index("avoid: ["))]
     for sel in (".checklist-acts", ".btn-go"):
         assert f'"{sel}"' in avoid, sel
-    for sel in (".top", ".demo-top", "#app > .nav", "#first-day"):
+    for sel in (".top", ".demo-top", "#first-day"):
         assert f'"{sel}"' not in avoid, sel
+    # 3.38.0: the console's own header is listed (at 375px with the alert
+    # bar showing, the robot sat in it beside °F).
+    assert '"#app > .nav"' in avoid
 
 
 def test_the_core_stays_untouched():

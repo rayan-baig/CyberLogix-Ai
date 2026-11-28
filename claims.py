@@ -159,16 +159,33 @@ def full_name(label: Optional[str]) -> Optional[str]:
     return text or person_name(label)
 
 
+# Words that already say what a unit is (3.38.0): "Prep fridge, bakery"
+# needs no kind after it.
+_NAMED_KINDS = ("fridge", "freezer", "cooler", "chiller", "display")
+
+
 def asset_label(name: Optional[str], noun: str) -> str:
     """The unit as the kitchen calls it, with its kind only when the name
     doesn't already say it: "Walk-in fridge", never "Walk-in fridge
-    (walk-in)" (3.33.0); "Unit 4 (walk-in)" keeps it."""
+    (walk-in)" (3.33.0); "Unit 4 (walk-in)" keeps it. A name with fridge,
+    freezer, cooler, chiller or display in it is already named (3.38.0):
+    "Prep fridge, bakery (walk-in)" called a prep fridge a walk-in."""
     shown = (name or "").strip()
     if not shown:
         return noun
     flat = "".join(ch for ch in shown.lower() if ch.isalnum())
     kind = "".join(ch for ch in (noun or "").lower() if ch.isalnum())
-    return shown if not kind or kind in flat else f"{shown} ({noun})"
+    if not kind or kind in flat or any(word in flat for word in _NAMED_KINDS):
+        return shown
+    return f"{shown} ({noun})"
+
+
+def unit_kind_noun(sensor, profile: Dict[str, Any]) -> str:
+    """The unit's own kind where its sector asks one ("fridge",
+    "freezer"), else the sector's word for a unit (3.38.0)."""
+    from domain import unit_kind_of
+
+    return (unit_kind_of(sensor) if sensor is not None else None) or profile["asset_noun"]
 
 
 def _breach_words(first_f: Optional[float], sensor, unit: str) -> Optional[str]:
@@ -651,10 +668,10 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
             # asks for it.
             "address": ((site.address if site else "") or tenant.site_address or "").strip() or None,
             "asset": sensor.location_name if sensor else incident.sensor_id,
-            "asset_type": profile["asset_noun"],
+            "asset_type": unit_kind_noun(sensor, profile),
             # "Walk-in fridge", with its kind only when the name lacks it.
             "asset_label": asset_label(
-                sensor.location_name if sensor else incident.sensor_id, profile["asset_noun"]),
+                sensor.location_name if sensor else incident.sensor_id, unit_kind_noun(sensor, profile)),
             "industry": profile["name"],
         },
         "event": {

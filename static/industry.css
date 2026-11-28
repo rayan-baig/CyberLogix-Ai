@@ -78,7 +78,7 @@ h1.lede {
 
 /* The index of all twelve. */
 .grid { display: grid; gap: 12px;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+        grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
 .ind {
   display: block; text-decoration: none; padding: 20px;
   border-radius: 14px; border: 1px solid var(--border);

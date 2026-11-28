@@ -147,7 +147,9 @@
   }
 
   const CONNECT = onConsole || onToday ? "/console#connect" : "/help/sensors";
-  const ON_IT = onToday ? "**I'm on it** under Needs you now" : "**I'm on it** at the top of the page";
+  // /today's alert card has no "Needs you now" heading under the alert's
+  // own headline since 3.38.0: the buttons are at the top of the page.
+  const ON_IT = onToday ? "**I'm on it** on the alert at the top of the page" : "**I'm on it** at the top of the page";
 
   // The words in a question that count, for this file's own matching
   // (3.32.0): lower case, a plural "s" off, and the little words left out
@@ -386,7 +388,10 @@
 
   const DOOR = () => `No. A door opened for a minute doesn't alert anybody: a fridge has to **stay** out of range for its wait first (${fig(F.alertAfterFridge, "20")} minutes for a food fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer). You can change the wait per unit with **Alert wait** on its card. A reading ${fig(F.alertAtOnceDegrees, "15")}°F or more past the limit alerts at once.`;
   const POWER = () => `Sensors send their readings over your internet. If the power or the Wi-Fi goes off, readings stop, and after ${fig(F.offlineMinutes, "30")} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts go out from our servers, not from your building.\n\nUntil the sensor reports again, check that fridge with a thermometer and write it down. [What to check](/help#sensor-offline)`;
-  const CALLS = () => `Yes, on plans with calls. If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, ${F.appShort} phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
+  // "What happens if nobody answers?" (3.38.0) gets the answer to that,
+  // not a "Yes" to a question nobody asked.
+  const NOBODY_ANSWERS = /\b(?:nobody|no one|no-one)\b.*\b(?:answers?|answered|picks? up|responds?|replies)\b|\b(?:doesn'?t|does not|don'?t|do not|didn'?t|did not)\s+(?:answer|pick up|respond|reply)\b|\bunanswered\b/i;
+  const CALLS = (ctx) => `${ctx && typeof ctx.label === "string" && NOBODY_ANSWERS.test(ctx.label) && !/\bnight\b|\b\d{1,2}\s?am\b/i.test(ctx.label) ? "" : "Yes, on plans with calls. "}If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, ${F.appShort} phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
   const TRIAL = () => `The free trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors, needs no card, and includes ${fig(F.trialCalls, "5")} alert calls. Nothing moves you to a paid plan by itself: you choose one when you are ready. [Start a free trial](/signup)`;
   // Signed in on /today, the console is a link to open, never "Sign in"
   // (3.28.0): that was offered to somebody already signed in.
@@ -405,7 +410,7 @@
     const i = live[0];
     const u = units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
     const name = i.site_wide ? "the site-wide alert" : `**${unitName(u)}**`;
-    const where = onToday ? "under **Needs you now**" : "at the top of the page, or on the alert under **Alerts**";
+    const where = onToday ? "on the alert at the top of the page" : "at the top of the page, or on the alert under **Alerts**";
     const more = live.length > 1 ? ` There ${live.length === 2 ? "is 1 more alert" : `are ${live.length - 1} more alerts`}, each with its own button.` : "";
     return `Press **It's fixed** on ${name}, ${where}.${more}\n\nIf it is back in range it closes, and you are asked one thing: was the food kept or thrown away. If it is still out of range, it stays open and closes by itself once it is cold, so nobody is woken for a fridge that is fine.`;
   }
@@ -456,7 +461,7 @@
   //
   // "Is it hard to set up?", for anybody.
   const EASY = () => [
-    "Not hard, and no coding. For each fridge or freezer:",
+    "Not hard, and no coding. No electrician either: the sensors are wireless, most run on batteries, and nothing is wired into the fridge. For each fridge or freezer:",
     "1. Buy a wireless sensor that sends its readings to a web address, or one whose maker's cloud we read (Monnit, SensorPush).",
     "2. Put it inside, away from the door, and connect it to your Wi-Fi as its maker says.",
     `3. ${ownPage && signedIn() ? "" : "In the console, "}**Add a fridge or freezer**: the wizard shows your brand's few steps with your key filled in, and ticks when the first reading lands.`,
@@ -546,6 +551,98 @@
   const ADDRESS = () => (ownPage && signedIn()
     ? `Open **Insurance packs** in the console (the **Proof** tab; on a small account, under **More**), type it in **Site address** and press **Save**. Every pack shows it from then on. On a pack that has none, **Site: not recorded** has **Add the site address**, which does the same.\n\n[Add the address](${ADDRESS_LINK})`
     : `Once you've signed up, **Insurance packs** in the console has a **Site address** box: saved once, every pack shows it. [See a sample pack](/sample-insurance-pack) · [Start a free trial](/signup)`);
+
+  // ---------------------------------------------------------------- 3.38.0
+  //
+  // Who is on call, what the account pays, pausing for a closure and
+  // changing a limit: from what the page already loaded for the person
+  // (the console's On call now card, the overview), first names only.
+  const firstName = (full) => words(String(full || "").split(/\s+/)[0]);
+  const listed = (names) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+  function rotationsNow() {
+    try {
+      if (onConsole && window.KryozynConsole && typeof window.KryozynConsole.rotations === "function") {
+        const r = window.KryozynConsole.rotations();
+        return Array.isArray(r) ? r : null;
+      }
+    } catch (_) { /* the overview's names instead */ }
+    return null;
+  }
+  // When a shift ends, as the card says it: "Fri 04 Dec 08:00 CST".
+  const shiftEnd = (r) => words((r.schedule && r.schedule[0] && r.schedule[0].ends_local) || "");
+  function oncallAnswer() {
+    if (!(ownPage && signedIn())) {
+      return `Once you've signed up, everyone under **Who gets alerts** is on call, or set a rotation on the **Team** tab (**On call now**): people take turns by the day or the week, handing over at a time you choose, and the card shows who is on now and who is next. [Start a free trial](/signup)`;
+    }
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const rotations = rotationsNow();
+    const lines = [];
+    if (rotations && rotations.length) {
+      const sites = Array.isArray(dd.sites) ? dd.sites : [];
+      rotations.forEach((r) => {
+        const place = !r.scope || r.scope === "estate" ? ""
+          : ` at ${words((sites.find((x) => x.site_id === r.scope) || {}).name || "one location")}`;
+        const now = r.on_shift_now ? firstName(r.on_shift_now.full_name) : "";
+        const next = r.schedule && r.schedule[1] ? firstName(r.schedule[1].full_name) : "";
+        const until = shiftEnd(r);
+        lines.push(now ? `On call${place} now: **${now}**${until ? ` until ${until}` : ""}${next ? `, then **${next}**` : ""}.`
+          : `Nobody in the rotation${place} is on call right now.`);
+      });
+    }
+    const names = Array.isArray(dd.texted_first_names) ? dd.texted_first_names.map(words).filter(Boolean) : [];
+    if (names.length) lines.push(`An alert text goes to **${listed(names)}** right now.`);
+    if (!lines.length) return `Nobody is on the list yet, so nobody would be texted. Add people under **Who gets alerts** on the **Team** tab. [Add someone](${TEAM_LINK})`;
+    if (!rotations) lines.push("The week's turns are on the **Team** tab, under **On call now**.");
+    return `${lines.join("\n\n")}\n\n[Open On call now](${TEAM_LINK})`;
+  }
+  // "How much am I paying?": the plan and the month from the overview.
+  const usd = (v) => `$${Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: Number(v) % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+  function billAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const sub = dd.subscription || {};
+    const acct = dd.account || {};
+    const money = onConsole ? "the **Money** tab" : "the console's **Money** tab";
+    if (acct.paused) return `${words(acct.paused.words) || "Your account is paused."} Pausing or coming back early is on ${money}, under **Pause or cancel**.`;
+    if (acct.on_trial || sub.plan === "trial") {
+      const after = sub.after_trial;
+      return `You're on the free trial: nothing is billed.${after ? ` Your ${count(sub.units_total, "unit")} would be **${words(after.plan_name)}, ${usd(after.monthly_total_usd)} a month** after it.`
+        : sub.monthly_total_usd ? ` Carrying on with what you have would be **${usd(sub.monthly_total_usd)} a month**.` : ""} Nothing moves you to a paid plan by itself. Plans are on ${money}.`;
+    }
+    const what = (Array.isArray(sub.line_items) ? sub.line_items : []).map((l) => words(l.description)).filter(Boolean).join("; ");
+    const late = acct.collections && Number(acct.collections.overdue_usd) > 0 ? ` ${usd(acct.collections.overdue_usd)} is overdue.` : " Nothing is overdue.";
+    return `You're on **${words(sub.plan_name) || "your plan"}: ${usd(sub.monthly_total_usd)} a month**${what ? `, for ${what}` : ""}.${late} Invoices, the plan and **Pause or cancel** are on ${money}.`;
+  }
+  // "Closed for Christmas: can I pause alerts?": the real pause, honestly.
+  function pauseAnswer() {
+    const dd = ownPage && signedIn() ? overview() : null;
+    const paused = dd && dd.account && dd.account.paused;
+    if (paused) return `${words(paused.words) || "Alerts are paused."} An owner can come back early on the **Money** tab, under **Pause or cancel**.`;
+    return [
+      "There's no pause for a few days. The shortest is the account pause, 1, 2 or 3 months: no bill and no alerts until the date you pick, readings still kept, and everything starts again on its own on that date. An owner sets it on the console's **Money** tab, under **Pause or cancel**.",
+      "Closed for a few days? Leave alerts on: stock left in a fridge still needs watching. One person away can be muted with **Mute** beside their name under **Who gets alerts**, and unmuted when they're back.",
+    ].join("\n\n");
+  }
+  // "Change the bar fridge limit to 38": the real Change limit button.
+  function limitAnswer(ctx) {
+    const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const to = (/\bto\s+(-?\d{1,3}(?:\.\d)?)\b/i.exec(typed) || [])[1];
+    const dd = ownPage && signedIn() ? overview() : null;
+    const units = dd && Array.isArray(dd.sensors) ? dd.sensors : [];
+    const asked = wordsIn(typed);
+    const named = units.filter((u) => wordsIn(u.location_name || "").some((w) => !GENERIC.has(w) && asked.includes(w)));
+    const multi = new Set(units.map((u) => u.site_name).filter(Boolean)).size > 1;
+    const which = named.slice(0, 4).map((u) => {
+      const limit = degrees(u.danger_above_display, u, dd);
+      return `**${unitName(u).split("/").pop().trim()}**${multi && u.site_name ? ` at ${words(u.site_name)}` : ""}${limit ? ` (now over ${limit})` : ""}`;
+    });
+    const how = `Press **Change limit** on its card${onConsole ? "" : " in the console"} (the **Fridges** tab), type ${to || "the new limit"} under **Text us if it goes over**, and press **Save**.`;
+    if (which.length) {
+      return `${which.length === 1 ? `For ${which[0]}: ${how}` : `${how}\n\nThe ones that fit: ${which.join(", ")}.`} An owner or operator can change it; Pilot doesn't change limits for you.`;
+    }
+    return `Every fridge and freezer has its own limit. ${how} A fridge starts at ${fig(F.fridgeLimit, "41")}°F and a freezer at ${fig(F.freezerLimit, "10")}°F.${ownPage && signedIn() ? "" : " [Start a free trial](/signup)"}`;
+  }
 
   // "Sum up my fridges" (core 1.4.2's screenChip, on the console and
   // /today): the page in a few lines, from what it already loaded, in
@@ -681,7 +778,11 @@
   ].join("\n\n");
   // "How do I cancel my subscription?" (3.33.0): where, and the rule as
   // checkout shows it.
-  const CANCEL = () => [
+  // "Is there a contract?" (3.38.0): the answer to that first.
+  const LOCK_IN = /\bcontract\b|\bcommitment\b|\block(?:ed)?[\s-]*in\b|\btied in\b|\bleave\b|\bany ?time\b/i;
+  const CANCEL = (ctx) => [
+    ...(ctx && typeof ctx.label === "string" && LOCK_IN.test(ctx.label)
+      ? ["No lock-in: you pay by the month, or by the year if you choose, and can leave any time."] : []),
     "In the console: **Money** tab, **Pause or cancel**, then **Cancel my plan**. One press, never hidden behind another screen. You can pause for 1 to 3 months instead.",
     fig(F.cancelRule, "Cancel any time. Nothing more is billed after you cancel, and the service carries on to the end of the month or year you have already paid for. What you have already paid is not refunded, in part or in full."),
     "A free trial has nothing to cancel: it ends by itself, and nothing moves you to a paid plan unless you choose one.",
@@ -713,7 +814,7 @@
   // no number of fridges or places.
   function countsIn(text) {
     const tokens = String(text || "").toLowerCase().replace(/[?!.,;:()]/g, " ").split(/\s+/).filter(Boolean);
-    let units = null, places = null, noun = "";
+    let units = null, places = null, noun = "", unitAt = -1;
     tokens.forEach((t, n) => {
       const value = /^\d{1,4}$/.test(t) ? Number(t) : (NUMBER_WORDS[t] && t.length > 2 ? NUMBER_WORDS[t] : null);
       if (value === null) return;
@@ -724,9 +825,19 @@
         if (units === null && n === tokens.length - 1) units = value;   // "how much for 2"
         return;
       }
-      if (UNIT_NOUN.test(next)) { if (units === null) { units = value; noun = next; } } else if (places === null) places = value;
+      if (UNIT_NOUN.test(next)) { if (units === null) { units = value; noun = next; unitAt = n; } } else if (places === null) places = value;
     });
     if (units === null && places === null) return null;
+    // "3 restaurants with about 8 fridges each" (3.38.0): 8 at each of the
+    // 3, so 24 in all, not 8. Also "8 fridges per restaurant", "8 fridges
+    // in each", "each with 8 fridges".
+    if (units !== null && places !== null && unitAt >= 0) {
+      const after = tokens.slice(unitAt + 1, unitAt + 5);
+      const each = after.includes("each") || after.includes("apiece")
+        || after.some((t, k) => t === "per" && PLACE_NOUN.test(after[k + 1] || ""))
+        || tokens.slice(Math.max(0, unitAt - 3), unitAt).includes("each");
+      if (each) units *= places;
+    }
     const pharmacy = /pharmac/i.test(text);
     return { units, places, pharmacy, noun: noun.replace(/s$/, "") };
   }
@@ -740,7 +851,9 @@
     const growth = Number(fig(F.restaurantPrice, "149")), pharmacy = Number(fig(F.pharmacyPrice, "199"));
     const allowance = Number(fig(F.unitsPerLocation, "10")), extra = Number(fig(F.extraUnit, "15"));
     const places = Math.max(1, c.places || 1);
-    const each = c.units === null ? null : (c.places && c.units > allowance * places ? Math.ceil(c.units / places) : c.units);
+    // Each location's share (3.38.0): 24 fridges over 3 restaurants is 8
+    // at each, not 24 at each.
+    const each = c.units === null ? null : (places > 1 ? Math.ceil(c.units / places) : c.units);
     const kind = c.noun === "fridge" || c.noun === "freezer" ? c.noun : "fridge or freezer";
     const many = (n) => (kind === "fridge or freezer" ? (n === 1 ? "fridge or freezer" : "fridges or freezers") : n === 1 ? kind : `${kind}s`);
     const what = c.units === null ? (c.pharmacy ? count(places, "pharmacy", "pharmacies") : count(places, "location")) : `${c.units} ${many(c.units)}${places > 1 ? ` across ${places} locations` : ""}`;
@@ -831,7 +944,7 @@
     { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model", "monnit", "sensorpush", "elitech", "dickson",
       "metal", "steel", "range", "wall"],
       answer: SENSORS },
-    { id: "price", labels: ["What does it cost?"], also: ["afford", "subscribe"], answer: PRICE },
+    { id: "price", labels: ["What does it cost?"], also: ["afford", "subscribe", "paying"], answer: PRICE },
     // 3.33.0: a pharmacy's price, cancelling, who gets the texts, and
     // whether the data is safe, each with its own words.
     { id: "pharmacy", labels: [], ask: "How much for a pharmacy?",
@@ -839,7 +952,7 @@
     // 3.37.0: a price for a number of fridges or places, by phrase only.
     { id: "quote", labels: [], ask: "What would mine cost?", answer: QUOTE },
     { id: "cancel", labels: [], ask: "How do I cancel?",
-      also: ["cancel", "cancellation", "unsubscribe", "refund", "quit", "contract", "subscription", "stop"], answer: CANCEL },
+      also: ["cancel", "cancellation", "unsubscribe", "refund", "quit", "contract", "subscription", "stop", "leave", "commitment"], answer: CANCEL },
     { id: "team", labels: ["Who gets the texts?"], answer: TEAM },
     { id: "privacy", labels: [], ask: "Is my data safe?", also: ["data", "privacy", "private", "secure", "security", "gdpr", "sold", "safe"], answer: PRIVACY },
     { id: "plan", labels: ["Which plan for a café?"], also: ["tier", "option", "upgrade"], answer: PLAN },
@@ -851,7 +964,7 @@
     { id: "power", labels: ["Wi-Fi or power goes off?", "Power or Wi-Fi goes off?"],
       also: ["battery", "drop", "dropped", "router", "disconnect", "disconnected"], answer: POWER },
     { id: "calls", labels: ["Do you phone at night?", "Do you phone us?"],
-      also: ["3am", "2am", "4am", "midnight", "overnight", "asleep", "nighttime", "late", "wake"], answer: CALLS },
+      also: ["3am", "2am", "4am", "midnight", "overnight", "asleep", "nighttime", "late", "wake", "nobody", "answer", "unanswered"], answer: CALLS },
     { id: "log", labels: ["Log for the inspector", "A log for the inspector"], answer: LOG },
     // What happens when a fridge is warm, for a visitor: on the person's
     // own pages "which fridges need me" says it with their own fridges.
@@ -866,11 +979,20 @@
     { id: "signup", labels: [], ask: "How do I sign up?", also: ["signup", "register", "registration", "join", "create"], answer: SIGNUP },
     // 3.36.0: how hard it is to set up, Canada, the note of what was thrown
     // away, why nobody got a text, and the pack's address.
-    { id: "easy", labels: [], ask: "Is it hard to set up?", also: ["hard", "easy", "difficult", "complicated", "technical", "simple"], answer: EASY },
+    { id: "easy", labels: [], ask: "Is it hard to set up?", also: ["hard", "easy", "difficult", "complicated", "technical", "simple",
+      "electrician", "install", "installation", "wiring", "installer"], answer: EASY },
     { id: "canada", labels: [], ask: "Does it work in Canada?", also: ["canada", "canadian", "celsius", "metric", "province"], answer: CANADA },
     { id: "lossnote", labels: [], ask: "What was thrown away?", also: ["binned", "note", "went", "lost"], answer: thrownAnswer, only: () => ownPage && signedIn() },
     { id: "delivery", labels: [], ask: "Why did nobody get a text?", also: ["nobody", "didnt", "delivered", "arrive", "arrived", "received", "receive"], answer: deliveryAnswer },
     { id: "address", labels: [], ask: "How do I add my address?", also: ["address", "street"], answer: ADDRESS },
+    // 3.38.0: who is on call, what the account pays, pausing for a
+    // closure, and changing a limit.
+    { id: "oncall", labels: [], ask: "Who is on call?", also: ["rota", "rotation", "shift", "duty", "oncall", "turn"], answer: oncallAnswer },
+    { id: "bill", labels: [], ask: "What am I paying?", also: ["paying", "bill", "billed", "invoice", "invoiced", "spend", "spending"],
+      answer: billAnswer, only: () => ownPage && signedIn() },
+    { id: "pause", labels: [], ask: "Can I pause alerts?", also: ["pause", "paused", "holiday", "christmas", "vacation", "seasonal",
+      "snooze", "closure", "away"], answer: pauseAnswer },
+    { id: "limit", labels: [], ask: "How do I change a limit?", also: ["limit", "threshold", "adjust", "raise", "lower"], answer: limitAnswer },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -894,8 +1016,16 @@
     [/\bsign(?:ing)?[\s-]*up\b|\bregister\b|\bcreate (?:an |my )?account\b/i, "signup"],
     [/\binsurance (?:pack|packet|claim)|\bclaim (?:pack|form)|\bfor (?:my|the) insurer\b/i, "pack"],
     [/\bwhat (?:was |got |were |did (?:we|you|they|i) )?(?:thrown|throw|binned|tossed)\b|\bwhat went in the bin\b/i, "lossnote"],
+    // 3.38.0, before the texts and the night: the account's own bill, a
+    // pause for a closure, a limit to change, who is on call, and nobody
+    // answering.
+    [/^(?![\s\S]*\b(?:cancel|pause)\b)[\s\S]*(?:\b(?:how much|what) (?:am|are|do|does) (?:i|we) (?:paying|pay|being charged|charged|billed)\b|\b(?:my|our) (?:bill|invoice)\b|\bwhat (?:plan|tier) (?:am|are) (?:i|we)\b)/i, "bill"],
+    [/\bpause\b|\bpausing\b|\bsnooze\b|\b(?:closed|closing|shut) (?:for|over|during)\b|\bholidays?\b|\bvacation\b|\bchristmas\b|\bseasonal\b|\b(?:turn off|switch off|stop|mute) (?:the |all |my )?alerts\b/i, "pause"],
+    [/\b(?:change|set|raise|lower|move|adjust|edit)\b.*\b(?:limits?|thresholds?)\b|\blimits? (?:to|at) -?\d|\bthresholds?\b/i, "limit"],
+    [/\bwho(?:'s|’s| is| are)?\b.*\bon[\s-]*(?:call|shift|duty)\b|\bon[\s-]*call (?:this|next|now|today|tonight|right now)\b|\bwhose turn\b|\brota\b|\brotation\b/i, "oncall"],
+    [NOBODY_ANSWERS, "calls"],
     [/(?=.*\b(?:texts?|sms|messages?|alerts?)\b)(?:\b(?:nobody|no one|no-one)\b|\b(?:didn'?t|did not|never|wasn'?t|was not|weren'?t)\b.*\b(?:get|got|receive|received|arrive|arrived|come|came|sent|texted)\b)/i, "delivery"],
-    [/\b(?:hard|difficult|complicated|tricky|technical|easy)\b.*\bset(?:ting)?[\s-]*up\b|\bset(?:ting)?[\s-]*up\b.*\b(?:hard|difficult|complicated|tricky|easy)\b|\bhow (?:hard|easy|difficult) is it\b/i, "easy"],
+    [/\b(?:hard|difficult|complicated|tricky|technical|easy)\b.*\bset(?:ting)?[\s-]*up\b|\bset(?:ting)?[\s-]*up\b.*\b(?:hard|difficult|complicated|tricky|easy)\b|\bhow (?:hard|easy|difficult) is it\b|\belectrician\b|\bwiring\b|\b(?:hard|easy|difficult) to install\b|\b(?:need|hire|pay) (?:someone|somebody|a professional|an installer|a technician) to install\b/i, "easy"],
     [/\bcanad|\bcelsius\b/i, "canada"],
     [/\b(?:my|the|our) insurer\b|\binsurance company\b/i, "pack"],
     [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
@@ -909,6 +1039,10 @@
     [/\bnight\b|\bovernight\b|\bmidnight\b|\b\d{1,2}\s?(?:am|a\.m)\b|\basleep\b|\bsleeping\b|\b(?:do|will|would|can) (?:you|it) (?:phone|call|ring)\b/i, "calls"],
     // Metal walls, a walk-in, the signal: the sensors answer, with its lead.
     [THROUGH_METAL, "sensors"],
+    // 3.38.0, last: a contract or leaving any time is cancelling; "what's
+    // wrong right now?" is which fridges need you.
+    [/\bcontract\b|\bcommitment\b|\block(?:ed)?[\s-]*in\b|\btied in\b|\b(?:leave|cancel|quit|stop) (?:at )?any ?time\b/i, "cancel"],
+    [/\bwhat(?:'|’)?s (?:wrong|the matter|up with|the status|going on|happening)\b|\bwhat is (?:wrong|happening|going on)\b|\b(?:anything|something) wrong\b|\bany (?:problems?|issues?)\b|\bstatus\b|\bright now\b/i, "status"],
   ];
   function bestTopic(text, own) {
     const phrased = PHRASES.find(([re, id]) => re.test(String(text || "")) && TOPICS.some((t) => t.id === id && (!t.only || t.only())));
@@ -1419,7 +1553,13 @@
       "#did-lines", "#did-sample-lines", ".did-tabs",
       // The note of what was thrown away, quoted under the month line
       // (3.35.0): at 375px the robot sat on its last words.
-      ".answer-note", ".answer-what"],
+      ".answer-note", ".answer-what",
+      // The console's header (3.38.0): at 375px with the alert bar pinned
+      // under it and the search box and tabs at the bottom, the free top
+      // corner was the header's own, beside °F. Listed, the robot keeps
+      // clear of it (it hides rather than sit there). Only the console's:
+      // the public pages' and /today's headers stay off the list.
+      "#app > .nav"],
     // Not the logo (3.31.0): it is a picture and words, not a link, on most
     // pages, so core 1.4.2's handle may peek in beside it at the screen's
     // left edge. At 320px and 375x667 on /today with an alert that is the

@@ -287,12 +287,20 @@ def price(vertical: str) -> Dict[str, Any]:
             "price_note": (note + setup).strip(), "talk_href": "", "talk_address": ""}
 
 
+# The index's first cards (3.38.0): restaurants, then other food service,
+# then pharmacies, then the rest A to Z. "Licensed Cannabis Cultivation"
+# led the page a restaurant owner lands on.
+INDEX_FIRST = ("restaurant", "country_club", "pharmacy")
+
+
 def index() -> List[Dict[str, str]]:
+    first = [v for v in INDEX_FIRST if v in known()]
+    order = first + [v for v in known() if v not in first]
     return [
         {"vertical": v, "name": INDUSTRY_PROFILES[v]["name"],
          "slogan": INDUSTRY_PROFILES[v]["slogan"],
          "protects": CONTEXT[v]["protects"]}
-        for v in known()
+        for v in order
     ]
 
 
