@@ -96,9 +96,43 @@ KINDS = {
 
 HANDLED = "OML-WIF-1"      # the breach somebody dealt with, three days ago
 STILL_OPEN = "COM-PREP-2"  # the problem that is open right now
+HANDLED_FOR = 90           # minutes the handled freezer was warm
+WARMING_FOR = 90           # minutes of the open problem's warming, to now
+
+
+def _handled_shape(minute: int) -> float:
+    """The handled freezer, `minute` minutes after it went out: 12.5°F,
+    up to its worst of 21.0°F half an hour in, down to 11.5°F an hour in,
+    and still just over its 10°F limit until an hour and a half."""
+    if minute <= 30:
+        temp = 12.5 + (21.0 - 12.5) * minute / 30
+    elif minute <= 60:
+        temp = 21.0 - (21.0 - 11.5) * (minute - 30) / 30
+    else:
+        temp = 11.5 - 1.0 * (minute - 60) / 30
+    return round(temp, 1)
+
+
+def _warming_shape(minute: int) -> float:
+    """The open problem, `minute` minutes from now (0 or less): in range
+    and creeping up to 40.0°F an hour and a half ago... 40.8°F, then
+    43.5°F an hour ago when its alert opened, 45.0°F half an hour ago, and
+    its worst, 46.5°F, now."""
+    if minute < -60:
+        return round(40.0 + 0.8 * (minute + 90) / 25, 1)
+    if minute <= -30:
+        return round(43.5 + 1.5 * (minute + 60) / 30, 1)
+    return round(45.0 + 1.5 * (minute + 30) / 30, 1)
 
 DAYS = 7
-EVERY_MINUTES = 30
+# The made-up week, a reading every 5 minutes (3.41.0), as often as a
+# running demo is fed: the proof of monitoring report says "No sensor went
+# 10 minutes or more without sending data", which a reading every half
+# hour made untrue.
+EVERY_MINUTES = 5
+# A door opened now and then: this often in each half hour, whatever the
+# cadence.
+DOOR_CHANCE_HALF_HOUR = 0.04
 
 # While the server runs, every demo unit gets a fresh reading this often
 # (3.40.0; feed() below, called by the sweep). Half an hour after it was
@@ -147,7 +181,8 @@ def what_is_there() -> List[str]:
     return found
 
 
-def _temperature(rng: random.Random, kind: str, step: float, door_chance: float = 0.04) -> float:
+def _temperature(rng: random.Random, kind: str, step: float,
+                 door_chance: float = DOOR_CHANCE_HALF_HOUR * EVERY_MINUTES / 30) -> float:
     """A healthy unit: its own level, a slow daily swell, a little noise,
     and a door opening now and then."""
     spec = KINDS[kind]
@@ -174,7 +209,10 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
             "The demo goes into a new database only: give --db a path that "
             "does not exist yet.")
 
-    now = now or utc_now()
+    # To the second (3.41.0): the record keeps readings' times to the
+    # second, and at a reading every 5 minutes the week is read from it, so
+    # the alerts open at the very time of their readings.
+    now = (now or utc_now()).replace(microsecond=0)
     rng = random.Random(seed_value)
     owner_password = password or secrets.token_urlsafe(12)
     operator_password = secrets.token_urlsafe(12)
@@ -229,13 +267,16 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         above, below = sensor.bounds()
         for step in range(steps):
             temp = _temperature(rng, kind, step)
-            if sensor_id == HANDLED and handled_at <= step < handled_at + 3:
-                # Door left open after a delivery: three readings warm,
+            if sensor_id == HANDLED and handled_at <= step < handled_at + HANDLED_FOR // EVERY_MINUTES:
+                # Door left open after a delivery: an hour and a half warm,
                 # the stock still frozen solid.
-                temp = (12.5, 21.0, 11.5)[step - handled_at]
-            if sensor_id == STILL_OPEN and step >= steps - 4:
+                temp = _handled_shape((step - handled_at) * EVERY_MINUTES)
+            elif sensor_id == HANDLED and handled_at + HANDLED_FOR // EVERY_MINUTES <= step < handled_at + 2 * HANDLED_FOR // EVERY_MINUTES:
+                # Then back down over the next hour and a half, not at once.
+                temp = round(min(temp + 9.0 * (1 - (step - handled_at - HANDLED_FOR // EVERY_MINUTES) * EVERY_MINUTES / HANDLED_FOR), 9.5), 1)
+            if sensor_id == STILL_OPEN and step >= steps - WARMING_FOR // EVERY_MINUTES - 1:
                 # Warming now, and still warm at the last reading.
-                temp = (40.0, 43.5, 45.0, 46.5)[step - (steps - 4)]
+                temp = _warming_shape((step - (steps - 1)) * EVERY_MINUTES)
             breached = evaluate_breach("restaurant", temp, above, below) is not None
             STORE.record_reading(sensor, temp, round(rng.uniform(40, 60), 1),
                                  breached, at=first + timedelta(minutes=EVERY_MINUTES * step))
@@ -265,7 +306,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     # said "nobody was on the list to text" beside an alert answered in 7
     # minutes. Made-up receipts for the made-up numbers below.
     incident.out_since = opened
-    incident.peak_f, incident.peak_at = 21.0, opened + timedelta(minutes=EVERY_MINUTES)
+    incident.peak_f, incident.peak_at = 21.0, opened + timedelta(minutes=30)
     incident.sms_fanout = [
         {"channel": "sms", "contact_name": name, "to": phone, "delivered": True,
          "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}", "demo": True}
@@ -320,7 +361,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         breach_details="Too warm: 43.5°F (limit 41°F).",
         sms_text=f"{sensor.location_name} at {COMPANY} is 43.5°F, 2.5°F above the limit.",
         sms_dispatch_source="fallback_template",
-        opened_at=now - timedelta(minutes=EVERY_MINUTES * 2))
+        opened_at=now - timedelta(minutes=60))
     still.out_since = still.opened_at
     still.peak_f, still.peak_at = 46.5, now
     still.sms_fanout = [
@@ -340,7 +381,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     invoice, _ = STORE.settle_invoice(invoice, "DEMO-WIRE-0001")
 
     STORE.record_audit(tid, f"{owner.full_name} <{owner.email}>", "owner",
-                       "contract.signed", "1-year term, 5% escalator, monthly.")
+                       "contract.signed", "1-year term, prices rise 5% a year, monthly.")
     STORE.record_audit(tid, who, "operator", "incident.resolved",
                        f"{incident.incident_id} on {HANDLED}.")
 
@@ -378,6 +419,9 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
 # The still-open alert's unit stays warm while its alert is open, at or
 # under its worst reading so far, so "46.5°F is its worst" stays true.
 STILL_OPEN_WARM = (45.6, 46.5)
+# Once somebody says it is fixed it cools this much a reading (3.41.0),
+# never more: it went from 46.5°F to 37.8°F in five minutes.
+COOLS_PER_READING = 2.5
 
 _feed_rng = random.Random()
 
@@ -430,7 +474,11 @@ def feed(now: Optional[datetime] = None) -> int:
             temp = round(_feed_rng.uniform(*STILL_OPEN_WARM), 1)
         else:
             temp = _temperature(_feed_rng, kind, step,
-                                door_chance=0.04 * LIVE_EVERY_MINUTES / EVERY_MINUTES)
+                                door_chance=DOOR_CHANCE_HALF_HOUR * LIVE_EVERY_MINUTES / 30)
+            # Said to be fixed, it comes down over a few readings
+            # (3.41.0), never from 46.5°F to 37.8°F at once.
+            if open_alert is not None and sensor.last_temperature is not None:
+                temp = round(max(temp, sensor.last_temperature - COOLS_PER_READING), 1)
         above, below = sensor.bounds()
         breached = evaluate_breach("restaurant", temp, above, below) is not None
         STORE.record_reading(sensor, temp, round(_feed_rng.uniform(40, 60), 1),

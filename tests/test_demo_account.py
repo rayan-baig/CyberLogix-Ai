@@ -56,8 +56,10 @@ def test_a_restaurant_group_with_three_sites_and_twenty_units(demo):
 
 def test_a_week_of_readings_mostly_in_range(demo):
     for sensor in STORE.sensors_for(demo["tenant_id"]):
-        readings = STORE.readings_for(sensor.sensor_id)
-        assert len(readings) == demo_account.DAYS * 48
+        # The whole week, a reading every 5 minutes since 3.41.0 (it was
+        # every half hour): more than memory holds, so from the record.
+        readings = STORE.readings_for(sensor.sensor_id, complete=True)
+        assert len(readings) == demo_account.DAYS * 24 * 60 // demo_account.EVERY_MINUTES
         span = readings[-1].recorded_at - readings[0].recorded_at
         assert timedelta(days=6, hours=23) <= span <= timedelta(days=7)
         assert sensor.last_seen is not None and not sensor.offline(utc_now())

@@ -47,7 +47,7 @@ function renderIndex(rows, trades) {
        </a>`).join("");
   $("page").innerHTML =
     `<div class="eyebrow">Who this is for</div>
-     <h1 class="lede">Twelve industries with the same problem.</h1>
+     <h1 class="lede">${esc(String(first.length + rest.length))} kinds of business with the same problem.</h1>
      <p class="standfirst">Something you own has to stay at a temperature,
         it fails quietly and usually overnight, and afterwards somebody
         asks you to prove what happened. Pick yours.</p>

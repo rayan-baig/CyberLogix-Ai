@@ -6,6 +6,65 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.41.0 — 2026-11-28
+
+Pilot stops giving confident wrong answers with no AI key and answers
+more of what owners ask, the Setup tab fits a 320px phone, and the proof
+report, the console and the demo agree with each other. No price, plan
+or sector offered has changed.
+
+- **Pilot's wrong answers put right.** "The bakery fridge alarm, what
+  should I do?" got the sales pitch for bakeries; it now explains the
+  alert on that fridge, or says nothing is open on it and what to check.
+  "The walk-in is beeping" does the same, and says a beep is the unit's
+  own alarm. "Who can see my temperature readings?" and "What sensor do
+  you recommend for a walk-in freezer?" got "Sign in to see your
+  fridges"; they now get who can see the readings and what to buy. "What
+  did I pay last month?", "Show me my last invoice" and "When is my next
+  bill?" got the price list; on the console they now answer from your own
+  bills, and on /today they say where the bills are. "What if I have 12
+  fridges in one restaurant?" is priced as the calculator prices it
+  ($179 a month on Growth). "Change the walk-in limit to 38" lists every
+  walk-in, each with "(limit 41°F)", not "now over 10°F".
+- **Pilot answers more.** Any trade with a page under /for is recognised
+  ("Do you do florists?"), with its page and price. Also: what happens
+  after the trial (still watched for 14 days, nothing billed, nothing
+  deleted), adding a second location, changing the alert wait, taking
+  someone off the account, and changing someone's phone number. "Which
+  fridges need me?" says "Nothing needs you right now" in one line when
+  nothing does. After a question it cannot answer, the two answers it
+  offers are never "It's fixed now" with no alert open. The calls answer
+  no longer sends you to "Spending limits".
+- **The console has the buttons those answers name.** **Change number**
+  beside each person under Who gets alerts (same place in the call
+  order), and **Remove** under People who can sign in, for owners (their
+  sign-in stops; what they did stays in the record).
+- **Fits a 320px phone.** The Setup tab was 334px wide, cutting off "Use
+  a sensor you already own" and "Set up for your industry".
+- **The proof report.** An every-location report says "across 3
+  locations", not "at this location". Who is alerted is the real ladder
+  (a text to everyone on call at once, then a phone call down the list
+  after 10 minutes), not "1. On-call person" three times. Dates read
+  "Nov 21, 2026" and hours "3,353.6".
+- **The demo agrees with itself.** Its made-up week now has a reading
+  every 5 minutes, so the report's "No sensor went 10 minutes or more
+  without sending data" is true. Once somebody says the warm fridge is
+  fixed, it cools over several readings, not from 46.5°F to 37.8°F at
+  once.
+- **The console agrees with the pack.** An alert that closed by itself
+  after somebody said it was fixed reads "Closed by itself" in the
+  timeline, as in the insurance pack, not "Closed by Morgan". An open
+  alert's line shows the reading now and the worst so far, each
+  labelled, not the reading when it opened.
+- **Plainer words.** "About $224 off" and "$87 a month" beside whole
+  dollar prices; hand-over at "8:00 AM Central"; one date style on an
+  alert card; "Effective Nov 23, 2026" on the legal page (the text and
+  its hash are unchanged, so nobody has to accept it again); Setup's
+  "3rd-party gateway", "payload", "open endpoint", "Unattended watchdog"
+  and "Run sweep now" in plain words; the activity log names units and
+  says "prices rise 5% a year"; /for counts its own cards.
+
+
 ## 3.40.0 — 2026-11-28
 
 The demo stays fresh while it is served, quiet sensors that stopped

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 import food_value
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
+from claims import closed_how
 from records import person_name
 from repairs import unit_state
 from telemetry import unit_condition
@@ -269,6 +270,10 @@ def console_overview(
         row["first_out_display"] = display_temperature(incident.first_out_f, unit)
         row["peak_display"] = display_temperature(incident.peak_f, unit)
         row["temperature_unit"] = unit
+        # How it closed, as the pack says it (claims.closed_how, 3.41.0),
+        # and the reading it closed on.
+        row["closed_how"] = closed_how(incident)
+        row["close_display"] = display_temperature(incident.close_temperature_f, unit)
         # On a closed alert: what the food in it was roughly worth, as an
         # estimate (food_value.py, where the owner tunes the figures),
         # only once somebody said it was kept. Until somebody answers, the

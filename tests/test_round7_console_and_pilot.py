@@ -224,7 +224,8 @@ def test_a_tab_with_one_empty_column_gives_the_other_the_width():
     assert "balanceLayout();" in _function(CONSOLE_JS, "applyFinder")
     assert ".layout.solo-main, .layout.solo-side { grid-template-columns: minmax(0, 1fr); }" in THEME
     assert "grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));" in THEME
-    assert ".pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));" in THEME
+    # 3.41.0: never wider than a 320px phone.
+    assert ".pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));" in THEME
 
 
 # --- 6. texts off ---------------------------------------------------------------

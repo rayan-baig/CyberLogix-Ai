@@ -1439,7 +1439,7 @@ def sign(
         tenant,
         operator,
         "contract.signed",
-        f"{sub.term_years}-year term, {sub.escalator_percent:g}% escalator, "
+        f"{sub.term_years}-year term, prices rise {sub.escalator_percent:g}% a year, "
         f"{'yearly' if sub.annual_prepay else 'monthly'}.",
     )
     from pricing import CANCELLATION_RULE

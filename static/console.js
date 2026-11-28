@@ -417,6 +417,7 @@ async function enter(token, user) {
   followTeamLink();
   followAddressLink();
   followAddUnitLink();
+  followBillsLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -1029,6 +1030,10 @@ async function refresh(opts = {}) {
     bills: got.invoices ? (got.invoices.invoices || []).length : null,
     licences: got.peopleCal ? (got.peopleCal.credentials || 0) : null,
   };
+  // The bills and the contract's next bill as this load drew them, for
+  // Pilot's "What did I pay last month?" and "When is my next bill?"
+  // (3.41.0), read in the browser.
+  state.bills = { ledger: got.invoices || null, contract: (got.contract && got.contract.contract) || null };
   renderTabEmpty();
 }
 
@@ -2219,11 +2224,21 @@ function incidentTimeline(i) {
         + " said it was fixed. It closes by itself once it is back in range." });
   }
   if (i.resolved_at) {
+    // How it closed in the pack's words (claims.closed_how, 3.41.0): an
+    // alert somebody said was fixed, closed by its reading coming back,
+    // read "Closed by Morgan" here and "closed by itself" in the pack.
     const by = i.resolved_by ? CLXWords.person(i.resolved_by_name, i.resolved_by) : "";
-    const text = i.back_to_normal_on_its_own || !by
-      ? (i.resolved_note || "Closed")
-      : `Closed by ${by}${i.closed_out_of_range ? " while still out of range" : ""}`
-        + (i.close_note ? `: ${i.close_note}` : "");
+    const back = i.close_display !== null && i.close_display !== undefined
+      ? `, back to ${oneDecimal(i.close_display)}°${i.temperature_unit || state.unit}` : "";
+    const how = i.closed_how || (i.back_to_normal_on_its_own || !by ? "itself" : "person");
+    if (how === "fixed_then_itself" && i.fix_reported_at) {
+      steps.push({ cls: "ack", when: i.fix_reported_at,
+        text: `${CLXWords.person(i.fix_reported_by_name, i.fix_reported_by)} said it was fixed` });
+    }
+    const text = how === "fixed_then_itself" ? `Closed by itself${back}`
+      : how === "itself" ? (i.closed_how ? `Back in range by itself${back}` : (i.resolved_note || "Closed"))
+        : `Closed by ${by}${i.closed_out_of_range ? " while still out of range" : ""}`
+          + (i.close_note ? `: ${i.close_note}` : "");
     steps.push({ cls: "done", when: i.resolved_at, text });
   }
   // What happened to the food, who said so and when (3.30.0): "Thrown
@@ -2289,7 +2304,9 @@ function foodAtRisk(i) {
 function foodAnswered(i) {
   if (!i.food_answer_words) return "";
   const who = [i.food_answer_words, i.food_auto ? "recorded automatically" : i.food_answered_by_name,
-    i.food_answered_at ? CLXWords.clock(i.food_answered_at) : ""].filter(Boolean).join(", ");
+    // The same style as the timeline under it (3.41.0): "Nov 25, 1:58 PM"
+    // there and "Wed 1:58 PM" here were one moment.
+    i.food_answered_at ? CLXWords.dateTime(i.food_answered_at) : ""].filter(Boolean).join(", ");
   // "Change" for 24 hours, each change kept in the history, and after
   // "Thrown away" the insurance pack and the note of what went (3.32.0).
   const canAct = Boolean(state.user && state.user.role !== "viewer") && !state.wall;
@@ -2305,6 +2322,23 @@ function foodAnswered(i) {
     open ? `<div class="food-acts food-change-to"><button class="btn btn-sm" type="button" data-food-kept="${id}">Food kept</button><button class="btn btn-sm" type="button" data-food-thrown="${id}">Thrown away</button></div>` : ""}${
     open && thrown ? `<div class="food-loss"><button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>${
       i.corrective_action ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}</div>` : ""}</div>`;
+}
+
+/* An open alert's line (3.41.0): the reading now and the worst so far,
+   each labelled, with the limit. "Too warm: 43.5°F" was the reading when
+   it opened, beside a unit reading 46.5°F. */
+function liveWords(i) {
+  const unit = ((state.data && state.data.sensors) || []).find((x) => x.sensor_id === i.sensor_id);
+  const now = unit ? unit.last_temperature_display : null;
+  if (!unit || now === null || now === undefined || (unit.condition && unit.condition.state === "offline")) return i.breach_details || "";
+  const u = `°${i.temperature_unit || unit.temperature_unit || state.unit}`;
+  const cold = Boolean(unit.condition && unit.condition.too === "cold");
+  const limit = cold ? unit.danger_below_display : unit.danger_above_display;
+  const peak = i.peak_display ?? null;
+  const limitWords = limit !== null && limit !== undefined ? ` (limit ${limit}${u})` : "";
+  const worst = peak !== null && Number(peak) !== Number(now) ? ` Worst so far ${oneDecimal(peak)}${u}.` : "";
+  if (unit.condition && unit.condition.back_in_range) return `Back in range now: ${oneDecimal(now)}${u}${limitWords}.${worst}`;
+  return `${cold ? "Too cold" : "Too warm"} now: ${oneDecimal(now)}${u}${limitWords}.${worst}`;
 }
 
 /* A unit's name as the kitchen says it, for an alert about it. */
@@ -2375,7 +2409,7 @@ function renderIncidents(incidents, entitlements, siteWide) {
         <span class="card-note incident-for">${i.state === "resolved" ? "was out" : "out"} for ${esc(outWords)}</span>
       </div>
       ${i.state === "resolved" && (i.peak_display ?? i.peak_fahrenheit) != null
-        ? "" : `<div class="card-note">${esc(i.breach_details)}</div>`}
+        ? "" : `<div class="card-note">${esc(i.state === "resolved" ? i.breach_details : liveWords(i))}</div>`}
       ${textsFailedNote(i)}
       ${i.state === "resolved" ? foodAnswered(i) : ""}
       ${i.state === "resolved" && i.food_question ? foodAtRisk(i) : ""}
@@ -2571,7 +2605,7 @@ const AGREEMENTS = {
 
 function auditDetail(e) {
   const detail = String(e.detail || "");
-  if (e.action !== "legal.accepted") return detail;
+  if (e.action !== "legal.accepted") return plainAudit(detail);
   const version = (detail.match(/accepted v([0-9.]+)/) || [])[1];
   const names = Array.from(detail.matchAll(/([a-z-]+)@[0-9a-f]{6,}/g))
     .map((m) => AGREEMENTS[m[1]] || m[1].replace(/-/g, " "));
@@ -2580,6 +2614,29 @@ function auditDetail(e) {
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   const when = /at sign-up/.test(detail) ? " at sign-up" : "";
   return `Agreed to ${list}${version ? ` (version ${version})` : ""}${when}.`;
+}
+
+/* An audit line as an owner reads it (3.41.0): units by their names and
+   alerts as "the alert on ...", never "INC-2-RXCQ on COM-PREP-2", and a
+   contract's "5% escalator" as what it means. The line as written stays
+   in the tooltip. */
+function plainAudit(detail) {
+  const sensors = (typeof state !== "undefined" && state.data && state.data.sensors) || [];
+  const named = (id) => {
+    const s = sensors.find((x) => x.sensor_id === id);
+    return s ? ((s.location_name || "").trim() || id) : id;
+  };
+  let out = detail
+    .replace(/\bINC-[A-Za-z0-9-]+ on ([A-Za-z0-9][A-Za-z0-9_-]*)/g, (_, id) => `The alert on ${named(id)}`)
+    .replace(/\b(\d+(?:\.\d+)?)% escalator\b/g, "prices rise $1% a year");
+  sensors.forEach((s) => {
+    const name = (s.location_name || "").trim();
+    if (name && s.sensor_id && out.includes(s.sensor_id)) {
+      const id = s.sensor_id.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp("\\b" + id + "\\b", "g"), name);
+    }
+  });
+  return out;
 }
 
 function renderAudit(trail) {
@@ -2876,7 +2933,9 @@ function renderRoster(roster) {
   $("roster-body").innerHTML = roster.contacts.map((c, index) => {
     const channels = [c.receives_sms ? "SMS" : null, c.receives_voice ? "call" : null]
       .filter(Boolean).join(" + ") || "muted";
-    return `<div class="u-d-flex u-items-center u-gap-9 u-p-7-0 u-bb${c.active ? "" : " u-o-5"}">
+    // Wraps on a narrow phone (3.41.0): three buttons and a name are
+    // wider than 320px.
+    return `<div class="u-d-flex u-flex-wrap u-items-center u-gap-9 u-p-7-0 u-bb${c.active ? "" : " u-o-5"}">
       <span class="u-w-20 u-c-muted u-fs-12 u-tnum">${index + 1}</span>
       <span class="grow">
         <span class="u-fs-13 u-fw-500">${esc(c.full_name)}</span>
@@ -2886,9 +2945,26 @@ function renderRoster(roster) {
       </span>
       <button class="btn btn-sm" data-contact-toggle="${esc(c.contact_id)}"
               data-active="${c.active ? "1" : "0"}">${c.active ? "Mute" : "Unmute"}</button>
+      <button class="btn btn-sm" data-contact-phone="${esc(c.contact_id)}"
+              data-name="${esc(c.full_name)}" data-phone="${esc(c.phone)}">Change number</button>
       <button class="btn btn-sm" data-contact-remove="${esc(c.contact_id)}">Remove</button>
     </div>`;
   }).join("");
+}
+
+/* A hand-over time in the console's clock words (3.41.0): "8:00 AM
+   Central", not "08:00 America/Chicago". */
+function handoverWords(hhmm, zone) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  const clock = m ? `${Number(m[1]) % 12 || 12}:${m[2]} ${Number(m[1]) < 12 ? "AM" : "PM"}` : String(hhmm || "");
+  let place = "";
+  try {
+    const part = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "longGeneric" })
+      .formatToParts(new Date()).find((p) => p.type === "timeZoneName");
+    place = part ? part.value.replace(/ Time$/, "") : "";
+  } catch (_) { place = ""; }
+  if (!place || /^GMT|^UTC/.test(place)) place = String(zone || "").split("/").pop().replace(/_/g, " ");
+  return `${clock} ${place}`.trim();
 }
 
 /* ---------------- on call now: rotations and quiet hours ----------------
@@ -3024,7 +3100,7 @@ function renderRotations(data, roster) {
       <div class="rota-head">
         <span class="grow"><b>${esc(rotaPlace(r.scope))}</b>
           <span class="rota-sub">${esc(turnWords(r.shift_days))}, handing over at
-            ${esc(r.handover)} ${esc(r.timezone)} · ${esc(r.members.length)} ${
+            ${esc(handoverWords(r.handover, r.timezone))} · ${esc(r.members.length)} ${
             r.members.length === 1 ? "person" : "people"}</span></span>
         ${buttons}
       </div>
@@ -3266,8 +3342,8 @@ function renderContract(contract, pipeline, tenant) {
            <label class="sr" for="term-years">Term</label>
            <select id="term-years" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
              <option value="1">1 year</option>
-             <option value="3" selected>3 years — 5% a year escalator</option>
-             <option value="5">5 years — 5% a year escalator</option>
+             <option value="3" selected>3 years — prices rise 5% a year</option>
+             <option value="5">5 years — prices rise 5% a year</option>
            </select>
            <button class="btn btn-sm btn-primary" type="submit">Sign</button>
          </div>
@@ -3384,7 +3460,7 @@ function renderLeaving(d) {
   const offer = d.offer || {};
   const stay = offer.available ? `<div class="stay-offer">
       <b>Or stay, with ${esc(offer.words)}.</b>
-      ${offer.saving_usd ? ` That is about ${money(offer.saving_usd)} off.` : ""}
+      ${offer.saving_usd ? ` That is about ${wholeDollars(offer.saving_usd)} off.` : ""}
       Once only.
       <div class="u-mt-8"><button class="btn btn-sm btn-primary" type="button" data-stay="1"
         ${owner ? "" : "disabled"}>Stay with ${esc(offer.percent)}% off</button></div>
@@ -3548,6 +3624,10 @@ function renderInvoices(ledger) {
 
 const money = (n) => "$" + Number(n || 0).toLocaleString(undefined,
   { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* Whole dollars (3.41.0), as the prices beside them are written: "+$29 a
+   month per location · $87 a month for you", "about $224 off", never
+   "$87.00" beside "$29". Bills and invoices keep their cents. */
+const wholeDollars = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
 
 /* The invoice as a document, in the same drawer and to the same print
    rules as the claim packet — a finance department prints this too. */
@@ -4143,7 +4223,7 @@ function omniPriceLine(seen, price) {
   if (!seen.connected && (trial || dayOne())) return "";
   return `<div class="sub u-mb-8">${esc(price.label)}${price.free_now
     ? ", free during your trial."
-    : ` · ${money(price.monthly_for_you_usd)} a month for you while connected.`}</div>`;
+    : ` · ${wholeDollars(price.monthly_for_you_usd)} a month for you while connected.`}</div>`;
 }
 
 function renderOmni(seen) {
@@ -4585,8 +4665,8 @@ function renderReading(read) {
 function renderByodSamples(seen) {
   if (!seen.count) {
     $("byod-samples").innerHTML =
-      `<div class="sub">Nothing has reached the open endpoint yet. A device
-       that never appears here never reached us at all, which is a
+      `<div class="sub">Nothing has come in from a sensor of your own yet. A
+       sensor that never shows here never reached us at all, which is a
        different problem from one that arrives and is not understood.</div>`;
     return;
   }
@@ -5270,9 +5350,22 @@ function followAddUnitLink() {
   goTo("sensor");
 }
 
+/* "/console#bills" opens Bills, and "#invoice=INV-..." that bill too;
+   "#people" opens People who can sign in (3.41.0): Pilot's answers about
+   bills and taking someone off come here. Followed once. */
+function followBillsLink() {
+  const hash = location.hash || "";
+  const bill = /^#invoice=([A-Za-z0-9_-]{1,64})$/.exec(hash);
+  if (!(bill || hash === "#bills" || hash === "#people") || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  goTo(hash === "#people" ? "people" : "bills");
+  if (bill) openInvoice(bill[1]);
+}
+
 // A link followed while the console is already open changes only the hash.
 window.addEventListener("hashchange", () => {
   if (!state.token) return;
+  followBillsLink();
   followTeamLink();
   followAddressLink();
   followAddUnitLink();
@@ -6139,7 +6232,7 @@ function historyChart(detail) {
 function renderTeam(team) {
   $("team-note").textContent = `${team.count} with access`;
   $("team-body").innerHTML = team.users.map((u) => `
-    <div class="u-d-flex u-items-center u-gap-9 u-p-7-0 u-bb${u.disabled ? " u-o-5" : ""}">
+    <div class="u-d-flex u-flex-wrap u-items-center u-gap-9 u-p-7-0 u-bb${u.disabled ? " u-o-5" : ""}">
       <span class="grow">
         <span class="u-fs-13 u-fw-500">${esc(u.full_name)}</span>
         <span class="u-d-block u-fs-11-5 u-c-muted">
@@ -6148,7 +6241,9 @@ function renderTeam(team) {
       </span>
       ${u.disabled || u.user_id === (state.user && state.user.user_id)
         ? ""
-        : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>`}
+        : `<button class="btn btn-sm" data-reset-user="${esc(u.user_id)}">Reset</button>${
+          state.user && state.user.role === "owner"
+            ? `<button class="btn btn-sm" data-disable-user="${esc(u.user_id)}" data-name="${esc(u.full_name || u.email)}">Remove</button>` : ""}`}
     </div>`).join("")
     ;
   // The business key is replaced from its own card in Setup, by an owner.
@@ -6216,6 +6311,10 @@ const GO = {
   // The address every insurance pack shows (3.36.0): Pilot's "How do I
   // add my address to the pack?" links here (#site-address).
   address: { card: "find-claim-packets", field: "claims-address" },
+  // Pilot's bills and "take someone off" answers (3.41.0): #bills,
+  // #invoice=..., #people.
+  bills: { card: "find-invoices", field: "" },
+  people: { card: "find-team", field: "" },
 };
 const GO_LABEL = {
   site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",
@@ -7067,6 +7166,24 @@ document.addEventListener("click", (event) => {
     }), "Removed from the roster.");
   }
 
+  // A new mobile number for someone on the list (3.41.0), in the same
+  // place in the call order: the roster's own PATCH.
+  if (btn.dataset.contactPhone) {
+    const phone = prompt(`New mobile number for ${btn.dataset.name}, with its country code:`, btn.dataset.phone || "");
+    if (phone === null || !phone.trim() || phone.trim() === btn.dataset.phone) return;
+    act(() => api(`/api/contacts/${encodeURIComponent(btn.dataset.contactPhone)}`, {
+      method: "PATCH", body: JSON.stringify({ phone: phone.trim() }),
+    }), "Number changed. Send a test alert to check it arrives.");
+  }
+
+  // Taking somebody's sign-in away (3.41.0): owners only, never their own.
+  if (btn.dataset.disableUser) {
+    if (!confirm(`Remove ${btn.dataset.name}? They can no longer sign in. What they did stays in the record.`)) return;
+    act(() => api(`/api/accounts/users/${encodeURIComponent(btn.dataset.disableUser)}/disable`, {
+      method: "POST",
+    }), "Removed: they can no longer sign in.");
+  }
+
   if (btn.dataset.resetUser) {
     act(async () => {
       const out = await api(
@@ -7500,9 +7617,9 @@ $("run-sweep").addEventListener("click", () => {
   act(async () => {
     const out = await api("/api/autopilot/sweep", { method: "POST" });
     $("autopilot-out").innerHTML =
-      `<div class="quote"><div class="quote-label">Sweep complete</div>`
-      + `${out.sensors_offline} offline · ${out.open_incidents} open · `
-      + `${out.voice_calls_placed} call(s) placed · ${out.actions_taken} action(s)</div>`;
+      `<div class="quote"><div class="quote-label">Checked just now</div>`
+      + `${CLXWords.count(out.sensors_offline, "sensor")} quiet · ${CLXWords.count(out.open_incidents, "alert")} open · `
+      + `${CLXWords.count(out.voice_calls_placed, "call")} placed</div>`;
   });
 });
 
@@ -8074,6 +8191,9 @@ window.KryozynConsole = Object.freeze({
   // for Pilot's "Who is on call this week?": who is on now, until when,
   // and who is next, read in the browser. null until the card has loaded.
   rotations: () => (state.token && ROTA.loaded ? ROTA.rotations : null),
+  // The Bills card's invoices and the contract's next bill (3.41.0), as
+  // this page last loaded them; null until then.
+  bills: () => (state.token && state.bills ? state.bills : null),
   tab: () => {
     const on = document.querySelector('.f-tab[aria-pressed="true"]');
     return on ? on.textContent.trim() : "";

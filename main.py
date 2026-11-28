@@ -20,7 +20,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -809,6 +809,7 @@ _pilot_tag: Dict[str, str] = {}
 def pilot_facts() -> Dict[str, str]:
     """What Pilot's knowledge pack may quote, read from the code that charges
     and alarms, so Pilot can never say a figure the product does not use."""
+    from auth import LICENCE_GRACE_DAYS
     from costs import TRIAL_CALLS_TOTAL
     from domain import (ALERT_AFTER_MINUTES_CLINICAL_FRIDGE, ALERT_AFTER_MINUTES_FOOD_FREEZER,
                         ALERT_AFTER_MINUTES_FOOD_FRIDGE, ALERT_AT_ONCE_DEGREES_F,
@@ -860,7 +861,31 @@ def pilot_facts() -> Dict[str, str]:
         # for 6 restaurants?": from this many locations, this much off.
         "chain-from": str(CHAIN_DISCOUNT_TIERS[0][0]),
         "chain-percent": number(CHAIN_DISCOUNT_TIERS[0][1]),
+        # How long a finished trial is still watched (3.41.0), for Pilot's
+        # "What happens after the trial?".
+        "grace-days": str(LICENCE_GRACE_DAYS),
+        # Every sector with a page at /for/<slug> (3.41.0): "slug|name|price|per"
+        # joined by ";", so "Do you do florists?" finds the florists' page
+        # and price, and any sector offered is recognised.
+        "sectors": ";".join("|".join(row) for row in _sector_pages()),
     }
+
+
+def _sector_pages() -> List[Tuple[str, str, str, str]]:
+    """(slug, name, monthly dollars or "", what it is per) for every page
+    under /for, industries and trades alike, from the code that serves
+    them. A bare number, as the other figures here: "" is priced by quote."""
+    import industries
+    import trades
+    from pricing import PRICE_BOOK, public_price
+
+    def priced(vertical: Optional[str]) -> Tuple[str, str]:
+        rate = public_price(vertical) if vertical else None
+        return ("", "") if rate is None else (f"{float(rate):g}", str(PRICE_BOOK[vertical]["unit"]))
+
+    rows = [(v, INDUSTRY_PROFILES[v]["name"], *priced(v)) for v in industries.known()]
+    rows += [(s, trades.TRADES[s]["name"], *priced(trades.TRADES[s]["plan"])) for s in trades.known()]
+    return [tuple(str(x).replace("|", " ").replace(";", ",") for x in row) for row in rows]
 
 
 # Pilot's pose pictures (core 1.1.0, docs/PILOT.md): every <pose>.webp or

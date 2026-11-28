@@ -341,7 +341,7 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 }
 .modules {
   display: grid; gap: 22px; margin-bottom: 0;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
 }
 .modules > .card { margin-bottom: 22px; display: flex; flex-direction: column; }
 /* Fields sit under the description; only the action drops to the foot, so
@@ -350,7 +350,7 @@ main { padding: 34px 30px; max-width: 1520px; margin: 0 auto; }
 .modules > .card form .btn-primary { margin-top: auto; }
 /* auto-fit (3.26.0): when a tab shows only one of the two, it takes the
    row instead of half of it beside a gap. */
-.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 22px; }
 .pair > .card { margin-bottom: 22px; }
 @media (max-width: 900px) { .pair { grid-template-columns: minmax(0,1fr); } }
 
@@ -1999,3 +1999,9 @@ html .pilot-handle-r .pilot-handle-robot { left: 1px; width: 42px; }
 html .pilot-handle-l .pilot-handle-robot { right: 1px; left: auto; width: 42px; }
 html .pilot-handle-r::before { left: 2px; }
 html .pilot-handle-l::before { right: 2px; }
+
+/* Pilot's chat box on a 320px phone (3.41.0): the box sits in a flex row
+   and kept the width of its text area's default 20 columns, so the send
+   button was clipped at the panel's edge. The shared core's own files are
+   not this app's to edit; this lets the box shrink to the panel. */
+html .pilot-foot > .pilot-compose { min-width: 0; }

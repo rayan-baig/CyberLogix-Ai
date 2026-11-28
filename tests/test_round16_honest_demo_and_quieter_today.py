@@ -117,7 +117,9 @@ def test_the_open_alert_opens_at_its_reading_then_and_46_5_is_its_worst(demo):
 
 def test_the_handled_alert_opens_at_its_first_reading_out_of_range(demo):
     handled = _alert(demo["tenant_id"], demo_account.HANDLED)
-    readings = STORE.readings_for(demo_account.HANDLED)
+    # Three days back is past what memory holds at a reading every 5
+    # minutes (3.41.0): from the record.
+    readings = STORE.readings_for(demo_account.HANDLED, complete=True)
     first_out = next(r for r in readings if r.breached)
     assert first_out.recorded_at == handled.opened_at == handled.out_since
     assert handled.temperature_fahrenheit == first_out.temperature_fahrenheit == 12.5
