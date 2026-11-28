@@ -123,7 +123,7 @@ function advance() {
   // minute goes over and comes back; a fridge that stays over is a fault.
   if (!run.alertOpen && !run.fixed && now > walkIn.limit_f && t >= overAt()) {
     timeline("over", "", `${walkIn.name} is over its ${fmt(walkIn.limit_f)}°F limit `
-      + `(${fmt(now)}°F). We wait to see if it stays over: ${S.real_stay_minutes} `
+      + `(${cardReading(now)}°F). We wait to see if it stays over: ${S.real_stay_minutes} `
       + `minutes in real life, ${S.stay_ticks * S.tick_seconds} seconds here, so a `
       + `door open for a minute wakes nobody.`);
   }
@@ -132,7 +132,7 @@ function advance() {
   if (!run.alertOpen && !run.fixed && now > walkIn.limit_f && t >= alertAt()) {
     run.alertOpen = true;
     setStep("alert");
-    timeline("breach", "hit", `${walkIn.name} has stayed too warm: ${fmt(now)}°F, `
+    timeline("breach", "hit", `${walkIn.name} has stayed too warm: ${cardReading(now)}°F, `
       + `over its ${fmt(walkIn.limit_f)}°F limit.`);
     timeline("texted", "hit", `Texted ${people()}.`);
     bubble("them", S.messages.alert_text);

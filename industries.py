@@ -290,16 +290,22 @@ def price(vertical: str) -> Dict[str, Any]:
 # The index's first cards (3.38.0): restaurants, then other food service,
 # then pharmacies, then the rest A to Z. "Licensed Cannabis Cultivation"
 # led the page a restaurant owner lands on.
+# 3.39.0: the same order as the price calculator (pricing.SECTOR_FIRST),
+# the rest A to Z by name, and each card says whether it is one of the
+# first ("food" or "pharmacy", else ""), so /for puts the food trades'
+# shorter pages ahead of the niche industries.
 INDEX_FIRST = ("restaurant", "country_club", "pharmacy")
 
 
 def index() -> List[Dict[str, str]]:
-    first = [v for v in INDEX_FIRST if v in known()]
-    order = first + [v for v in known() if v not in first]
+    from pricing import sector_order
+
+    order = sorted(known(), key=sector_order)
     return [
         {"vertical": v, "name": INDUSTRY_PROFILES[v]["name"],
          "slogan": INDUSTRY_PROFILES[v]["slogan"],
-         "protects": CONTEXT[v]["protects"]}
+         "protects": CONTEXT[v]["protects"],
+         "group": ("pharmacy" if v == "pharmacy" else "food") if v in INDEX_FIRST else ""}
         for v in order
     ]
 

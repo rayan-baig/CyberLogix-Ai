@@ -188,9 +188,16 @@ def guidance(measured: Dict[str, Any], above: float) -> Dict[str, Any]:
 
 
 def _span(hours: float) -> str:
-    if hours < 1:
-        return f"{round(hours * 60)} minutes"
-    return f"{hours:.1f} hours"
+    """"40 minutes", "1 hour 6 minutes", "3 hours" (3.39.0): "1.1 hours"
+    sat beside the alert's own "about 1 hour" on the same card. In whole
+    hours and minutes, never rounded across the two- and four-hour lines
+    the headline is about."""
+    total = int(round(hours * 60))
+    if total < 60:
+        return f"{total} minute{'' if total == 1 else 's'}"
+    whole, rest = divmod(total, 60)
+    out = f"{whole} hour{'' if whole == 1 else 's'}"
+    return out + (f" {rest} minute{'' if rest == 1 else 's'}" if rest else "")
 
 
 def assess(

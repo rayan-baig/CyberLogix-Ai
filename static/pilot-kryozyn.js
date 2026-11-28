@@ -118,7 +118,16 @@
   };
 
   const unitName = (u) => words((u && u.location_name) || "") || words(u && u.sensor_id) || "A unit";
+  // A reading, always with its tenth (3.39.0): "35°F" beside "36.4°F"
+  // read as two kinds of thermometer, as on /today's list.
   function degrees(value, unit, dd) {
+    if (value === null || value === undefined || value === "") return "";
+    const n = Number(value);
+    const shown = Number.isFinite(n) ? (Math.round(n * 10) / 10).toFixed(1).replace(/^-0\.0$/, "0.0") : value;
+    return `${shown}°${(unit && unit.temperature_unit) || (dd && dd.temperature_unit) || "F"}`;
+  }
+  // A limit as it was set: "41°F".
+  function limitDegrees(value, unit, dd) {
     if (value === null || value === undefined || value === "") return "";
     return `${value}°${(unit && unit.temperature_unit) || (dd && dd.temperature_unit) || "F"}`;
   }
@@ -220,7 +229,12 @@
     const first = asked.length && asked.length < units.length ? asked : [];
     // One full stop (3.32.1): a unit that needs you already ends its line
     // with one ("since 1:32 AM."), and got two.
-    if (first.length) lines.push(first.map((u) => unitLine(u, dd).replace(/([^.!?])$/, "$1.")).join("\n"));
+    // Two or more asked about (3.39.0: "the bar fridge" at each site) as a
+    // list: on lines of their own they ran together into one.
+    if (first.length) {
+      lines.push(first.length === 1 ? unitLine(first[0], dd).replace(/([^.!?])$/, "$1.")
+        : first.map((u) => `- ${unitLine(u, dd).replace(/([^.!?])$/, "$1.")}`).join("\n"));
+    }
     const rows = units.map((u) => ({ u, s: stateOf(u) })).filter((r) => r.s.state in URGENCY)
       .sort((a, b) => URGENCY[a.s.state] - URGENCY[b.s.state]);
     const live = liveAlerts(dd);
@@ -233,6 +247,18 @@
       && i.food_question && i.food_question.ask_on_today);
     // The unit asked about is said once, above.
     const fine = units.filter((u) => !(stateOf(u).state in URGENCY) && !first.includes(u));
+    // A unit named in the question, on a bigger list (3.39.0): the ones
+    // asked about, and the rest in one line. "Is the bar fridge ok?" got
+    // all twenty.
+    const others = units.length - first.length;
+    if (named.length && first.length && others > 3) {
+      const elsewhere = rows.filter((r) => r.s.state !== "waiting_first" && !first.includes(r.u));
+      lines.push(elsewhere.length
+        ? `${elsewhere.length === 1 ? "1 other needs you" : `${elsewhere.length} others need you`}: ${elsewhere.map((r) => unitName(r.u)).join(", ")}. Ask **Which fridges need me?** for the list.`
+        : `The other ${others} are within their limits.`);
+      if (live.some((i) => i.state === "open")) lines.push(`Nobody has answered an alert yet: press ${ON_IT} to say you have it.`);
+      return lines.join("\n\n");
+    }
     if (!urgent.length && !wide.length && !food.length) {
       const total = units.length;
       if (first.length) {
@@ -300,7 +326,7 @@
     const u = units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
     const cold = Boolean(u.condition && u.condition.too === "cold");
     const now = degrees(u.last_temperature_display != null ? u.last_temperature_display : i.temperature_display, u, dd);
-    const limit = cold ? degrees(u.danger_below_display, u, dd) : degrees(u.danger_above_display, u, dd);
+    const limit = cold ? limitDegrees(u.danger_below_display, u, dd) : limitDegrees(u.danger_above_display, u, dd);
     const peak = degrees(i.peak_display, u, dd);
     const since = i.out_since || i.opened_at;
     const long = outFor(since);
@@ -374,15 +400,40 @@
     return `${measured}\n\n${RULE}\n\n${NOT_A_RULING}${button}`;
   }
 
+  // Signed in (3.39.0): never "Start with the free 14-day trial" to a
+  // business already on it, or past it. On the trial: that it is on it.
+  function onTrialNow() {
+    const dd = ownPage && signedIn() ? overview() : null;
+    return Boolean(dd && ((dd.account && dd.account.on_trial) || (dd.subscription && dd.subscription.plan === "trial")));
+  }
+  function trialWords() {
+    if (!(ownPage && signedIn())) return `Start with the free ${fig(F.trialDays, "14")}-day trial, no card.`;
+    return onTrialNow() ? "You're on the free trial now: nothing is billed until you choose a plan on the console's **Money** tab." : "";
+  }
+  const withTrial = (lead, link) => [lead, trialWords(), link].filter(Boolean).join(" ");
+
+  // A butcher, a bakery or a deli (3.39.0): watched as a restaurant is.
+  const FOOD_SHOP = /\bbutchers?\b|\bbutcher(?:'|’)s\b|\bbaker(?:y|ies|s)?\b|\bdeli(?:s|catessens?)?\b/i;
+  function shopLead(ctx) {
+    const said = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const m = FOOD_SHOP.exec(said);
+    if (!m) return "";
+    const word = m[0].toLowerCase();
+    const shop = /^butcher/.test(word) ? "butcher's" : /^baker/.test(word) ? "bakery" : "deli";
+    const page = shop === "butcher's" ? " [For butchers](/for/butchers)" : "";
+    return `Yes: a ${shop} is watched the same way as a restaurant, on the restaurant plan with its food limits.${page}`;
+  }
+
   // The visitor's "Will it work for my café?": short, from the real figures.
-  function cafeAnswer() {
+  function cafeAnswer(ctx) {
+    const lead = shopLead(ctx);
     return [
-      `Yes: ${F.appShort} is made for cafés and small restaurants first.`,
+      lead || `Yes: ${F.appShort} is made for cafés and small restaurants first.`,
       `- A wireless sensor goes in each fridge and freezer (we don't sell them: [which sensors work](/help/sensors)).`,
       `- A fridge alarms over ${fig(F.fridgeLimit, "41")}°F and a freezer over ${fig(F.freezerLimit, "10")}°F, only if it stays out (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer), so a door opened for a minute wakes nobody.`,
       `- Then everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds, and on plans with calls, phoned if nobody answers in ${fig(F.callAfterMinutes, "10")} minutes.`,
       `- Starter is $${fig(F.fromPrice, "59")} a month for one café with up to ${fig(F.starterUnits, "3")} fridges or freezers. [See prices](/pricing)`,
-      `[See it live](/demo) with pretend fridges, or [start a free trial](/signup): ${fig(F.trialDays, "14")} days, no card.`,
+      ownPage && signedIn() ? "[See it live](/demo) with pretend fridges." : `[See it live](/demo) with pretend fridges, or [start a free trial](/signup): ${fig(F.trialDays, "14")} days, no card.`,
     ].join("\n");
   }
 
@@ -392,7 +443,14 @@
   // not a "Yes" to a question nobody asked.
   const NOBODY_ANSWERS = /\b(?:nobody|no one|no-one)\b.*\b(?:answers?|answered|picks? up|responds?|replies)\b|\b(?:doesn'?t|does not|don'?t|do not|didn'?t|did not)\s+(?:answer|pick up|respond|reply)\b|\bunanswered\b/i;
   const CALLS = (ctx) => `${ctx && typeof ctx.label === "string" && NOBODY_ANSWERS.test(ctx.label) && !/\bnight\b|\b\d{1,2}\s?am\b/i.test(ctx.label) ? "" : "Yes, on plans with calls. "}If nobody answers the alert text within ${fig(F.callAfterMinutes, "10")} minutes, ${F.appShort} phones the people on call in the order you set, until one answers and presses 1. Calls come with the Growth and Enterprise plans; Trial and Starter send texts, and the free trial includes ${fig(F.trialCalls, "5")} alert calls so you can hear one. [Compare plans](/pricing)`;
-  const TRIAL = () => `The free trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors, needs no card, and includes ${fig(F.trialCalls, "5")} alert calls. Nothing moves you to a paid plan by itself: you choose one when you are ready. [Start a free trial](/signup)`;
+  const TRIAL = () => {
+    const what = `The free trial lasts ${fig(F.trialDays, "14")} days for up to ${fig(F.trialUnits, "5")} sensors, needs no card, and includes ${fig(F.trialCalls, "5")} alert calls.`;
+    if (ownPage && signedIn()) {
+      return onTrialNow() ? `You're on it now. ${what} Nothing moves you to a paid plan by itself: choose one on the console's **Money** tab when you are ready.`
+        : `You're past the free trial: your plan is on the console's **Money** tab. ${what}`;
+    }
+    return `${what} Nothing moves you to a paid plan by itself: you choose one when you are ready. [Start a free trial](/signup)`;
+  };
   // Signed in on /today, the console is a link to open, never "Sign in"
   // (3.28.0): that was offered to somebody already signed in.
   const LOG = () => `In the console, open **Log for an inspector** on the **Proof** tab (on a small account, under **More**). Pick the dates, and print it or save it as a PDF. It has every unit's temperatures, each time one went out of range, and who answered it.${
@@ -428,7 +486,8 @@
   const PLAN = () => [
     `**One café or shop with up to ${fig(F.starterUnits, "3")} fridges or freezers: Starter, $${fig(F.fromPrice, "59")} a month.** Text alerts to everyone on call, the inspector's log and insurance packs.`,
     `More fridges than that, phone calls when a text goes unanswered, or the forecast: Growth, $${fig(F.restaurantPrice, "149")} a month a location for a restaurant, up to ${fig(F.unitsPerLocation, "10")} units there.`,
-    `Either way, start with the free ${fig(F.trialDays, "14")}-day trial, no card. [Work out your price](/pricing#calc-title)`,
+    ownPage && signedIn() ? withTrial("", "[Work out your price](/pricing#calc-title)")
+      : `Either way, start with the free ${fig(F.trialDays, "14")}-day trial, no card. [Work out your price](/pricing#calc-title)`,
   ].join("\n\n");
   const DEMO_WHAT = "A pretend kitchen with four sensors. In about a minute the walk-in starts to warm up, and you see exactly what would happen: the wait, the text, the phone call if nobody answers, and the record once it's fixed. No texts or calls are sent, and nothing is saved.";
   const SIGN_IN = "Use the email and password you signed up with, on [the console](/console). On a phone you can add it to your home screen. No account yet? [Start a free trial](/signup).";
@@ -536,6 +595,9 @@
       said = `The alert for **${name}**${at ? ` at ${at}` : ""} was written but not delivered: texts are off on this server, so nobody was texted. It showed here all the same.`;
     } else if (!n) {
       said = `Nobody was on the list to text when **${name}** alerted${at ? ` at ${at}` : ""}.`;
+    } else if (sent.every((r) => r && r.demo)) {
+      // The demo's made-up receipts (3.39.0).
+      said = `The alert for **${name}**${at ? ` at ${at}` : ""} was a pretend text to ${people} (demo): nothing is really sent from the demo.`;
     } else if (i.alert_texts_failed) {
       const again = i.next_sms_retry_at ? ` It is sent again at ${clock(i.next_sms_retry_at)}.` : "";
       said = `The alert text for **${name}**${at ? ` at ${at}` : ""} went to ${people} and failed: none went through.${again}`;
@@ -568,8 +630,16 @@
     } catch (_) { /* the overview's names instead */ }
     return null;
   }
-  // When a shift ends, as the card says it: "Fri 04 Dec 08:00 CST".
-  const shiftEnd = (r) => words((r.schedule && r.schedule[0] && r.schedule[0].ends_local) || "");
+  // When a shift ends (3.39.0): "Fri Dec 4, 8:00 AM", in the rotation's
+  // own time, from the card's "Fri 04 Dec 08:00 CST".
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function shiftWords(local) {
+    const m = /^([A-Z][a-z]{2}) (\d{1,2}) ([A-Z][a-z]{2}) (\d{1,2}):(\d{2})/.exec(String(local || "").trim());
+    if (!m || !MONTHS.includes(m[3])) return words(local);
+    const h = Number(m[4]);
+    return `${m[1]} ${m[3]} ${Number(m[2])}, ${h % 12 || 12}:${m[5]} ${h < 12 ? "AM" : "PM"}`;
+  }
+  const shiftEnd = (r) => shiftWords((r.schedule && r.schedule[0] && r.schedule[0].ends_local) || "");
   function oncallAnswer() {
     if (!(ownPage && signedIn())) {
       return `Once you've signed up, everyone under **Who gets alerts** is on call, or set a rotation on the **Team** tab (**On call now**): people take turns by the day or the week, handing over at a time you choose, and the card shows who is on now and who is next. [Start a free trial](/signup)`;
@@ -634,7 +704,7 @@
     const named = units.filter((u) => wordsIn(u.location_name || "").some((w) => !GENERIC.has(w) && asked.includes(w)));
     const multi = new Set(units.map((u) => u.site_name).filter(Boolean)).size > 1;
     const which = named.slice(0, 4).map((u) => {
-      const limit = degrees(u.danger_above_display, u, dd);
+      const limit = limitDegrees(u.danger_above_display, u, dd);
       return `**${unitName(u).split("/").pop().trim()}**${multi && u.site_name ? ` at ${words(u.site_name)}` : ""}${limit ? ` (now over ${limit})` : ""}`;
     });
     const how = `Press **Change limit** on its card${onConsole ? "" : " in the console"} (the **Fridges** tab), type ${to || "the new limit"} under **Text us if it goes over**, and press **Save**.`;
@@ -684,7 +754,7 @@
   const PRICE = () => [
     `**Starter $${fig(F.fromPrice, "59")} a month, up to ${fig(F.starterUnits, "3")} fridges or freezers**: one café or shop, text alerts to everyone on call, the inspector's log and insurance packs.`,
     `**Growth $${fig(F.restaurantPrice, "149")} a month a location** for a restaurant, up to ${fig(F.unitsPerLocation, "10")} units there, with a phone call when a text goes unanswered.`,
-    `Sensors are bought separately. Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [See all prices](/pricing)`,
+    withTrial("Sensors are bought separately.", "[See all prices](/pricing)"),
   ].join("\n\n");
   // The knowledge pack's own words on sensors (pilot-kryozyn-pack.js),
   // short.
@@ -774,7 +844,7 @@
   const PHARMACY = () => [
     `**Pharmacies: $${fig(F.pharmacyPrice, "199")} a month per pharmacy**, for up to ${fig(F.unitsPerLocation, "10")} fridges and freezers there; each one past that is $${fig(F.extraUnit, "15")} a month.`,
     `A vaccine fridge gets its own range (36°F to 46°F) and alerts after ${fig(F.alertAfterVaccine, "10")} minutes out, and everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds. No setup fee; sensors are bought separately.`,
-    `Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [See all prices](/pricing)`,
+    withTrial("", "[See all prices](/pricing)"),
   ].join("\n\n");
   // "How do I cancel my subscription?" (3.33.0): where, and the rule as
   // checkout shows it.
@@ -841,9 +911,20 @@
     const pharmacy = /pharmac/i.test(text);
     return { units, places, pharmacy, noun: noun.replace(/s$/, "") };
   }
-  const isQuote = (text) => PRICE_WORDS.test(String(text || "")) && Boolean(countsIn(text));
+  // "15 at one, 4 at the other", "12 fridges in the first, 6 in the
+  // second and 3 in the third" (3.39.0): a count for each location, or
+  // null. Number words count too ("fifteen at one").
+  const PER_PLACE = /\b(\d{1,4})\s+(?:(?:small |big |large )?(?:fridges?|freezers?|units?|sensors?|coolers?|refrigerators?)\s+)?(?:at|in)\s+(?:the\s+)?(?:one|other|another|first|second|third|fourth|fifth|last|main)\b/gi;
+  function perPlace(text) {
+    const plain = String(text || "").toLowerCase().replace(/\b[a-z]+\b/g, (w) => (NUMBER_WORDS[w] && w.length > 2 && w !== "one" ? String(NUMBER_WORDS[w]) : w));
+    const counts = Array.from(plain.matchAll(PER_PLACE), (m) => Number(m[1]));
+    return counts.length >= 2 ? counts : null;
+  }
+  const isQuote = (text) => PRICE_WORDS.test(String(text || "")) && Boolean(countsIn(text) || perPlace(text));
   function QUOTE(ctx) {
     const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const split = perPlace(typed);
+    if (split) return splitQuote(split, /pharmac/i.test(typed));
     const c = countsIn(typed);
     if (!c) return PRICE();
     const money = (v) => `$${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
@@ -857,7 +938,7 @@
     const kind = c.noun === "fridge" || c.noun === "freezer" ? c.noun : "fridge or freezer";
     const many = (n) => (kind === "fridge or freezer" ? (n === 1 ? "fridge or freezer" : "fridges or freezers") : n === 1 ? kind : `${kind}s`);
     const what = c.units === null ? (c.pharmacy ? count(places, "pharmacy", "pharmacies") : count(places, "location")) : `${c.units} ${many(c.units)}${places > 1 ? ` across ${places} locations` : ""}`;
-    const tail = `Sensors are bought separately. Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [Work out your price](/pricing#calc-title)`;
+    const tail = withTrial("Sensors are bought separately.", "[Work out your price](/pricing#calc-title)");
     const chain = F.chainFrom && F.chainPercent && places >= Number(F.chainFrom)
       ? ` From ${F.chainFrom} locations, ${F.chainPercent}% comes off the location prices: the calculator shows the total.` : "";
     if (c.pharmacy) {
@@ -878,6 +959,95 @@
       `${money(growth)} a month a location covers up to ${allowance} fridges and freezers there${over
         ? `, and each one past that is ${money(extra)} a month: ${over} more ${places > 1 ? "at each" : ""} is ${money(over * extra * places)}`.replace(/ {2}/g, " ")
         : ""}, with a phone call when a text goes unanswered.${chain}`, tail].join("\n\n");
+  }
+
+  // A count at each location (3.39.0), priced as the /pricing calculator
+  // prices a row for each (pricing.js quote): each location's price, and
+  // each unit past its allowance at that location extra.
+  function splitQuote(counts, pharmacy) {
+    const money = (v) => `$${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    const rate = Number(pharmacy ? fig(F.pharmacyPrice, "199") : fig(F.restaurantPrice, "149"));
+    const allowance = Number(fig(F.unitsPerLocation, "10")), extra = Number(fig(F.extraUnit, "15"));
+    const places = counts.length;
+    const over = counts.map((n) => Math.max(0, n - allowance));
+    const past = over.reduce((a, b) => a + b, 0);
+    const total = rate * places + past * extra;
+    const sum = counts.reduce((a, b) => a + b, 0);
+    const listed = counts.length === 2 ? `${counts[0]} and ${counts[1]}` : `${counts.slice(0, -1).join(", ")} and ${counts[counts.length - 1]}`;
+    const head = pharmacy
+      ? `**${sum} fridges or freezers across ${places} pharmacies (${listed}): ${money(total)} a month**, ${money(rate)} a pharmacy.`
+      : `**${sum} fridges or freezers across ${places} locations (${listed}): Growth, ${money(total)} a month.**`;
+    const extras = counts.map((n, k) => (over[k] ? `${over[k]} past it at the one with ${n}` : "")).filter(Boolean);
+    const chain = F.chainFrom && F.chainPercent && places >= Number(F.chainFrom)
+      ? ` From ${F.chainFrom} locations, ${F.chainPercent}% comes off the location prices: the calculator shows the total.` : "";
+    const how = `${money(rate)} a month a ${pharmacy ? "pharmacy" : "location"} covers up to ${allowance} fridges and freezers there${extras.length
+      ? `; each one past that is ${money(extra)} a month: ${extras.join(", ")}, ${money(past * extra)} in all` : ""}.${chain}`;
+    return [head, how, withTrial("Sensors are bought separately.", "[Work out your price](/pricing#calc-title)")].join("\n\n");
+  }
+
+  // ---------------------------------------------------------------- 3.39.0: more answers with no key
+  //
+  // Adding another fridge, trying it with no sensor, an app, this week's
+  // alerts, and the warmest unit.
+  const ADD_LINK = `${onConsole ? window.location.pathname + (window.location.search || "") : "/console?view=full"}#add-unit`;
+  function addUnitAnswer() {
+    if (!(ownPage && signedIn())) {
+      return `Once you've signed up, **Add a fridge or freezer** in the console adds each one: say where it is, and it gives that unit's sensor its own key and shows your brand's few steps. Each fridge or freezer has its own sensor. [Step-by-step guides](/help/sensors) · [Start a free trial](/signup)`;
+    }
+    const dd = overview();
+    const t = (dd && dd.tenant) || {};
+    const room = Number.isFinite(Number(t.seats_total)) && Number.isFinite(Number(t.seats_used)) && t.seats_total
+      ? ` Your plan has room for ${t.seats_total}; you have ${count(t.seats_used, "unit")}.` : "";
+    return `Press **Add a fridge or freezer** in the console (the **Setup** tab): say where it is, and it gives that unit's sensor its own key, shows your brand's few steps with the key filled in, and ticks when the first reading lands.${room}\n\n[Add a fridge or freezer](${ADD_LINK})`;
+  }
+  function tryAnswer() {
+    if (ownPage && signedIn()) {
+      return `Yes. On the console's **Fridges** tab an owner can press **Simulate** (or **No hardware yet? Try a simulated one** while the list is empty): pretend units that warm up, so you see the wait, the alert and **It's fixed**. Nothing they do is recorded and nobody is texted.\n\n[See it live](/demo) shows the whole story in a pretend kitchen too.`;
+    }
+    return [
+      "Yes, with no sensor at all:",
+      "- [See it live](/demo): a pretend kitchen where the walk-in warms up, and you see the wait, the text, the phone call and the record once it's fixed. No account, nothing sent.",
+      `- Or start the free trial and press **Simulate** on the console's **Fridges** tab: simulated units in your own console, never recorded and never texted. [Start a free trial](/signup)`,
+    ].join("\n");
+  }
+  // The manifest (display: standalone) and the console's service worker
+  // make it installable from the browser; there is no app-store app.
+  const APP = () => `There's no app to download from an app store: ${F.appShort} installs from the browser. Open [the console](/console) on your phone and add it to your home screen (on an iPhone: **Share**, then **Add to Home Screen**; on Android: the browser's menu, then **Install app**). It opens full screen, like an app.\n\nAlerts come by text${F.callAfterMinutes ? ", and on plans with calls by phone," : ""} whether it is open or not.`;
+  function weekAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const since = Date.now() - 7 * 24 * 3600 * 1000;
+    const all = (dd.incidents || []).filter((i) => i && !i.site_wide).concat((dd.site_wide_alerts || []).filter(Boolean))
+      .filter((i) => Date.parse(i.opened_at || "") >= since)
+      .sort((a, b) => String(b.opened_at).localeCompare(String(a.opened_at)));
+    if (!all.length) return "**No alerts in the last 7 days.** Every fridge and freezer stayed in range, or came back before anybody needed to be texted.";
+    const line = (i) => {
+      const name = i.site_wide ? "Several fridges at once" : unitName(units.find((u) => u.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id });
+      const at = clock(i.opened_at);
+      const answered = i.acknowledged_at ? outFor(i.opened_at, i.acknowledged_at) : "";
+      const how = i.state === "resolved" ? `closed${answered ? `, answered in ${answered}` : ""}`
+        : i.state === "acknowledged" ? "open, someone is on it" : "open, nobody has answered yet";
+      return `- **${name}**${at ? `, ${at}` : ""}: ${how}`;
+    };
+    const open = all.filter((i) => i.state !== "resolved").length;
+    return `**${count(all.length, "alert")} in the last 7 days**${open ? `, ${open} still open` : ""}:\n${all.slice(0, 6).map(line).join("\n")}${all.length > 6 ? `\n- and ${all.length - 6} more` : ""}`;
+  }
+  // "Which is warmest?": one line, the unit warmest for its limit.
+  function warmestAnswer() {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const units = (Array.isArray(dd.sensors) ? dd.sensors : []).filter((u) => Number.isFinite(Number(u.last_temperature_display))
+      && u.last_temperature_display !== null && stateOf(u).state !== "offline");
+    if (!units.length) return "None of your fridges or freezers has sent a reading yet.";
+    const margin = (u) => Number(u.last_temperature_display) - (Number.isFinite(Number(u.danger_above_display)) && u.danger_above_display !== null
+      ? Number(u.danger_above_display) : 1e6);
+    const top = units.slice().sort((a, b) => margin(b) - margin(a))[0];
+    const now = degrees(top.last_temperature_display, top, dd);
+    const limit = limitDegrees(top.danger_above_display, top, dd);
+    const gap = Math.round(Math.abs(margin(top)) * 10) / 10;
+    const where = !limit ? "" : margin(top) > 0 ? `, ${gap.toFixed(1)}° over its ${limit} limit` : `, ${gap.toFixed(1)}° under its ${limit} limit`;
+    return `**${unitName(top)}** is the warmest for its limit: ${now}${where}.`;
   }
 
   // Words a typed question may use for each answer or link that needs no
@@ -993,6 +1163,13 @@
     { id: "pause", labels: [], ask: "Can I pause alerts?", also: ["pause", "paused", "holiday", "christmas", "vacation", "seasonal",
       "snooze", "closure", "away"], answer: pauseAnswer },
     { id: "limit", labels: [], ask: "How do I change a limit?", also: ["limit", "threshold", "adjust", "raise", "lower"], answer: limitAnswer },
+    // 3.39.0: another fridge, trying with no sensor, an app, this week's
+    // alerts, the warmest unit.
+    { id: "addunit", labels: [], ask: "How do I add another fridge?", also: ["second", "another", "extra"], answer: addUnitAnswer },
+    { id: "try", labels: [], ask: "Can I try it without a sensor?", also: ["simulate", "simulated", "simulation", "hardware"], answer: tryAnswer },
+    { id: "app", labels: [], ask: "Is there an app?", also: ["app", "iphone", "android", "homescreen"], answer: APP },
+    { id: "week", labels: [], ask: "How many alerts this week?", answer: weekAnswer, only: () => ownPage && signedIn() },
+    { id: "warmest", labels: [], ask: "Which is the warmest?", also: ["warmest", "hottest"], answer: warmestAnswer, only: () => ownPage && signedIn() },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -1011,6 +1188,9 @@
   // Phrases whose telling word is a little one the matching leaves out
   // (3.35.0): "sign up" is "sign" alone, the same as "sign in".
   const PHRASES = [
+    // 3.39.0, first: "can I see it working before signing up?" is trying
+    // it, not signing up.
+    [/\bwithout (?:a |any |buying (?:a |any )?)?(?:sensors?|hardware|devices?)\b|\bno (?:sensors?|hardware) yet\b|\b(?:see|watch) it work(?:ing)?\b|\bbefore (?:i |we )?(?:sign(?:ing)? up|buy(?:ing)?|pay(?:ing)?|commit(?:ting)?)\b|\btry it (?:out|first|before)\b|\bsimulat/i, "try"],
     // 3.36.0, first: "my address on the insurance pack" is the address.
     [/\b(?:site|street|shop|business|our|my|the) address\b|\baddress (?:to|on|in|for) (?:the |my |our )?(?:pack|insurance)/i, "address"],
     [/\bsign(?:ing)?[\s-]*up\b|\bregister\b|\bcreate (?:an |my )?account\b/i, "signup"],
@@ -1031,6 +1211,14 @@
     [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
     // 3.37.0: a price with a number of fridges or places, worked out.
     [{ test: isQuote }, "quote"],
+    // 3.39.0: this week's alerts, the warmest, another fridge, trying with
+    // no sensor, an app, and a butcher, a bakery or a deli.
+    [/\balerts?\b.*\b(?:this|last|past) (?:week|7 days|seven days)\b|\b(?:this|last) week(?:'|’)?s alerts\b|\bhow many alerts\b/i, "week"],
+    [/\b(?:warmest|hottest)\b/i, "warmest"],
+    [/\b(?:add|adding|connect|set up|get)\b[^?]*\b(?:second|another|more|extra|third|new|other)\b[^?]*\b(?:fridges?|freezers?|sensors?|units?|coolers?|walk-?ins?)\b|\b(?:second|another|extra|third)\s+(?:fridges?|freezers?|sensors?|units?|coolers?)\b|\badd(?:ing)? (?:a |an |my |one )?(?:\w+ )?(?:fridges?|freezers?|coolers?)\b/i, "addunit"],
+    [/\b(?:have|got|is there|are there|download|install|get|need)\b[^?]*\bapps?\b|\bapp store\b|\bplay store\b|\bhome ?screen\b|\b(?:iphone|android|mobile|phone) app\b/i, "app"],
+    // A butcher's, a bakery or a deli as a business, not "the deli fridge".
+    [{ test: (t) => FOOD_SHOP.test(String(t || "")) && !/\b(?:fridges?|freezers?|coolers?|cases?|ok|okay|warm|cold|temp(?:erature)?s?)\b/i.test(String(t || "")) }, "cafe"],
     // The Wi-Fi or the power dropping, and a card's "No signal".
     [/\b(?:wi-?fi|internet|power|connection|router|network|broadband|electricity)\b.*\b(?:drops?|dropped|dropping|down|off|out|cuts?|fails?|failed|goes|went|lost|lose|loses|outage|offline)\b|\b(?:drops?|dropped|lost|lose|no)\b.*\b(?:wi-?fi|internet|power|connection)\b|\boffline\b|\boutage\b|\bblackout\b|\bpower cut\b|\bno signal\b/i, "power"],
     // The door before the night: "will a door left open wake us at night?".
@@ -1158,7 +1346,35 @@
       : lastMiss.again % 2 ? "That one isn't built in either:" : "Still no built-in answer for";
     return `${lead} \u201c${quoted}\u201d. The two closest are first below. With an AI key, I can answer anything.`;
   }
-  const answered = (fn) => (ctx) => { lastMiss = null; return fn(ctx); };
+  const answered = (fn) => (ctx) => { lastMiss = null; quietLead(); return fn(ctx); };
+
+  // "Here's what I can tell you without an AI key:" once a conversation
+  // (3.39.0), not before every typed answer. The core puts the line in
+  // front of each one it matches (MATCH_LEAD); this app cannot change the
+  // core, so where its own answers are drawn the line is kept on the first
+  // of them in the chat and left off the rest. Each drawing of the chat
+  // goes through the answers in order in one go, so the first one in a
+  // drawing is the first in the chat.
+  let leadDrawing = null;
+  function quietLead() {
+    const R = window.PilotRender;
+    if (!R || typeof R.render !== "function" || R.kryozynLead) return;
+    const lead = (window.PilotPanel && window.PilotPanel.MATCH_LEAD) || "Here's what I can tell you without an AI key:";
+    const draw = R.render;
+    R.render = function (text, doc, opts) {
+      let shown = text;
+      if (typeof text === "string" && opts && opts.local && text.startsWith(lead)) {
+        if (!leadDrawing) {
+          leadDrawing = { seen: false };
+          Promise.resolve().then(() => { leadDrawing = null; });
+        }
+        if (leadDrawing.seen) shown = text.slice(lead.length).replace(/^\s+/, "");
+        leadDrawing.seen = true;
+      }
+      return draw.call(this, shown, doc, opts);
+    };
+    R.kryozynLead = true;
+  }
 
   // An item's answer, routed: pressed (the label itself), its own; typed,
   // the answer the question is surely after (3.37.0), else the best of
@@ -1460,6 +1676,68 @@
   const OWN_PILLS = () => pillsFor(ownList());
   const VISITOR_PILLS = () => pillsFor(VISITOR);
 
+  // ---------------------------------------------------------------- off the page's words on a phone (3.39.0)
+  //
+  // On a phone the robot tucked into a bottom corner sat over words: the
+  // texts-off notice on /today at 375 and 320, the pricing page's opening
+  // lines, the console's "Readings logged" tile. The core lets a tucked
+  // robot sit over words and hides it only rather than cover something it
+  // is asked to avoid. So, at most every so often, the words actually in
+  // the robot's corners (and a small picture there, like the logo) are
+  // marked, and `yieldTo` (read with `avoid` on
+  // every placement) names them: the robot sits in a free corner, or
+  // hides, and its handle shows where it covers nothing. Only on a phone:
+  // a desktop corner has room. Never more than the four corners are
+  // looked at, so a long page costs no more than a short one.
+  const CORNER_W = 80;
+  const CORNER_H = 130;
+  const NARROW_PX = 720;
+  let marked = [];
+  let markedAt = 0;
+  function textInCorners() {
+    try {
+      const w = window.innerWidth || 0;
+      const h = window.innerHeight || 0;
+      if (!w || w > NARROW_PX || typeof document.elementsFromPoint !== "function") return [];
+      const now = Date.now();
+      if (now - markedAt < 120) return marked.length ? ["[data-pilot-text]"] : [];
+      markedAt = now;
+      marked.forEach((el) => el.removeAttribute("data-pilot-text"));
+      marked = [];
+      const zones = [[w - CORNER_W, h - CORNER_H, w, h], [0, h - CORNER_H, CORNER_W, h],
+        [w - CORNER_W, 0, w, CORNER_H], [0, 0, CORNER_W, CORNER_H]];
+      const own = document.querySelector(".pilot-root");
+      const seen = new Set();
+      zones.forEach(([l, t, r, b]) => {
+        for (let y = t + 2; y < b; y += 8) {
+          for (let x = l + 2; x < r; x += 8) {
+            // The page under the robot, not the robot.
+            const el = document.elementsFromPoint(x, y).find((e) => !(own && own.contains(e)));
+            if (el && !seen.has(el)) seen.add(el);
+          }
+        }
+      });
+      const inZone = (box) => zones.some(([l, t, r, b]) => box.left < r && box.right > l && box.top < b && box.bottom > t);
+      seen.forEach((el) => {
+        // A small picture (the logo) counts as the words do; a big one,
+        // like the page's backdrop, is scenery.
+        if (/^(IMG|SVG|PICTURE)$/i.test(el.tagName || "") && typeof el.getBoundingClientRect === "function") {
+          const box = el.getBoundingClientRect();
+          if (box.width > 0 && box.width <= 160 && box.height <= 160 && inZone(box)) { el.setAttribute("data-pilot-text", ""); marked.push(el); }
+          return;
+        }
+        const range = document.createRange();
+        const words = Array.from(el.childNodes || []).some((n) => {
+          if (n.nodeType !== 3 || !n.textContent.trim()) return false;
+          range.selectNodeContents(n);
+          return Array.from(range.getClientRects()).some((box) => box.width > 0 && inZone(box));
+        });
+        if (words) { el.setAttribute("data-pilot-text", ""); marked.push(el); }
+      });
+    } catch (_) { marked = []; }
+    return marked.length ? ["[data-pilot-text]"] : [];
+  }
+
   window.Pilot.mount({
     appName: F.appName,
     name: "Pilot",
@@ -1566,6 +1844,12 @@
     // only free spot on the first screen (the alert and "Needs you now"
     // cards, both listed, fill both edges below it); listed, the robot was
     // nowhere to be found there until a scroll.
+    // The words in the robot's corners on a phone (3.39.0, textInCorners).
+    get yieldTo() { return textInCorners(); },
+    // /today has no <main>: its column gets the phone's side room as the
+    // other pages' <main> does (3.39.0), so the tucked robot's edge and
+    // its handle stop short of the words there too.
+    gutter: onToday ? ["body > .wrap"] : ["main"],
     screen,
     chips,
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),

@@ -100,12 +100,19 @@ DAYS = 7
 EVERY_MINUTES = 30
 
 # Full-length made-up numbers in the 555-01xx fiction range (3.38.0): the
-# pack printed "+15550141", which no phone has ever had.
+# pack printed "+15550141", which no phone has ever had. Spaced as a trial
+# business types its own (3.39.0): "+1 555 010 0141", as the sign-up and
+# Who gets alerts boxes suggest.
 CONTACTS = [
-    ("Morgan Hale", "+15550100141"),
-    ("Priya Lund", "+15550100142"),
-    ("Ade Okoro", "+15550100143"),
+    ("Morgan Hale", "+1 555 010 0141"),
+    ("Priya Lund", "+1 555 010 0142"),
+    ("Ade Okoro", "+1 555 010 0143"),
 ]
+
+# The demo's text receipts are made up, and say so (3.39.0): /today said
+# "Texts are not switched on" while the alert's timeline said "texted 1
+# person · 1 delivered". Every made-up receipt carries `demo`, and the
+# console, the pack and Pilot call it a pretend text.
 
 
 class RefusedDatabase(RuntimeError):
@@ -214,20 +221,25 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         STORE.record_sensor_health(sensor, round(rng.uniform(55, 98)), round(rng.uniform(60, 95)))
         sensors[sensor_id] = sensor
 
-    # The breach that was handled.
+    # The breach that was handled, opened at its first reading out of
+    # range (3.39.0): it opened at the second, 21°F, so "out since 9:54"
+    # sat beside a 9:24 reading of 12.5°F marked out of range. 21°F is its
+    # worst.
     sensor = sensors[HANDLED]
-    opened = first + timedelta(minutes=EVERY_MINUTES * (handled_at + 1))
+    opened = first + timedelta(minutes=EVERY_MINUTES * handled_at)
     incident = STORE.open_incident(
-        tenant_id=tid, sensor=sensor, temperature_fahrenheit=21.0,
-        breach_details="Too warm: 21°F (limit 10°F).",
-        sms_text=f"{sensor.location_name} at {COMPANY} is 21°F, 11°F above the limit.",
+        tenant_id=tid, sensor=sensor, temperature_fahrenheit=12.5,
+        breach_details="Too warm: 12.5°F (limit 10°F).",
+        sms_text=f"{sensor.location_name} at {COMPANY} is 12.5°F, 2.5°F above the limit.",
         sms_dispatch_source="fallback_template", opened_at=opened)
     # Texted to the people on call, as a real alert is (3.37.0): the pack
     # said "nobody was on the list to text" beside an alert answered in 7
     # minutes. Made-up receipts for the made-up numbers below.
+    incident.out_since = opened
+    incident.peak_f, incident.peak_at = 21.0, opened + timedelta(minutes=EVERY_MINUTES)
     incident.sms_fanout = [
         {"channel": "sms", "contact_name": name, "to": phone, "delivered": True,
-         "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}"}
+         "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}", "demo": True}
         for n, (name, phone) in enumerate(CONTACTS, 1)]
     who = f"{OPERATOR[0]} <{OPERATOR[1]}>"
     incident, _ = STORE.acknowledge_incident(incident, who)
@@ -241,9 +253,12 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         "gasket, probed the stock: everything still frozen solid. Kept.",
         disposition="unaffected")
     incident = STORE.resolve_incident(incident, who)
-    incident.resolved_at = opened + timedelta(minutes=52)
+    # Closed just after its first reading back in range, an hour and a half
+    # after it went out (3.39.0: opened half an hour earlier, at the first
+    # reading out, it would otherwise close before its last warm one).
+    incident.resolved_at = opened + timedelta(minutes=92)
     # Written the moment it closed, not the moment the demo was seeded.
-    answered = opened + timedelta(minutes=50)
+    answered = opened + timedelta(minutes=90)
     incident.corrective_action_at = answered
     incident.food_answered_at = answered
     incident.food_history = [dict(row, at=iso(answered)) for row in incident.food_history]
@@ -265,19 +280,23 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         updated_at=iso(now))
     STORE._db.put(oncall.ROTATION_KIND, rotation.rec_id, rotation.to_row())
 
-    # The problem still open: warm for the last hour and a half, and
-    # nobody has answered yet. Texted to whoever a real alert texts now,
-    # the person on call this week, as the handled one was.
+    # The problem still open: warm for the last hour, and nobody has
+    # answered yet. Texted to whoever a real alert texts now, the person on
+    # call this week, as the handled one was. Opened at the reading taken
+    # then (3.39.0): it said "Reading at detection 46.5°F" beside its own
+    # 43.5°F at that time. 46.5°F is its worst, the latest.
     sensor = sensors[STILL_OPEN]
     still = STORE.open_incident(
-        tenant_id=tid, sensor=sensor, temperature_fahrenheit=46.5,
-        breach_details="Too warm: 46.5°F (limit 41°F).",
-        sms_text=f"{sensor.location_name} at {COMPANY} is 46.5°F, 5.5°F above the limit.",
+        tenant_id=tid, sensor=sensor, temperature_fahrenheit=43.5,
+        breach_details="Too warm: 43.5°F (limit 41°F).",
+        sms_text=f"{sensor.location_name} at {COMPANY} is 43.5°F, 2.5°F above the limit.",
         sms_dispatch_source="fallback_template",
         opened_at=now - timedelta(minutes=EVERY_MINUTES * 2))
+    still.out_since = still.opened_at
+    still.peak_f, still.peak_at = 46.5, now
     still.sms_fanout = [
         {"channel": "sms", "contact_name": person.full_name, "to": person.phone,
-         "delivered": True, "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}"}
+         "delivered": True, "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}", "demo": True}
         for n, person in enumerate(STORE.sms_recipients(tenant), len(CONTACTS) + 1)]
     STORE._db.put("incident", still.incident_id, still.to_row())
 

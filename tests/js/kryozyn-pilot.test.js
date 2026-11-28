@@ -421,11 +421,11 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
       "Who gets the texts?", "Do you phone us?", "Add my AI key"], pathname);
     const text = ask(p[0]);
     assert.match(text, /These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\*/);
-    assert.match(text, /- \*\*Kitchen walk-in\*\* \(47°F\): Too warm for /);
+    assert.match(text, /- \*\*Kitchen walk-in\*\* \(47.0°F\): Too warm for /);
     assert.match(text, /- \*\*Prep fridge x\(\/evil\)\*\*: No signal|- \*\*Prep fridge x\(\/evil\)\*\*: We have not heard/);
     // 3.32.0: a fine unit is not in the list, but its temperature is under it.
     assert.ok(!/- \*\*Bar freezer/.test(text), "a fine unit is not listed");
-    assert.ok(text.includes("The rest are fine: Bar freezer 2°F."), text);
+    assert.ok(text.includes("The rest are fine: Bar freezer 2.0°F."), text);
     assert.ok(text.indexOf("Kitchen walk-in") < text.indexOf("Prep fridge"), "worst first");
     assert.match(text, /Nobody has answered an alert yet: press \*\*I'm on it\*\*/);
     assert.doesNotMatch(text, /\]\(\/evil\)/, "a unit's name can't add a link");
@@ -433,7 +433,7 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
   }
   // All fine: says so, with the count.
   assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ quiet: true }) }), "/console")[0]),
-    /Nothing needs you right now\. All 2 are within their limits:\n- \*\*Kitchen walk-in\*\* 47°F, fine\n- \*\*Bar freezer\*\* 2°F, fine/);
+    /Nothing needs you right now\. All 2 are within their limits:\n- \*\*Kitchen walk-in\*\* 47.0°F, fine\n- \*\*Bar freezer\*\* 2.0°F, fine/);
   // A unit still waiting for its sensor: the wizard.
   assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ waiting: true }) }), "/console")[0]),
     /\*\*Dessert fridge\*\* is waiting for a first reading\. \[Connect a sensor\]\(\/console#connect\)/);
@@ -444,7 +444,7 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
 
 test("1.4.0: 'What does this alert mean?' explains the open alert from its own record", () => {
   const open = ask(meaningOf("/console", overviewWith()));
-  assert.match(open, /^\*\*Kitchen walk-in\*\* is too warm: 47°F, above its 41°F limit\./);
+  assert.match(open, /^\*\*Kitchen walk-in\*\* is too warm: 47.0°F, above its 41°F limit\./);
   assert.match(open, /It went out of range at .+ and has been out for .+; worst so far 48\.5°F\./);
   assert.match(open, /It stayed out longer than its 20-minute wait, so we alerted\./);
   // A reading far past the limit alerts at once: it never claims the wait passed.
@@ -708,9 +708,9 @@ test("1.4.2: with no key, a typed question finds this app's own answer on the co
       ["Where is the inspector log?", "Log for the inspector"], ["How do I close this alert?", "It's fixed now"], ["fridge", "Which fridges need me?"]]) {
       assert.equal(typed(pathname, words), want, `${pathname}: ${words}`);
     }
-    // 3.36.0: with a sensor reporting there is no connect pill; adding one
-    // more still gets the connect answer, through whichever item has its words.
-    assert.match(typedAnswer(pathname, "How do I add a new fridge?"), /^\*\*Connect your sensor\*\* walks you through it/, pathname);
+    // 3.39.0: adding one more points to Add a fridge or freezer (it was the
+    // connect answer, for the last unit added).
+    assert.match(typedAnswer(pathname, "How do I add a new fridge?"), /^Press \*\*Add a fridge or freezer\*\* in the console/, pathname);
   }
   // Signed out on the console: its own sign-in suggestions.
   assert.equal(typed("/console", "How do I sign in?", { signedIn: false }), "How do I sign in?");
@@ -954,7 +954,7 @@ test("3.32.1: the unit asked about, when it needs you, ends its line with one fu
   ov.sensors[0].condition = { state: "alert", too: "warm", out_since: "2026-11-20T09:55:00Z" };
   for (const pathname of ["/console", "/today"]) {
     const text = typedAnswer(pathname, "Is my kitchen walk-in OK?", { overview: ov });
-    assert.ok(text.startsWith("**Kitchen walk-in** (47°F): "), text);
+    assert.ok(text.startsWith("**Kitchen walk-in** (47.0°F): "), text);
     assert.doesNotMatch(text, /\.\.(\s|$)/, text);
     assert.match(text.split("\n")[0], /[.!?]$/, text);
   }
@@ -1474,13 +1474,13 @@ test("3.38.0: signed in, what's wrong, who is on call, the bill, a pause and a l
     const chat = chatAt(pathname, { overview, rotations: ROTA_NOW });
     const wrong = chat.send("What's wrong right now?");
     assert.equal(wrong.label !== null, true, pathname);
-    assert.match(wrong.text, /^These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\* \(47°F\)/, pathname);
+    assert.match(wrong.text, /^These 2 need you, worst first:\n- \*\*Kitchen walk-in\*\* \(47.0°F\)/, pathname);
     await chat.tick();
     assert.match(chat.send("status").text, /^These 2 need you/, pathname);
     await chat.tick();
 
     const oncall = chat.send("Who is on call this week?").text || "(missed)";
-    if (pathname === "/console") assert.match(oncall, /^On call now: \*\*Morgan\*\* until Fri 04 Dec 08:00 CST, then \*\*Priya\*\*\./);
+    if (pathname === "/console") assert.match(oncall, /^On call now: \*\*Morgan\*\* until Fri Dec 4, 8:00 AM, then \*\*Priya\*\*\./);
     else assert.match(oncall, /^An alert text goes to \*\*Morgan\*\* right now\.\n\nThe week's turns are on the \*\*Team\*\* tab, under \*\*On call now\*\*\./);
     assert.match(oncall, /\[Open On call now\]\(/);
     assert.doesNotMatch(oncall, /Hale|Lund|\+1555/);
@@ -1526,4 +1526,190 @@ test("3.38.0: '3 restaurants with about 8 fridges each' is 24 fridges across 3, 
     assert.match(chat.send("2 restaurants with 12 fridges each, how much?").text || "", /^\*\*24 fridges across 2 locations: Growth, \$358 a month\*\*/);
     await chat.tick();
   }
+});
+
+// ---------------------------------------------------------------- 3.39.0: more with no key, and quieter
+
+// A twenty-unit business as the demo is, with a week's alerts dated from
+// now, a bar fridge at each of two sites, and one unit warm.
+function bigOverview({ trial = false } = {}) {
+  const o = accountOverview({ trial });
+  const ago = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const fine = ["Walk-in cooler", "Prep fridge, grill", "Prep fridge, salads", "Dessert display", "Dairy cooler", "Blast chiller",
+    "Prep fridge, sauces", "Walk-in freezer 1", "Walk-in freezer 2", "Ice-cream freezer", "Prep fridge, hot line", "Prep fridge, pastry",
+    "Walk-in freezer", "Old Mill / Bar fridge", "Prep fridge, bakery", "Blast chiller 2"];
+  fine.forEach((name, n) => o.sensors.push({ sensor_id: `U-${n}`, location_name: name, last_temperature_display: n % 2 ? 36.4 : 35,
+    temperature_unit: "F", danger_above_display: 41, site_name: n % 2 ? "Old Mill" : "Harbourside", condition: { state: "ok" } }));
+  o.sensors[1].last_temperature_display = 37.2;
+  o.incidents = [
+    { incident_id: "INC-9", sensor_id: "WALKIN-1", state: "open", opened_at: ago(1), out_since: ago(1.5), temperature_display: 43.5,
+      sms_fanout: [{ contact_name: "Morgan Hale", to: "+1 555 010 0141", delivered: true, status: "delivered", demo: true }] },
+    { incident_id: "INC-8", sensor_id: "U-7", state: "resolved", opened_at: ago(72), acknowledged_at: ago(71.9), resolved_at: ago(70.5) },
+    { incident_id: "INC-1", sensor_id: "U-3", state: "resolved", opened_at: ago(24 * 9), resolved_at: ago(24 * 9 - 1) },
+  ];
+  return o;
+}
+
+test("3.39.0: another fridge, trying with no sensor, and an app, answered with no key on every page", async () => {
+  for (const pathname of EVERY) {
+    const own = pathname === "/console" || pathname === "/today";
+    const chat = chatAt(pathname, { signedIn: own, overview: bigOverview() });
+    for (const words of ["How do I add a second fridge?", "can I add another sensor?", "adding a freezer"]) {
+      const got = chat.send(words).text || "(missed)";
+      if (own) {
+        assert.match(got, /^Press \*\*Add a fridge or freezer\*\* in the console \(the \*\*Setup\*\* tab\)/, `${pathname}: ${words}`);
+        assert.match(got, /\[Add a fridge or freezer\]\([^)]*#add-unit\)/);
+      } else assert.match(got, /^Once you've signed up, \*\*Add a fridge or freezer\*\* in the console adds each one/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    for (const words of ["Can I try it without a sensor?", "can I see it working before signing up?"]) {
+      const got = chat.send(words).text || "(missed)";
+      assert.match(got, own ? /^Yes\. On the console's \*\*Fridges\*\* tab an owner can press \*\*Simulate\*\*/ : /^Yes, with no sensor at all:/, `${pathname}: ${words}`);
+      assert.match(got, /\[See it live\]\(\/demo\)/);
+      assert.match(got, /\*\*Simulate\*\*/);
+      await chat.tick();
+    }
+    for (const words of ["Do you have an app?", "Is there an iPhone app?"]) {
+      const got = chat.send(words).text || "(missed)";
+      assert.match(got, /^There's no app to download from an app store: Kryozyn installs from the browser\./, `${pathname}: ${words}`);
+      assert.match(got, /\*\*Add to Home Screen\*\*/);
+      await chat.tick();
+    }
+  }
+  // The console opens Add a fridge or freezer from "#add-unit".
+  const js = fsx.readFileSync(app("console.js"), "utf8");
+  assert.ok(js.includes('location.hash !== "#add-unit"') && js.includes('goTo("sensor")'));
+});
+
+test("3.39.0: a butcher, a bakery and a deli get the restaurant answer", async () => {
+  for (const pathname of ["/", "/pricing", "/for/restaurant", "/today"]) {
+    const chat = chatAt(pathname, { signedIn: pathname === "/today" });
+    for (const [words, shop] of [["Will it work for my butcher shop?", "butcher's"], ["Do you do bakeries?", "bakery"], ["Is it any good for a deli?", "deli"]]) {
+      const got = chat.send(words).text || "(missed)";
+      assert.ok(got.startsWith(`Yes: a ${shop} is watched the same way as a restaurant, on the restaurant plan with its food limits.`), `${pathname}: ${words}: ${got}`);
+      assert.match(got, /A fridge alarms over 41°F/);
+      await chat.tick();
+    }
+  }
+  // A unit called "Deli fridge" is a fridge, not a question about delis.
+  assert.doesNotMatch(chatAt("/today", { overview: bigOverview() }).send("Is the deli fridge ok?").text || "", /^Yes: a deli/);
+  // A price with a number is still a price.
+  assert.match(chatAt("/pricing", { signedIn: false }).send("how much for a bakery with 2 fridges?").text, /^\*\*2 fridges: Starter, \$59 a month\.\*\*/);
+});
+
+test("3.39.0: signed in, this week's alerts and the warmest come from the page's own data, in a line or a short list", async () => {
+  for (const pathname of ["/console", "/today"]) {
+    const chat = chatAt(pathname, { overview: bigOverview() });
+    const week = chat.send("How many alerts this week?").text || "(missed)";
+    assert.match(week, /^\*\*2 alerts in the last 7 days\*\*, 1 still open:\n- \*\*Kitchen walk-in\*\*, .+: open, nobody has answered yet\n- \*\*Walk-in freezer 1\*\*, .+: closed, answered in 6 minutes$/, `${pathname}: ${week}`);
+    await chat.tick();
+    const warm = chat.send("Which is warmest?").text || "(missed)";
+    assert.equal(warm, "**Kitchen walk-in** is the warmest for its limit: 47.0°F, 6.0° over its 41°F limit.", pathname);
+    assert.ok(!warm.includes("\n"), "one line");
+    await chat.tick();
+    // The bar fridges asked about, and the other eighteen in a line.
+    const bar = chat.send("Is the bar fridge ok?").text || "(missed)";
+    assert.match(bar, /^- \*\*Harbourside \/ Bar fridge\*\* 37\.2°F, fine\.\n- \*\*Old Mill \/ Bar fridge\*\* 36\.4°F, fine\./, `${pathname}: ${bar}`);
+    assert.match(bar, /2 others need you: Kitchen walk-in, Prep fridge x\(\/evil\)\. Ask \*\*Which fridges need me\?\*\* for the list\./);
+    assert.ok(!bar.includes("Dessert display"), "not all twenty");
+    await chat.tick();
+  }
+});
+
+test("3.39.0: readings always have their tenth, and the demo's pretend texts are called pretend", async () => {
+  const chat = chatAt("/today", { overview: bigOverview() });
+  const all = chat.send("Which fridges need me?").text;
+  assert.match(all, /Walk-in cooler 35\.0°F/);
+  assert.match(all, /Prep fridge, grill 36\.4°F/);
+  await chat.tick();
+  const told = chat.send("Why did nobody get a text?").text || "(missed)";
+  assert.match(told, /was a pretend text to 1 person \(demo\): nothing is really sent from the demo\./);
+  assert.doesNotMatch(told, /phone network took/);
+});
+
+test("3.39.0: a different count at each location is priced location by location, as the calculator does", async () => {
+  for (const pathname of ["/", "/pricing", "/console"]) {
+    const chat = chatAt(pathname, { signedIn: pathname === "/console" });
+    for (const words of ["How much for 15 fridges at one restaurant and 4 at the other?", "15 at one, 4 at the other: what would it cost?",
+      "price for fifteen at one and four at the other"]) {
+      const got = chat.send(words).text || "(missed)";
+      assert.match(got, /^\*\*19 fridges or freezers across 2 locations \(15 and 4\): Growth, \$373 a month\.\*\*/, `${pathname}: ${words}: ${got}`);
+      assert.match(got, /\$149 a month a location covers up to 10 fridges and freezers there; each one past that is \$15 a month: 5 past it at the one with 15, \$75 in all\./);
+      await chat.tick();
+    }
+    const three = chat.send("How much for 12 at the first, 6 at the second and 3 at the third?").text || "(missed)";
+    assert.match(three, /^\*\*21 fridges or freezers across 3 locations \(12, 6 and 3\): Growth, \$477 a month\.\*\*/, three);
+    await chat.tick();
+    const pharm = chat.send("Two pharmacies, 12 at one and 3 at the other: how much?").text || "(missed)";
+    assert.match(pharm, /^\*\*15 fridges or freezers across 2 pharmacies \(12 and 3\): \$428 a month\*\*, \$199 a pharmacy\./, pharm);
+    await chat.tick();
+  }
+});
+
+test("3.39.0: signed in, nobody is told to start the free trial; on the trial they are told they are on it", async () => {
+  for (const pathname of ["/console", "/today"]) {
+    for (const words of ["How much does it cost?", "Which plan for my café?", "How much for 6 restaurants?", "How much for a pharmacy?"]) {
+      const paid = chatAt(pathname, { overview: bigOverview() }).send(words).text || "(missed)";
+      assert.doesNotMatch(paid, /Start with the free|start with the free|start a free trial/i, `${pathname}: ${words}: ${paid}`);
+      const trial = chatAt(pathname, { overview: bigOverview({ trial: true }) }).send(words).text || "(missed)";
+      assert.doesNotMatch(trial, /Start with the free|start with the free/, `${pathname}: ${words}`);
+      assert.match(trial, /You're on the free trial now: nothing is billed until you choose a plan on the console's \*\*Money\*\* tab\./, `${pathname}: ${words}: ${trial}`);
+    }
+    assert.match(chatAt(pathname, { overview: bigOverview({ trial: true }) }).send("What's in the trial?").text || "", /^You're on it now\. The free trial lasts 14 days/);
+    assert.match(chatAt(pathname, { overview: bigOverview() }).send("What's in the trial?").text || "", /^You're past the free trial/);
+  }
+  // A visitor still gets the trial.
+  assert.match(chatAt("/pricing", { signedIn: false }).send("How much does it cost?").text, /Start with the free 14-day trial, no card\./);
+});
+
+test("3.39.0: on-call times read \"Fri Dec 4, 8:00 AM\", in the rotation's own time", async () => {
+  const rota = [{ scope: "estate", on_shift_now: { contact_id: "C1", full_name: "Morgan Hale" },
+    schedule: [{ full_name: "Morgan Hale", ends_local: "Sat 12 Dec 20:30 CST" }, { full_name: "Priya Lund", ends_local: "Sat 19 Dec 20:30 CST" }] }];
+  const got = chatAt("/console", { overview: accountOverview(), rotations: rota }).send("Who is on call this week?").text;
+  assert.match(got, /^On call now: \*\*Morgan\*\* until Sat Dec 12, 8:30 PM, then \*\*Priya\*\*\./);
+  assert.doesNotMatch(got, /CST|20:30/);
+});
+
+test("3.39.0: \"Here's what I can tell you without an AI key:\" shows once in a chat, not before every answer", async () => {
+  let given = null;
+  const LEAD = "Here's what I can tell you without an AI key:";
+  const R = { render: (text) => text };
+  const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname: "/pricing", href: BASE + "/pricing" },
+    localStorage: { getItem: () => null }, CLXWords: Words, PilotRender: R, PilotPanel: { MATCH_LEAD: LEAD } };
+  vmx.runInNewContext(CONFIG, { window: win, URL, Promise, document: { getElementById: () => ({ dataset: { ...NAMES, ...DATA } }), title: "Pricing" } });
+  const first = PANEL.welcomePills(given.welcomePills, BASE + "/pricing").find((p) => typeof p.answer === "function");
+  first.answer({ facts: {}, ready: false, label: "How much is it?" });
+  const local = { local: BASE + "/pricing" };
+  // One drawing of the chat: two typed answers, then one pressed.
+  const drawn = [R.render(`${LEAD}\n\nOne.`, null, local), R.render(`${LEAD}\n\nTwo.`, null, local), R.render("Three.", null, local)];
+  assert.deepEqual(drawn, [`${LEAD}\n\nOne.`, "Two.", "Three."]);
+  // The next drawing starts again from the top: the first keeps it.
+  await Promise.resolve();
+  assert.equal(R.render(`${LEAD}\n\nOne.`, null, local), `${LEAD}\n\nOne.`);
+  // An AI's answer (not local) is never touched.
+  assert.equal(R.render(`${LEAD} x`, null, undefined), `${LEAD} x`);
+});
+
+test("3.39.0: on a phone the words in the robot's corners are named for it to keep off; on a desktop nothing is added", () => {
+  const make = (width) => {
+    let given = null;
+    const attrs = new Set();
+    const text = { nodeType: 3, textContent: "Texts are not switched on" };
+    const para = { childNodes: [text], setAttribute: (k) => attrs.add(k), removeAttribute: (k) => attrs.delete(k) };
+    const doc = { getElementById: () => ({ dataset: { ...NAMES, ...DATA } }), title: "Today",
+      querySelector: () => null,
+      elementsFromPoint: (x, y) => (x > width - 80 && y > 812 - 130 ? [para] : []),
+      createRange: () => ({ selectNodeContents() {}, getClientRects: () => [{ left: width - 70, right: width - 16, top: 760, bottom: 780, width: 54 }] }) };
+    const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname: "/today", href: BASE + "/today" }, innerWidth: width, innerHeight: 812,
+      localStorage: { getItem: () => "t" }, CLXWords: Words, KryozynToday: { overview: () => bigOverview(), did: () => null } };
+    vmx.runInNewContext(CONFIG, { window: win, URL, document: doc });
+    return { given, attrs };
+  };
+  const phone = make(375);
+  assert.deepEqual(J(phone.given.yieldTo), ["[data-pilot-text]"]);
+  assert.ok(phone.attrs.has("data-pilot-text"));
+  assert.deepEqual(J(phone.given.gutter), ["body > .wrap"], "/today's column gets the side room <main> has elsewhere");
+  const desk = make(1280);
+  assert.deepEqual(J(desk.given.yieldTo), []);
+  assert.ok(!desk.attrs.has("data-pilot-text"));
 });

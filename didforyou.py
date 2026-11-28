@@ -94,6 +94,10 @@ def lines(f: Dict[str, Any]) -> List[str]:
         out.append(", ".join(bits) + ".")
         if f["texts"] or f["calls"]:
             out.append(f"{_count(f['texts'], 'alert text')} delivered, {_count(f['calls'], 'phone call')}.")
+        elif f.get("pretend_texts"):
+            # The demo's made-up receipts (3.39.0), never "delivered" beside
+            # "Texts are not switched on".
+            out.append(f"{_count(f['pretend_texts'], 'pretend alert text')} (demo): nothing is really sent.")
         food = []
         # The count first (3.33.0): "1 kept, 1 thrown away", never "thrown away 1".
         if f["food_kept"]:
@@ -141,7 +145,10 @@ def summary(tenant: Tenant, period: str = "week", now: Optional[datetime] = None
         "by_itself": sum(1 for i in alerts if i.acknowledged_at is None and i.resolved_at is not None),
         # Texts that reached the phone network, never ones only written
         # (a server with texts off).
-        "texts": sum(sum(1 for r in i._sms_receipts() if r.get("delivered")) for i in alerts),
+        "texts": sum(sum(1 for r in i._sms_receipts() if r.get("delivered") and not r.get("demo"))
+                     for i in alerts),
+        # The demo's made-up receipts (demo_account.py, 3.39.0), apart.
+        "pretend_texts": sum(sum(1 for r in i._sms_receipts() if r.get("demo")) for i in alerts),
         "calls": sum(1 for i in alerts if i.phoned),
         "food_kept": food["alerts"],
         "food_auto_safe": food["auto_safe"],

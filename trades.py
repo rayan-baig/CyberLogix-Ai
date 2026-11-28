@@ -171,8 +171,12 @@ def price(slug: str) -> Dict[str, Any]:
     return {**out, "starter": starter}
 
 
-def index() -> List[Dict[str, str]]:
-    return [{"slug": s, "name": TRADES[s]["name"], "lede": TRADES[s]["lede"]}
+def index() -> List[Dict[str, Any]]:
+    # The plan a trade signs up on (3.39.0), so /for can put the food
+    # trades (restaurant) and a vaccine clinic (pharmacy) ahead of the
+    # niche industries.
+    return [{"slug": s, "name": TRADES[s]["name"], "lede": TRADES[s]["lede"],
+             "plan": TRADES[s]["plan"]}
             for s in known()]
 
 

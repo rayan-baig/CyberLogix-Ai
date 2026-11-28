@@ -289,8 +289,11 @@ def sensor_forecast(
             outlook = f"{moving}is heading for its limit of {limit}"
             advice = "Schedule preventive maintenance."
         else:
+            # In words (3.39.0), never "in about 1.1 hours".
+            from domain import minutes_words
+
             outlook = (f"{moving}is projected to reach its limit of {limit} "
-                       f"in about {hours} hours")
+                       f"in {minutes_words(hours * 60)}")
             advice = "Schedule preventive maintenance."
         fallback = (
             f"{result['industry_name']} sensor {sensor_id}{where} {outlook}. "
@@ -359,10 +362,14 @@ def fleet_forecast(
         "window_hours": window_hours,
         "sensors_analysed": len(forecasts),
         "risk_tally": tally,
+        # Not a unit out of range now (3.39.0): it has an alert, and a
+        # fridge at 46.5°F sat under "Heading for trouble: still fine, but
+        # drifting" with "in under an hour".
         "at_risk": [
             f
             for f in forecasts
             if f["risk_level"] in {"critical", "high", "elevated"}
+            and not f.get("already_breached")
         ],
         "forecasts": forecasts,
     }

@@ -110,6 +110,6 @@ def _trend(trend_f, unit):
 def test_the_forecast_drift_is_written_in_the_account_unit():
     """1.8°F an hour is 1°C an hour; shown as "+1.8°/h" to a Celsius
     account it read as nearly twice as fast as it is."""
-    assert _trend(1.8, "C") == "+1°C/h"
+    assert _trend(1.8, "C") == "+1.0°C/h"  # one decimal since 3.39.0
     assert _trend(1.8, "F") == "+1.8°F/h"
     assert _trend(None, "C") == ""

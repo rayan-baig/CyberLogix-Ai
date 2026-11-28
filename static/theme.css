@@ -1704,6 +1704,10 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
 /* Pause or cancel (retention.py): the offers first, cancel right below. */
 .pause-options { display: grid; gap: 8px; margin: 10px 0 4px; }
 .pause-options .btn { justify-content: space-between; text-align: left; }
+/* "Pause for 3 months" and "back on 28 February 2027" wrap onto two lines
+   on a narrow phone (3.39.0): at 320px the Money tab scrolled 52px
+   sideways (.btn never wraps its words). */
+.pause-options .btn { flex-wrap: wrap; white-space: normal; max-width: 100%; column-gap: 10px; height: auto; }
 .stay-offer { margin: 14px 0 4px; padding: 12px 14px; border-radius: 12px;
               border: 1px solid var(--border-lit); background: var(--surface);
               font-size: 13.5px; color: var(--ink-2); }
