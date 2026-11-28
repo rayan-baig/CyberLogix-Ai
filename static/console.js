@@ -1186,8 +1186,8 @@ function render(d, health) {
     tile("Flat batteries", `${s.low_battery ?? 0}`,
          s.low_battery ? "replace before they go dark" : "all healthy"),
     calm ? "" :
-    tile("Readings logged", `${s.readings_logged}`,
-         `${s.readings_breached} out of range`),
+    tile("Readings logged", Number(s.readings_logged || 0).toLocaleString("en-US"),
+         `${Number(s.readings_breached || 0).toLocaleString("en-US")} out of range`),
   ].join("");
   animateFigures($("tiles"));
   // "Heading for trouble" is the forecast's card: not shown at all on a
@@ -1197,6 +1197,7 @@ function render(d, health) {
   // The first day: seven tiles of zeros say nothing yet. The checklist
   // and the fridges are the page until it is done.
   $("tiles").hidden = dayOne(d);
+  balanceTiles();
 
   // Rebuilt on every poll because a site can be added from the sidebar.
   const siteSelect = $("fleet-site");
@@ -1459,11 +1460,35 @@ function openAlertsNote(s) {
 function tile(label, value, foot) {
   // data-to lets the figure count up after paint. A number that snaps
   // reads as a page reloading; one that settles reads as an instrument.
-  const numeric = typeof value === "string" && /^[0-9.]+%?$/.test(value);
+  // "6,723" counts up too, and lands with its comma (3.38.0).
+  const numeric = typeof value === "string" && /^[0-9.,]+%?$/.test(value);
   return `<div class="tile"><div class="tile-label">${esc(label)}</div>`
        + `<div class="tile-value"${numeric ? ` data-to="${esc(value)}"` : ""}>`
        + `${numeric ? "" : esc(value)}</div>`
        + `<div class="tile-foot">${esc(foot)}</div></div>`;
+}
+
+/* The summary tiles in rows of even length (3.38.0): as many to a row as
+   fit, then shared out, so seven on a screen with room for six read 4 + 3,
+   never six over one tile alone across the whole width. The phone's
+   two-column grid (theme.css) ignores it. */
+const TILE_MIN = 168, TILE_GAP = 14;
+function balanceTiles() {
+  const box = $("tiles");
+  if (!box) return;
+  const n = box.children.length;
+  const width = box.clientWidth;
+  if (!n || !width) return;
+  const fits = Math.max(1, Math.floor((width + TILE_GAP) / (TILE_MIN + TILE_GAP)));
+  const perRow = n <= fits ? n : Math.ceil(n / Math.ceil(n / fits));
+  box.style.setProperty("--per-row", String(perRow));
+}
+// Again whenever the row's width changes, including the moment the page
+// first shows (it is drawn while still hidden, at no width at all).
+if (typeof ResizeObserver === "function" && $("tiles")) {
+  new ResizeObserver(() => balanceTiles()).observe($("tiles"));
+} else {
+  window.addEventListener("resize", () => balanceTiles());
 }
 
 /* Count a figure up to its value over about half a second. Skipped
@@ -1473,7 +1498,8 @@ function animateFigures(root) {
   root.querySelectorAll("[data-to]").forEach((el) => {
     const raw = el.dataset.to;
     const suffix = raw.endsWith("%") ? "%" : "";
-    const target = parseFloat(raw);
+    const grouped = raw.includes(",");
+    const target = parseFloat(raw.replace(/,/g, ""));
     if (!isFinite(target)) { el.textContent = raw; return; }
     if (reduced || target === 0) { el.textContent = raw; return; }
 
@@ -1484,7 +1510,8 @@ function animateFigures(root) {
       const t = Math.min(1, (now - started) / DURATION);
       // Ease out, so it decelerates into the figure rather than stopping.
       const eased = 1 - Math.pow(1 - t, 3);
-      el.textContent = (target * eased).toFixed(decimals) + suffix;
+      el.textContent = (grouped ? Math.round(target * eased).toLocaleString("en-US")
+        : (target * eased).toFixed(decimals)) + suffix;
       if (t < 1) requestAnimationFrame(step);
       else el.textContent = raw;
     };
@@ -1680,9 +1707,25 @@ function forecastNote(s) {
   if (!s.risk_level || s.risk_level === "unknown") return "";
   if (s.hours_until_breach !== null && s.hours_until_breach > 0
       && ["critical", "high", "elevated"].includes(s.risk_level)) {
-    return `<span class="sensor-fore">Could be too warm in about ${esc(s.hours_until_breach)}h</span>`;
+    // Which way it is heading, and when in words (3.38.0): "Could be too
+    // warm in about 7.54h" was a figure, not a time.
+    const way = (s.trend_f_per_hour || 0) < 0 ? "too cold" : "too warm";
+    return `<span class="sensor-fore">Could be ${way} ${esc(forecastWhen(s.hours_until_breach))}</span>`;
   }
   return "";
+}
+
+/* "in under an hour", "in about 8 hours", "by about 6:40 PM": never a
+   decimal of an hour. Past 12 hours a clock time reads better than a
+   count. */
+function forecastWhen(hours) {
+  const h = Number(hours);
+  if (!(h > 0)) return "soon";
+  if (h < 1) return "in under an hour";
+  const whole = Math.round(h);
+  if (whole <= 12) return `in about ${whole} hour${whole === 1 ? "" : "s"}`;
+  const at = new Date(Date.now() + h * 3600000);
+  return `by about ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function sensorCard(s) {
@@ -2849,7 +2892,7 @@ function renderRoster(roster) {
    page rather than rebuilt by the poll, so the twenty-second refresh
    never wipes something half typed. */
 
-const ROTA = { roster: [], rotations: [], draft: [], ready: false };
+const ROTA = { roster: [], rotations: [], draft: [], ready: false, loaded: false };
 
 function canEditRoster() {
   return Boolean(state.user && state.user.role !== "viewer") && !state.wall;
@@ -2926,6 +2969,7 @@ function renderRotations(data, roster) {
   const rotations = data.rotations || [];
   ROTA.roster = people;
   ROTA.rotations = rotations;
+  ROTA.loaded = true;
   const editor = canEditRoster();
 
   $("rotation-note").textContent = rotations.length
@@ -7990,6 +8034,10 @@ window.KryozynConsole = Object.freeze({
   // are drawn from), for Pilot's answers that need no AI key (3.27.0):
   // read in the browser, nothing fetched and nothing sent.
   overview: () => (state.token ? state.data : null),
+  // The on-call rotations as the On call now card last drew them (3.38.0),
+  // for Pilot's "Who is on call this week?": who is on now, until when,
+  // and who is next, read in the browser. null until the card has loaded.
+  rotations: () => (state.token && ROTA.loaded ? ROTA.rotations : null),
   tab: () => {
     const on = document.querySelector('.f-tab[aria-pressed="true"]');
     return on ? on.textContent.trim() : "";

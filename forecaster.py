@@ -36,6 +36,25 @@ NEGLIGIBLE_SLOPE_F_PER_HOUR = 0.05
 # and a rhythm is not visible in less than three of them.
 PATTERN_WINDOW_HOURS = 72.0
 
+# After a unit comes back in range (3.38.0), no forecast until it has
+# settled for this long, and then a trend fitted only to the readings
+# since. A fridge that warmed to 46.5°F and cooled back to 37.8°F was
+# fitted through the warm spell and its card said "Could be too warm in
+# about 7.54h", counted as at risk, a minute after it recovered.
+SETTLE_HOURS = 2.0
+
+
+def _since_back_in_range(readings: List[Reading]) -> Optional[List[Reading]]:
+    """The readings since the last return to range, when the window holds
+    a reading out of range and the latest is back in; else None (nothing
+    to cut)."""
+    if not readings or readings[-1].breached:
+        return None
+    last_out = max((n for n, r in enumerate(readings) if r.breached), default=None)
+    if last_out is None:
+        return None
+    return readings[last_out + 1:]
+
 
 def _risk_band(hours: Optional[float]) -> str:
     if hours is None:
@@ -137,6 +156,26 @@ def forecast_sensor(sensor_id: str, window_hours: float) -> Dict[str, Any]:
             "because": "This unit has no upper limit, so there is no warm "
                        "spell to classify.",
         }
+
+    recovered = _since_back_in_range(readings)
+    if recovered is not None:
+        settled_hours = (utc_now() - recovered[0].recorded_at).total_seconds() / 3600.0
+        if settled_hours < SETTLE_HOURS:
+            base.update(
+                {
+                    "forecast": "recovering",
+                    "risk_level": "stable",
+                    "hours_until_breach": None,
+                    "trend_f_per_hour": None,
+                    "confidence": None,
+                    "summary": (
+                        "Back in range recently: no forecast until it has "
+                        f"settled for {SETTLE_HOURS:g} hours."
+                    ),
+                }
+            )
+            return base
+        readings = recovered
 
     trend = _linear_trend(readings)
     if trend is None:

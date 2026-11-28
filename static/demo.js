@@ -241,6 +241,9 @@ function foodAsk() {
 /* ---------------- drawing ---------------- */
 
 function fmt(f) { return (Math.round(f * 10) / 10).toFixed(1).replace(/\.0$/, ""); }
+/* A card's reading, always with its tenth (3.38.0): "35°" beside "36.4°"
+   read as two kinds of thermometer. */
+function cardReading(f) { return (Math.round(f * 10) / 10).toFixed(1).replace(/^-0\.0$/, "0.0"); }
 
 function clockWords(t) {
   const m = Math.floor(t / 60);
@@ -281,7 +284,7 @@ function draw() {
     return `<article class="demo-unit ${st.cls}">
       <div class="demo-unit-top"><span class="demo-unit-name">${esc(unit.name)}</span>
         <span class="demo-word ${st.cls}">${esc(st.word)}</span></div>
-      <div class="demo-unit-temp">${esc(fmt(now))}<span>°F</span></div>
+      <div class="demo-unit-temp">${esc(cardReading(now))}<span>°F</span></div>
       ${spark(list, unit.limit_f)}
       <div class="demo-unit-limit">Alert above ${esc(fmt(unit.limit_f))}°F</div>
     </article>`;

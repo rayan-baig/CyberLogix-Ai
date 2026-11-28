@@ -274,7 +274,9 @@ def test_for_a_day_after_a_loss_today_leads_with_the_pack(api):
     STORE._save_incident(incident)
     assert _overview(api, owner)["recent_loss"] is None
     simple = (STATIC / "simple.js").read_text()
-    assert "Food thrown away from ${esc(loss.unit)}: make the insurance pack" in simple
+    # 3.38.0: named as the rest of /today names it (whichOne).
+    assert "Food thrown away from ${esc(lost)}: make the insurance pack" in simple
+    assert loss["sensor_id"] == "WALK-IN-1"
     assert ".verdict.calm" in (STATIC / "simple.css").read_text()
 
 

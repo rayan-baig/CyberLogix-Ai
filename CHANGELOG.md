@@ -6,6 +6,64 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.38.0 — 2026-11-28
+
+Pilot answers the questions people ask most with no AI key, the demo
+reads as a settled business and agrees with itself, the forecast stops
+warning about a fridge that has just recovered, and a few rough edges on
+/for, the console and /today are smoothed. No price or plan term has
+changed.
+
+- **Pilot answers more with no key.** "What happens if nobody answers?"
+  gets the phone-call answer. "Is there a contract?" says there is no
+  lock-in before how to cancel. "Do I need an electrician?" says no, and
+  how setting up goes. Signed in: "What's wrong right now?" lists the
+  fridges that need you; "Who is on call this week?" names who is on now,
+  until when, and who is next, from the On call now card (first names
+  only); "How much am I paying?" gives the plan and the month from the
+  account; "Closed for Christmas, can I pause alerts?" explains the real
+  1 to 3 month pause on the Money tab, honestly, and that there is no
+  shorter one; "Change the bar fridge limit to 38" points to Change limit
+  on that fridge's card.
+- **"3 restaurants with about 8 fridges each" is 24 fridges.** Pilot's
+  price works out 8 at each of the 3, and shares a total over the places
+  instead of charging every place for all of them.
+- **The demo agrees with itself.** The people on call are added before
+  the open alert, and it shows as texted to the person on call, so its
+  insurance pack no longer says "nobody was on the list to text" beside a
+  call to Morgan Hale. The made-up numbers are full length (+1 555 010
+  0141).
+- **The demo looks settled.** A week in with a paid invoice, it has sent
+  its test alert and accepted the agreements, so "Getting started 3 of 4"
+  and "Agreements to accept" are gone.
+- **The pack calls a prep fridge a prep fridge.** It uses the unit's own
+  kind, and a name that already says fridge, freezer, cooler, chiller or
+  display gets nothing after it: "Prep fridge, bakery (walk-in)" is now
+  "Prep fridge, bakery".
+- **No forecast for a fridge that has just recovered.** For two hours
+  after a unit comes back in range there is no forecast, and then only
+  the readings since it came back are used. A fridge back at 37.8°F said
+  "Could be too warm in about 7.54h" and counted as at risk. The card now
+  says "in about 8 hours" or a clock time, and "too cold" when it is
+  heading down.
+- **/for starts with restaurants**, then other food service and
+  pharmacies, and no longer scrolls sideways at 320px.
+- **Even tiles on the console.** Seven tiles on a screen with room for
+  six read 4 + 3, not six and one alone across the whole width.
+  "Readings logged" reads "6,720".
+- **/today names the unit in the loss headline as the rest of the page
+  does:** "Prep fridge, bakery at Juniper Commissary", not "Commissary /
+  Prep fridge, bakery".
+- **A new trial hears what is left.** /today says "One thing left to set
+  up: send a test alert" instead of "nothing for you to do", and says when
+  texts are not switched on for the server.
+- **Pilot keeps clear of the console's header** on a phone with the alert
+  bar showing.
+- **One decimal on every temperature in a list.** "35.0°" beside "36.4°"
+  on /today and the demo, not "35°".
+- **No "Needs you now" under "An alert needs you now"** on /today.
+
+
 ## 3.37.0 — 2026-11-28
 
 Pilot answers what people actually type, every time is dated when it is

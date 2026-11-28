@@ -456,6 +456,10 @@ def loss_headline(tenant: Tenant, now) -> Optional[Dict[str, Any]]:
     sensor = STORE.get_sensor(i.sensor_id)
     return {
         "incident_id": i.incident_id,
+        # The unit's id too (3.38.0), so /today names it as everywhere else
+        # on the page ("Prep fridge, bakery at Juniper Commissary"), not by
+        # its raw "Commissary / Prep fridge, bakery".
+        "sensor_id": i.sensor_id,
         "unit": (sensor.location_name if sensor and sensor.location_name else i.sensor_id),
         "at": iso(i.food_answered_at),
         "by_name": person_name(i.food_answered_by),

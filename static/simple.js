@@ -33,6 +33,14 @@ function howLongAgo(iso) {
 /* What a thing is called in words somebody would say out loud. The API
    calls a walk-in freezer an "asset" with a "location_name"; nobody has
    ever walked into a kitchen and pointed at an asset. */
+/* A reading with its tenth, always (3.38.0): "35°" beside "36.4°" in the
+   list read as two kinds of thermometer. */
+function degreesOf(value) {
+  const n = Number(value);
+  if (value === null || value === undefined || value === "" || !isFinite(n)) return "—";
+  return `${(Math.round(n * 10) / 10).toFixed(1).replace(/^-0\.0$/, "0.0")}°`;
+}
+
 function nameOf(unit) {
   const where = (unit.location_name || "").split("/").pop().trim();
   return where || unit.sensor_id;
@@ -105,6 +113,9 @@ function renderNeeds(data, units) {
   // Nothing more to press on any of them (3.36.0): waiting, not needing.
   const heading = $("needs-h");
   if (heading) heading.textContent = live.length && !sitewide.length && live.every(fixSaid) ? "Waiting to get cold" : "Needs you now";
+  // Under "An alert needs you now" the cards need no "Needs you now" of
+  // their own (3.38.0): the page said it twice, one under the other.
+  if (heading) heading.hidden = !(data.account || {}).paused && live.some((i) => i.state === "open");
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   const cards = sitewide.map((i) => `
     <div class="need">
@@ -233,7 +244,7 @@ function foodWhy(i) {
 
 /* The headline. One sentence, chosen by how bad the worst thing is. */
 let lossShown = null;
-function verdict(units, jobs, paused, live, food, loss) {
+function verdict(units, jobs, paused, live, food, loss, left) {
   const box = $("verdict");
   lossShown = null;
   // Paused by the owner (retention.py): no "everything is fine" while
@@ -336,7 +347,10 @@ function verdict(units, jobs, paused, live, food, loss) {
     const id = esc(loss.incident_id);
     const by = loss.by_name ? `, by ${esc(loss.by_name)}` : "";
     box.className = "verdict calm";
-    box.innerHTML = `<h1>Food thrown away from ${esc(loss.unit)}: make the insurance pack</h1>
+    // Named as the rest of the page names it (3.38.0), not "Commissary /
+    // Prep fridge, bakery".
+    const lost = whichOne(byId[loss.sensor_id] || { sensor_id: loss.sensor_id || loss.unit, location_name: loss.unit }, units);
+    box.innerHTML = `<h1>Food thrown away from ${esc(lost)}: make the insurance pack</h1>
        <p>Recorded at ${esc(CLXWords.clock(loss.at))}${by}. Your fridges are back to normal. The pack has
           the readings, who was told and when, and ${loss.note ? "your note of what went" : "room for a note of what went"},
           ready to send to your insurer.${jobs.length ? ` ${esc(CLXWords.count(jobs.length, "thing"))} to sort out below.` : ""}</p>
@@ -365,13 +379,44 @@ function verdict(units, jobs, paused, live, food, loss) {
     return;
   }
   box.className = "verdict ok";
+  // A new account with Getting started not done (3.38.0): what is left,
+  // never "nothing for you to do" before a test alert has reached anyone.
+  const todo = left && left.length
+    ? ` ${left.length === 1 ? "One thing left to set up" : `${left.length} things left to set up`}: ${
+        esc(left.map((step) => step.label.toLowerCase()).join(", "))}. It's under Getting started in the console.`
+    : " There is nothing for you to do.";
+  const go = left && left.length
+    ? `<div class="need-acts loss-acts"><a class="btn" href="/console">Open Getting started</a></div>` : "";
   box.innerHTML = n === 1
     ? `<h1>Everything is fine</h1>
-       <p>Your fridge is the right temperature and reporting in. There is
-          nothing for you to do.</p>`
+       <p>Your fridge is the right temperature and reporting in.${todo}</p>${go}`
     : `<h1>Everything is fine</h1>
        <p>All ${n} of your fridges and freezers are the right temperature and
-          reporting in. There is nothing for you to do.</p>`;
+          reporting in.${todo}</p>${go}`;
+}
+
+/* Getting started's steps not done yet (firstday.checklist), or none. */
+function setupLeft(data) {
+  const day = data.first_day;
+  if (!day || day.complete || !Array.isArray(day.steps)) return [];
+  return day.steps.filter((step) => !step.done && step.label);
+}
+
+/* Texts switched off on this server (3.38.0): said on this page too, as
+   the console's banner says it, so nobody reads "Everything is fine" and
+   thinks an alert would reach their phone. Asked once; an older server or
+   a failed read shows nothing. */
+let textsOff = false;
+async function loadHealth() {
+  try {
+    const got = await fetch("/api/health");
+    if (got.ok) textsOff = (await got.json()).message_delivery !== "twilio";
+  } catch (_) { textsOff = false; }
+}
+
+function textsNote() {
+  const note = $("texts-off");
+  if (note) note.hidden = !textsOff;
 }
 
 /* What happens when nobody answers, in the words of this account's plan.
@@ -641,7 +686,8 @@ function render(data) {
   });
 
   const food = foodQuestions(data);
-  const shownAbove = verdict(units, jobs, (data.account || {}).paused, live, food, data.recent_loss) === true;
+  const shownAbove = verdict(units, jobs, (data.account || {}).paused, live, food, data.recent_loss, setupLeft(data)) === true;
+  textsNote();
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   (shownAbove ? food.slice(1) : food).forEach((i) => {
     const name = whichOne(byId[i.sensor_id] || { sensor_id: i.sensor_id }, units);
@@ -674,7 +720,7 @@ function render(data) {
     return `<div class="thing">
       <span class="thing-temp">${
         unit.last_temperature_display == null ? "—"
-          : esc(unit.last_temperature_display) + "°"}</span>
+          : esc(degreesOf(unit.last_temperature_display))}</span>
       <span class="grow">
         <span class="thing-name">${esc(nameOf(unit))}</span><br>
         <span class="thing-where">${unit.site_name ? `${esc(unit.site_name)} · ` : ""}${
@@ -724,7 +770,7 @@ let meAsked = false;
 let didAsked = false;
 async function tick() {
   clearTimeout(pollTimer);
-  if (!meAsked) { meAsked = true; await loadMe(); }
+  if (!meAsked) { meAsked = true; await Promise.all([loadMe(), loadHealth()]); }
   await load();
   if (!didAsked && lastData) { didAsked = true; loadDid(); }
   pollTimer = setTimeout(tick, CLXWords.pollDelay((lastData || {}).sensors, POLL_MS));

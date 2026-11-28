@@ -52,6 +52,12 @@
                    color-mix(in srgb, var(--accent) 8%, var(--surface)), var(--surface)); }
 .verdict.calm h1 { color: var(--ink); }
 .verdict .loss-acts { margin-top: 16px; }
+/* Texts off on this server (3.38.0): a plain line under the headline. */
+.texts-off {
+  margin: 12px 0 0; padding: 10px 14px; border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 48%, transparent);
+  color: var(--ink-2); font-size: 14px; line-height: 1.5;
+}
 
 /* The explainer. Deliberately quieter than the verdict below it: it is
    the thing you read once, not the thing you came for. */
