@@ -30,7 +30,7 @@ def test_the_page_is_the_real_console():
     assert 'id="signin-form"' in page
     assert "--accent-cyan" in page          # the real theme
     assert 'id="find-q"' in page            # the real finder
-    assert 'data-label="Staff licences"' in page  # the real cards
+    assert 'data-label="Staff cards"' in page  # the real cards
     assert 'data-label="Your crew"' in page
 
 

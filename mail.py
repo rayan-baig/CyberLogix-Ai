@@ -320,7 +320,7 @@ MUST_SEND = (
 # Mail that is neither must-send nor marketing says where its reader
 # changes it: (path, what the link is for).
 MANAGED = {
-    "licence-alert:": ("/console", "Change the licences we remind you about"),
+    "licence-alert:": ("/console", "Change the staff licenses we remind you about"),
     "digest:operator:": ("/book", "The same figures, and the settings behind them"),
     "omniarmor-failing:": ("/console", f"Each day sent to {CHECKLIST_APP}, and the connection"),
     "insurance-application:": ("/book", "Approve or decline it in the operator console"),

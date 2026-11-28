@@ -118,7 +118,7 @@ def test_answered_and_back_within_two_hours_asks_rather_than_counts(api):
     row = _row(api, owner, incident_id)
     assert row["food_protected"] is None
     assert row["food_at_risk"] is None
-    assert row["food_question"]["words"] == "Cold again after about 2 hours out"
+    assert row["food_question"]["words"] == "Cold again after 1 hour 30 minutes out"
     assert api.post(f"/api/voice/food/{incident_id}", headers=owner,
                     json={"food": "kept"}).status_code == 200
     row = _row(api, owner, incident_id)

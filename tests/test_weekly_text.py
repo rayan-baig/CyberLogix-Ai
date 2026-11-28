@@ -88,7 +88,7 @@ def test_a_licence_about_to_lapse_rides_along(api, paying):
 
     body = api.get("/api/digest/weekly-text", headers=headers).json()["preview"]
 
-    assert "licence(s) expired" in body
+    assert "license(s) expired" in body
 
 
 def test_a_trial_is_left_alone(api, tenant_factory, owner_headers):
@@ -141,4 +141,4 @@ def test_another_business_s_licences_never_ride_along(
     theirs = api.get("/api/digest/weekly-text", headers=other).json()["preview"]
 
     assert "licence" not in body
-    assert "1 staff licence(s) expired" in theirs
+    assert "1 staff license(s) expired" in theirs

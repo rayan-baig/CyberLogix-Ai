@@ -115,7 +115,7 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "title": "Vaccine fridge alarms for clinics",
         "description": ("Vaccine fridge monitoring for clinics: a text, then a call, "
                         "when a fridge stays out of its range, and a continuous "
-                        "temperature record for your vaccine programme."),
+                        "temperature record for your vaccine program."),
         "lede": "We watch your vaccine fridges, and alert somebody when one drifts out of range.",
         "risk": (
             "Vaccine fridges have to stay inside a narrow range. Too warm or "

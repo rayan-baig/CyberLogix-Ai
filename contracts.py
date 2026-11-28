@@ -1336,9 +1336,9 @@ def refuse_if_behind(tenant: Tenant, feature: str) -> None:
         return
     if state["licence_state"] in ("grace", "lapsed"):
         because = (
-            f"the licence expired on {tenant.expires_at.date()}"
+            f"the license expired on {tenant.expires_at.date()}"
             if tenant.expires_at
-            else "the licence has lapsed"
+            else "the license has lapsed"
         )
     else:
         because = (
@@ -1396,7 +1396,7 @@ def sign(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "A trial estate is priced but not charged. Move the licence "
+                "A trial estate is priced but not charged. Move the license "
                 "onto a paid plan before countersigning, or the contract "
                 "would start issuing invoices against an evaluation."
             ),
@@ -1885,16 +1885,16 @@ def _rows_for(tenant: Tenant, now: datetime) -> List[Dict[str, Any]]:
 
     if state == "suspended":
         row("suspended", "high",
-            "Licence suspended.", mrr * 12,
+            "License suspended.", mrr * 12,
             "Decide whether this account comes back.")
     elif state == "lapsed":
         row("lapsed", "high",
-            "Licence lapsed and monitoring has stopped.", mrr * 12,
+            "License lapsed and monitoring has stopped.", mrr * 12,
             "Call. They are unmonitored and not paying.")
     elif state == "grace":
         left = grace_days_left(tenant, now)
         row("grace", "high",
-            f"Licence expired; {left} day{'' if left == 1 else 's'} of "
+            f"License expired; {left} day{'' if left == 1 else 's'} of "
             "monitoring left.", mrr * 12,
             "Call today. After that the estate goes dark.")
     elif tenant.plan == "trial" and tenant.expires_at is not None:

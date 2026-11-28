@@ -140,7 +140,7 @@ def offline_steps() -> List[Dict[str, str]]:
             "detail": (
                 "If the sensor sends through its maker's app or cloud, open "
                 "that app and check the sensor shows there. In the console, "
-                "the card Fetch from a sensor cloud says if we could not "
+                "the card Sensor maker's cloud says if we could not "
                 "reach the maker's service, and why."
             ),
         },

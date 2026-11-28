@@ -429,7 +429,7 @@ def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"You are already on {PLAN_TIERS[plan]['name']}. Your licence runs "
+                f"You are already on {PLAN_TIERS[plan]['name']}. Your license runs "
                 "on from paid invoices, not from choosing the plan again."
             ),
         )
@@ -439,7 +439,7 @@ def _refuse_self_service_downgrade(tenant: Tenant, plan: str) -> None:
             detail=(
                 f"Moving from {PLAN_TIERS[tenant.plan]['name']} down to "
                 f"{PLAN_TIERS[plan]['name']} is not a self-service change, "
-                "because it resets the licence term and alters what was "
+                "because it resets the license term and alters what was "
                 "agreed. Get in touch and we will do it."
             ),
         )

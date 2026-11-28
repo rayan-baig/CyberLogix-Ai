@@ -92,7 +92,7 @@ GUIDES: List[Dict[str, Any]] = [
             "warn you before it goes flat.",
             "Check the answer. 200 means the reading was taken and the unit "
             "shows it in the console. 401 means the key was not "
-            "recognised; 403 means the key belongs to a different unit; "
+            "recognized; 403 means the key belongs to a different unit; "
             "404 means no unit has that Sensor ID.",
         ],
         "example": {"sensor_id": "WALKIN-1", "temperature_fahrenheit": 2.5,
@@ -128,7 +128,7 @@ GUIDES: List[Dict[str, Any]] = [
             "Check the answer. 200 means it was taken. 202 means the serial "
             "is not on any unit yet: the reading is held under Devices "
             "knocking in the console, where one tap adds it and keeps what "
-            "it sent. 401 means the key was not recognised.",
+            "it sent. 401 means the key was not recognized.",
         ],
         "example": {"device_sn": "ELITECH-00:1B:44:11", "api_key_token": "(sensor key)",
                     "reading_value": 3.1, "metric_type": "temperature_c"},
@@ -189,7 +189,7 @@ GUIDES: List[Dict[str, Any]] = [
             "the sensor's id as its cloud names it.",
             "The gateway cannot be pointed at us, so the readings have to be "
             "fetched from SensorPush's cloud and passed on. Our fetcher "
-            "(Fetch from a sensor cloud, in the next guide) only sends GET "
+            "(Sensor maker's cloud, in the next guide) only sends GET "
             "requests with headers you fix in advance. If the account's data "
             "can be read that way, use it. If reading it needs a sign-in "
             "step that hands out a short-lived token, or a POST, the "
@@ -225,7 +225,7 @@ GUIDES: List[Dict[str, Any]] = [
             "Get the address and the credential from the vendor: an HTTPS "
             "address that answers a plain GET with JSON, and the header it "
             "wants the credential in, such as Authorization.",
-            "In the console, open Fetch from a sensor cloud (under the "
+            "In the console, open Sensor maker's cloud (under the "
             "Advanced tab). Give it a name, "
             "the address, and the header name and value. Choose how often to "
             f"fetch: every {MIN_INTERVAL_MINUTES} to {MAX_INTERVAL_MINUTES} "
@@ -382,7 +382,7 @@ WIZARD: List[Dict[str, Any]] = [
         "steps": [
             "Get the web address and the key from the maker's cloud (often "
             "under API or integrations).",
-            "In the console, open Fetch from a sensor cloud, in the "
+            "In the console, open Sensor maker's cloud, in the "
             "Advanced tab, and paste them. We fetch the readings every few "
             "minutes.",
             "Press Try now there: it says at once whether readings came back.",
@@ -466,7 +466,7 @@ WHAT_YOU_NEED: Dict[str, Any] = {
         "shows you.",
         "In the sensor's app or cloud, set it to send readings to the "
         "address in the guide for your brand below, with that key. Or, for "
-        "a maker's cloud, add it under Fetch from a sensor cloud, in the "
+        "a maker's cloud, add it under Sensor maker's cloud, in the "
         "console's Advanced tab.",
         "Wait for the first reading. Getting started ticks First reading "
         "received when it arrives, usually within a few minutes.",
@@ -574,7 +574,7 @@ def easiest_html(base: str) -> str:
         f"address: <code>{e(base)}/api/sensor-pulse</code>, and the key as "
         "the header <code>X-Kryozyn-Sensor-Key</code>.</li>"
         "<li><b>An API key in the maker's cloud.</b> In the console, press "
-        "the <b>Advanced</b> tab, open <b>Fetch from a sensor cloud</b>, "
+        "the <b>Advanced</b> tab, open <b>Sensor maker's cloud</b>, "
         "choose the kind of cloud and paste that key. We fetch the readings "
         "every few minutes.</li>"
         "</ul></li>"
@@ -641,7 +641,7 @@ def render_markdown() -> str:
         f"   `{DOC_BASE}/api/sensor-pulse` as the address and the key as the",
         "   header `X-Kryozyn-Sensor-Key`. If its maker's cloud gives you an",
         "   API key instead, press the **Advanced** tab in the console, open",
-        "   **Fetch from a sensor cloud**, choose the kind of cloud and paste",
+        "   **Sensor maker's cloud**, choose the kind of cloud and paste",
         "   that key.",
         "3. Wait a few minutes for the first reading.",
         "",

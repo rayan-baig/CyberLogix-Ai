@@ -176,7 +176,7 @@ def test_the_pack_page_reads_well_on_a_phone_and_on_paper():
     packet = _function(CONSOLE_JS, "openPacket")
     assert 'const closedKey = ev.resolved_at ? "Closed at" : "Closed";' in packet
     assert "closed at ${stamp(ev.resolved_at)}" not in packet
-    assert "issued ${esc(stampZone(packet.issued_at))}" in packet
+    assert "issued ${esc(at(packet.issued_at))}" in packet
     assert "oneDecimal(r.temperature)" in packet and "oneDecimal(ev.detected_reading)" in packet
     assert "oneDecimal(evidence.peak_reading)" in packet
     assert '<table class="doc-channels">' in packet and 'data-label="Outcome"' in packet

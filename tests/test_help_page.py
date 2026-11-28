@@ -159,7 +159,7 @@ def test_the_console_has_the_buttons_the_answers_name():
     console = page_source(ROOT / "static" / "console.html")
     for label in ("Send a test alert", "Download everything", "Delete everything",
                   "Download or delete everything", "Who gets called",
-                  "What you pay", "Fetch from a sensor cloud", "New key",
+                  "What you pay", "Sensor maker's cloud", "New key",
                   "Forgotten your password?"):
         assert label in console, label
 

@@ -365,7 +365,7 @@ $("onboard-form").addEventListener("submit", async (event) => {
     // they had no way to see -- and a key in the console log stays in
     // the log. It goes where every other new key goes.
     showIssuedKey("this business (master key)", made.api_key, { scroll: false });
-    toast("Trial started. Your business key is in Setup if you ever "
+    toast("Trial started. Your key for other software is under Advanced if you ever "
           + "connect other software.", "ok");
   } catch (err) {
     toast(err.message, "err");
@@ -846,7 +846,7 @@ function panelUnavailable(key, err) {
     return;
   }
   el.innerHTML = `<div class="empty u-p-16-0">${
-    lapsed ? "Withheld while the licence is unpaid."
+    lapsed ? "Withheld while the license is unpaid."
            : "Could not be loaded."}
     <span class="sub">${esc(lapsed
       ? "Monitoring and alerting are unaffected."
@@ -1079,7 +1079,7 @@ function render(d, health) {
     roleBanner.textContent =
       "Signed in as a viewer. You can see everything here and change " +
       "nothing — registering sensors, changing alarm limits and the " +
-      "licence all need an operator or owner.";
+      "license all need an operator or owner.";
     roleBanner.dataset.short = "Signed in as a viewer";
     roleBanner.hidden = false;
   } else if (state.user && state.user.must_change_password) {
@@ -1361,15 +1361,12 @@ function siteWideCard(a) {
 const GENERIC_NOUNS = new Set(["asset", "assets", "unit", "units", "walk-in", "walk-ins",
   "kitchen", "kitchens"]);
 
-/* "about 1 minute", "3 minutes", "about 2 hours": never "0.73 min" or
-   "1 minutes". */
+/* "about 1 minute", "3 minutes", "1 hour 28 minutes": never "0.73 min"
+   or "1 minutes". An hour or more as words.js says it (3.42.0). */
 function minutesWords(value) {
   const m = Number(value);
   if (!Number.isFinite(m) || m < 0.5) return "under a minute";
-  if (m >= 90) {
-    const h = Math.round(m / 60);
-    return `about ${h} hour${h === 1 ? "" : "s"}`;
-  }
+  if (m >= 60) return CLXWords.minutes(m);
   const n = Math.round(m);
   const about = Math.abs(m - n) > 0.05 ? "about " : "";
   return `${about}${n} minute${n === 1 ? "" : "s"}`;
@@ -1598,7 +1595,7 @@ function renderFleet(sensors) {
       return `<div class="group-head">
           <span>${esc(name)}</span>
           <span class="count">${rows.length} sensor${rows.length === 1 ? "" : "s"}${
-            bad ? ` · ${bad} breaching` : ""
+            bad ? ` · ${bad} out of range` : ""
           }</span>
         </div>
         <div class="fleet">${byUrgency(rows).map(sensorCard).join("")}</div>`;
@@ -1990,7 +1987,7 @@ function renderTable(sensors) {
       <td class="num">${s.battery_percent === null || s.battery_percent === undefined
           ? "—" : esc(Math.round(s.battery_percent)) + "%"}</td>
       <td>${esc(s.online ? "online" : "offline")}</td>
-      <td>${esc(s.breaching ? "breaching" : (s.risk_level || "—"))}</td>
+      <td>${esc(s.breaching ? "out of range" : (s.risk_level || "—"))}</td>
       <td class="num">${s.hours_until_breach === null || s.hours_until_breach === undefined
           ? "—" : esc(s.hours_until_breach)}</td>
     </tr>`).join("");
@@ -3769,7 +3766,7 @@ function renderAlertLane(boxId, due, keep, note) {
 function renderLicenceAlerts(due) {
   renderAlertLane("licence-alerts", due,
                   (row) => row.kind !== "leaver_on_roster",
-                  "A renewal notice goes out once per licence at 60, 30, "
+                  "A renewal notice goes out once per card at 60, 30, "
                   + "14, 7 and 1 days out, and once on the day itself. One "
                   + "that has already lapsed is emailed daily for a week, "
                   + "then weekly, until it is renewed.");
@@ -4503,7 +4500,7 @@ function renderStaff(book) {
   const box = $("staff-list");
   if (!book || !book.count) {
     box.innerHTML = `<div class="sub">Nobody on the books yet. Add the
-      crew and the licence dates follow them.</div>`;
+      crew and their card dates follow them.</div>`;
     return;
   }
   const here = book.people.filter((row) => row.active);
@@ -4520,7 +4517,7 @@ function renderStaff(book) {
           <span class="grow">
             <span class="fc-id">${esc(row.full_name)}</span>
             <span class="sub">${esc(row.role || "No role recorded")}${
-              creds.length ? ` · ${creds.length} licence(s)` : ""}</span>
+              creds.length ? ` · ${creds.length} staff card(s)` : ""}</span>
           </span>
         </div>`;
       }).join("");
@@ -4529,11 +4526,11 @@ function renderStaff(book) {
 function renderPeople(book) {
   $("licence-note").textContent = book.credentials
     ? `${book.expiring_within_30_days} within 30 days`
-    : "no licences recorded";
+    : "no staff cards recorded";
 
   if (!book.credentials) {
     $("people-cal").innerHTML =
-      `<div class="sub">No staff licences recorded. A food handler card,
+      `<div class="sub">No staff cards recorded. A food handler card,
        a CDL, a pharmacy registration &mdash; anything somebody legally
        needs to do the job.</div>`;
     return;
@@ -4768,7 +4765,7 @@ function renderForecast(fleet) {
     ? `${risky.filter((f) => !(f.pattern
         && ["defrost", "door"].includes(f.pattern.pattern))).length
        } in the next ${fleet.window_hours}h`
-    : `${fleet.sensors_analysed} analysed`;
+    : `${fleet.sensors_analysed} analyzed`;
 
   if (!risky.length && !fleet.sensors_analysed) {
     $("forecast-body").innerHTML =
@@ -4784,7 +4781,7 @@ function renderForecast(fleet) {
     $("forecast-body").innerHTML =
       `<div class="empty u-p-14">
          Nothing is trending out of range.
-         <span class="sub">${esc(CLXWords.count(fleet.sensors_analysed, "sensor"))} modelled
+         <span class="sub">${esc(CLXWords.count(fleet.sensors_analysed, "sensor"))} modeled
          over ${esc(CLXWords.count(fleet.window_hours, "hour"))}${
            unknown ? `; ${esc(unknown)} without enough history yet` : ""}.</span>
        </div>`;
@@ -4959,6 +4956,9 @@ async function openPacket(incidentId) {
 
   state.packet = packet;
   state.drawerSensor = null;
+  // Every time on the pack on the business's own clock, labelled (3.42.0):
+  // "Nov 24, 2026, 1:52 AM CST", as the summary's words already are.
+  const at = (iso) => zonedStamp(iso, packet.clock);
 
   const ev = packet.event;
   const loc = packet.location;
@@ -4966,7 +4966,7 @@ async function openPacket(incidentId) {
 
   const timeline = packet.response.timeline.map((step) => `<li>
       <b>${esc(step.event)}</b>${step.detail ? " — " + esc(step.detail) : ""}
-      <span class="when">${esc(stamp(step.at))}</span>
+      <span class="when">${esc(at(step.at))}</span>
     </li>`).join("");
 
   // In words (3.35.0): "Text", "not switched on", never "sms /
@@ -4992,7 +4992,7 @@ async function openPacket(incidentId) {
     : evidence.readings.some((r) => r.humidity !== null && r.humidity !== undefined);
   const excursions = evidence.readings.filter((r) => r.breached);
   const readingRows = evidence.readings.map((r) => `<tr>
-      <td>${esc(stamp(r.at))}</td>
+      <td>${esc(at(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical" : ""}">${
         esc(oneDecimal(r.temperature))}°${esc(ev.temperature_unit)}</td>
       ${humid ? `<td class="num">${esc(humidityWords(r.humidity))}</td>` : ""}
@@ -5006,7 +5006,7 @@ async function openPacket(incidentId) {
   const food = packet.food || {};
   const foodHistory = (food.history || []).map((row) => `<li>
       <b>${esc(row.changed ? `Changed to ${row.words}` : row.words)}</b>${row.by ? " — " + esc(row.by) : ""}
-      <span class="when">${esc(stamp(row.at))}</span>
+      <span class="when">${esc(at(row.at))}</span>
     </li>`).join("");
   // A note that starts with its own answer ("Thrown away from the
   // walk-in: ...") is the answer, said once (3.37.0), not "Thrown away"
@@ -5018,7 +5018,7 @@ async function openPacket(incidentId) {
     <div class="readout">
       <div><span class="k">Answer</span><span class="v">${esc(repeats ? food.note : food.answer)}</span></div>
       <div><span class="k">Who</span><span class="v">${esc(food.by || "not recorded")}</span></div>
-      <div><span class="k">When</span><span class="v">${esc(stamp(food.at))}</span></div>
+      <div><span class="k">When</span><span class="v">${esc(at(food.at))}</span></div>
       ${food.note && !repeats ? `<div><span class="k">What went</span><span class="v">${esc(food.note)}</span></div>` : ""}
     </div>
     ${food.note ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet.${
@@ -5034,7 +5034,7 @@ async function openPacket(incidentId) {
   // "Closed at 4:41 AM", never "Closed: closed at 4:41 AM" (3.36.0).
   const closedKey = ev.resolved_at ? "Closed at" : "Closed";
   const closedWords = ev.resolved_at
-    ? `${stamp(ev.resolved_at)}${ev.closed_by_itself ? ", back in range by itself" : ""}`
+    ? `${at(ev.resolved_at)}${ev.closed_by_itself ? ", back in range by itself" : ""}`
     : ev.state === "acknowledged" ? "not yet: someone is on it" : "not yet: still open";
 
   $("drawer").innerHTML = `
@@ -5043,7 +5043,7 @@ async function openPacket(incidentId) {
         <div class="doc-kicker">Insurance pack: loss event evidence</div>
         <div class="drawer-title" id="drawer-title">${esc(ev.incident_id)}</div>
         <div class="drawer-sub">${esc(packet.insured.company_name)} ·
-          issued ${esc(stampZone(packet.issued_at))}</div>
+          issued ${esc(at(packet.issued_at))}</div>
       </div>
       <button class="btn btn-sm" id="packet-print">Print</button>
       <button class="btn btn-sm" id="drawer-close">Close</button>
@@ -5078,9 +5078,9 @@ async function openPacket(incidentId) {
     <div class="doc-section">The event</div>
     <div class="readout">
       <div><span class="k">Out of range since</span><span class="v">${
-        esc(stamp(ev.out_since || ev.opened_at))}</span></div>
+        esc(at(ev.out_since || ev.opened_at))}</span></div>
       <div><span class="k">${sentKey}</span><span class="v">${
-        esc(stamp(ev.opened_at))}</span></div>
+        esc(at(ev.opened_at))}</span></div>
       <div><span class="k">Reading at detection</span><span class="v">${
         esc(oneDecimal(ev.detected_reading))}°${esc(ev.temperature_unit)}</span></div>
       <div><span class="k">Breach</span><span class="v">${
@@ -5107,8 +5107,8 @@ async function openPacket(incidentId) {
     <div class="doc-section">Recorded evidence</div>
     <div class="readout">
       <div><span class="k">Window</span><span class="v">${
-        esc(stamp(evidence.window_start))} — ${
-        esc(stamp(evidence.window_end))}</span></div>
+        esc(at(evidence.window_start))} — ${
+        esc(at(evidence.window_end))}</span></div>
       <div><span class="k">Readings</span><span class="v">${
         esc(evidence.readings_in_window)}</span></div>
       <div><span class="k">Out of band</span><span class="v">${
@@ -5131,7 +5131,7 @@ async function openPacket(incidentId) {
     ${packet.prior_incidents_90_days.length
       ? `<ul class="timeline">${packet.prior_incidents_90_days.map((p) =>
           `<li><b>${esc(p.incident_id)}</b> — ${esc(p.detail)}
-            <span class="when">${esc(stamp(p.opened_at))}</span></li>`).join("")}
+            <span class="when">${esc(at(p.opened_at))}</span></li>`).join("")}
          </ul>
          <div class="card-note">Disclosed rather than omitted: an adjuster
            finds these anyway, and a packet that hides them is worth less
@@ -5214,6 +5214,20 @@ async function saveSiteAddress(value) {
 function stamp(iso) {
   if (!iso) return "—";
   return CLXWords.dateTime(iso, { year: true });
+}
+
+/* A moment on a named clock, labelled (3.42.0): "Nov 24, 2026, 1:52 AM
+   CST". For the insurance pack, read by somebody who may be elsewhere. */
+function zonedStamp(iso, zone) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  try {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric",
+      minute: "2-digit", timeZone: zone || "UTC", timeZoneName: "short" });
+  } catch (_) {
+    return stampZone(iso);
+  }
 }
 
 /* The same with the reader's time zone, "Nov 24, 2026, 1:52 AM EST", for
@@ -5352,13 +5366,14 @@ function followAddUnitLink() {
 
 /* "/console#bills" opens Bills, and "#invoice=INV-..." that bill too;
    "#people" opens People who can sign in (3.41.0): Pilot's answers about
-   bills and taking someone off come here. Followed once. */
+   bills and taking someone off come here; "#proof-report" opens Proof of
+   monitoring (3.42.0). Followed once. */
 function followBillsLink() {
   const hash = location.hash || "";
   const bill = /^#invoice=([A-Za-z0-9_-]{1,64})$/.exec(hash);
-  if (!(bill || hash === "#bills" || hash === "#people") || !state.token || !state.data) return;
+  if (!(bill || hash === "#bills" || hash === "#people" || hash === "#proof-report") || !state.token || !state.data) return;
   history.replaceState(null, "", location.pathname + location.search);
-  goTo(hash === "#people" ? "people" : "bills");
+  goTo(hash === "#people" ? "people" : hash === "#proof-report" ? "proof" : "bills");
   if (bill) openInvoice(bill[1]);
 }
 
@@ -5664,7 +5679,7 @@ function renderSites(d) {
         <span class="u-fs-13 u-fw-500">${esc(site.name)}</span>
         <span class="u-d-block u-fs-11-5 u-c-muted">
           ${esc(site.sensor_count)} sensor${site.sensor_count === 1 ? "" : "s"} ·
-          ${esc(site.online)} online${breaching ? ` · ${breaching} breaching` : ""}
+          ${esc(site.online)} online${breaching ? ` · ${breaching} out of range` : ""}
         </span>
       </span>
       <button class="btn btn-sm" data-site-view="${esc(site.site_id)}">View</button>
@@ -5852,7 +5867,7 @@ async function paintOfflineHelp() {
 
 function businessStatus(b) {
   if (b.removed) return { kind: "unknown", text: "You no longer have access" };
-  if (b.licence === "suspended") return { kind: "unknown", text: "Licence suspended" };
+  if (b.licence === "suspended") return { kind: "unknown", text: "License suspended" };
   const parts = [];
   if (b.open_alerts) parts.push(`${b.open_alerts} open alert${b.open_alerts === 1 ? "" : "s"}`);
   if (b.sensors_offline) parts.push(`${b.sensors_offline} unit${b.sensors_offline === 1 ? "" : "s"} offline`);
@@ -6248,6 +6263,8 @@ function renderTeam(team) {
     ;
   // The business key is replaced from its own card in Setup, by an owner.
   $("biz-key-act").hidden = !(state.user && state.user.role === "owner");
+  // Adding somebody who can sign in (3.42.0), by an owner.
+  $("user-add").hidden = !(state.user && state.user.role === "owner");
 }
 
 /* Only the sectors this estate actually has sensors in: a health inspector
@@ -6315,6 +6332,8 @@ const GO = {
   // #invoice=..., #people.
   bills: { card: "find-invoices", field: "" },
   people: { card: "find-team", field: "" },
+  // Pilot's "Make a proof report" (3.42.0): #proof-report.
+  proof: { card: "find-proof-reports", field: "proof-report-month" },
 };
 const GO_LABEL = {
   site: "Add a site", sensor: "Add a sensor", oncall: "Add someone",
@@ -6695,7 +6714,7 @@ function connectStepsHtml(b, u) {
   }
   parts.push(`<ol class="steps connect-list">${b.steps.map((st) => `<li>${fill(st)}</li>`).join("")}</ol>`);
   if (b.id === "cloud") {
-    parts.push(`<button class="btn btn-sm btn-primary" type="button" data-connect-go="pollers">Open Fetch from a sensor cloud</button>`);
+    parts.push(`<button class="btn btn-sm btn-primary" type="button" data-connect-go="pollers">Open Sensor maker's cloud</button>`);
   }
   return parts.join("");
 }
@@ -7092,7 +7111,7 @@ document.addEventListener("click", (event) => {
 
   if (btn.dataset.settle) {
     const reference = prompt(
-      "Payment reference (wire number, cheque, processor id):");
+      "Payment reference (wire number, check, processor id):");
     if (!reference) return;
     act(() => api(`/api/invoices/${encodeURIComponent(btn.dataset.settle)}/paid`, {
       method: "POST", body: JSON.stringify({ reference }),
@@ -7208,7 +7227,7 @@ document.addEventListener("click", (event) => {
 
   if (btn.dataset.rekeyBusiness) {
     if (!confirm(
-      "Make a new business key?\n\n"
+      "Make a new key for other software?\n\n"
       + "The current key stops working immediately. Any script or device that "
       + "still uses it will be refused until you give it the new one. Sensors "
       + "with their own keys carry on as before."
@@ -7360,7 +7379,7 @@ function showIssuedKey(sensorId, key, options = {}) {
   $("issued-guide").dataset.connectFor = sensorId;
   $("issued-for").textContent = sensorId;
   $("issued-for").hidden = master;
-  $("issued-kind").textContent = master ? "Your business key" : "Sensor key for";
+  $("issued-kind").textContent = master ? "Your key for other software" : "Sensor key for";
   $("issued-guide").hidden = master;
   $("issued-value").textContent = key;
   $("issued-note").textContent = master ? MASTER_KEY_NOTE : DEVICE_KEY_NOTE;
@@ -7553,6 +7572,25 @@ $("download-csv").addEventListener("click", async () => {
   } catch (err) {
     toast(err.message, "err");
   }
+});
+
+// Somebody new who can sign in (3.42.0): Pilot's "Can my manager have
+// their own login?" points here.
+$("user-add").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = $("user-add");
+  act(async () => {
+    await api("/api/accounts/users", {
+      method: "POST",
+      body: JSON.stringify({
+        full_name: $("ua-name").value.trim(),
+        email: $("ua-email").value.trim(),
+        role: $("ua-role").value,
+        password: $("ua-pw").value,
+      }),
+    });
+    form.reset();
+  }, "Added. Give them the password yourself; they choose their own when they sign in.");
 });
 
 $("password-form").addEventListener("submit", async (event) => {
@@ -7870,10 +7908,10 @@ const ADV_SECTIONS = [
     say: "Your sealed safety records, how you compare, and who did what.",
     cards: ["find-compliance-vault", "find-sector-standing", "find-audit-trail"] },
   { id: "connect", title: "Sensors and connections",
-    say: `A sensor cloud, a sensor you already own, ${BRAND.checklist}, an AI key, your industry's settings.`,
-    cards: ["find-vendor-clouds", "find-byod-sensor-webhook", "find-omniarmor", "find-ai-key", "find-sector-shortcuts"] },
+    say: `A sensor maker's cloud, a sensor you already own, ${BRAND.checklist}, an AI key, your industry's settings, the key for other software.`,
+    cards: ["find-vendor-clouds", "find-byod-sensor-webhook", "find-omniarmor", "find-ai-key", "find-sector-shortcuts", "find-business-key"] },
   { id: "jobs", title: "Jobs and staff",
-    say: "Things to do, notes from a meeting, staff licences, your crew.",
+    say: "Things to do, notes from a meeting, staff cards, your crew.",
     cards: ["find-tasks", "find-meeting-intelligence", "find-licences", "find-people"] },
   { id: "running", title: "Automatic checks and costs",
     say: "The checks that run on their own, and spending limits.",
