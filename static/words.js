@@ -85,6 +85,16 @@
     return unpad(d.toLocaleString([], o));
   }
 
+  /* A calendar day in the same style: "Dec 20, 2026" (3.40.0), for a
+     bill's date or a contract's end, which said "2026-12-20" beside "Nov
+     28, 9:28 AM". The day the server wrote, whatever the reader's zone. */
+  function date(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+    if (!m) return "";
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
+    return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  }
+
   /* "Rosa", from the name the server gives, or from a raw label
      ("Rosa Test <rosa@...>") when that is all an older answer has. */
   function person(name, label) {
@@ -213,7 +223,7 @@
   /* For the tests: read the time from here instead of the computer. */
   function setNow(fn) { clockNow = typeof fn === "function" ? fn : () => Date.now(); }
 
-  const api = { minutes, between, outFor, clock, dateTime, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet,
+  const api = { minutes, between, outFor, clock, dateTime, date, person, condition, pollDelay, setNow, roundHalfEven, nobodyYet,
     foodBack, changeable, count };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CLXWords = Object.freeze(api);

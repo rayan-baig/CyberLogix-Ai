@@ -239,6 +239,15 @@ def premium_destination(to: str) -> bool:
     return ("+" + digits).startswith(BLOCKED_PREFIXES)
 
 
+def _demo_database() -> bool:
+    try:
+        from backup import is_demo_database
+
+        return is_demo_database()
+    except Exception:  # noqa: BLE001 - not knowing is not a demo
+        return False
+
+
 def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
     """Return an undelivered record when the message cannot be attempted."""
     if not to or not to.strip():
@@ -252,6 +261,15 @@ def _precheck(channel: str, to: str) -> Optional[Dict[str, Any]]:
             channel, to, "blocked_destination",
             "That number is in a premium-rate or satellite range, which alerts are never sent to.",
         )
+
+    # A demo database (demo_account.py) never sends a text or places a
+    # call (3.40.0): its numbers are made up, and a demo served with the
+    # live text service switched on would otherwise ring them, on the live
+    # bill. Said as a server with texts switched off says it.
+    if _demo_database():
+        logger.info("Demo database: %s to %s composed but not sent.", channel, number_tail(to))
+        return _undelivered(channel, to, "not_configured",
+                            "This is a demo database: it never sends a text or places a call.")
 
     if not _configured():
         missing = [

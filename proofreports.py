@@ -240,8 +240,12 @@ MIN_SECONDS_FOR_PERCENT = 3600.0
 
 
 def _floor1(value: float) -> float:
-    """Down to one decimal, so 99.97% never prints as 100%."""
-    return math.floor(value * 10) / 10.0
+    """Down to one decimal, so 99.97% never prints as 100%.
+
+    Not past a rounding error (3.40.0): 100 x 12,060,016 / 12,060,016 came
+    out a hair under 100 in floating point, and the demo's report said
+    99.9% online beside twenty units each 100% with no time offline."""
+    return math.floor(value * 10 + 1e-9) / 10.0
 
 
 def _minutes(seconds: float) -> int:

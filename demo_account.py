@@ -8,7 +8,8 @@ fridges, an ice-cream freezer, a blast chiller), a week of readings every
 half hour, one breach that was handled (acknowledged in minutes, a
 corrective action written down, closed), one problem still open, an
 on-call rotation, a signed contract and a paid invoice. Then it prints
-how to sign in.
+how to sign in. While it is served, the sweep keeps every unit reporting
+(feed below), so the demo is as fresh an hour later as at once.
 
 Unlike seed_demo.py, which empties whatever store it is pointed at, this
 refuses a database that holds anything: a business, a person, an
@@ -99,6 +100,14 @@ STILL_OPEN = "COM-PREP-2"  # the problem that is open right now
 DAYS = 7
 EVERY_MINUTES = 30
 
+# While the server runs, every demo unit gets a fresh reading this often
+# (3.40.0; feed() below, called by the sweep). Half an hour after it was
+# seeded the demo's /today said "19 things need you now", one "has gone
+# quiet" card per unit, because nothing wrote a reading after the seed.
+# Under GAP_RECORD_MINUTES, so a running demo writes no gaps in its data,
+# and well under the half hour after which a unit counts as quiet.
+LIVE_EVERY_MINUTES = 5
+
 # Full-length made-up numbers in the 555-01xx fiction range (3.38.0): the
 # pack printed "+15550141", which no phone has ever had. Spaced as a trial
 # business types its own (3.39.0): "+1 555 010 0141", as the sign-up and
@@ -138,12 +147,12 @@ def what_is_there() -> List[str]:
     return found
 
 
-def _temperature(rng: random.Random, kind: str, step: int) -> float:
+def _temperature(rng: random.Random, kind: str, step: float, door_chance: float = 0.04) -> float:
     """A healthy unit: its own level, a slow daily swell, a little noise,
     and a door opening now and then."""
     spec = KINDS[kind]
     daily = math.sin(step / (24 * 60 / EVERY_MINUTES) * 2 * math.pi) * spec["spread"] * 0.5
-    door = spec["spread"] * 1.2 if rng.random() < 0.04 else 0.0
+    door = spec["spread"] * 1.2 if rng.random() < door_chance else 0.0
     return round(spec["normal"] + daily + door + rng.uniform(-0.4, 0.4) * spec["spread"], 1)
 
 
@@ -156,7 +165,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     import oncall
     from contracts import bill_period
     from domain import evaluate_breach
-    from store import STORE, iso, utc_now
+    from store import GAP_KIND, STORE, iso, utc_now
 
     found = what_is_there()
     if found:
@@ -170,9 +179,17 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     owner_password = password or secrets.token_urlsafe(12)
     operator_password = secrets.token_urlsafe(12)
 
+    steps = DAYS * 24 * 60 // EVERY_MINUTES
+    first = now - timedelta(minutes=EVERY_MINUTES * (steps - 1))
+
     # Marked first, so that even a seed that fails half way leaves a
     # database that knows it is a demo and backs up accordingly.
-    STORE._db.put(*DEMO_MARK, {"seeded_at": iso(now), "company": COMPANY})
+    mark = {"seeded_at": iso(now), "company": COMPANY, "history_from": iso(first)}
+    STORE._db.put(*DEMO_MARK, mark)
+    # Gaps in data are counted from the week's first reading (3.40.0), not
+    # from whenever the store first asked: the proof report reads from it.
+    STORE._db.put("meta", "gap_log_since", {"at": iso(first)})
+    STORE._gap_since = None
 
     # Nothing is ever mailed to a made-up address.
     for _, address in (OWNER, OPERATOR, VIEWER):
@@ -185,6 +202,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         industry_vertical="restaurant",
     )
     tid = tenant.tenant_id
+    STORE._db.put(*DEMO_MARK, dict(mark, tenant_id=tid))
 
     owner = STORE.create_user(tid, OWNER[1], OWNER[0], "owner", owner_password)
     STORE.create_user(tid, OPERATOR[1], OPERATOR[0], "operator", operator_password)
@@ -193,14 +211,17 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     sites = {name: STORE.create_site(tid, f"{COMPANY.split(' &')[0]} {name}", address)
              for name, address in SITES}
 
-    steps = DAYS * 24 * 60 // EVERY_MINUTES
-    first = now - timedelta(minutes=EVERY_MINUTES * (steps - 1))
     handled_at = steps - 3 * 24 * 60 // EVERY_MINUTES   # three days ago
     sensors = {}
     for site_name, sensor_id, where, kind in UNITS:
         sensor = STORE.register_sensor(
             sensor_id=sensor_id, tenant_id=tid, industry_vertical="restaurant",
             location_name=f"{site_name} / {where}")
+        # Watched since the week began (3.40.0): registered "now", its
+        # proof of monitoring said "0.2 hours watched" beside a week of
+        # readings.
+        sensor.registered_at = first
+        STORE._db.put("sensor", sensor_id, sensor.to_row())
         STORE.assign_sensor_to_site(sensor, sites[site_name].site_id)
         spec = KINDS[kind]
         if spec["above"] is not None or spec["below"] is not None:
@@ -220,6 +241,14 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
                                  breached, at=first + timedelta(minutes=EVERY_MINUTES * step))
         STORE.record_sensor_health(sensor, round(rng.uniform(55, 98)), round(rng.uniform(60, 95)))
         sensors[sensor_id] = sensor
+
+    # The week's history is made up at a reading every half hour, which is
+    # not a silence (3.40.0): each half hour was written down as a gap in
+    # data, some 6,700 of them. None of it was a real silence, so none is
+    # kept. A running demo is fed more often than gaps are written (feed).
+    for rec_id, row in STORE._db.rows(GAP_KIND):
+        if row.get("tenant_id") == tid:
+            STORE._db.delete(GAP_KIND, rec_id)
 
     # The breach that was handled, opened at its first reading out of
     # range (3.39.0): it opened at the second, 21°F, so "out since 9:54"
@@ -345,6 +374,74 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         "invoice": invoice.number,
         "invoice_state": invoice.state,
     }
+
+# The still-open alert's unit stays warm while its alert is open, at or
+# under its worst reading so far, so "46.5°F is its worst" stays true.
+STILL_OPEN_WARM = (45.6, 46.5)
+
+_feed_rng = random.Random()
+
+
+def feed(now: Optional[datetime] = None) -> int:
+    """A fresh reading for every demo unit that is due one (3.40.0).
+
+    Called by every sweep (scheduler.py) on a demo database only, so the
+    demo is as fresh half an hour after it was seeded as at once. Written
+    straight into the store, never through the reading routes: they open
+    alerts and text people, and these readings are part of the made-up
+    story, not news. No reading is billed (a plan is priced by units, and
+    nothing here counts usage), no alert opens, and nobody is texted.
+
+    The healthy units carry on their daily swell. The unit whose alert is
+    still open stays warm while it is open and nobody has said it is
+    fixed. Once somebody has, it cools, and its alert closes by itself as
+    the product's own does, with no texts (a demo database sends none:
+    notifications.py). Returns how many readings were written.
+    """
+    from domain import back_to_normal, evaluate_breach
+    from store import STORE, utc_now
+
+    mark = STORE._db.get(*DEMO_MARK)
+    if not mark:
+        return 0
+    tenant = STORE.get_tenant(str(mark.get("tenant_id") or ""))
+    if tenant is None:
+        tenant = next((t for t in STORE.list_tenants() if t.company_name == COMPANY), None)
+    if tenant is None:
+        return 0
+    now = now or utc_now()
+    try:
+        history_from = datetime.fromisoformat(str(mark.get("history_from")).replace("Z", "+00:00"))
+    except ValueError:
+        history_from = now
+    step = (now - history_from).total_seconds() / 60.0 / EVERY_MINUTES
+    due = timedelta(minutes=LIVE_EVERY_MINUTES)
+    written = 0
+    for _, sensor_id, _, kind in UNITS:
+        sensor = STORE.get_sensor(sensor_id)
+        if sensor is None or sensor.tenant_id != tenant.tenant_id:
+            continue
+        if sensor.last_seen is not None and now - sensor.last_seen < due:
+            continue
+        open_alert = None
+        if sensor_id == STILL_OPEN:
+            open_alert = STORE.latest_unresolved_incident(sensor_id, tenant.tenant_id)
+        if open_alert is not None and open_alert.fix_reported_at is None:
+            temp = round(_feed_rng.uniform(*STILL_OPEN_WARM), 1)
+        else:
+            temp = _temperature(_feed_rng, kind, step,
+                                door_chance=0.04 * LIVE_EVERY_MINUTES / EVERY_MINUTES)
+        above, below = sensor.bounds()
+        breached = evaluate_breach("restaurant", temp, above, below) is not None
+        STORE.record_reading(sensor, temp, round(_feed_rng.uniform(40, 60), 1),
+                             breached, at=now)
+        written += 1
+        if open_alert is not None and open_alert.fix_reported_at is not None \
+                and back_to_normal(sensor, temp):
+            from telemetry import close_if_back_to_normal
+
+            close_if_back_to_normal(tenant, sensor, temp)
+    return written
 
 
 def main(argv: Optional[List[str]] = None) -> int:

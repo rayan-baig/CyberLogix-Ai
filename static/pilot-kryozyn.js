@@ -361,11 +361,60 @@
   // its note. Never a ruling: the business's own plan and local code decide.
   const RULE = "The widely taught rule of thumb: under 2 hours above the limit, cool it back down; 2 to 4 hours, use it straight away and don't put it back; over 4 hours, or at room temperature or warmer, it is commonly thrown away.";
   const NOT_A_RULING = "That is guidance, not a ruling: the sensor reads the air, not the middle of the food, and your written food safety plan and local code decide.";
-  function foodAnswer() {
+  // "Was the food in the walk-in freezer ok on Wednesday?" (3.40.0): the
+  // alert on the unit named, on the day named, from the page's own record.
+  const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  function askedAbout(ctx, dd) {
+    const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const asked = wordsIn(typed);
+    const named = units.filter((u) => wordsIn(u.location_name || "").some((w) => !GENERIC.has(w) && w !== "food" && asked.includes(w)));
+    const kind = asked.includes("freezer") ? "freezer" : asked.includes("fridge") ? "fridge" : "";
+    const fits = kind ? named.filter((u) => kindOf(u) === kind) : named;
+    const lower = typed.toLowerCase();
+    const day = DAYS.findIndex((d) => new RegExp(`\\b${d}\\b`).test(lower));
+    const dayWord = day >= 0 ? DAYS[day][0].toUpperCase() + DAYS[day].slice(1)
+      : /\byesterday\b/.test(lower) ? "yesterday" : /\btoday\b|\bthis morning\b|\btonight\b/.test(lower) ? "today" : "";
+    const onDay = (iso) => {
+      const t = Date.parse(iso || "");
+      if (!Number.isFinite(t) || !dayWord) return true;
+      const d = new Date(t);
+      if (day >= 0) return d.getDay() === day && Date.now() - t < 7 * 24 * 3600 * 1000;
+      const today = new Date();
+      const back = dayWord === "yesterday" ? 1 : 0;
+      const want = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
+      return d.getFullYear() === want.getFullYear() && d.getMonth() === want.getMonth() && d.getDate() === want.getDate();
+    };
+    return { units: fits.length ? fits : named, dayWord, onDay, any: Boolean(named.length || dayWord) };
+  }
+  function foodAnswer(ctx) {
     const dd = overview();
     if (!dd) return `${RULE}\n\n${NOT_A_RULING}\n\n${NOT_LOADED}`;
     const units = Array.isArray(dd.sensors) ? dd.sensors : [];
     const unit = (i) => units.find((x) => x.sensor_id === i.sensor_id) || { sensor_id: i.sensor_id };
+    const about = askedAbout(ctx, dd);
+    if (about.any) {
+      const ids = new Set(about.units.map((u) => u.sensor_id));
+      const hit = (dd.incidents || []).filter((i) => i && !i.site_wide && (!ids.size || ids.has(i.sensor_id))
+        && (about.onDay(i.out_since || i.opened_at) || about.onDay(i.resolved_at)))
+        .sort((a, b) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
+      const shown = about.units.slice(0, 3).map((u) => `**${unitName(u)}**`);
+      const which = !shown.length ? "any fridge or freezer"
+        : about.units.length > 3 ? `${shown.join(", ")} and ${about.units.length - 3} more` : listed(shown);
+      const when = about.dayWord ? (about.dayWord === "today" || about.dayWord === "yesterday" ? ` ${about.dayWord}` : ` on ${about.dayWord}`) : "";
+      if (!hit) {
+        return `No alert on ${which}${when}: ${about.units.length === 1 ? "it" : "they"} stayed in range, so there is nothing to weigh up.`;
+      }
+      const u = unit(hit);
+      const peak = degrees(hit.peak_display != null ? hit.peak_display : hit.temperature_display, u, dd);
+      const limit = limitDegrees(u.danger_above_display, u, dd);
+      const long = outFor(hit.out_since || hit.opened_at, hit.out_until || hit.resolved_at);
+      const at = clock(hit.out_since || hit.opened_at);
+      const lead = `**${unitName(u)}** went out of range${at ? ` at ${at}` : ""}${long ? ` for ${long}` : ""}${peak ? `, at worst ${peak}` : ""}${limit ? ` (limit ${limit})` : ""}${hit.state === "resolved" ? ", and it is closed" : ", and it is not closed yet"}.`;
+      if (hit.product_disposition === "discarded") return `${lead} It was recorded as thrown away.\n\n${PACK_LINE(hit)}`;
+      if (hit.product_disposition && !hit.food_auto) return `${lead} It was recorded as **kept**${hit.food_answered_at ? ` at ${clock(hit.food_answered_at)}` : ""}.\n\n${NOT_A_RULING}`;
+      return `${lead}\n\n${RULE}\n\n${NOT_A_RULING}`;
+    }
     const live = liveAlerts(dd).filter((i) => !i.site_wide);
     let measured;
     if (live.length) {
@@ -413,13 +462,18 @@
   const withTrial = (lead, link) => [lead, trialWords(), link].filter(Boolean).join(" ");
 
   // A butcher, a bakery or a deli (3.39.0): watched as a restaurant is.
-  const FOOD_SHOP = /\bbutchers?\b|\bbutcher(?:'|’)s\b|\bbaker(?:y|ies|s)?\b|\bdeli(?:s|catessens?)?\b/i;
+  // And (3.40.0) a food truck or a caterer: "Does it work for a food
+  // truck?" got the food-safety rule.
+  const FOOD_SHOP = /\bbutchers?\b|\bbutcher(?:'|’)s\b|\bbaker(?:y|ies|s)?\b|\bdeli(?:s|catessens?)?\b|\bfood (?:trucks?|vans?|trailers?|carts?)\b|\bcater(?:ers?|ing)\b/i;
   function shopLead(ctx) {
     const said = ctx && typeof ctx.label === "string" ? ctx.label : "";
     const m = FOOD_SHOP.exec(said);
     if (!m) return "";
     const word = m[0].toLowerCase();
-    const shop = /^butcher/.test(word) ? "butcher's" : /^baker/.test(word) ? "bakery" : "deli";
+    if (/^food /.test(word)) {
+      return `Yes, while its fridges have internet: a ${word.replace(/s$/, "")} is watched the same way as a restaurant, on the restaurant plan with its food limits. Each sensor sends its readings over Wi-Fi or its maker's gateway, so the truck needs a hotspot or a gateway that stays on. Parked with everything switched off, a sensor goes quiet, and after ${fig(F.offlineMinutes, "30")} minutes everyone on call is texted that it has.`;
+    }
+    const shop = /^butcher/.test(word) ? "butcher's" : /^baker/.test(word) ? "bakery" : /^cater/.test(word) ? "caterer" : "deli";
     const page = shop === "butcher's" ? " [For butchers](/for/butchers)" : "";
     return `Yes: a ${shop} is watched the same way as a restaurant, on the restaurant plan with its food limits.${page}`;
   }
@@ -437,7 +491,8 @@
     ].join("\n");
   }
 
-  const DOOR = () => `No. A door opened for a minute doesn't alert anybody: a fridge has to **stay** out of range for its wait first (${fig(F.alertAfterFridge, "20")} minutes for a food fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer). You can change the wait per unit with **Alert wait** on its card. A reading ${fig(F.alertAtOnceDegrees, "15")}°F or more past the limit alerts at once.`;
+  // "How long is the wait?" (3.40.0) is not a yes-or-no question.
+  const DOOR = (ctx) => `${ctx && typeof ctx.label === "string" && !/\bdoors?\b/i.test(ctx.label) && /\bwait\b|\bhow long\b/i.test(ctx.label) ? "" : "No. "}A door opened for a minute doesn't alert anybody: a fridge has to **stay** out of range for its wait first (${fig(F.alertAfterFridge, "20")} minutes for a food fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer). You can change the wait per unit with **Alert wait** on its card. A reading ${fig(F.alertAtOnceDegrees, "15")}°F or more past the limit alerts at once.`;
   const POWER = () => `Sensors send their readings over your internet. If the power or the Wi-Fi goes off, readings stop, and after ${fig(F.offlineMinutes, "30")} minutes with nothing from a sensor everyone on call is texted that it has gone quiet, so you hear about the outage too. Alerts go out from our servers, not from your building.\n\nUntil the sensor reports again, check that fridge with a thermometer and write it down. [What to check](/help#sensor-offline)`;
   // "What happens if nobody answers?" (3.38.0) gets the answer to that,
   // not a "Yes" to a question nobody asked.
@@ -1050,6 +1105,177 @@
     return `**${unitName(top)}** is the warmest for its limit: ${now}${where}.`;
   }
 
+  // ---------------------------------------------------------------- 3.40.0
+  //
+  // Hello, what Kryozyn is, the limits, a reading typed in, the phone, the
+  // texts, calls left, a cheap alarm, how long it takes, the next step,
+  // the trial's end, the food kept, the forecast, each location's count
+  // and the sensor key. Each from the page's own data where it has it,
+  // else from the figures on Pilot's script tag; nothing is fetched.
+  const own = () => (ownPage && signedIn() ? overview() : null);
+  function helloAnswer() {
+    if (ownPage && signedIn()) {
+      return `Hi. Ask me about your fridges and freezers: **Which fridges need me?**, **Is the food still OK?**, who is on call, or what you pay. I answer from this page, with no AI key.`;
+    }
+    return `Hi. I'm Pilot. I can tell you what ${F.appShort} costs, which sensors work, and what happens when a fridge gets warm, with no AI key. [See it live](/demo) with pretend fridges.`;
+  }
+  const WHAT = () => [
+    `${F.appShort} watches the temperature of your fridges and freezers, day and night. A wireless sensor in each one sends its readings to us; when one stays too warm past its wait, everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds, and on plans with calls, phoned if nobody answers.`,
+    "It also tells you when a sensor goes quiet, and keeps the record an inspector or an insurer asks for: the log for an inspector and the insurance pack.",
+    ownPage && signedIn() ? "Ask **Which fridges need me?** for yours now." : `From $${fig(F.fromPrice, "59")} a month. [See it live](/demo) · [Start a free trial](/signup)`,
+  ].join("\n\n");
+  // The limits a food fridge and freezer start on (domain._FOOD_KINDS).
+  const LIMITS = () => `**A fridge: under ${fig(F.fridgeLimit, "41")}°F. A freezer: under ${fig(F.freezerLimit, "10")}°F.** Those are the limits ${F.appShort} starts a food fridge and freezer on, and it alerts when one stays over its limit past its wait (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer).\n\nYour food safety plan or local code may ask for a tighter one: set it per unit with **Change limit** on its card${onConsole ? "" : " in the console"}.`;
+  // "My freezer is at 15 degrees": that kind's limit, and what to do.
+  const READING_RE = /\b(fridges?|freezers?|coolers?|walk-?ins?|refrigerators?|chillers?)\b[^?\d-]*?\b(?:is|was|at|reads?|reading|says|shows?|showing|sitting at|sits at)\s+(?:at\s+|about\s+|around\s+)?(-?\d{1,3}(?:\.\d+)?)(?!\s*(?:locations?|sites?|restaurants?|stores?|places?|pharmac|branch|kitchens?|shops?|cafes?|bars?|of\b))\s*(°\s*[cf]?|degrees?(?:\s*[cf]\b|\s*(?:celsius|fahrenheit))?|deg\b|[cf]\b)?/i;
+  function readingAnswer(ctx) {
+    const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const m = READING_RE.exec(typed);
+    if (!m) return LIMITS();
+    const freezer = /freez/i.test(m[1]);
+    const dd = own();
+    const celsius = /c|celsius/i.test(m[3] || "") || (!/f|fahrenheit/i.test(m[3] || "") && dd && dd.temperature_unit === "C");
+    const limitF = Number(freezer ? fig(F.freezerLimit, "10") : fig(F.fridgeLimit, "41"));
+    const limit = celsius ? Math.round(((limitF - 32) * 5) / 9) : limitF;
+    const u = celsius ? "C" : "F";
+    const at = Number(m[2]);
+    const what = freezer ? "a freezer" : "a fridge";
+    if (at <= limit) {
+      return `**${m[2]}°${u} is under ${what}'s ${limit}°${u} limit**, so that's fine: ${F.appShort} alerts only when one stays over its limit. If yours has a limit of its own, it is on its card.`;
+    }
+    const over = Math.round((at - limit) * 10) / 10;
+    const wait = freezer ? fig(F.alertAfterFreezer, "30") : fig(F.alertAfterFridge, "20");
+    const once = Number(fig(F.alertAtOnceDegrees, "15")) * (celsius ? 5 / 9 : 1);
+    return [
+      `**${m[2]}°${u} is ${over}° over ${what}'s ${limit}°${u} limit.** Check the door is shut and sealing and the unit is running, with nothing warm just put in and nothing blocking the vent.`,
+      `If it stays over for ${wait} minutes, everyone on call is texted${over >= once ? "; this far over, it alerts at once" : ""}. If it doesn't come back down, move the food somewhere cold and write down what you did: that note is what an inspector or an insurer asks for.`,
+      "Ask **Is the food still OK?** for the rule of thumb on the food.",
+    ].join("\n\n");
+  }
+  // "Can I see it on my phone?": the console works in a phone's browser.
+  const MOBILE = () => `Yes. The console and the Simple view (Today) work in your phone's browser: [sign in](/console) there. It installs to your home screen too (on an iPhone: **Share**, then **Add to Home Screen**; on Android: the browser's menu, then **Install app**) and opens full screen, like an app.\n\nAlerts come by text${F.callAfterMinutes ? ", and on plans with calls by phone," : ""} whether it is open or not.`;
+  // "Turn texts on": who gets them is the business's; the text service is
+  // the server's (the console's banner says so for whoever runs it).
+  const TEXTS_ON = () => [
+    `Alert texts go to everyone under **Who gets alerts** on the console's **Team** tab who isn't muted: add a name and mobile number, or press **Unmute** beside someone. Then **Send a test alert** to check they arrive.${(onConsole || onToday) && signedIn() ? ` [Open Who gets alerts](${TEAM_LINK})` : ""}`,
+    "If the page says **Texts are not switched on for this server**, that switch isn't in the console: the server's text service hasn't been set up by whoever runs it. Until it is, alerts show on screen but nobody is texted.",
+  ].join("\n\n");
+  // "How many phone calls do I have left?": the plan's own words.
+  function callsLeftAnswer() {
+    const dd = own();
+    const calls = dd && dd.entitlements && dd.entitlements.calls;
+    if (calls && calls.mode === "plan") {
+      return "Your plan includes phone calls, so there's no number of calls to use up: if nobody answers the alert text, we phone the people on call until somebody does. A daily safety limit stops a fault running up a bill (under **Advanced**, **Spending limits**).";
+    }
+    if (calls && calls.words) return words(calls.words);
+    if (ownPage && signedIn() && !dd) return NOT_LOADED;
+    return `Signed in, I can tell you from your plan. The free trial includes ${fig(F.trialCalls, "5")} alert calls; Growth and Enterprise include phone calls; Starter sends texts only. [Compare plans](/pricing)`;
+  }
+  // "How is this different from a cheap thermometer alarm?"
+  const VERSUS = () => [
+    "A thermometer alarm beeps in the kitchen, so it only helps if somebody is there to hear it. With " + F.appShort + ":",
+    `- Everyone on call is texted within ${fig(F.textWithinSeconds, "60")} seconds, wherever they are, and on plans with calls phoned until somebody answers.`,
+    `- A door opened for a minute wakes nobody: a unit has to stay out of range for its wait (${fig(F.alertAfterFridge, "20")} minutes for a fridge, ${fig(F.alertAfterFreezer, "30")} for a freezer).`,
+    `- A sensor that goes quiet (power, Wi-Fi, a flat battery) is a text too, after ${fig(F.offlineMinutes, "30")} minutes.`,
+    "- Every reading is kept: the log for an inspector and the insurance pack are a button, not a clipboard.",
+  ].join("\n");
+  // "How long does setup take?": the sign-up page's five minutes.
+  const SETUP_TIME = () => [
+    `About five minutes for the first fridge, once the sensor is in your hands: ${ownPage && signedIn() ? "" : "signing up takes about a minute with no card, then "}**Add a fridge or freezer** in the console, and follow your brand's few steps with the key filled in. **Connect your sensor** ticks when its first reading lands.`,
+    "Each one after that is the same few steps. No electrician and no coding: the sensors are wireless.",
+    ownPage && signedIn() ? `[Connect your sensor](${CONNECT})` : "[Step-by-step guides](/help/sensors) · [Start a free trial](/signup)",
+  ].join("\n\n");
+  // "What do I do next?": Getting started's next step, from the overview.
+  function nextAnswer() {
+    if (!(ownPage && signedIn())) {
+      return `[Start a free trial](/signup) (about a minute, no card), then **Add a fridge or freezer** in the console and connect its sensor. Getting started in the console lists the rest: who gets alerts, the first reading and a test alert.`;
+    }
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const fd = dd.first_day || {};
+    const steps = Array.isArray(fd.steps) ? fd.steps : [];
+    const next = steps.find((st) => st && !st.done);
+    if (!steps.length) return `**Getting started** is on the console's first screen, with each step and a tick once it's done.${onConsole ? "" : " [Open the console](/console?view=full)"}`;
+    if (next) {
+      return `Next under **Getting started** (${count(fd.done || 0, "step")} of ${fd.total || steps.length} done): **${words(next.label)}**. ${words(next.detail)}${onConsole ? "" : " It's on the console's first screen. [Open the console](/console?view=full)"}`;
+    }
+    const live = liveAlerts(dd);
+    if (live.some((i) => i.state === "open")) return `Getting started is done. Right now an alert needs somebody: press ${ON_IT}.`;
+    return "Getting started is done: every step is ticked. Nothing else needs setting up; alerts go out on their own. Worth a look now and then: **Which fridges need me?** and the log for an inspector.";
+  }
+  // "When does my trial end?": the licence's own date.
+  function trialEndAnswer() {
+    const dd = own();
+    if (!dd) return TRIAL();
+    const acct = dd.account || {};
+    if (!(acct.on_trial || (dd.subscription && dd.subscription.plan === "trial"))) {
+      return `You're not on the free trial: you're on ${words((dd.subscription || {}).plan_name) || "a paid plan"}. Your plan is on the console's **Money** tab.`;
+    }
+    const day = W() && typeof W().date === "function" ? W().date(acct.expires_at) : String(acct.expires_at || "").slice(0, 10);
+    const left = Number(acct.days_to_expiry);
+    const lead = Number.isFinite(left) && left >= 0
+      ? `**Your free trial ends${day ? ` on ${day}` : ""}: ${count(left, "day")} left.**` : `**Your free trial ends${day ? ` on ${day}` : " soon"}.**`;
+    return `${lead} Nothing is billed during it, and nothing moves you to a paid plan by itself: choose one on the console's **Money** tab to keep the alerts going after it.`;
+  }
+  // "How much has this saved me?": the food kept figure, as the Money tab
+  // and /today show it.
+  function savedAnswer() {
+    const dd = own();
+    if (!dd) {
+      return ownPage && signedIn() ? NOT_LOADED
+        : `Once you're signed in, the console's **Money** tab and the Simple view count the food kept: each closed alert with the food recorded as kept, at an estimate of what a typical fridge or freezer of each kind holds. [See it live](/demo)`;
+    }
+    const roi = dd.roi || {};
+    const month = dd.this_month || {};
+    const usd0 = (v) => `$${Math.round(Number(v)).toLocaleString("en-US")}`;
+    if (roi.loss_avoided_usd) {
+      return `**About ${usd0(roi.loss_avoided_usd)} of food kept in the last ${roi.period_days || 30} days**: ${count(roi.quantified_saves, "closed alert")} with the food recorded as kept. It is an estimate of what a typical fridge or freezer of each kind holds${roi.return_multiple ? `, ${roi.return_multiple}× the subscription` : ""}.`;
+    }
+    if (month.food_usd) return `**About ${usd0(month.food_usd)} of food kept this month**: an estimate of what a typical fridge or freezer of each kind holds.`;
+    return "Nothing counted yet: the figure is the food recorded as **kept** on closed alerts, and there hasn't been one in the last 30 days. No alert is a good month.";
+  }
+  // "Is anything about to go wrong?": the forecast's own figure on each
+  // unit (hours_until_breach), as /today's "Heading the wrong way".
+  const SOON_HOURS = 6;
+  function forecastAnswer() {
+    const dd = own();
+    const what = `On plans with the forecast, ${F.appShort} fits a trend line to each unit's recent readings and warns when one is drifting toward its limit, before it gets there.`;
+    if (!dd) return ownPage && signedIn() ? NOT_LOADED : `${what} It comes with Growth. [Compare plans](/pricing)`;
+    if (dd.entitlements && dd.entitlements.predictive_forecasting === false) return `${what} Your plan doesn't include it; Growth does. Alerts still go out the moment a unit stays out of range.`;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const out = units.filter((u) => stateOf(u).state in URGENCY && stateOf(u).state !== "offline" && stateOf(u).state !== "waiting_first");
+    const soon = units.filter((u) => !out.includes(u) && !["offline", "waiting_first"].includes(stateOf(u).state) && u.hours_until_breach != null && Number(u.hours_until_breach) <= SOON_HOURS)
+      .sort((a, b) => Number(a.hours_until_breach) - Number(b.hours_until_breach));
+    const hours = (h) => (h < 1 ? "within the hour" : `in about ${count(Math.round(h), "hour")}`);
+    const lines = [soon.length
+      ? `**Heading the wrong way:**\n${soon.slice(0, 5).map((u) => `- **${unitName(u)}** ${degrees(u.last_temperature_display, u, dd)}: at this rate it passes its limit ${hours(Number(u.hours_until_breach))}`).join("\n")}`
+      : `**Nothing is heading for trouble:** no unit is drifting toward its limit fast enough to pass it in the next ${SOON_HOURS} hours.`];
+    if (out.length) lines.push(`${out.length === 1 ? `**${unitName(out[0])}** is` : `${out.length} units are`} already out of range: that's an alert, not a forecast. Ask **Which fridges need me?**`);
+    return lines.join("\n\n");
+  }
+  // "How many fridges at Old Mill?" / "at each location": the page's own
+  // count. A site is named by the words its name doesn't share with the
+  // others ("Old Mill" in "Juniper Old Mill").
+  function sitesAnswer(ctx) {
+    const dd = overview();
+    if (!dd) return NOT_LOADED;
+    const units = Array.isArray(dd.sensors) ? dd.sensors : [];
+    const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const asked = wordsIn(typed);
+    const names = [...new Set(units.map((u) => u.site_name).filter(Boolean))];
+    (Array.isArray(dd.sites) ? dd.sites : []).forEach((x) => { if (x && x.name && !names.includes(x.name)) names.push(x.name); });
+    const counts = names.map((name) => ({ name, n: units.filter((u) => u.site_name === name).length }));
+    const shared = (w) => names.length > 1 && names.every((nm) => wordsIn(nm).includes(w));
+    const named = counts.filter((c) => wordsIn(c.name).some((w) => !shared(w) && asked.includes(w)));
+    const noun = (n) => (n === 1 ? "fridge or freezer" : "fridges and freezers");
+    if (named.length) return named.map((c) => `**${words(c.name)}**: ${c.n} ${noun(c.n)}.`).join("\n");
+    if (!counts.length) return `**${units.length} ${noun(units.length)}**, all at one location.`;
+    const loose = units.filter((u) => !u.site_name).length;
+    return `**${units.length} ${noun(units.length)} across ${count(counts.length, "location")}:**\n${counts.map((c) => `- ${words(c.name)}: ${c.n}`).join("\n")}${loose ? `\n- Not at a location yet: ${loose}` : ""}`;
+  }
+  // "What is a sensor key?"
+  const SENSOR_KEY = () => `A sensor key is the password one sensor uses to send its readings to ${F.appShort}. Each fridge or freezer gets its own when you add it, shown once: **Connect your sensor** fills it in for your brand, and it can only send readings for that one unit. Lost it? Press **New key** on the unit's card: a new one is made and the old one stops working. It is not your business key, which speaks for the whole account.`;
+
   // Words a typed question may use for each answer or link that needs no
   // key (core 1.4.2, matchTyped). With no key, "Is my walk-in fridge OK?"
   // gets "Which fridges need me?" and "How much is it?" the prices, at
@@ -1170,6 +1396,26 @@
     { id: "app", labels: [], ask: "Is there an app?", also: ["app", "iphone", "android", "homescreen"], answer: APP },
     { id: "week", labels: [], ask: "How many alerts this week?", answer: weekAnswer, only: () => ownPage && signedIn() },
     { id: "warmest", labels: [], ask: "Which is the warmest?", also: ["warmest", "hottest"], answer: warmestAnswer, only: () => ownPage && signedIn() },
+    // 3.40.0: hello, what it is, the limits, a reading typed in, the
+    // phone, turning texts on, calls left, a thermometer alarm, how long
+    // it takes, the next step, the trial's end, the food kept, the
+    // forecast, each location's count and the sensor key.
+    { id: "hello", labels: [], ask: "Hi", also: ["hi", "hello", "hey", "hiya"], answer: helloAnswer },
+    { id: "what", labels: [], ask: `What is ${F.appShort}?`, answer: WHAT },
+    { id: "limits", labels: [], ask: "What temperature should a fridge be?", also: ["ideal", "recommended", "correct", "range"], answer: LIMITS },
+    { id: "reading", labels: [], ask: "My freezer is at 15 degrees", answer: readingAnswer },
+    { id: "mobile", labels: [], ask: "Can I see it on my phone?", also: ["tablet", "ipad", "browser"], answer: MOBILE },
+    { id: "texts", labels: [], ask: "How do I turn texts on?", also: ["sms", "enable"], answer: TEXTS_ON },
+    { id: "callsleft", labels: [], ask: "How many calls do I have left?", also: ["left", "remaining", "allowance"], answer: callsLeftAnswer },
+    { id: "versus", labels: [], ask: "How is it different from a thermometer alarm?", also: ["thermometer", "logger", "beep", "buzzer", "different", "difference"],
+      answer: VERSUS },
+    { id: "setuptime", labels: [], ask: "How long does setup take?", answer: SETUP_TIME },
+    { id: "next", labels: [], ask: "What do I do next?", answer: nextAnswer },
+    { id: "trialend", labels: [], ask: "When does my trial end?", answer: trialEndAnswer },
+    { id: "saved", labels: [], ask: "How much has it saved me?", answer: savedAnswer },
+    { id: "forecast", labels: [], ask: "Is anything about to go wrong?", also: ["forecast", "predict", "prediction", "drifting", "risk"], answer: forecastAnswer },
+    { id: "sites", labels: [], ask: "How many fridges at each location?", answer: sitesAnswer, only: () => ownPage && signedIn() },
+    { id: "sensorkey", labels: [], ask: "What is a sensor key?", also: ["key"], answer: SENSOR_KEY },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -1187,7 +1433,33 @@
   // item the core matched was the right one.
   // Phrases whose telling word is a little one the matching leaves out
   // (3.35.0): "sign up" is "sign" alone, the same as "sign in".
+  // "How many fridges at Old Mill?" (3.40.0), never a price ("8 fridges
+  // per restaurant" is the quote's).
+  const SITES_RE = /\bhow many\b[^?]*\b(?:fridges?|freezers?|units?|sensors?|coolers?)\b[^?]*\b(?:at|in)\b(?![^?]*\b(?:plan|trial|starter|growth|cost|price)\b)|\bhow many\b[^?]*\b(?:each|every|per) (?:location|site|restaurant|kitchen|store|branch)\b|\bhow many (?:fridges?|freezers?|units?|sensors?)(?: and freezers?)? (?:do|have) (?:i|we)\b(?! need)|\b(?:fridges?|freezers?|units?|sensors?) (?:per|at each|in each|at every) (?:location|site|restaurant|kitchen|store|branch)\b/i;
   const PHRASES = [
+    // 3.40.0, first: hello on its own; what Kryozyn is; the sensor key; a
+    // reading typed in and the limits ("should" is never which fridge
+    // needs you); calls left; the trial's end; the food kept; turning texts
+    // on; a cheap alarm; how long setup takes; the next step; the forecast;
+    // a count at each location; the food on a unit and a day; a food truck.
+    [/^\s*(?:hi|hello|hey|hiya|howdy|yo|good (?:morning|afternoon|evening))(?:\s+(?:there|pilot|team))?[\s!.,?]*$/i, "hello"],
+    [new RegExp(`^\\s*(?:so\\s+)?(?:what(?:'|’)?s|what is|what does|who (?:is|are)|tell me about|explain)\\s+(?:${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "kryozyn"}|this(?: app| site| service| product| thing)?|it|you)(?:\\s+do)?\\s*[?.!]*\\s*$|^\\s*how does (?:${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "kryozyn"}|it|this) work\\b`, "i"), "what"],
+    [/\bsensor[\s-]*keys?\b|\bingest(?:ion)? keys?\b|\bwhat(?:'|’)?s (?:a |the |my )?key\b|\bwhat is (?:a |the |my )?key\b/i, "sensorkey"],
+    [{ test: (t) => READING_RE.test(String(t || "")) && !isQuote(t) }, "reading"],
+    [/\bhow long (?:has|have|was|is|did) (?:the |my |our |it |this )?[\w ,-]{0,40}?\b(?:been )?(?:warm|too warm|too cold|out|out of range|over)\b/i, "alert"],
+    [/\bhow long\b[^?]*\bwait\b|\bwait (?:before|until) (?:an |the |it )?(?:alert|alerts|text|texts)\b/i, "door"],
+    [/\bwhat(?:'|’)?s (?:the |my |our )?(?:[\w,-]+ ){0,3}?(?:fridge|freezer|cooler|walk-?in)s? (?:at|reading|temp(?:erature)?)\b|\bwhat is (?:the |my |our )?(?:[\w,-]+ ){0,3}?(?:fridge|freezer|cooler|walk-?in)s? (?:at|reading)\b|\bhow (?:cold|warm) is (?:the|my|our)\b/i, "status"],
+    [/\bwhat (?:temp(?:erature)?s?|degrees?)\b[^?]*\b(?:should|must|ought|supposed|needs? to)\b|\b(?:should|must) (?:a |my |the |our )?(?:fridges?|freezers?|coolers?|walk-?ins?)\b[^?]*\b(?:be|sit|run|stay)\b|\b(?:right|correct|safe|ideal|recommended|proper|best|good|normal) (?:(?:fridge|freezer|walk-?in|cooler) )?(?:temp(?:erature)?s?|range)\b|\bhow (?:cold|warm) should\b|\b(?:temp(?:erature)?|degrees?) (?:limits?|range) for\b|\bwhat(?:'|’)?s (?:the |a )?(?:limit|safe temp(?:erature)?) for\b|\bwhat is (?:the |a )?(?:limit|safe temp(?:erature)?) for\b/i, "limits"],
+    [/\bhow many (?:phone )?calls\b|\b(?:phone )?calls?\b[^?]*\b(?:left|remaining|remain|allowance|quota|used up)\b/i, "callsleft"],
+    [/\btrial\b[^?]*\b(?:end|ends|ending|over|expire|expires|expiring|left|remaining|finish|finishes|run out|runs out)\b|\bdays? left\b|\bwhen (?:does|will|is) (?:my |the |our )?(?:free )?trial\b|\bhow long (?:is|does) (?:my |the |our )?(?:free )?trial\b/i, "trialend"],
+    [/\b(?:how much|what) (?:has|have|did|is)\b[^?]*\b(?:sav(?:e|ed|ing)|kept)\b|\bsav(?:ed|ings?|e) (?:me|us)\b|\bhow much (?:money |food )?(?:have|did|has) (?:i|we|it|this|you)\b[^?]*\bsav(?:e|ed|ings?)\b|\bpaid for itself\b|\bworth (?:it|the money)\b|\breturn on\b|\broi\b|\bfood kept\b|\bmoney saved\b/i, "saved"],
+    [/\b(?:turn|switch|set|put|get)(?:ting)? (?:on|up) (?:the |my |our )?(?:texts?|sms|text alerts?|text messages?|texting)\b|\b(?:turn|switch)(?:ing)? (?:the |my |our )?(?:texts?|sms|text alerts?) on\b|\b(?:texts?|sms|text alerts?|texting) (?:on|switched on|turned on)\b|\benabl(?:e|ing) (?:the )?(?:texts?|sms|text alerts?|texting)\b|\b(?:texts?|sms) (?:are |is )?(?:not |n(?:'|’)t )?(?:switched|turned) on\b/i, "texts"],
+    [/\b(?:thermometers?|data ?loggers?|temperature alarms?|fridge alarms?|freezer alarms?|beepers?|buzzers?|cheap(?:er)? alarms?)\b[^?]*\b(?:differ|different|difference|better|vs\.?|versus|compare|compared|instead|rather)\b|\b(?:differ|different|difference|why not|instead of|vs\.?|versus|compared? (?:to|with)|better than|rather than|over)\b[^?]*\b(?:thermometers?|data ?loggers?|(?:temperature |fridge |freezer |cheap |\$\d+ )alarms?|beepers?|buzzers?)\b|\bwhy (?:not |wouldn(?:'|’)?t (?:i|we) )?(?:just )?(?:use|buy|get) (?:a |an )?(?:cheap |\$\d+ )?(?:thermometer|alarm)/i, "versus"],
+    [/\bhow long\b[^?]*\b(?:set ?up|setting up|install(?:ing|ation)?|get(?:ting)? (?:started|going|running|set up)|to start|connect(?:ing)?)\b|\b(?:set ?up|installation)\b[^?]*\bhow long\b|\bhow (?:quick|quickly|fast)\b[^?]*\b(?:set ?up|start|install|running|going)\b/i, "setuptime"],
+    [/\bwhat (?:do|should|can|must) (?:i|we) do next\b|\bwhat(?:'|’)?s next\b|\bwhat is next\b|\bnext steps?\b|\bwhere (?:do|should) (?:i|we) (?:start|begin)\b|\bwhat(?:'|’)?s left to (?:do|set ?up)\b|\bwhat is left to (?:do|set ?up)\b|\bgetting started\b|^\s*(?:ok(?:ay)?,?\s*)?(?:so\s+)?what now\s*\??\s*$/i, "next"],
+    [/\bforecast\b|\babout to (?:go wrong|fail|break|warm up|go warm)\b|\b(?:going|likely|heading) to (?:fail|go wrong|break|warm up)\b|\bheading (?:for trouble|the wrong way)\b|\bpredict(?:ion|ions|ive|ed)?\b|\bat risk\b|\bdrifting\b|\b(?:will|might|could) (?:any|a|my|the) (?:fridge|freezer|unit|cooler)s? (?:fail|break|go wrong)\b|\bwhich (?:one|fridge|freezer|unit)s? (?:will|might|could|is going to) (?:fail|break|go wrong)\b/i, "forecast"],
+    [{ test: (t) => SITES_RE.test(String(t || "")) && !isQuote(t) }, "sites"],
+    [/\b(?:food|stock)\b[^?]*\b(?:ok|okay|safe|good|fine|alright|all right|spoiled|bad)\b|\b(?:ok|okay|safe|good|fine|alright) to (?:eat|use|serve|keep)\b/i, "food"],
     // 3.39.0, first: "can I see it working before signing up?" is trying
     // it, not signing up.
     [/\bwithout (?:a |any |buying (?:a |any )?)?(?:sensors?|hardware|devices?)\b|\bno (?:sensors?|hardware) yet\b|\b(?:see|watch) it work(?:ing)?\b|\bbefore (?:i |we )?(?:sign(?:ing)? up|buy(?:ing)?|pay(?:ing)?|commit(?:ting)?)\b|\btry it (?:out|first|before)\b|\bsimulat/i, "try"],
@@ -1208,6 +1480,8 @@
     [/\b(?:hard|difficult|complicated|tricky|technical|easy)\b.*\bset(?:ting)?[\s-]*up\b|\bset(?:ting)?[\s-]*up\b.*\b(?:hard|difficult|complicated|tricky|easy)\b|\bhow (?:hard|easy|difficult) is it\b|\belectrician\b|\bwiring\b|\b(?:hard|easy|difficult) to install\b|\b(?:need|hire|pay) (?:someone|somebody|a professional|an installer|a technician) to install\b/i, "easy"],
     [/\bcanad|\bcelsius\b/i, "canada"],
     [/\b(?:my|the|our) insurer\b|\binsurance company\b/i, "pack"],
+    // 3.40.0: insurance or an insurer, however asked, is the pack.
+    [/\binsurance\b|\binsurers?\b|\binsured\b|\bunderwriters?\b/i, "pack"],
     [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
     // 3.37.0: a price with a number of fridges or places, worked out.
     [{ test: isQuote }, "quote"],
@@ -1217,6 +1491,9 @@
     [/\b(?:warmest|hottest)\b/i, "warmest"],
     [/\b(?:add|adding|connect|set up|get)\b[^?]*\b(?:second|another|more|extra|third|new|other)\b[^?]*\b(?:fridges?|freezers?|sensors?|units?|coolers?|walk-?ins?)\b|\b(?:second|another|extra|third)\s+(?:fridges?|freezers?|sensors?|units?|coolers?)\b|\badd(?:ing)? (?:a |an |my |one )?(?:\w+ )?(?:fridges?|freezers?|coolers?)\b/i, "addunit"],
     [/\b(?:have|got|is there|are there|download|install|get|need)\b[^?]*\bapps?\b|\bapp store\b|\bplay store\b|\bhome ?screen\b|\b(?:iphone|android|mobile|phone) app\b/i, "app"],
+    // 3.40.0: "Can I see it on my phone?" is the console in a phone's
+    // browser, not a phone call.
+    [/\b(?:on|from|with|using|via) (?:my |a |an |the |your |our )?(?:phone|mobile|cell ?phone|cell|smartphone|iphone|android|tablet|ipad)\b(?!\s*(?:calls?|numbers?|list))|\bmobile[\s-]*(?:friendly|version|site)\b|\b(?:phone|mobile)(?:'|’)?s? browser\b/i, "mobile"],
     // A butcher's, a bakery or a deli as a business, not "the deli fridge".
     [{ test: (t) => FOOD_SHOP.test(String(t || "")) && !/\b(?:fridges?|freezers?|coolers?|cases?|ok|okay|warm|cold|temp(?:erature)?s?)\b/i.test(String(t || "")) }, "cafe"],
     // The Wi-Fi or the power dropping, and a card's "No signal".
@@ -1232,19 +1509,25 @@
     [/\bcontract\b|\bcommitment\b|\block(?:ed)?[\s-]*in\b|\btied in\b|\b(?:leave|cancel|quit|stop) (?:at )?any ?time\b/i, "cancel"],
     [/\bwhat(?:'|’)?s (?:wrong|the matter|up with|the status|going on|happening)\b|\bwhat is (?:wrong|happening|going on)\b|\b(?:anything|something) wrong\b|\bany (?:problems?|issues?)\b|\bstatus\b|\bright now\b/i, "status"],
   ];
+  // A question with "should", "what is" or "how long" in it is never
+  // answered with the list of your fridges by its words alone (3.40.0):
+  // "What temperature should my fridge be?" got the walk-in's status. A
+  // phrase above can still mean it ("what is wrong?").
+  const NOT_STATUS = /\bshould\b|\bwhat is\b|\bhow long\b/i;
   function bestTopic(text, own) {
     const phrased = PHRASES.find(([re, id]) => re.test(String(text || "")) && TOPICS.some((t) => t.id === id && (!t.only || t.only())));
     if (phrased) return TOPICS.find((t) => t.id === phrased[1]);
     const asked = wordsIn(text);
+    const barred = (t) => Boolean(t) && t.id === "status" && NOT_STATUS.test(String(text || ""));
     let best = null;
     let top = 0;
     const score = (t) => asked.reduce((n, w) => n + (t.words.includes(w) ? 1 / SHARED[w] : 0), 0);
     TOPICS.forEach((t) => {
-      if (t.only && !t.only()) return;
+      if ((t.only && !t.only()) || barred(t)) return;
       const n = score(t);
       if (n > top + 1e-9) { best = t; top = n; }
     });
-    if (own && best && score(own) >= top - 1e-9) return own;
+    if (own && !barred(own) && best && score(own) >= top - 1e-9) return own;
     return best;
   }
   // ---------------------------------------------------------------- a typed question, and every miss (3.37.0)
@@ -1386,6 +1669,9 @@
       const route = asking && sameLabel(asking.text, typed) ? typedRoute() : null;
       if (route) return route.topic.answer(ctx);
       const pick = bestTopic(typed, TOPIC_OF[label] || null);
+      if (!pick && TOPIC_OF[label] && TOPIC_OF[label].id === "status" && NOT_STATUS.test(typed)) {
+        return `${missNote() || "I don't have a built-in answer for that."}`.replace(/ The two closest are first below\./, " Ask **Which fridges need me?** for your fridges now.");
+      }
       return (pick ? pick.answer : own)(ctx);
     });
   }
@@ -1852,6 +2138,10 @@
     gutter: onToday ? ["body > .wrap"] : ["main"],
     screen,
     chips,
+    // Which built-in answer a typed question gets, by its id (3.40.0): for
+    // the tests' table of phrasings, and for anybody checking in the
+    // browser's console. Reads nothing but the words.
+    topicFor: (text) => { const t = sureTopic(text) || bestTopic(text, null); return t ? t.id : null; },
     taskPrompt: () => ((onConsole || onToday) && signedIn() ? TASKS.live : TASKS[path] || "Help me get started on this page."),
     facts: F,
   });

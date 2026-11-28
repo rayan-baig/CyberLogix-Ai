@@ -1713,3 +1713,179 @@ test("3.39.0: on a phone the words in the robot's corners are named for it to ke
   assert.deepEqual(J(desk.given.yieldTo), []);
   assert.ok(!desk.attrs.has("data-pilot-text"));
 });
+
+// ---------------------------------------------------------------- 3.40.0
+//
+// The phrasings a review asked with no key, and more like them: each with
+// the built-in answer it must get. Signed in on /today with twenty units;
+// the visitor's rows on /pricing. `topicFor` is the config's own answer to
+// "which built-in answer does this get?"; the chat must also answer it.
+const OWN_ONLY = new Set(["sites", "week", "warmest", "status"]);
+const PHRASINGS = [
+  // Wrong before 3.40.0.
+  ["Does it work for a food truck?", "cafe"], ["Would this suit a food truck?", "cafe"], ["We do catering, is it for us?", "cafe"],
+  ["Can I see it on my phone?", "mobile"], ["Does it work on mobile?", "mobile"], ["Can I check my fridges from my phone?", "mobile"],
+  ["Will it work on an iPad?", "mobile"],
+  ["Turn texts on", "texts"], ["How do I turn on text alerts?", "texts"], ["Switch on SMS", "texts"], ["Why are texts not switched on?", "texts"],
+  ["enable texts", "texts"],
+  ["Was the food in the walk-in freezer ok on Wednesday?", "food"], ["Is the food still OK?", "food"], ["Is the food in the walk-in safe?", "food"],
+  ["was the stock ok yesterday", "food"], ["Is the food safe to eat?", "food"],
+  ["What is Kryozyn?", "what"], ["what's kryozyn", "what"], ["What does Kryozyn do?", "what"], ["How does it work?", "what"],
+  ["Tell me about Kryozyn", "what"], ["what is this app?", "what"],
+  ["What temperature should my fridge be?", "limits"], ["How cold should a freezer be?", "limits"],
+  ["What's the right temperature for a walk-in?", "limits"], ["What is the safe temperature for a fridge?", "limits"],
+  ["what temp should the freezer be at", "limits"], ["ideal fridge temperature", "limits"],
+  ["My freezer is at 15 degrees", "reading"], ["the walk-in is at 45", "reading"], ["my fridge says 44F", "reading"],
+  ["Our freezer reads 2 degrees", "reading"], ["fridge is at 5C", "reading"],
+  ["How many phone calls do I have left?", "callsleft"], ["how many calls are left on my trial", "callsleft"], ["calls remaining?", "callsleft"],
+  // New.
+  ["hi", "hello"], ["Hello!", "hello"], ["hey", "hello"], ["Hi there", "hello"], ["good morning", "hello"],
+  ["insurance", "pack"], ["Can you help with my insurance?", "pack"], ["What does my insurer need?", "pack"],
+  ["Will it help with an insurance claim?", "pack"],
+  ["How is this different from a cheap thermometer alarm?", "versus"], ["Why not just buy a $20 thermometer?", "versus"],
+  ["What's the difference between this and a fridge alarm?", "versus"], ["Is it better than a data logger?", "versus"],
+  ["How long does setup take?", "setuptime"], ["how long to set up", "setuptime"], ["How quickly can I get it running?", "setuptime"],
+  ["How long will it take to install?", "setuptime"],
+  ["What do I do next?", "next"], ["What's next?", "next"], ["next steps", "next"], ["Where do I start?", "next"], ["what's left to set up", "next"],
+  ["When does my trial end?", "trialend"], ["How many days left in my trial?", "trialend"], ["Is my trial over?", "trialend"],
+  ["how long is the free trial", "trialend"],
+  ["How much has this saved me?", "saved"], ["How much money have I saved?", "saved"], ["Has it paid for itself?", "saved"],
+  ["what has it saved us", "saved"],
+  ["Is anything about to go wrong?", "forecast"], ["Show me the forecast", "forecast"], ["Which fridge is going to fail?", "forecast"],
+  ["anything at risk?", "forecast"], ["Are any units drifting?", "forecast"],
+  ["How many fridges at Old Mill?", "sites"], ["How many fridges at each location?", "sites"],
+  ["how many units do we have at Harbourside", "sites"], ["How many sensors do I have?", "sites"], ["fridges per location", "sites"],
+  ["What is a sensor key?", "sensorkey"], ["I lost my sensor key", "sensorkey"], ["what's the key for?", "sensorkey"],
+  ["How long has the walk-in been warm?", "alert"], ["How long is the wait before an alert?", "door"],
+  // The earlier ones still go where they did.
+  ["Which fridges need me?", "status"], ["Is my walk-in fridge OK?", "status"], ["What's wrong right now?", "status"],
+  ["What's the walk-in at?", "status"], ["How cold is the bar fridge?", "status"],
+  ["How much does it cost?", "price"], ["how much for 2 fridges?", "quote"], ["How much for 3 fridges at 2 locations?", "quote"],
+  ["price for 3 restaurants, 8 fridges per restaurant", "quote"], ["Do you sell sensors?", "sensors"],
+  ["What if the wifi goes down?", "power"], ["Do you call at night?", "calls"], ["What happens if nobody answers?", "calls"],
+  ["Will a door left open wake us?", "door"], ["Who is on call?", "oncall"], ["How do I cancel?", "cancel"], ["Can I pause alerts?", "pause"],
+  ["Change the bar fridge limit to 38", "limit"], ["How many alerts this week?", "week"], ["Which is warmest?", "warmest"],
+  ["Do you have an app?", "app"], ["How do I add a second fridge?", "addunit"], ["Is there a contract?", "cancel"],
+  ["Does it work in Canada?", "canada"], ["Is it hard to set up?", "easy"], ["How do I make the insurance pack?", "pack"],
+];
+
+test("3.40.0: about a hundred phrasings each get the answer they are after, with no key", async () => {
+  assert.ok(PHRASINGS.length >= 100, String(PHRASINGS.length));
+  for (const [where, signedIn] of [["/today", true], ["/console", true], ["/pricing", false]]) {
+    for (const [words, want] of PHRASINGS) {
+      if (!signedIn && OWN_ONLY.has(want)) continue;
+      const chat = chatAt(where, { signedIn, overview: bigOverview() });
+      assert.equal(chat.given.topicFor(words), want, `${where}: ${words}`);
+      const got = chat.send(words);
+      assert.ok(got.label, `${where}: ${words}: answered, not missed (${got.note})`);
+      await chat.tick();
+    }
+  }
+});
+
+test("3.40.0: 'should', 'what is' and 'how long' never get the list of your fridges by their words alone", async () => {
+  for (const words of ["What temperature should my fridge be?", "What is the meaning of the blue dot?", "How long have I been a customer?",
+    "How should I clean the fridge?"]) {
+    const chat = chatAt("/today", { overview: bigOverview() });
+    assert.notEqual(chat.given.topicFor(words), "status", words);
+    assert.doesNotMatch(chat.send(words).text || "", /^- \*\*|need you, worst first|Nothing needs you right now/, words);
+    await chat.tick();
+  }
+});
+
+// The demo as /api/console/overview gives it: a plan with calls and the
+// forecast, Getting started, the food kept, and a closed alert on the
+// walk-in freezer last Wednesday.
+function lastWeekday(day) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  while (d.getDay() !== day || d.getTime() > Date.now()) d.setDate(d.getDate() - 1);
+  return d;
+}
+function demoOverview({ trial = false, starter = false, steps = 4 } = {}) {
+  const o = bigOverview({ trial });
+  const wed = lastWeekday(3);
+  const iso = (ms) => new Date(ms).toISOString();
+  o.sensors.push({ sensor_id: "OML-WIF-1", location_name: "Old Mill / Walk-in freezer", site_name: "Old Mill", unit_kind: "freezer",
+    last_temperature_display: -1.2, temperature_unit: "F", danger_above_display: 10, condition: { state: "ok" } });
+  o.incidents.push({ incident_id: "INC-W", sensor_id: "OML-WIF-1", state: "resolved", opened_at: iso(wed.getTime()), out_since: iso(wed.getTime()),
+    out_until: iso(wed.getTime() + 90 * 60000), resolved_at: iso(wed.getTime() + 92 * 60000), peak_display: 21, temperature_display: 12.5,
+    product_disposition: "unaffected", food_auto: false, food_answered_at: iso(wed.getTime() + 90 * 60000) });
+  o.entitlements = trial ? { voice_escalation: false, predictive_forecasting: false,
+    calls: { mode: "trial", left: 3, total: 5, words: "Your free trial includes 5 phone calls (about a minute each) so you can hear what an alert call sounds like; 3 left. After that, alerts are texts only until you move to a plan with calls (Growth)." } }
+    : starter ? { voice_escalation: false, predictive_forecasting: false, calls: { mode: "none", left: null, total: null, words: "Your Starter plan sends texts, not phone calls. Growth includes phone calls." } }
+      : { voice_escalation: true, predictive_forecasting: true, calls: { mode: "plan", left: null, total: null, words: "If nobody answers the text, we phone them until somebody does." } };
+  o.account.expires_at = trial ? "2026-12-12T09:00:00Z" : "2027-12-28T11:09:31Z";
+  o.account.days_to_expiry = trial ? 9 : 395;
+  const names = ["Add your first sensor", "Add who gets alerts", "First reading received", "Send a test alert"];
+  o.first_day = { steps: names.map((label, n) => ({ key: String(n), label, detail: n === 3 ? "A text that starts TEST and says nothing is wrong." : "", done: n < steps })),
+    done: steps, total: 4, complete: steps === 4 };
+  o.roi = { period_days: 30, quantified_saves: 1, loss_avoided_usd: 4000, return_multiple: 8.9 };
+  o.this_month = { food_usd: 4000 };
+  o.sensors[2].hours_until_breach = 1.5; // quiet: its forecast is stale, never "heading the wrong way"
+  o.sensors[3].hours_until_breach = 2.4;
+  return o;
+}
+
+test("3.40.0: the eight wrong answers are put right, each true to the product", async () => {
+  const chat = chatAt("/today", { overview: demoOverview() });
+  const say = async (words) => { const got = chat.send(words).text || "(missed)"; await chat.tick(); return got; };
+  assert.match(await say("Does it work for a food truck?"), /^Yes, while its fridges have internet: a food truck is watched the same way as a restaurant, on the restaurant plan with its food limits\./);
+  const phone = await say("Can I see it on my phone?");
+  assert.match(phone, /^Yes\. The console and the Simple view \(Today\) work in your phone's browser/);
+  assert.match(phone, /\*\*Add to Home Screen\*\*/);
+  assert.doesNotMatch(phone, /presses 1|phones the people/);
+  const texts = await say("Turn texts on");
+  assert.match(texts, /^Alert texts go to everyone under \*\*Who gets alerts\*\* on the console's \*\*Team\*\* tab who isn't muted/);
+  assert.match(texts, /Texts are not switched on for this server/);
+  const wed = await say("Was the food in the walk-in freezer ok on Wednesday?");
+  assert.match(wed, /^\*\*Old Mill \/ Walk-in freezer\*\* went out of range at .+ for about 2 hours, at worst 21\.0°F \(limit 10°F\), and it is closed\. It was recorded as \*\*kept\*\*/, wed);
+  assert.match(await say("Was the food in the walk-in freezer ok on Thursday?"),
+    /^No alert on \*\*Walk-in freezer 1\*\*, \*\*Walk-in freezer 2\*\*, \*\*Walk-in freezer\*\* and 1 more on Thursday: they stayed in range/);
+  assert.match(await say("What is Kryozyn?"), /^Kryozyn watches the temperature of your fridges and freezers, day and night\./);
+  const limits = await say("What temperature should my fridge be?");
+  assert.match(limits, /^\*\*A fridge: under 41°F\. A freezer: under 10°F\.\*\*/);
+  assert.match(limits, /\*\*Change limit\*\*/);
+  const fifteen = await say("My freezer is at 15 degrees");
+  assert.match(fifteen, /^\*\*15°F is 5° over a freezer's 10°F limit\.\*\* Check the door is shut/);
+  assert.match(fifteen, /If it stays over for 30 minutes, everyone on call is texted\./);
+  assert.doesNotMatch(fifteen, /haven't added/);
+  assert.match(await say("My fridge is at 38"), /^\*\*38°F is under a fridge's 41°F limit\*\*, so that's fine/);
+  assert.match(await say("the walk-in is at 60"), /^\*\*60°F is 19° over a fridge's 41°F limit\.\*\*[\s\S]*this far over, it alerts at once/);
+  assert.match(await say("How many phone calls do I have left?"), /^Your plan includes phone calls, so there's no number of calls to use up/);
+  const trial = chatAt("/today", { overview: demoOverview({ trial: true }) });
+  assert.match(trial.send("How many phone calls do I have left?").text, /^Your free trial includes 5 phone calls .+; 3 left\./);
+  const starter = chatAt("/console", { overview: demoOverview({ starter: true }) });
+  assert.match(starter.send("How many calls do I have left?").text, /^Your Starter plan sends texts, not phone calls\./);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("How many phone calls do I have left?").text,
+    /^Signed in, I can tell you from your plan\. The free trial includes 5 alert calls/);
+});
+
+test("3.40.0: hello, insurance, a thermometer alarm, setup time, the next step, the trial, the food kept, the forecast, each location and the key", async () => {
+  const chat = chatAt("/today", { overview: demoOverview({ steps: 2 }) });
+  const say = async (words) => { const got = chat.send(words).text || "(missed)"; await chat.tick(); return got; };
+  assert.match(await say("hi"), /^Hi\. Ask me about your fridges and freezers/);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("Hello!").text, /^Hi\. I'm Pilot\. I can tell you what Kryozyn costs/);
+  assert.match(await say("Can you help with my insurance?"), /\*\*Insurance packs\*\*|insurance pack/i);
+  assert.match(chatAt("/", { signedIn: false }).send("insurance").text, /^Your insurer gets an \*\*insurance pack\*\*/);
+  const versus = await say("How is this different from a cheap thermometer alarm?");
+  assert.match(versus, /^A thermometer alarm beeps in the kitchen, so it only helps if somebody is there to hear it\./);
+  assert.match(versus, /texted within 60 seconds/);
+  assert.match(await say("How long does setup take?"), /^About five minutes for the first fridge, once the sensor is in your hands/);
+  assert.match(await say("What do I do next?"), /^Next under \*\*Getting started\*\* \(2 steps of 4 done\): \*\*First reading received\*\*\./);
+  assert.match(chatAt("/today", { overview: demoOverview() }).send("What do I do next?").text, /^Getting started is done\. Right now an alert needs somebody/);
+  assert.match(await say("When does my trial end?"), /^You're not on the free trial: you're on Growth\./);
+  const trial = chatAt("/today", { overview: demoOverview({ trial: true }) });
+  assert.match(trial.send("When does my trial end?").text, /^\*\*Your free trial ends on Dec 12, 2026: 9 days left\.\*\* Nothing is billed during it/);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("When does the trial end?").text, /^The free trial lasts 14 days/);
+  assert.match(await say("How much has this saved me?"), /^\*\*About \$4,000 of food kept in the last 30 days\*\*: 1 closed alert with the food recorded as kept\. It is an estimate of what a typical fridge or freezer of each kind holds, 8\.9× the subscription\./);
+  const forecast = await say("Is anything about to go wrong?");
+  assert.match(forecast, /^\*\*Heading the wrong way:\*\*\n- \*\*Walk-in cooler\*\* 35\.0°F: at this rate it passes its limit in about 2 hours/, forecast);
+  assert.match(forecast, /already out of range: that's an alert, not a forecast/);
+  assert.match(chatAt("/today", { overview: demoOverview({ starter: true }) }).send("Show me the forecast").text, /Your plan doesn't include it; Growth does\./);
+  assert.equal(await say("How many fridges at Old Mill?"), "**Old Mill**: 10 fridges and freezers.");
+  assert.match(await say("How many fridges at each location?"), /^\*\*20 fridges and freezers across 2 locations:\*\*\n- Old Mill: 10\n- Harbourside: 9\n- Not at a location yet: 1$/);
+  const key = await say("What is a sensor key?");
+  assert.match(key, /^A sensor key is the password one sensor uses to send its readings to Kryozyn\./);
+  assert.match(key, /\*\*New key\*\*/);
+});

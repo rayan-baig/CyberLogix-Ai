@@ -85,7 +85,8 @@ def test_the_open_alert_was_texted_to_the_person_on_call_as_the_handled_one_was(
     pack = api.post(f"/api/claims/{still.incident_id}/packet", headers=owner).json()
     told = claims.told_words(pack)
     assert "nobody was on the list" not in told
-    assert told.startswith("The alert was texted to 1 person at "), told
+    # The demo's receipts are pretend, and say so (3.40.0).
+    assert told.startswith("The alert went out as 1 pretend text (demo) at "), told
     assert "nobody was on the list" not in pack["cover_letter"]
     assert pack["insured"]["contact_phone"] == demo_account.CONTACTS[0][1]
     # Who was told: the texts and the person texted agree.

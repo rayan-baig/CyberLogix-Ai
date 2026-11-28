@@ -181,7 +181,8 @@ def test_the_pack_page_reads_well_on_a_phone_and_on_paper():
     assert "oneDecimal(evidence.peak_reading)" in packet
     assert '<table class="doc-channels">' in packet and 'data-label="Outcome"' in packet
     assert '<div class="doc-keep">' in packet
-    assert 'told.texts === "sent" && told.delivered ? "Alert texted" : "Alert opened"' in packet
+    # 3.40.0: and never for the demo's pretend texts.
+    assert 'told.texts === "sent" && told.delivered && !told.demo ? "Alert texted" : "Alert opened"' in packet
     assert "Alert sent" not in packet
     zone = _function(CONSOLE_JS, "stampZone")
     assert 'timeZoneName: "short"' in zone

@@ -72,6 +72,12 @@ function figs(s) {
       <span class="n">${esc(n)}</span><span class="s">${esc(sub)}</span></div>`).join("");
 }
 
+/* "21.0°F", as the insurance pack writes a reading (3.40.0), never "21°F". */
+function tenth(value) {
+  const n = Number(value);
+  return value === null || value === undefined || value === "" || !Number.isFinite(n) ? String(value ?? "—") : n.toFixed(1);
+}
+
 function render(seen) {
   const r = seen.report;
   const u = r.temperature_unit;
@@ -99,7 +105,7 @@ function render(seen) {
       ? `limit ${esc(a.limit_above)}°${esc(u)}`
       : a.limit_below !== null ? `limit ${esc(a.limit_below)}°${esc(u)}` : "";
     return `<div class="alert"><div><strong>${esc(a.unit)}</strong> reached
-        ${esc(a.worst)}°${esc(u)}${limit ? ` (${limit})` : ""}</div>
+        ${esc(tenth(a.worst))}°${esc(u)}${limit ? ` (${limit})` : ""}</div>
       <div class="when">${esc(stamp(a.opened_at))}${a.closed_at
         ? ` · back to normal ${esc(stamp(a.closed_at))}` : " · still open"}</div>
       <div>${answered}</div></div>`;

@@ -377,6 +377,12 @@ ones away. `tests/test_demo_account.py` takes a snapshot of a seeded demo
 in its own process with `CYBERLOGIX_BACKUP_DIR` set, and checks the live
 folder is untouched.
 
+Since 3.40.0, while a demo database is served, every sweep gives each of
+its units a fresh reading every 5 minutes (`demo_account.feed`), straight
+into the store: no alert opens, nothing is billed, and nobody is texted.
+A demo database never sends a text or places a call, even with Twilio set
+up: notifications treat it as a server with texts switched off.
+
 ## Outage drill: Twilio and mail
 
 Twice a year, and after any change to how alerts are sent. On a staging

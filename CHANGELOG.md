@@ -6,6 +6,81 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.40.0 — 2026-11-28
+
+The demo stays fresh while it is served, quiet sensors that stopped
+together are one card on /today, the demo's proof of monitoring report
+reads its whole week, the insurance pack calls pretend texts pretend,
+Pilot answers more questions with no AI key and gets eight it used to get
+wrong right, and the owner's screens use plainer words. No price or plan
+term has changed.
+
+- **The demo stays fresh.** Half an hour after it was seeded, the demo's
+  /today said "19 things need you now", one "has gone quiet" card per
+  unit, because nothing wrote a reading after the seed. While the server
+  runs, every sweep now gives each demo unit a fresh reading every 5
+  minutes (`demo_account.feed`), straight into the store: no alert opens,
+  nothing is counted or billed, and nobody is texted. The unit whose alert
+  is still open stays warm, never past its worst reading, until somebody
+  says it is fixed; then it cools and its alert closes by itself. A demo
+  database never sends a text or places a call, even on a server with the
+  text service set up: its numbers are made up.
+- **Sensors that stopped together are one card.** When three or more go
+  quiet within a few minutes of each other, at one site or several,
+  /today shows one card ("19 sensors at 3 sites stopped together —
+  probably the internet or power") instead of one each.
+- **The demo's report reads its week.** The proof of monitoring report
+  said "100% of 3.2 sensor-hours", every unit "0.2 hours watched", beside
+  a week of readings: the units were registered at the moment of the seed,
+  and the half-hourly made-up history was written down as about 6,700
+  gaps in data. The demo's units are now watched from their first reading,
+  gaps are counted from then, and the made-up history has no gaps.
+- **Pretend texts in the pack.** The insurance pack said "3 on the roster
+  texted, 3 delivered" and "The alert was texted to 3 people" for the
+  demo's pretend texts. It now says "3 pretend texts (demo); nothing was
+  sent", and its console row says "Alert opened", not "Alert texted".
+- **Pilot gets eight answers right.** With no AI key, "Does it work for a
+  food truck?" got the food-safety rule, "Can I see it on my phone?" phone
+  calls, "Turn texts on" who is on call, "What is Kryozyn?" the week's
+  summary, "What temperature should my fridge be?" the walk-in's status,
+  and "My freezer is at 15 degrees" "You haven't added a freezer". Each
+  now gets its own answer: a food truck is watched like a restaurant while
+  its fridges have internet; the console works in a phone's browser and
+  installs to the home screen; who gets the texts and what "Texts are not
+  switched on" means; what Kryozyn is; the limits (a fridge under 41°F, a
+  freezer under 10°F); and how far over the freezer's limit 15°F is and
+  what to do. "Was the food in the walk-in freezer ok on Wednesday?" finds
+  that unit's alert that day and what was recorded. "How many phone calls
+  do I have left?" answers from the plan.
+- **Pilot answers more.** Hello; insurance or an insurer (the pack); how
+  it differs from a thermometer alarm; how long setup takes; what to do
+  next (Getting started's next step); when the trial ends and the days
+  left; the food kept; the forecast; how many fridges at each location;
+  and what a sensor key is. A question with "should", "what is" or "how
+  long" is never answered with the list of your fridges by its words
+  alone. A table of over a hundred phrasings checks each answer.
+- **Plainer words for the owner.** /today's "Being dealt with" says what
+  the "It's fixed" dialog says: press It's fixed when the job is done, and
+  it closes by itself once it's cold. The console's top bar says "Being
+  dealt with" once somebody has said they are on it. Spending limits
+  (model calls, cache hits) and the meeting-based Things to do are under
+  Advanced only. The agreement has no "Bill what is due" (bills issue on
+  their own) and "Renew" says what it does: "Start a new 1-year term now".
+  The cancel rule is said once on the Money tab.
+- **One date style.** The Team tab's turns, the agreement's dates and the
+  pause's return date read like the rest of the console ("until Fri 8:00
+  AM", "Dec 4, 8:00 AM", "Dec 20, 2026"), not "Fri 04 Dec 08:00 CST" or
+  "2026-12-20".
+- **The report's 100% is 100%.** With no time offline anywhere, the proof
+  report's total no longer rounds down to 99.9% through a floating-point
+  hair.
+- **Smaller things.** "$14,364 a year" and "$149 off" in whole dollars
+  beside whole-dollar prices. "At its worst: 21.0°F" in the console's
+  timeline and "reached 21.0°F" in the proof report, as the pack writes
+  it. The agreement's table stays inside its card at 320px. Sign-up says
+  "A freezer fails at two", as the home page does.
+
+
 ## 3.39.0 — 2026-11-28
 
 The forecast leaves a fridge that has already failed to the alerts, the

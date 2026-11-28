@@ -641,6 +641,14 @@ pre.snippet {
 .term-table th:first-child, .term-table td:first-child { text-align: left; }
 .term-table th { color: var(--ink); font-weight: 600; }
 .term-table tr.now td { color: var(--ink); }
+/* Inside its card at 320px (3.40.0): the table ran 23px past the card's
+   edge. Tighter on a phone, and it scrolls inside the card, never the
+   page, if a figure is still too wide. */
+.term-scroll { max-width: 100%; overflow-x: auto; }
+@media (max-width: 420px) {
+  .term-table { font-size: 12.5px; }
+  .term-table th, .term-table td { padding: 6px 3px; }
+}
 .opp { display: flex; align-items: baseline; gap: 9px; padding: 7px 0;
        border-bottom: 1px solid var(--border); font-size: 13.5px; }
 .opp .grow { color: var(--muted); }
