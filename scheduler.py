@@ -271,6 +271,19 @@ def _sweep_every_tenant() -> dict:
     # freezer that went out of range is noticed a minute late for no
     # reason. Guarded separately: a vendor being down is a Tuesday, and
     # it must not stop anybody's estate being swept.
+    # A demo database's made-up units keep reporting while it is served
+    # (3.40.0), before the sweep looks for quiet ones. Straight into the
+    # store: no alert, no text, nothing billed (demo_account.feed).
+    try:
+        from backup import is_demo_database
+
+        if is_demo_database():
+            import demo_account
+
+            demo_account.feed()
+    except Exception as exc:  # noqa: BLE001 - the watchdog must not die
+        logger.exception("Demo feed failed (%s).", exc)
+
     fetched = {"polled": 0, "readings": 0, "failed": 0}
     try:
         fetched = run_vendor_polls()

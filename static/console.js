@@ -2168,7 +2168,8 @@ function incidentTimeline(i) {
   const firstAt = Date.parse(i.out_since || i.opened_at);
   if (peak !== null && peak !== undefined && peak !== first) {
     steps.push({ cls: "hit", when: i.peak_at || null,
-      text: `${i.resolved_at ? "At its worst" : "Worst so far"}: ${peak}${u}`,
+      // "21.0°F", as the pack writes it (3.40.0), never "21°F".
+      text: `${i.resolved_at ? "At its worst" : "Worst so far"}: ${oneDecimal(peak)}${u}`,
       order: peakAt || firstAt });
   } else if ((first === null || first === undefined)
              && (i.temperature_display ?? i.temperature_fahrenheit) != null) {
@@ -2482,8 +2483,11 @@ function renderNeedsBar(d) {
         : `${esc(CLXWords.person(i.acknowledged_by_name, i.acknowledged_by))} is on it.`)
     : CLXWords.nobodyYet(i);
   const more = all.length - 1;
+  // Open alerts come first, so the first one being taken means all are
+  // (3.40.0): "Needs you now" stayed up after somebody said "I'm on it".
+  const kicker = i.state === "open" ? "Needs you now" : "Being dealt with";
   bar.innerHTML = `<div class="needs-bar-in">
-      <span class="needs-bar-kicker">Needs you now</span>
+      <span class="needs-bar-kicker">${kicker}</span>
       <p class="needs-bar-what">${what} <span class="needs-bar-who">${who}</span></p>
       <span class="needs-bar-acts">
         ${i.state === "open" ? `<button class="btn btn-sm btn-primary" type="button"
@@ -3003,7 +3007,7 @@ function renderRotations(data, roster) {
     const turns = schedule.map((s, index) => `
       <li class="${index === 0 ? "is-now" : ""}">
         <span class="rota-who">${named(s)}</span>
-        <span class="rota-when">${esc(s.starts_local)} to ${esc(s.ends_local)}</span>
+        <span class="rota-when">${esc(CLXWords.dateTime(s.starts_at))} to ${esc(CLXWords.dateTime(s.ends_at))}</span>
       </li>`).join("");
     const buttons = editor
       ? `<button class="btn btn-sm" type="button" data-rota-edit="${esc(r.scope)}">Change</button>
@@ -3011,7 +3015,7 @@ function renderRotations(data, roster) {
       : "";
     const who = now
       ? `<div class="rota-line is-now"><span class="rota-label">On call now</span><b>${named(now)}</b>${
-           schedule[0] ? ` until ${esc(schedule[0].ends_local)}` : ""}</div>
+           schedule[0] ? ` until ${esc(CLXWords.clock(schedule[0].ends_at))}` : ""}</div>
          <div class="rota-line"><span class="rota-label">Next</span>${
            next ? named(next) : "nobody"}</div>`
       : `<div class="rota-line is-empty">Nobody is in this rotation, so
@@ -3296,7 +3300,7 @@ function renderContract(contract, pipeline, tenant) {
   const other = isYearly ? "monthly" : "yearly";
   const switching = c.switching_to
     ? `<div class="card-note u-mt-9">Switching to ${esc(c.switching_to)} billing on
-         ${esc((c.switches_at || "").slice(0, 10))}, when what you have paid
+         ${esc(CLXWords.date(c.switches_at))}, when what you have paid
          for runs out.</div>`
     : "";
   body.innerHTML = `
@@ -3304,27 +3308,30 @@ function renderContract(contract, pipeline, tenant) {
       ${esc(isYearly ? `Billed yearly (${yearly.label || ""})` : "Billed monthly")},
       ${c.escalator_percent}% a year, ${
         c.auto_renew ? "renews automatically" : "does not auto-renew"}.
-      Next invoice ${esc((c.next_billing_at || "").slice(0, 10))}.
+      Next invoice ${esc(CLXWords.date(c.next_billing_at))}.
     </div>
     ${switching}
-    <table class="term-table">
+    <div class="term-scroll"><table class="term-table">
       <thead><tr><th>Term</th><th>Rate</th><th>Months free</th><th>Payable</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>
+    </table></div>
     <div class="card-note u-mt-9">
-      Ends ${esc((c.ends_at || "").slice(0, 10))} —
+      Ends ${esc(CLXWords.date(c.ends_at))} —
       ${renewal.days_away} days away.
     </div>
     ${behind}
     ${opportunities(pipeline, c)}
     <div class="row u-mt-12">
-      <button class="btn btn-sm" id="contract-bill">Bill what is due</button>
-      <button class="btn btn-sm" id="contract-renew">Renew</button>
+      <button class="btn btn-sm" id="contract-renew">Start a new ${c.term_years}-year term now</button>
       <button class="btn btn-sm" id="contract-interval">${
         c.switching_to ? `Stay ${isYearly ? "yearly" : "monthly"}`
                        : `Switch to ${other} at renewal`}</button>
-    </div>
-    <div class="u-fs-11-5 u-c-muted u-mt-7">${esc(yearly.cancellation || "")}</div>`;
+    </div>`;
+  // No "Bill what is due" (3.40.0): bills issue on their own every hour,
+  // and an owner's button for it read as the provider's job. Nor "Renew"
+  // on its own: it ends this term and starts a new one, at the rate this
+  // one has reached, from where the bills paid so far run to; the button
+  // says that. The cancel rule is said once, under Pause or cancel.
 
   wireAddOnButtons(c);
 
@@ -3338,20 +3345,11 @@ function renderContract(contract, pipeline, tenant) {
     } catch (err) { toast(err.message, "err"); }
   });
 
-  $("contract-bill").addEventListener("click", async () => {
-    try {
-      const out = await api("/api/contracts/billing-run", { method: "POST" });
-      toast(out.invoices_issued
-        ? `${out.invoices_issued} invoice(s) issued.`
-        : "Nothing is due yet.", out.invoices_issued ? "ok" : "");
-      refresh();
-    } catch (err) { toast(err.message, "err"); }
-  });
   $("contract-renew").addEventListener("click", async () => {
     try {
       await api("/api/contracts/renew", {
         method: "POST", body: JSON.stringify({ term_years: c.term_years }) });
-      toast("Renewed at the rate the last term finished on.", "ok");
+      toast(`A new ${c.term_years}-year term has started, at the rate this one reached.`, "ok");
       refresh();
     } catch (err) { toast(err.message, "err"); }
   });
@@ -3381,7 +3379,7 @@ function renderLeaving(d) {
     <button class="btn btn-sm" type="button" data-pause-months="${esc(o.months)}"
             ${owner ? "" : "disabled"}>
       <span>Pause for ${esc(o.label)}</span>
-      <span class="u-c-muted">back on ${esc(o.resume_on)}</span>
+      <span class="u-c-muted">back on ${esc(CLXWords.date(o.resume_at) || o.resume_on)}</span>
     </button>`).join("");
   const offer = d.offer || {};
   const stay = offer.available ? `<div class="stay-offer">
@@ -3452,7 +3450,7 @@ function opportunities(pipeline, contract) {
   const yearly = offered.reduce((sum, o) => sum + (Number(o.annual_usd) || 0), 0);
   return `<div class="u-mt-14">
     <div class="card-note u-mb-4">
-      Not on this contract${yearly ? " — " + money(yearly) + " a year" : ""}
+      Not on this contract${yearly ? " — $" + Math.round(yearly).toLocaleString() + " a year" : ""}
     </div>
     ${rows.map((o) => `<div class="opp">
         <span class="grow">${esc(o.name)}</span>
@@ -3954,7 +3952,10 @@ function referralReward(seen) {
     return `You get a month of your plan free when they pay their first invoice: ${price} off on Starter, `
       + "or a month on one location on Growth.";
   }
-  return `You get ${money(seen.reward_usd)} off, one month on one location, when they pay their first invoice.`;
+  // Whole dollars beside the whole-dollar prices (3.40.0): "$149.00 off".
+  const reward = Number(seen.reward_usd || 0);
+  const off = Number.isInteger(reward) ? "$" + reward.toLocaleString() : money(reward);
+  return `You get ${off} off, one month on one location, when they pay their first invoice.`;
 }
 
 function renderReferrals(seen) {
@@ -4948,7 +4949,8 @@ async function openPacket(incidentId) {
   // "Alert texted" only when a text went through (3.36.0): the row said
   // sent for alerts written on a server with texts switched off.
   const told = packet.response.notified;
-  const sentKey = told && told.texts === "sent" && told.delivered ? "Alert texted" : "Alert opened";
+  // Nor for the demo's pretend texts (3.40.0).
+  const sentKey = told && told.texts === "sent" && told.delivered && !told.demo ? "Alert texted" : "Alert opened";
   // "Closed at 4:41 AM", never "Closed: closed at 4:41 AM" (3.36.0).
   const closedKey = ev.resolved_at ? "Closed at" : "Closed";
   const closedWords = ev.resolved_at
@@ -7740,6 +7742,7 @@ function inShortList(card) {
    them in Setup; a search still finds every one. */
 function isAdvanced(card) {
   return card.getAttribute("data-advanced") === "1"
+    || card.getAttribute("data-advanced-only") === "1"
     || (card.getAttribute("data-small-advanced") === "1" && smallAccount());
 }
 
@@ -7776,7 +7779,9 @@ function inTab(card, searching) {
   if ((finder.tab === "all" || simpleTabs()) && finder.reveal.has(card.id)) return true;
   // Under Advanced only, for every account (data-advanced-only, 3.39.0):
   // "Turn meeting notes into jobs" opened a restaurant's Money tab, with
-  // Data centers first in its sector list. A search still finds it.
+  // Data centers first in its sector list. A search still finds it. And
+  // (3.40.0) "Spending limits", with its model calls and cache hits, off
+  // the Money tab, and the meeting-based "Things to do" off Setup.
   if (card.getAttribute("data-advanced-only") === "1" && !searching) return false;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
   if (hiddenAsAdvanced) return false;

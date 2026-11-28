@@ -544,6 +544,7 @@ def state(tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, Any]:
         "paused": public_pause(pause) if pause else None,
         "pause_options": ([] if pause or trial else [
             {"months": m, "resume_on": _day(add_months(now, m)),
+             "resume_at": iso(add_months(now, m)),
              "label": f"{m} month{'' if m == 1 else 's'}"} for m in PAUSE_MONTHS
             if months_allowed(tenant.tenant_id, m, now)]),
         "pause_limit_words": PAUSE_LIMIT_WORDS,

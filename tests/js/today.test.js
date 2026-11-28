@@ -315,7 +315,8 @@ test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who s
     sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [{ ...live, fix_reported_at: null, fix_reported_by_name: null }],
   }));
   assert.match(before.nodes.needs.innerHTML, /data-fixed="INC-3"/);
-  assert.match(before.nodes.verdict.innerHTML, /Press <b>It's fixed<\/b> once it is cold again/);
+  // 3.40.0: as the dialog says it, not "once it is cold again".
+  assert.match(before.nodes.verdict.innerHTML, /Press <b>It's fixed<\/b> when the job is done: it closes\s+by itself once it's cold\./);
   assert.equal(before.nodes["needs-h"].textContent, "Needs you now");
 });
 
@@ -350,4 +351,30 @@ test("3.39.0: under the top banner the cards never repeat 'Needs you now', whate
   const { nodes } = await today(base({ sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [live()],
     account: { paused: { resume_on: "1 February 2027", words: "Paused." } } }));
   assert.equal(nodes["needs-h"].hidden, false);
+});
+
+test("3.40.0: three or more sensors that went quiet together are one card, not one each; a lone quiet one keeps its own", async () => {
+  const ago = (m) => new Date(Date.now() - m * 60000).toISOString();
+  const quiet = (id, name, site, minutes) => Object.assign(fridge({ state: "offline" }), {
+    sensor_id: id, location_name: name, site_name: site, last_seen: ago(minutes), online: false });
+  const sensors = [
+    quiet("A", "Walk-in cooler", "Old Mill", 41), quiet("B", "Bar fridge", "Old Mill", 40), quiet("C", "Prep fridge", "Harbourside", 39),
+    quiet("D", "Dessert display", "Harbourside", 38), quiet("E", "Ice-cream freezer", "Harbourside", 300),
+    Object.assign(fridge(), { sensor_id: "F", location_name: "Dairy cooler", site_name: "Old Mill" }),
+  ];
+  const { nodes } = await today(base({ sensors }));
+  const cards = nodes.todo.innerHTML.split('class="todo ').length - 1;
+  assert.equal(cards, 2, nodes.todo.innerHTML);
+  assert.match(nodes.todo.innerHTML, /<strong>4 sensors at 2 sites stopped together<\/strong> — probably the internet or power\./);
+  assert.match(nodes.todo.innerHTML, /Walk-in cooler at Old Mill, Bar fridge at Old Mill, Prep fridge at Harbourside and 1 more\./);
+  assert.match(nodes.todo.innerHTML, /<strong>Ice-cream freezer at Harbourside<\/strong> has gone quiet\./);
+  assert.doesNotMatch(nodes.todo.innerHTML, /<strong>Bar fridge at Old Mill<\/strong> has gone quiet/);
+  assert.match(nodes.verdict.innerHTML, /<h1>2 things need you now<\/h1>/);
+  assert.match(nodes.verdict.innerHTML, /Sensors stopped reporting together/);
+  // One site: named. Two quiet together: a card each, as before.
+  const one = await today(base({ sensors: sensors.slice(0, 2).concat([quiet("G", "Prep fridge 2", "Old Mill", 40)]) }));
+  assert.match(one.nodes.todo.innerHTML, /<strong>3 sensors at Old Mill stopped together<\/strong>/);
+  const two = await today(base({ sensors: sensors.slice(0, 2) }));
+  assert.doesNotMatch(two.nodes.todo.innerHTML, /stopped together/);
+  assert.equal((two.nodes.todo.innerHTML.match(/has gone quiet/g) || []).length, 2);
 });

@@ -296,10 +296,24 @@ def _delivery_rows(fanout: List[Dict[str, Any]], single: Optional[Dict[str, Any]
             "status": row.get("status"),
             "provider_reference": row.get("provider_sid"),
             "detail": row.get("detail"),
+            # Carried on, so every line built from these rows can say so
+            # (3.40.0): "3 on the roster texted, 3 delivered" was the
+            # timeline's line for pretend texts.
+            "demo": bool(row.get("demo")),
         }
         for row in rows
         if row
     ]
+
+
+def _texted_words(rows: List[Dict[str, Any]]) -> str:
+    """"3 on the roster texted, 3 delivered", or, when every row is one of
+    the demo's made-up receipts, "3 pretend texts (demo); nothing was
+    sent" (3.40.0)."""
+    if rows and all(r.get("demo") for r in rows):
+        return f"{plural(len(rows), 'pretend text')} (demo); nothing was sent."
+    landed = sum(1 for r in rows if r["delivered"])
+    return f"{len(rows)} on the roster texted, {landed} delivered."
 
 
 # Where an adjuster's IT team reads how to check the chain (3.35.0): the
@@ -392,6 +406,8 @@ def _notified(incident: Incident, sensor) -> Dict[str, Any]:
         "at": iso(incident.opened_at),
         "texted": len(first),
         "delivered": sum(1 for r in first if r.get("delivered")),
+        # Every receipt one of the demo's made-up ones (3.40.0).
+        "demo": bool(first) and all(r.get("demo") for r in first),
         "wait_minutes": wait,
         "out_minutes_before": round(out_before, 1),
         "retries": retries,
@@ -426,6 +442,10 @@ def told_words(packet: Dict[str, Any], zone=timezone.utc, day: Optional[datetime
                 "texts are off on this server, so nobody was texted.")
     elif told["texts"] == "none":
         said = f"No alert text went out at {when}: nobody was on the list to text."
+    elif told.get("demo"):
+        # The demo's made-up receipts (3.40.0): never "texted to 3 people".
+        said = (f"The alert went out as {plural(told['texted'], 'pretend text')} (demo) "
+                f"at {when}{after}; nothing was sent.")
     else:
         n, landed = told["texted"], told["delivered"]
         people = plural(n, "person", "people")
@@ -451,7 +471,7 @@ def told_words(packet: Dict[str, Any], zone=timezone.utc, day: Optional[datetime
             said += f" A phone call was tried at {at(call['at'])} and did not go through."
     if acked:
         if (said.endswith(".") and told["texts"] == "sent" and told["delivered"] == told["texted"]
-                and not told.get("retries") and not call):
+                and not told.get("retries") and not call and not told.get("demo")):
             said = said[:-1] + f"; it was {acked}."
         else:
             said += f" It was {acked.replace('later', 'after the alert opened')}."
@@ -574,12 +594,11 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
             "detail": "Texts are off on this server, so nobody was texted.",
         })
     elif sms_rows:
-        landed = sum(1 for r in sms_rows if r["delivered"])
         timeline.append(
             {
                 "at": iso(incident.opened_at),
                 "event": "Alert dispatched by SMS",
-                "detail": f"{len(sms_rows)} on the roster texted, {landed} delivered.",
+                "detail": _texted_words(sms_rows),
             }
         )
     # Re-sends after every text failed are part of what was done to tell
@@ -587,12 +606,11 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
     # tried again.
     for attempt in incident.sms_retries:
         rows = _delivery_rows(attempt.get("deliveries") or [], None)
-        landed = sum(1 for r in rows if r["delivered"])
         timeline.append(
             {
                 "at": attempt.get("at"),
                 "event": "Alert text sent again",
-                "detail": f"{len(rows)} on the roster texted, {landed} delivered.",
+                "detail": _texted_words(rows),
             }
         )
     if incident.voice_escalated_at:

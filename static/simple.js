@@ -308,9 +308,15 @@ function verdict(units, jobs, paused, live, food, loss, left) {
     box.innerHTML = unanswered
       ? `<h1>${unanswered === 1 ? "An alert needs" : `${unanswered} alerts need`} you now</h1>
          <p>Nobody has said they are on it yet. Press <b>I'm on it</b> so everyone
-            knows somebody has it, then <b>It's fixed</b> once it is cold again.</p>`
+            knows somebody has it, then <b>It's fixed</b> when the job is done: it closes
+            by itself once it's cold.</p>`
+      // As the "It's fixed" dialog says it (3.40.0): this said "Press It's
+      // fixed once it is cold again" while the dialog said it closes by
+      // itself. Both are true once It's fixed is pressed: then it closes
+      // as soon as it is cold, or at once if it already is.
       : `<h1>Being dealt with</h1>
-         <p>Somebody is on it. Press <b>It's fixed</b> once it is cold again.</p>`;
+         <p>Somebody is on it. Press <b>It's fixed</b> when the job is done: it closes
+            by itself once it's cold.</p>`;
     return;
   }
   const urgent = jobs.filter((j) => j.now).length;
@@ -335,7 +341,9 @@ function verdict(units, jobs, paused, live, food, loss, left) {
         urgent === 1 ? "s" : ""} you now</h1>
        <p>${jobs.some((j) => j.now && j.mark === "!")
           ? "A fridge or freezer is warmer than its limit. Check it now."
-          : "A sensor has stopped reporting, so that food is not being watched."}
+          : jobs.some((j) => j.quiet)
+            ? "Sensors stopped reporting together, so that food is not being watched."
+            : "A sensor has stopped reporting, so that food is not being watched."}
           What to do is written under each one.</p>`;
     return;
   }
@@ -644,6 +652,49 @@ $("did").addEventListener("click", (event) => {
 
 let introDone = false;
 
+/* Sensors that went quiet together (3.40.0): three or more whose last
+   reading came within a few minutes of each other, at one site or
+   across several, are one card, not one each. Nineteen "has gone quiet"
+   cards under "19 things need you now" were one router or one power cut. */
+const QUIET_TOGETHER = 3;
+const QUIET_WITHIN_MINUTES = 5;
+
+function quietTogether(units) {
+  const quiet = units.filter((u) => {
+    const s = stateOf(u);
+    return s.cls === "w-quiet" && !s.first && !isNaN(Date.parse(u.last_seen));
+  }).sort((a, b) => Date.parse(a.last_seen) - Date.parse(b.last_seen));
+  const groups = [];
+  let run = [];
+  quiet.forEach((u) => {
+    if (run.length && Date.parse(u.last_seen) - Date.parse(run[0].last_seen)
+        > QUIET_WITHIN_MINUTES * 60000) {
+      groups.push(run);
+      run = [];
+    }
+    run.push(u);
+  });
+  if (run.length) groups.push(run);
+  const big = groups.filter((g) => g.length >= QUIET_TOGETHER);
+  return { groups: big, grouped: new Set(big.flat().map((u) => u.sensor_id)) };
+}
+
+function quietGroupJob(group, units) {
+  const sites = Array.from(new Set(group.map((u) => u.site_name).filter(Boolean)));
+  const where = sites.length > 1 ? ` at ${sites.length} sites`
+    : sites.length === 1 ? ` at ${sites[0]}` : "";
+  const names = group.slice(0, 3).map((u) => whichOne(u, units));
+  const rest = group.length - names.length;
+  return { now: true, mark: "?", quiet: group.length,
+    what: `<strong>${group.length} sensors${esc(where)} stopped together</strong> — probably the internet or power. ${
+      ""}Last heard from ${esc(howLongAgo(group[group.length - 1].last_seen))}: ${
+      esc(names.join(", "))}${rest ? ` and ${rest} more` : ""}.`,
+    todo: "Check the internet router and the power where they are. Sensors "
+        + "stopping at the same moment is almost never all of them breaking. "
+        + "Until they start talking again, nobody is watching that food.",
+    help: "/help#sensor-offline" };
+}
+
 function render(data) {
   const units = data.sensors || [];
   const jobs = [];
@@ -653,6 +704,9 @@ function render(data) {
   watchWords(data.entitlements);
   if (!introDone) { introFor(units); introDone = true; }
   renderNeeds(data, units);
+
+  const together = quietTogether(units);
+  together.groups.forEach((group) => jobs.push(quietGroupJob(group, units)));
 
   units.forEach((unit) => {
     const state = stateOf(unit);
@@ -685,6 +739,8 @@ function render(data) {
         todo: "Once its sensor is switched on and connected, its temperature "
             + "shows here. Nothing is wrong.",
         help: "/help/sensors" });
+    } else if (state.cls === "w-quiet" && together.grouped.has(unit.sensor_id)) {
+      // Said once, in the card for the sensors that stopped together.
     } else if (state.cls === "w-quiet") {
       jobs.push({ now: true, mark: "?",
         what: `<strong>${esc(name)}</strong> has gone quiet. ${
