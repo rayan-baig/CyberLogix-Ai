@@ -1479,7 +1479,7 @@ test("3.38.0: a visitor's nobody answering, a contract, and an electrician are a
     }
     for (const words of ["Is there a contract or can I leave any time?", "Is there a commitment?", "am I locked in?"]) {
       const got = chat.send(words).text || "(missed)";
-      assert.match(got, /^No lock-in: you pay by the month, or by the year if you choose, and can leave any time\. A signed term sets your price and renews by itself, but cancelling still stops the bills, with no fee for leaving early\.\n\nIn the console: \*\*Money\*\* tab/, `${pathname}: ${words}`);
+      assert.match(got, /^No lock-in: you pay by the month, or by the year if you choose, and can leave any time\. A signed term sets your price and renews by itself, but canceling still stops the bills, with no fee for leaving early\.\n\nIn the console: \*\*Money\*\* tab/, `${pathname}: ${words}`);
       await chat.tick();
     }
     for (const words of ["Do I need an electrician?", "is it hard to install?", "Is there any wiring?"]) {
@@ -2249,7 +2249,8 @@ const ADVERSARIAL = [
   ["how do I acknowledge the alert", { v: "alert|warm|miss", o: "alert|miss", t: "alert|miss" }],
   ["hey so the walk in has been warm since like 2am and nobody answered whats going on", { v: "calls|warm|miss", o: "alert|alarm|status|calls", t: "alert|alarm|status|calls" }],
   ["ok the freezer alarm went off last night but its fine now do i need to do anything", { v: "warm|alarm|miss", o: "alarm|alert|food|fixed|week", t: "alarm|alert|food|fixed|week" }],
-  ["why did I get a text at 3am", { v: "miss|calls|quiet|alert", o: "alert|alarm|week|quiet", t: "alert|alarm|week|quiet" }],
+  // 3.44.0: a time of day gets no guess at the data then; the honest note.
+  ["why did I get a text at 3am", { v: "miss|calls|quiet|alert", o: "alert|alarm|week|quiet|miss", t: "alert|alarm|week|quiet|miss" }],
   ["my alert says nobody answered, what now", { v: "calls|warm|alarm", o: "calls|alert|alarm", t: "calls|alert|alarm" }],
   ["the alarm keeps going off for no reason", { v: "door|warm|miss", o: "door|alarm|miss", t: "door|alarm|miss" }],
   ["can i snooze an alert", "alert|pause|miss|fixed"],
@@ -2284,7 +2285,7 @@ const ADVERSARIAL = [
   ["how many calls do I have left", "callsleft"], ["when does my trial end", "trialend"], ["how many days left on my trial", "trialend"],
   ["what do I do next", "next"], ["what did kryozyn do for me this week", "did"],
   ["My freezer is at 15 degrees", "reading"], ["the walk-in says 45", "reading"], ["the dessert display is at 44, is that bad?", "reading|status|miss"],
-  ["can i see the temperature history", "log|status|miss"], ["can i download a graph of the fridge temps", "log|miss"],
+  ["can i see the temperature history", "history|log|status|miss"], ["can i download a graph of the fridge temps", "log|miss"],
   ["export to csv", "log|retention|miss"],
   // Two more rounds, written after the first was put right, to check the
   // fixes are the pattern and not the instances.
@@ -2486,7 +2487,7 @@ const ROUND20 = [
   ["who gets alerted at night", "team|quiet|oncall"], ["set quiet hours for me", "quiet"],
   ["only alert me during business hours", "quiet"], ["can alerts go to the chef on saturdays and me on weekdays", "oncall|quiet"],
   ["do you phone at night", "calls"], ["will it ring my phone at 3am if nobody answers the text", "calls"],
-  ["will you call me in the middle of the night", "calls"], ["my phone buzzed at 4am, why", "alert"],
+  ["will you call me in the middle of the night", "calls"], ["my phone buzzed at 4am, why", "alert|miss"],
   ["can we take turns being on call", "oncall"], ["who is on call this weekend", "oncall"],
   ["the alerts are annoying at night", "quiet"], ["do not disturb mode", "quiet"],
   ["can I stop getting woken for the bar fridge", "quiet|unitpause|door|wait|limit"], ["weekend rota", "oncall"],
@@ -2528,7 +2529,7 @@ const ROUND20 = [
   ["can the alerts go to my email", "email"], ["whatsapp alerts?", "miss|email|texts"],
   ["can I see the history of a fridge", "log|retention|week|miss"], ["is there a weekly email", "did|miss|email"],
   ["how do I change who gets called first", "team|oncall|miss"], ["can I get a text when the alert is fixed", "miss"],
-  ["do I need to keep the website open", "app|mobile|miss|what"], ["can I test the alerts", "texts|team|miss"],
+  ["do I need to keep the website open", "app|mobile|miss|what"], ["can I test the alerts", "testalert|texts|team|miss"],
   ["my staff left, remove her", "removeperson"], ["change Marco's number", "number"],
   ["the alert keeps coming back after I close it", "miss|fixed|alert"], ["how do I mark the alert done", "fixed"],
   ["I didn't get the text last night", "delivery|week"], ["the fridge was at 50 last night, is the food ok", "food|reading|week"],
@@ -2677,4 +2678,394 @@ test("3.43.0: the common questions get their answers: who to add, why no call, n
   const why = starter.send("why wasn't I called?").text;
   assert.match(why, /^\*\*Your plan sends texts, not phone calls\.\*\* Your Starter plan sends texts, not phone calls\./);
   assert.doesNotMatch(why, /Calls are off on this server/);
+});
+
+// ---------------------------------------------------------------- 3.44.0: precision first
+//
+// Round 21. For four rounds each review found five to seven new confident
+// wrong answers among questions nobody had written yet, so Pilot now
+// answers from the business's own data only when the question is plainly
+// about that data: a what-if, a time of day ("3am", "at 2"), a place or
+// a unit it can't pin down exactly, a change mixed with a status word, or
+// several questions at once get the honest note and two suggestions, or
+// the how-to answer. The demo's console here is the real demo account
+// (demo_account.seed: "Juniper Harbourside", "Juniper Old Mill" and
+// "Juniper Commissary", sharing "Juniper"), saved as the server made it,
+// its times moved to now.
+const DEMO_FIXTURE = JSON.parse(fsx.readFileSync(path.join(__dirname, "fixtures", "demo-console.json"), "utf8"));
+const ISO_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+function realDemo({ closedByHand = false, trial = false } = {}) {
+  const shift = Date.now() - Date.parse(DEMO_FIXTURE.generated_at);
+  const o = JSON.parse(JSON.stringify(DEMO_FIXTURE.overview), (k, v) => (typeof v === "string" && ISO_AT.test(v) ? new Date(Date.parse(v) + shift).toISOString() : v));
+  if (closedByHand) {
+    // The bakery alert closed by hand ("Called for a repair") while the
+    // fridge was still at 46.5°F, and the food thrown away.
+    const i = o.incidents.find((x) => x.sensor_id === "COM-PREP-2");
+    Object.assign(i, { state: "resolved", resolved_at: new Date(Date.now() - 5 * 60000).toISOString(), resolved_by: "Morgan Hale",
+      resolved_by_name: "Morgan", closed_how: "person", closed_out_of_range: true, close_display: 46.5, close_note: "Called for a repair",
+      product_disposition: "discarded", food_answered_at: new Date(Date.now() - 4 * 60000).toISOString(), food_answer_words: "Thrown away" });
+  }
+  if (trial) {
+    o.account = { ...o.account, on_trial: true, plan: "trial", days_to_expiry: 9 };
+    o.subscription = { ...(o.subscription || {}), plan: "trial", plan_name: "Trial" };
+  }
+  return o;
+}
+const realRota = () => JSON.parse(JSON.stringify(DEMO_FIXTURE.rotations));
+const ROUND21_AT = {
+  v: () => chatAt("/pricing", { signedIn: false }),
+  o: () => chatAt("/today", { overview: realDemo() }),
+  t: () => chatAt("/console", { overview: bigOverview({ trial: true }) }),
+  d: () => chatAt("/console", { overview: realDemo(), rotations: realRota() }),
+};
+// The places, by the word that tells each apart.
+const PLACE_WORDS = { harbourside: /\bharbou?rside\b/i, "old mill": /\bold mill\b|\bmill\b/i, commissary: /\bcommissary\b/i };
+
+// Each question's answer or the honest note, as before, and two checks
+// more: a question naming one place is answered with that place's units
+// only, never another's; a time of day is never read as a temperature.
+function scoreScoped(table, at) {
+  const wrong = [];
+  const pairs = new Set();
+  const confident = new Set();
+  let asked = 0;
+  let missed = 0;
+  const bad = (who, words, topic, why) => { wrong.push(`${who}: ${words} -> ${why}`); pairs.add(`${who}: ${words}`); if (topic) confident.add(`${who}: ${words}`); };
+  return (async () => {
+    for (const [words, want] of table) {
+      const named = Object.keys(PLACE_WORDS).filter((p) => PLACE_WORDS[p].test(words));
+      for (const who of Object.keys(at)) {
+        const ok = String(typeof want === "string" ? want : (want[who] || want.all)).split("|")
+          .map((x) => ((who === "v" && SIGNED_IN_ONLY.has(x)) || (who !== "v" && SIGNED_OUT_ONLY.has(x)) ? "miss" : x));
+        const chat = at[who]();
+        const got = chat.send(words);
+        const topic = got.label ? (chat.given.answeredTopic() || (/^LINK /.test(got.text || "") && got.label === "See it live" ? "demo" : null)) : null;
+        const text = got.text || got.note || "";
+        asked += 1;
+        if (!topic) missed += 1;
+        if (!ok.includes(topic || "miss")) bad(who, words, topic, `${topic || "miss"} (want ${ok.join("|")})`);
+        else if (topic && named.length === 1) {
+          const others = Object.keys(PLACE_WORDS).filter((p) => p !== named[0]);
+          const leak = others.find((p) => PLACE_WORDS[p].test(text));
+          if (leak && !/I can't find/.test(text)) bad(who, words, topic, `${topic}, but answered with ${leak}'s units`);
+        }
+        if (topic === "reading" && /\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|o'?clock/i.test(words)) {
+          const m = /^\*\*(-?[\d.]+)°/.exec(text);
+          if (m && new RegExp(`\\b${m[1]}\\s?(?:am|pm|o'?clock)`, "i").test(words)) bad(who, words, topic, `read the time ${m[1]} as a temperature`);
+        }
+        if (!topic) assert.match(text, /built-in answer|built in either/, `${who}: ${words}`);
+        else assert.doesNotMatch(text, /undefined|NaN|\[object Object|Morgan Hale|\+1 555/, `${who}: ${words}`);
+        await chat.tick();
+      }
+    }
+    return { wrong, asked, missed, right: asked - pairs.size, confident: confident.size };
+  })();
+}
+
+// Round 21's table: written before anything was changed, and scored as it
+// stood (CHANGELOG 3.44.0). Where an answer from the data would be a
+// guess, the honest note ("miss") is the right one.
+const ROUND21 = [
+  // A time of day: never a temperature, never a guess at the data then.
+  ["if the freezer packs in at 3am will you ring me", "ifwarm|calls|miss"], ["what was the freezer at 3am", "miss|history"],
+  ["was the walk-in ok at 2am", "miss|history"], ["freezer read 5 at 4am is that bad", "reading|miss"],
+  ["will you text me at 2am if the freezer goes", "ifwarm|calls|quiet|miss"], ["who's on call at 3am tonight", "oncall|miss"],
+  ["the fridge alarm went off at 2:30, why", "miss|week"], ["I got a text at 4am about the walk-in", "miss|week"],
+  ["can you stop texting me at 3 in the morning", "quiet"], ["no texts between 11pm and 6am please", "quiet"],
+  ["set quiet hours from 10pm to 7am", "quiet"], ["can I get alerts only after 6pm", "quiet|miss"],
+  ["what happens at 3am if the freezer fails", "ifwarm|calls"], ["at 2 o'clock the walk-in was beeping", "miss|week"],
+  ["who handles alerts at 3am on sundays", "oncall|quiet|ifwarm|miss"], ["freezer at 10 o'clock is it ok", "miss"],
+  ["is 3am too early to get texts", "quiet|miss"], ["the walk-in hit 45 at 2am", "reading|miss"],
+  ["did the freezer go off at 1am last night", "week|miss"], ["freezer was 8 at midnight", "reading|miss"],
+  ["fridge said 3 at 3am", "miss"], ["at 6 the cooler was warm", "miss|week"],
+  ["what's the walk-in at, at 7pm", "miss"], ["I'll be asleep from 11 till 7, who gets the alert", "quiet|team|oncall|miss"],
+  ["texts at 5am woke the baby", "quiet"], ["can the 2am alerts go to Priya instead", "quiet|oncall|miss"],
+  ["we close at 10pm, will alerts still come after", "ifwarm|quiet|calls|miss"], ["the freezer fails around 4am sometimes", "ifwarm|forecast|miss"],
+  ["Saturday 3am the walk-in alarmed", "week|miss"], ["why did my phone go at 2am", "week|miss"],
+  ["set the handover to 8am", "oncall|miss"], ["rotation hands over at 8, can I change it", "oncall"],
+  ["is anyone on call at 6am", "oncall|miss"], ["who's covering tonight", "oncall"],
+  ["who is on call sunday night", "oncall|miss"], ["a sunday night alert, who would get it", "oncall|team|ifwarm|miss"],
+  ["will I get woken at 3am for a door left open", "door|quiet|calls"], ["how quickly will I know at 3am", "speed|ifwarm|calls|miss"],
+  ["fridge at 2.5 degrees at 2am ok?", "reading|miss"], ["the freezer was at 3 at 3am", "miss"],
+  ["walk-in at 4 at 4pm", "miss"], ["did anything alarm at 2.30am", "miss|week"],
+  ["fridge reading at 9 this morning", "miss|history|week"], ["at 2 the freezer was at -5", "reading|miss"],
+  // What if: how alerts work, or the honest note, never today's data.
+  ["if the freezer dies on a sunday night who finds out", "ifwarm|oncall|team"], ["what if the walk-in fails on a saturday night", "ifwarm"],
+  ["what happens if the walk-in fails on a saturday night", "ifwarm"], ["what if nobody answers at 3am", "calls"],
+  ["if the power goes out will I know", "power"], ["what if the sensor battery dies", "battery"],
+  ["suppose the bar fridge breaks while we're closed", "ifwarm|miss"], ["if the cooler gets warm while I'm on holiday who gets told", "ifwarm|team|oncall|miss"],
+  ["would you call me if the freezer was at 20", "calls|ifwarm|miss"], ["if the freezer reads 15 what happens", "reading|ifwarm"],
+  ["what if my phone is off", "calls|team|miss"], ["what if the fridge door is left open overnight", "door|ifwarm"],
+  ["would the bakery fridge alert if it hit 42", "miss|reading|limits"], ["if Morgan doesn't answer who's next", "calls|oncall|team"],
+  ["what if two fridges fail at once", "ifwarm|miss"], ["what happens when a fridge fails on christmas day", "ifwarm|miss"],
+  ["if we lose power on a sunday would the alerts still work", "power"], ["imagine the walk-in freezer stops overnight, what then", "ifwarm|miss"],
+  ["would anyone know if the ice-cream freezer died at 2am", "ifwarm|calls"], ["when the walk-in fails who gets the text", "team|ifwarm|oncall"],
+  ["what if the freezer goes on a bank holiday", "ifwarm|miss"], ["if the alarm goes off and I'm asleep", "ifwarm|calls|quiet"],
+  ["what happens if I ignore the text", "calls"], ["if the bakery fridge goes warm is the food ok", "miss|ifwarm"],
+  ["what if someone closes the alert without fixing it", "fixed|miss"], ["what if a sensor stops sending", "noreadings|power"],
+  ["if the freezer warms up slowly will you catch it", "forecast|ifwarm|miss"], ["should the walk-in fail tonight, who's on call", "oncall|ifwarm|miss"],
+  ["what if the Old Mill walk-in freezer dies", "ifwarm|miss"], ["if Harbourside loses power what happens", "power"],
+  ["what if I need more than 5 sensors on the trial", "trial|miss"], ["what if I don't like it", "cancel|trialafter|miss"],
+  ["what if I forget to cancel the trial", "trialafter|cancel"], ["if the alert is closed by mistake can I reopen it", "miss"],
+  ["what happens if the freezer is at 12 for an hour", "reading|ifwarm"], ["what would happen if the walk-in hit 50", "reading|ifwarm"],
+  ["would you phone at 3am", "calls"], ["would the night porter get the alert", "team|oncall|miss"],
+  ["what if the sensor falls off the shelf", "miss"], ["a sunday night failure, who deals with it", "ifwarm|oncall|team|miss"],
+  ["when the power fails at night does it still text", "power"], ["if the bar fridge alarm goes off while we're open, what do I do", "ifwarm|warm|miss"],
+  ["what if the walk-in is warm on a Sunday", "ifwarm|miss"], ["if the freezer is 15 degrees is the food ok", "reading|food|miss"],
+  // Places that share a word: that place, exactly, or said so.
+  ["Harbourside walk-in cooler right now", { v: "status|miss", all: "status" }], ["Harbourside walk-in cooler last night", { v: "miss", all: "week" }],
+  ["Warmest the Harbourside walk-in freezer got this week", { v: "miss", all: "week" }], ["is the Juniper walk-in ok", "status|miss"],
+  ["how's Juniper Old Mill doing", { v: "status|miss", all: "status" }], ["Juniper Harbourside bar fridge temperature", { v: "status|miss", all: "status" }],
+  ["anything wrong at Old Mill", { v: "status|miss", all: "status" }], ["any alerts at Commissary this week", { v: "miss", all: "week" }],
+  ["which Harbourside fridge is warmest", { v: "miss", all: "warmest" }], ["the Old Mill dessert display last night", { v: "miss", all: "week" }],
+  ["Commissary bakery fridge now", { v: "status|miss", all: "status" }], ["what's the Old Mill walk-in freezer at", { v: "status|miss", all: "status" }],
+  ["Harbourside ice cream freezer ok?", { v: "status|miss", all: "status" }], ["did the Harbourside walk-in freezer alarm this week", { v: "miss", all: "week" }],
+  ["was the Old Mill freezer alert closed properly", { v: "miss", all: "week" }], ["how many units at Juniper Harbourside", { v: "miss", all: "sites" }],
+  ["how many fridges does Old Mill have", "sites|status|miss"], ["is everything ok at Juniper", "status|miss"],
+  ["Riverside walk-in ok?", "status|miss"], ["is the Downtown freezer working", "status|miss"],
+  ["Eastbank fridges ok", "status|miss"], ["Harbourside or Old Mill, which is warmer", "warmest|miss"],
+  ["compare Harbourside and Old Mill alerts this week", "week|miss"], ["the walk-in freezer at harbourside", { v: "status|miss", all: "status" }],
+  ["harbourside walkin", "status|miss"], ["old mill bar fridge yesterday", { v: "miss", all: "week" }],
+  ["bar fridge at the mill", "status|miss"], ["Juniper Old Mill vs Juniper Harbourside warmest fridge", "warmest|miss"],
+  ["is the Harbourside walk-in cooler colder than Old Mill's", "status|miss"], ["what's happening at the commissary", { v: "status|miss", all: "status" }],
+  ["is the bakery fridge still warm", { v: "status|alarm|miss", all: "status|alert|alarm" }], ["bakery fridge alarm what do I do", { v: "alarm|miss|warm", all: "alarm" }],
+  ["is the food in the bakery fridge still safe", "food"], ["was the bakery fridge alert closed properly", { v: "miss", all: "week|history" }],
+  ["who's on call at Harbourside", "oncall"], ["Old Mill quiet hours", "quiet"],
+  ["pause Harbourside for the holidays", "pause|miss"], ["can my Harbourside manager see only her site", "sitescope"],
+  ["can the Old Mill chef get only Old Mill alerts", "sitescope|team|oncall"], ["give the Harbourside manager access to just Harbourside", "sitescope|addlogin"],
+  ["Harbourside's walk-in freezer temperature this morning", "week|history|miss"], ["the Commissary walk-in freezer 2", "status|miss"],
+  ["is walk-in freezer 2 ok", "status|miss"], ["walk in freezer at old mill", "status|miss"],
+  ["dessert display at Harbourside", "status|miss"], ["Old Mill pastry fridge", "status|miss"],
+  ["harbourside freezers ok?", { v: "status|miss", all: "status" }], ["Juniper freezers ok?", "status|miss"],
+  ["how is the old mill walk in doing", { v: "status|miss", all: "status" }], ["temperature of the Harbourside bar fridge", { v: "status|miss", all: "status|miss" }],
+  ["is the Commissary dairy cooler cold enough", { v: "status|miss", all: "status" }], ["any problems at Harbourside today", { v: "status|miss", all: "status|week" }],
+  // How to change it, not the status.
+  ["I keep getting woken at 2am, can someone else cover nights", "quiet|oncall"], ["can I change who's on call", "oncall"],
+  ["how do I change the walk-in limit", "limit"], ["can someone else take the alerts this weekend", "oncall|quiet"],
+  ["how do I change the rotation", "oncall"], ["change the handover time", "oncall|miss"],
+  ["can I swap shifts with Priya", "oncall"], ["how do I make the freezer alert later", "wait|limit"],
+  ["can I change the bakery fridge so it's not alarming", "limit|unitpause|wait|miss"], ["how do I stop the bakery fridge alert", "fixed|unitpause|miss"],
+  ["can I mute myself", "quiet"], ["how do I turn the walk-in alarm off, it's fine now", "fixed|unitpause|miss"],
+  ["can I see the status of all fridges", "status"], ["how do I add the new freezer", "addunit|connect"],
+  ["how do I hook up my sensor", "connect"], ["how do I send a test alert", "testalert"],
+  ["send me a test text", "testalert"], ["how do I test the alerts", "testalert"],
+  ["can I check my alerts work", "testalert|miss"], ["how do I see yesterday's temperatures", "history|log"],
+  ["show me yesterday's temperatures", "history|log"], ["where can I see last week's readings", "history|log"],
+  ["how do I print a temperature log", "log"], ["can I change my number", "number"],
+  ["can someone else get the alerts while I'm on holiday", "quiet|oncall|team"], ["can my sous chef get the alerts too", "team"],
+  ["can my manager get texts as well", "team"], ["can I change the alarm on the walk-in freezer status", "limit"],
+  ["how do I check the freezer status", "status|miss"], ["is the freezer limit right and how do I change it", "limit"],
+  ["change who gets the bakery alerts", "team|oncall|miss"], ["can I set different limits at Harbourside", "limit"],
+  ["how do I close the alert", "fixed"], ["how do I say the food was thrown away", "foodrecord"],
+  ["can I stop the alarms at night but keep weekends", "quiet"], ["can the alerts go to Priya on weekends", "oncall|quiet"],
+  ["how do I add my manager to the rota", "oncall|team"], ["make Ade on call tonight", "oncall|miss"],
+  ["how do I change quiet hours", "quiet"], ["can I rename a fridge", "miss"],
+  ["how do I move a sensor to another site", "miss"], ["how do I change the alert wait to 30 minutes", "wait"],
+  ["status of the rota", "oncall"], ["can I change it so only Morgan is texted at night", "quiet|oncall"],
+  ["who's on call and how do I change it", "oncall"], ["can someone else cover the bakery alert right now", "alert|oncall|miss"],
+  ["how can I get the walk-in to stop going off every morning", "door|wait|limit|unitpause|miss"], ["can Priya take over my alerts", "oncall|quiet|team|miss"],
+  // A visitor's and a new business's basics.
+  ["can I have a look without signing up", "demo|try"], ["can I see it before I sign up", "try|demo"],
+  ["is there a demo", "demo"], ["can I try it for free", "trial|try"],
+  ["how many fridges can I put on the trial", "trial"], ["how many sensors on the free trial", "trial"],
+  ["what happens once the 14 days are up", "trialafter"], ["do I need a card for the trial", "trial"],
+  ["can i get my money back", "cancel"], ["refund?", "cancel"],
+  ["do you give refunds if it doesn't work", "cancel"], ["do I need special thermometers", "sensors"],
+  ["what kind of sensors do I need", "sensors"], ["will my existing thermometer work", "sensors|versus|miss"],
+  ["can I use my own sensors", "sensors|miss"], ["how long is the trial", "trialend|trial"],
+  ["is the trial really free", "trial"], ["will you charge me after the trial", "trialafter"],
+  ["how much is it for one fridge", "quote|price"], ["is there a contract", "cancel"],
+  ["can I cancel any time", "cancel"], ["how do I cancel", "cancel"],
+  ["do I need wifi", "power"], ["does it work without internet", "power"],
+  ["is it hard to install", "easy"], ["how long does setup take", "setuptime"],
+  ["what is Kryozyn", "what"], ["do I need an app", "app"],
+  ["can I use it on my phone", "mobile"], ["sign me up", "signup"],
+  ["do you phone at night", "calls"], ["is my data safe", "privacy"],
+  ["does it work for a bakery", "cafe|sector"], ["price for 3 locations", "quote"],
+  ["can I pay yearly", "yearly"], ["any setup fees", "fees"],
+  ["how many people can get alerts", "team"], ["what's the cheapest plan", "price"],
+  ["how do I add a login for my manager", "addlogin"], ["what do the sensors cost", "sensors"],
+  ["can I look around first", "demo|try|miss"], ["show me how it works", "demo|what|try"],
+  ["can I play with it before buying", "try|demo"], ["what happens after the free trial", "trialafter"],
+  ["how many units does the trial cover", "trial"], ["does the trial include phone calls", "trial|callsleft"],
+  // The reviewer's own words.
+  ["Earlier this week", { v: "miss", all: "week" }], ["earlier this week?", { v: "miss", all: "week" }],
+  ["this week", { v: "miss", all: "week" }], ["anything happen earlier this week", { v: "miss", all: "week" }],
+  ["what happened earlier this week", { v: "miss", all: "week" }], ["alerts earlier this week", { v: "miss", all: "week" }],
+  // More of each: a time, a what-if, a place, a change, the trial.
+  ["the walk-in freezer at 11pm last night", "week|miss"], ["texts at 6am are fine but not at 2am", "quiet"],
+  ["can the 3am texts go to the night manager", "quiet|oncall|miss"], ["what if the ice-cream freezer packs up on a Sunday", "ifwarm|miss"],
+  ["if the walk-in cooler goes over 41 will you text me", "ifwarm|reading|miss"], ["what if the alarm goes off when no one's in", "ifwarm|calls|miss"],
+  ["suppose the bakery fridge fails overnight", "ifwarm|miss"], ["Old Mill walk-in cooler now", { v: "status|miss", all: "status" }],
+  ["Commissary walk-in freezer 1 temperature", { v: "status|miss", all: "status|miss" }], ["Harbourside bar fridge this week", { v: "miss", all: "week" }],
+  ["is anything warm at Juniper Commissary", { v: "status|miss", all: "status" }], ["the mill's freezer", "status|miss"],
+  ["how can I change the alert limit and is the walk-in ok", "limit|miss"], ["can someone else get woken instead of me", "quiet|oncall"],
+  ["how do I change who gets texted at night", "quiet|oncall"], ["can I put the freezer on a different limit", "limit"],
+  ["can I trial it with 3 fridges", "trial|quote|miss"], ["do I have to pay to see it", "demo|try|trial|price|miss"],
+  ["is the demo free", "demo|try|miss"], ["how do I see the demo", "demo"],
+  ["any texts sent earlier this week", { v: "miss", all: "week" }], ["were we alerted this week", { v: "miss", all: "week" }],
+];
+
+test("3.44.0: round 21's table: times, what-ifs, places sharing a word, how-to over status and the basics, never a confident wrong answer", async () => {
+  assert.ok(ROUND21.length >= 250, String(ROUND21.length));
+  const { wrong, asked, missed, right, confident } = await scoreScoped(ROUND21, ROUND21_AT);
+  if (process.env.PILOT_SCORE) console.log(`ROUND21 ${right}/${asked} right, ${confident} confident wrong, ${missed} honest notes\n${wrong.join("\n")}`);
+  assert.deepEqual(wrong, []);
+});
+
+// Round 21's unseen batch: written after the table above passed, scored
+// once as it stood (CHANGELOG 3.44.0), then put right where it missed.
+const ROUND21_UNSEEN = [
+  // Times of day.
+  ["the bar fridge beeped at half 3, should I worry", "miss|alarm"], ["what did the walk-in read at 6 this morning", "miss|history"],
+  ["was the ice cream freezer ok around 1am", "miss|history|week"], ["freezer showed 4 at 5am, fine?", "miss|reading"],
+  ["who gets the text if it goes off at 4 in the morning", "team|oncall|quiet|ifwarm|miss"], ["my alarm went at 11pm last night, what was it", "week|miss"],
+  ["at 9pm the walk-in cooler was 44", "miss|reading"], ["don't text me before 7am", "quiet"],
+  ["can Priya get the 1am texts instead of me", "quiet|oncall"], ["is someone on call at 2am on Saturday", "oncall|miss"],
+  // What-ifs.
+  ["what if the fridge stops working while we're shut", "ifwarm|miss"], ["if our freezer conks out overnight do you tell anyone", "ifwarm"],
+  ["say the walk-in dies on Christmas Eve, then what", "ifwarm|miss"], ["what if the compressor fails at the weekend", "ifwarm|miss"],
+  ["if the walk-in hits 50 do you phone", "calls|ifwarm|miss"], ["if the bakery fridge alarms again who gets told", "ifwarm|team|oncall|miss"],
+  ["would I know if the Old Mill freezer failed", "ifwarm|miss"], ["what if nobody's on call", "calls|oncall|miss"],
+  ["if I'm on holiday and the freezer goes, what happens", "ifwarm|miss"], ["what happens if the alert goes off and everyone's asleep", "calls|ifwarm|quiet"],
+  ["in case the fridge breaks at night, who's first to know", "ifwarm|oncall|team|miss"], ["what if the sensor gets knocked off the shelf", "miss|noreadings"],
+  // Places and units.
+  ["how's the Harbourside blast chiller", { v: "status|miss", all: "status" }], ["Old Mill prep fridges ok?", { v: "status|miss", all: "status" }],
+  ["any alarms at Juniper Old Mill this week", { v: "miss", all: "week" }], ["is the Commissary dairy cooler alright", { v: "status|miss", all: "status" }],
+  ["Harbourside pastry fridge temp", { v: "status|miss", all: "status|miss" }], ["the walk-in at Old Mill, how cold", "status|miss"],
+  ["which unit at Commissary is warmest right now", { v: "miss", all: "warmest" }], ["is anything wrong at Juniper", "status|miss"],
+  ["the Juniper bar fridge", "status|miss"], ["is the Westside walk-in ok", "status|miss"],
+  ["Harbourside salads fridge", "status|miss"], ["Old Mill's freezer this week", { v: "miss", all: "week|miss" }],
+  ["did the Commissary bakery fridge alarm yesterday", { v: "miss", all: "week" }], ["is the freezer at the harbour ok", "status|miss"],
+  // How to change versus status.
+  ["I'm away next week, can someone else take my alerts", "oncall|quiet|team"], ["can I make Priya first to be called", "team|oncall|miss"],
+  ["how do I stop getting texts on my day off", "quiet"], ["how can I make the walk-in alert at 38", "limit"],
+  ["how do I give the walk-in more time before it alerts", "wait"], ["can I change the rota so Ade does weekends", "oncall"],
+  ["the alert on the bakery fridge, how do I close it", "fixed|miss"], ["how do I tell it the food was kept", "foodrecord"],
+  ["who's on call this week and can I change it", "oncall"], ["can my head chef cover Sundays", "oncall|quiet|miss"],
+  ["stop the bakery fridge alarm, it's sorted", "fixed|unitpause|miss"], ["can I change the freezer limit and the wait", "limit|wait|miss"],
+  // Trial and visitor basics.
+  ["can I poke around before I buy", "demo|try"], ["is there a free version", "trial|price|miss"],
+  ["how many freezers does the free trial allow", "trial"], ["what do I pay after 14 days", "trialafter"],
+  ["will I lose my data when the trial ends", "retention|trialafter|miss"], ["do I get a refund if I cancel mid month", "cancel"],
+  ["what thermometer do I buy", "sensors"], ["can I use the probes I already have", "sensors|miss"],
+  ["how do I connect my first sensor", "connect"], ["how do I check the texts reach my phone", "testalert"],
+  ["can I see a demo first", "demo|try"], ["is a card needed to start", "trial|signup"],
+  ["how do I get started", "connect|next|signup|steps|miss"], ["does it cost extra for texts", "fees"],
+  ["can my manager have her own login", "addlogin"], ["can the Harbourside manager only see Harbourside", "sitescope"],
+  ["can I limit a staff member to one location", "sitescope|miss"], ["do you work with any sensor", "sensors"],
+  // History and the past.
+  ["yesterday's readings for the walk-in", "history|miss"], ["temperatures for last Tuesday", "history|miss"],
+  ["what happened earlier this week at Harbourside", { v: "miss", all: "week" }], ["any alerts earlier in the week", { v: "miss", all: "week" }],
+  ["was the bakery fridge alert handled right", { v: "miss", all: "week" }], ["who closed the bakery alert", { v: "miss", all: "week|alert" }],
+  ["did anything go wrong over the weekend", { v: "miss", all: "week" }], ["graph of the freezer this week", "history|miss|log"],
+  // Several at once.
+  ["is the walk-in ok and who's on call", "miss|status|oncall"], ["what's the freezer at? also how do I add someone", "miss"],
+  ["price for 2 sites and do you phone at night", "miss|quote|calls"], ["is the food ok and should I call someone", "miss|food"],
+  ["Harbourside and Old Mill freezers ok?", "status|miss"], ["test alert and quiet hours, how?", "miss|testalert|quiet"],
+];
+
+test("3.44.0: round 21's unseen batch, scored once before it was put right, gets its answers too", async () => {
+  assert.ok(ROUND21_UNSEEN.length >= 80, String(ROUND21_UNSEEN.length));
+  const { wrong, asked, missed, right, confident } = await scoreScoped(ROUND21_UNSEEN, ROUND21_AT);
+  if (process.env.PILOT_SCORE) console.log(`UNSEEN21 ${right}/${asked} right, ${confident} confident wrong, ${missed} honest notes\n${wrong.join("\n")}`);
+  assert.deepEqual(wrong, []);
+});
+
+test("3.44.0: the reviewer's confident wrong answers are put right, on the real demo account", async () => {
+  const ask = async (chat, words) => { const got = chat.send(words); const topic = got.label ? chat.given.answeredTopic() : null; await chat.tick(); return { topic, text: got.text || got.note || "" }; };
+  const demo = () => chatAt("/console", { overview: realDemo(), rotations: realRota() });
+  // A time of day is never a temperature; a what-if is how alerts work then.
+  const ring = await ask(demo(), "if the freezer packs in at 3am will you ring me");
+  assert.doesNotMatch(ring.text, /3°F|under a freezer's/);
+  assert.equal(ring.topic, "ifwarm");
+  assert.match(ring.text, /^It works the same at 3 AM, on a Sunday or on a holiday/);
+  assert.match(ring.text, /whoever is on call is texted within 60 seconds/);
+  assert.match(ring.text, /\*\*quiet hours\*\*/);
+  const sunday = await ask(demo(), "if the freezer dies on a sunday night who finds out");
+  assert.equal(sunday.topic, "ifwarm");
+  assert.doesNotMatch(sunday.text, /No alert on Sunday|No alert/);
+  const saturday = await ask(chatAt("/pricing", { signedIn: false }), "what happens if the walk-in fails on a saturday night");
+  assert.equal(saturday.topic, "ifwarm");
+  assert.match(saturday.text, /\[See it live\]\(\/demo\)/);
+  // "Earlier this week" is the 7-day list, not today alone.
+  const earlier = await ask(demo(), "Earlier this week");
+  assert.match(earlier.text, /^\*\*2 alerts in the last 7 days\*\*, 1 still open:/);
+  assert.match(earlier.text, /Old Mill \/ Walk-in freezer/);
+  // A place named is that place, with its own distinctive words.
+  const warmest = await ask(demo(), "Warmest the Harbourside walk-in freezer got this week");
+  assert.equal(warmest.topic, "week");
+  assert.match(warmest.text, /^No alert on \*\*Harbourside \/ Walk-in freezer\*\* at Juniper Harbourside in the last 7 days\./);
+  assert.doesNotMatch(warmest.text, /Old Mill \/|Commissary \//);
+  const now = await ask(demo(), "Harbourside walk-in cooler right now");
+  assert.match(now.text, /^At \*\*Juniper Harbourside\*\*:\n\n\*\*Harbourside \/ Walk-in cooler\*\* 3\d\.\d°F, fine\./);
+  assert.doesNotMatch(now.text, /Old Mill|Commissary/);
+  const night = await ask(demo(), "Harbourside walk-in cooler last night");
+  assert.match(night.text, /^No alert on \*\*Harbourside \/ Walk-in cooler\*\* at Juniper Harbourside last night\./);
+  assert.doesNotMatch(night.text, /Old Mill \/|Commissary \//);
+  // A word every site shares is asked which one, never all of them.
+  const juniper = await ask(demo(), "is the Juniper walk-in ok");
+  assert.match(juniper.text, /^Which location\? More than one of yours has that in its name: \*\*Juniper Commissary\*\*, \*\*Juniper Harbourside\*\* and \*\*Juniper Old Mill\*\*\./);
+  assert.doesNotMatch(juniper.text, /°F/);
+  // How to change it, not the status.
+  const cover = await ask(demo(), "I keep getting woken at 2am, can someone else cover nights");
+  assert.equal(cover.topic, "quiet");
+  assert.match(cover.text, /\*\*Quiet hours\*\*[\s\S]*\*\*A rotation\*\*/);
+  const rota = await ask(demo(), "how do I change the rotation");
+  assert.match(rota.text, /^On call now: \*\*Morgan\*\* until Sat [A-Z][a-z]{2} \d{1,2}, 8:00 AM Central, then \*\*Priya\*\*\./);
+  assert.match(rota.text, /To change it: on the \*\*Team\*\* tab, under \*\*On call now\*\*, press \*\*Change\*\*/);
+  // A look without signing up is the demo, for a visitor and a business on the trial.
+  for (const chat of [chatAt("/pricing", { signedIn: false }), chatAt("/console", { overview: realDemo({ trial: true }) })]) {
+    const look = await ask(chat, "can I have a look without signing up");
+    assert.equal(look.topic, "demo");
+    assert.doesNotMatch(look.text, /You are already signed in|Start a free trial/);
+  }
+});
+
+test("3.44.0: the misses reach their answers, true to the console", async () => {
+  const ask = async (chat, words) => { const got = chat.send(words); const topic = got.label ? chat.given.answeredTopic() : null; await chat.tick(); return { topic, text: got.text || got.note || "" }; };
+  const v = () => chatAt("/pricing", { signedIn: false });
+  const demo = (o) => chatAt("/console", { overview: realDemo(o), rotations: realRota() });
+  assert.equal((await ask(v(), "how do I hook up my sensor")).topic, "connect");
+  for (const words of ["send me a test text", "how do I send a test alert"]) {
+    const got = await ask(demo(), words);
+    assert.equal(got.topic, "testalert", words);
+    assert.match(got.text, /^Press \*\*Send a test alert\*\* on the \*\*Team\*\* tab, under \*\*Who gets alerts\*\*\. Everyone on the list gets a text that starts \*\*TEST\*\*/);
+  }
+  assert.match((await ask(v(), "how many fridges can I put on the trial")).text, /for up to 5 sensors/);
+  assert.equal((await ask(v(), "what happens once the 14 days are up")).topic, "trialafter");
+  assert.equal((await ask(v(), "can my sous chef get the alerts too")).topic, "team");
+  assert.equal((await ask(v(), "do I need special thermometers")).topic, "sensors");
+  const refund = await ask(v(), "can i get my money back");
+  assert.equal(refund.topic, "cancel");
+  assert.match(refund.text, /^\*\*No refunds for time already paid\*\*, in part or in full: canceling stops the next bill/);
+  assert.doesNotMatch(refund.text, /cancelling/);
+  const saturday = await ask(demo(), "what happens if the walk-in fails on a saturday night");
+  assert.equal(saturday.topic, "ifwarm");
+  assert.match(saturday.text, /texted within 60 seconds[\s\S]*\*\*rotation\*\*[\s\S]*\*\*quiet hours\*\*/);
+  // Site-scoped: alerts can be, sign-ins can't (contacts.site_id; users.role).
+  const scope = await ask(demo(), "can my Harbourside manager see only her site");
+  assert.equal(scope.topic, "sitescope");
+  assert.match(scope.text, /^\*\*Not for signing in\.\*\* Everyone who can sign in sees every location/);
+  assert.match(scope.text, /\*\*For the alerts, yes\.\*\* Someone on \*\*Who gets alerts\*\* can be tied to one location/);
+  // The food in the bakery fridge: today's excursion, measured.
+  const food = await ask(demo(), "is the food in the bakery fridge still safe");
+  assert.equal(food.topic, "food");
+  assert.match(food.text, /^\*\*Commissary \/ Prep fridge, bakery\*\* went out of range at .+, at worst 46\.5°F \(limit 41°F\), and it is not closed yet\./);
+  // Over its limit with no alert yet: said so, never "stayed in range".
+  const warming = realDemo();
+  warming.incidents = warming.incidents.filter((i) => i.sensor_id !== "COM-PREP-2");
+  const early = await ask(chatAt("/console", { overview: warming }), "is the food in the bakery fridge still safe");
+  assert.match(early.text, /^\*\*Commissary \/ Prep fridge, bakery\*\* is at 46\.5°F now, over its 41°F limit; no alert has opened yet/);
+  // Closed by hand while still out of range: said so.
+  const closed = await ask(demo({ closedByHand: true }), "was the bakery fridge alert closed properly");
+  assert.equal(closed.topic, "week");
+  assert.match(closed.text, /closed by hand while still out of range at 46\.5°F, food thrown away/);
+  // Yesterday's temperatures: the log and a unit's History.
+  const history = await ask(demo(), "show me yesterday's temperatures");
+  assert.equal(history.topic, "history");
+  assert.match(history.text, /\*\*Log for an inspector\*\*[\s\S]*\*\*History\*\* button on its card/);
+  // A fridge below freezing is never "fine".
+  const cold = await ask(v(), "my fridge is at 2.5 degrees");
+  assert.match(cold.text, /^\*\*2\.5°F is below freezing for a fridge\.\*\*/);
 });

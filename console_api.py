@@ -13,10 +13,11 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+import byod
 import food_value
 from forecaster import forecast_sensor
 from auth import require_tenant_any_state
-from claims import closed_how
+from claims import close_reason, closed_how, went_note
 from records import person_name
 from repairs import unit_state
 from telemetry import unit_condition
@@ -233,6 +234,9 @@ def console_overview(
         row["spark_at"] = [iso(r.recorded_at) for r in history]
         site = sites.get(sensor.site_id) if sensor.site_id else None
         row["site_name"] = site.name if site else None
+        # A reading held because its payload said neither C nor F (3.44.0):
+        # said on the unit's own card, never under Devices knocking.
+        row["unit_held"] = byod.held_for_unit(tenant.tenant_id, sensor.sensor_id, sensor.last_seen)
 
         projection = None
         if forecasting:
@@ -489,7 +493,10 @@ def loss_headline(tenant: Tenant, now) -> Optional[Dict[str, Any]]:
         "unit": (sensor.location_name if sensor and sensor.location_name else i.sensor_id),
         "at": iso(i.food_answered_at),
         "by_name": person_name(i.food_answered_by),
-        "note": i.corrective_action or None,
+        # The note of what went, never the reason given for closing it
+        # (3.44.0, claims.went_note): that is its own line.
+        "note": went_note(i),
+        "close_note": close_reason(i),
         "until": iso(i.food_answered_at + timedelta(hours=LOSS_HEADLINE_HOURS)),
         "others": len(lost) - 1,
     }
@@ -544,9 +551,13 @@ def month_summary(tenant: Tenant, now) -> Dict[str, Any]:
             "disposition": i.product_disposition,
             "change_until": iso(until),
             "changeable": until is not None and now <= until,
-            "has_note": bool(i.corrective_action),
-            # The note of what went (3.33.0), shown under the answer.
-            "note": i.corrective_action or None,
+            "has_note": bool(went_note(i)),
+            # The note of what went (3.33.0), shown under the answer; since
+            # 3.44.0 never the reason given for closing it, which is its
+            # own line ("Why it was closed").
+            "note": went_note(i),
+            "close_note": close_reason(i),
+            "closed_out_of_range": bool(i.closed_out_of_range),
         })
 
     # One short line of two items (3.35.0): how many alerts, and the one

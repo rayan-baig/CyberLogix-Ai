@@ -248,7 +248,9 @@ def test_the_note_shows_under_the_food_line_everywhere(api):
     assert answer["note"] == "Thrown away from Walk-in fridge: two trays of chicken"
     # The console's card and the alert's history.
     card = _function(CONSOLE_JS, "foodAnswered")
-    assert 'i.corrective_action ? `<span class="sub food-note">' in card
+    # Since 3.44.0 the note of what went, never the reason given for
+    # closing it (round 21): that is its own "Why it was closed" line.
+    assert 'went ? `<span class="sub food-note">' in card
     assert "Note: \u201c${i.corrective_action}\u201d" in CONSOLE_JS
     # /today (tests/js/today.test.js renders it).
     assert 'class="answer-note"' in (STATIC / "simple.js").read_text()

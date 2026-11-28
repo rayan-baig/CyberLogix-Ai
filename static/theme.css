@@ -655,28 +655,32 @@ pre.snippet {
 .opp b { color: var(--ink); font-weight: 600; }
 
 /* ---------- toast ---------- */
+/* Recent activity (3.44.0): the console's own type and plain timestamped
+   rows, like every other card. It was a terminal: monospace, "> " before
+   each line and an upper-case title. */
 #terminal {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
   margin: 0; padding: 10px 22px;
-  border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
   background: var(--sunken); border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--mono); font-size: 12.5px;
+  border-left: 0; border-right: 0; border-bottom: 0;
+  border-radius: 0;
+  font-size: 13.5px;
   box-shadow: 0 -12px 34px rgba(0,0,0,.6);
 }
 /* Room for the drawer, so it never covers the last card. */
 body.has-terminal main { padding-bottom: 148px; }
-#terminal { border-top: 1px solid rgba(79,168,240,0.18); }
 .term-head {
-  display: flex; align-items: center; justify-content: space-between;
-  color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
-  font-size: 11px; margin-bottom: 7px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  color: var(--ink); font-weight: 600; font-size: 14px; margin-bottom: 6px;
 }
-#term-body { max-height: 88px; overflow-y: auto; line-height: 1.7; }
-#term-body .t { color: var(--muted); margin-right: 8px; }
-#term-body .ok { color: var(--good); }
+#term-body { max-height: 88px; overflow-y: auto; line-height: 1.5; }
+#term-body .term-row { display: flex; gap: 10px; align-items: baseline; padding: 3px 0;
+  border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+#term-body .term-row:last-child { border-bottom: 0; }
+#term-body .t { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+#term-body .ok { color: var(--ink); }
 #term-body .err { color: var(--critical); }
-#term-body .info { color: var(--accent); }
+#term-body .info { color: var(--ink-2, var(--ink)); }
 
 #toasts { position: fixed; right: 18px; bottom: 96px; z-index: 80; display: grid; gap: 8px; }
 /* Off the sensor key and its instructions (console.js, placeToasts). */
@@ -703,6 +707,7 @@ body.has-terminal main { padding-bottom: 148px; }
 .food-ask { margin: 6px 0 4px; font-size: 13.5px; color: var(--ink-2, inherit); }
 .food-said { margin: 6px 0 4px; font-size: 13.5px; }
 .food-said .food-note, .food-saved .food-note { font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
+.food-said .food-closed, .food-saved .food-closed { color: var(--ink-2); overflow-wrap: anywhere; }
 .food-risk p, .food-ask p { margin: 0; }
 .food-risk .sub, .food-ask .sub, .food-said .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .food-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

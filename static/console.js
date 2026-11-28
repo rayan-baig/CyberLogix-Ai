@@ -67,7 +67,7 @@ function setTerminal(on, options = {}) {
   const btn = $("term-toggle");
   if (btn) {
     btn.setAttribute("aria-pressed", String(on));
-    btn.textContent = on ? "Hide log" : "Activity log";
+    btn.textContent = on ? "Hide recent activity" : "Recent activity";
   }
   if (options.remember === false) return;
   try { localStorage.setItem(TERMINAL_STORAGE, on ? "on" : "off"); }
@@ -77,10 +77,13 @@ function setTerminal(on, options = {}) {
 function logToConsole(message, kind = "info") {
   const body = $("term-body");
   if (!body) return;
+  // A plain row with its time, as the rest of the console says a time
+  // (3.44.0): no "> " and no 24-hour terminal clock.
   const line = document.createElement("div");
-  const stamp = new Date().toLocaleTimeString([], { hour12: false });
+  line.className = "term-row";
+  const stamp = CLXWords.clock(new Date().toISOString());
   line.innerHTML = `<span class="t">${esc(stamp)}</span>`
-                 + `<span class="${esc(kind)}">&gt; ${esc(message)}</span>`;
+                 + `<span class="${esc(kind)}">${esc(message)}</span>`;
   body.appendChild(line);
   // Keep the log bounded; an ops console can run for days.
   while (body.childElementCount > 200) body.removeChild(body.firstChild);
@@ -1761,6 +1764,9 @@ function sensorCard(s) {
         ${forecastNote(s)}
       </div>
       ${c.line ? `<p class="sensor-state st-${esc(c.kind)}">${esc(c.line)}</p>` : ""}
+      ${s.unit_held ? `<p class="sensor-state st-watch sensor-held">A reading${
+        s.unit_held.value !== null && s.unit_held.value !== undefined ? ` of ${esc(s.unit_held.value)}` : ""} came in ${
+        esc(CLXWords.clock(s.unit_held.at))} without saying Celsius or Fahrenheit, so it was held, not watched. Say the unit in your sensor's settings (for example "unit": "F").</p>` : ""}
       ${c.state === "waiting_first" ? "" : `<div class="spark-wrap">${sparkline(s)}</div>`}
       ${healthPills(s)}
       ${repairBlock(s)}
@@ -2310,15 +2316,25 @@ function foodAnswered(i) {
   const open = canAct && CLXWords.changeable(i.food_change_until);
   const id = esc(i.incident_id);
   const thrown = i.product_disposition === "discarded";
+  // The reason given for "Close anyway" is its own line (3.44.0), as the
+  // pack has it (claims.food_record): "Close anyway" copies its reason
+  // ("Called for a repair") into the corrective action, and after Thrown
+  // away the card quoted it as what went and hid "Add what was thrown
+  // away". The note of what went is the corrective action only where it
+  // differs from the close reason.
+  const closeNote = i.resolved_by || i.resolved_by_name ? String(i.close_note || "").trim() : "";
+  const action = String(i.corrective_action || "").trim();
+  const went = action && action !== closeNote ? action : "";
   return `<div class="${i.food_protected ? "food-saved" : "food-said"}"><p class="u-m-0"><b>${esc(who)}</b>${
     open ? `<button class="linkish food-change" type="button" data-food-change="${id}">Change</button>` : ""}${
     i.food_protected ? `<span class="sub">${esc(i.food_protected.words)}. ${
       esc(i.food_protected.note)}</span>` : ""}${
-    i.corrective_action ? `<span class="sub food-note">“${esc(i.corrective_action)}”</span>` : ""}${
+    went ? `<span class="sub food-note">“${esc(went)}”</span>` : ""}${
+    closeNote ? `<span class="sub food-closed">Why it was closed${i.closed_out_of_range ? " while still out of range" : ""}: “${esc(closeNote)}”</span>` : ""}${
     i.food_auto ? `<span class="sub">Out for under ${esc(CLXWords.count((state.data && state.data.food_safe_minutes) || 30, "minute"))} and never far past its limit: well inside the 2-hour rule, so nobody was asked.</span>` : ""}</p>${
     open ? `<div class="food-acts food-change-to"><button class="btn btn-sm" type="button" data-food-kept="${id}">Food kept</button><button class="btn btn-sm" type="button" data-food-thrown="${id}">Thrown away</button></div>` : ""}${
     open && thrown ? `<div class="food-loss"><button class="btn btn-sm" type="button" data-loss-pack="${id}">Make the insurance pack</button>${
-      i.corrective_action ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}</div>` : ""}</div>`;
+      went ? "" : `<button class="btn btn-sm" type="button" data-loss-note="${id}">Add what was thrown away</button>`}</div>` : ""}</div>`;
 }
 
 /* An open alert's line (3.41.0): the reading now and the worst so far,
@@ -2968,9 +2984,7 @@ function renderRoster(roster) {
 
 /* A hand-over time in the console's clock words (3.41.0): "8:00 AM
    Central", not "08:00 America/Chicago". */
-function handoverWords(hhmm, zone) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
-  const clock = m ? `${Number(m[1]) % 12 || 12}:${m[2]} ${Number(m[1]) < 12 ? "AM" : "PM"}` : String(hhmm || "");
+function zonePlace(zone) {
   let place = "";
   try {
     const part = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "longGeneric" })
@@ -2978,7 +2992,21 @@ function handoverWords(hhmm, zone) {
     place = part ? part.value.replace(/ Time$/, "") : "";
   } catch (_) { place = ""; }
   if (!place || /^GMT|^UTC/.test(place)) place = String(zone || "").split("/").pop().replace(/_/g, " ");
-  return `${clock} ${place}`.trim();
+  return place;
+}
+
+function handoverWords(hhmm, zone) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  const clock = m ? `${Number(m[1]) % 12 || 12}:${m[2]} ${Number(m[1]) < 12 ? "AM" : "PM"}` : String(hhmm || "");
+  return `${clock} ${zonePlace(zone)}`.trim();
+}
+
+/* A rotation's turns in the rotation's own clock, labelled (3.44.0): the
+   card said "handing over at 8:00 AM Central" and listed each turn as
+   "2:00 PM" in the browser's clock. "Sat Dec 5, 8:00 AM Central". */
+function rotaWhen(iso, zone) {
+  const when = CLXWords.dateTime(iso, zone ? { zone } : undefined);
+  return zone && when ? `${when} ${zonePlace(zone)}`.trim() : when;
 }
 
 /* ---------------- on call now: rotations and quiet hours ----------------
@@ -3097,7 +3125,7 @@ function renderRotations(data, roster) {
     const turns = schedule.map((s, index) => `
       <li class="${index === 0 ? "is-now" : ""}">
         <span class="rota-who">${named(s)}</span>
-        <span class="rota-when">${esc(CLXWords.dateTime(s.starts_at))} to ${esc(CLXWords.dateTime(s.ends_at))}</span>
+        <span class="rota-when">${esc(CLXWords.dateTime(s.starts_at, r.timezone ? { zone: r.timezone } : undefined))} to ${esc(rotaWhen(s.ends_at, r.timezone))}</span>
       </li>`).join("");
     const buttons = editor
       ? `<button class="btn btn-sm" type="button" data-rota-edit="${esc(r.scope)}">Change</button>
@@ -3105,7 +3133,7 @@ function renderRotations(data, roster) {
       : "";
     const who = now
       ? `<div class="rota-line is-now"><span class="rota-label">On call now</span><b>${named(now)}</b>${
-           schedule[0] ? ` until ${esc(CLXWords.clock(schedule[0].ends_at))}` : ""}</div>
+           schedule[0] ? ` until ${esc(rotaWhen(schedule[0].ends_at, r.timezone))}` : ""}</div>
          <div class="rota-line"><span class="rota-label">Next</span>${
            next ? named(next) : "nobody"}</div>`
       : `<div class="rota-line is-empty">Nobody is in this rotation, so
@@ -5048,8 +5076,7 @@ async function openPacket(incidentId) {
       ${food.close_reason ? `<div><span class="k">Why it was closed</span><span class="v">${esc(food.close_reason)}${
         food.closed_out_of_range ? " (closed while still out of range)" : ""}</span></div>` : ""}
     </div>
-    ${food.note ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet.${
-      food.thrown ? " Add one from the alert: it makes this pack complete." : ""}</div>`}
+    ${food.note || !food.thrown ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet. Add one from the alert: it makes this pack complete.</div>`}
     ${(food.history || []).length > 1 ? `<div class="doc-sub">Change history</div><ul class="timeline">${foodHistory}</ul>` : ""}`
     : `<div class="card-note">Nobody has said yet whether the food was kept or thrown away.
        Answer it on the alert (Food kept or Thrown away), then make this pack again.</div>`;
@@ -5932,7 +5959,7 @@ function thisAccountBox() {
       <div class="biz-meta">${esc(who)}${who ? " · " : ""}${esc(plan)}${
         t.seats_total ? ` · ${esc(`${t.seats_used} of ${t.seats_total} units`)}` : ""}</div>
       <div class="biz-acct-acts">
-        <button class="btn btn-sm" type="button" id="biz-log">Activity log</button>
+        <button class="btn btn-sm" type="button" id="biz-log">Recent activity</button>
         <button class="btn btn-sm biz-tv" type="button" id="biz-tv">TV screen</button>
       </div>
     </section>`;

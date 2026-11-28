@@ -83,11 +83,19 @@
   /* A day and a time: "Nov 21, 5:50 PM" (and the year with `year`). For
      the logs, the audit trail and the readings table, which each had
      their own "Nov 21, 05:50 PM". */
+  /* With `zone` (3.44.0), in that place's clock instead of the reader's,
+     with the weekday: "Sat Dec 5, 8:00 AM". A rotation hands over at 8:00
+     AM Central; its turns said "2:00 PM" in a London browser. */
   function dateTime(iso, opts) {
     const d = at(iso);
     if (!d) return "";
     const o = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
     if (opts && opts.year) o.year = "numeric";
+    if (opts && opts.zone) {
+      try {
+        return unpad(d.toLocaleString("en-US", { ...o, weekday: "short", timeZone: opts.zone })).replace(/^([A-Z][a-z]{2}), /, "$1 ");
+      } catch (_) { /* an unknown zone: the reader's clock, as before */ }
+    }
     return unpad(d.toLocaleString([], o));
   }
 

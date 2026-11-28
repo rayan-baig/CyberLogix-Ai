@@ -297,7 +297,7 @@ test("3.33.0: the console's insurance-pack list: '1 alert', '2 alerts', each by 
   assert.match(box.innerHTML, /Nov 23 · closed/);
 });
 
-test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who said it, that it closes by itself, and no It's fixed button", async () => {
+test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who said it, that it closes by itself, and (3.44.0) It's fixed still there for Close anyway", async () => {
   const live = { incident_id: "INC-3", sensor_id: "WALK-1", state: "acknowledged", opened_at: NOW, out_since: NOW,
     acknowledged_by_name: "Maya", fix_reported_at: NOW, fix_reported_by_name: "Maya", temperature_display: 47 };
   const { nodes } = await today(base({
@@ -307,9 +307,12 @@ test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who s
   assert.match(nodes.verdict.innerHTML, /Maya said it&#39;s fixed\. It closes by itself once it&#39;s cold\.|Maya said it's fixed\. It closes by itself once it's cold\./);
   assert.doesNotMatch(nodes.verdict.innerHTML, /Press <b>It's fixed<\/b>/);
   assert.equal(nodes.verdict.className, "verdict watch", "waiting, not alarm");
-  assert.match(nodes.needs.innerHTML, /Maya said it(&#39;|')s fixed at .+\. Nothing more to press\./);
+  assert.match(nodes.needs.innerHTML, /Maya said it(&#39;|')s fixed at .+\. To close it before it(&#39;|')s cold, press It(&#39;|')s fixed again: Close anyway is there\./);
   assert.equal(nodes["needs-h"].textContent, "Waiting to get cold");
-  assert.doesNotMatch(nodes.needs.innerHTML, /data-fixed=/, "nothing more to press");
+  // 3.44.0: once the dialog was dismissed there was no way back to Close
+  // anyway on /today; It's fixed stays while the alert is open.
+  assert.match(nodes.needs.innerHTML, /data-fixed="INC-3"/);
+  assert.doesNotMatch(nodes.needs.innerHTML, /data-ack=/);
   // Before anybody said fixed, the button is there.
   const before = await today(base({
     sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [{ ...live, fix_reported_at: null, fix_reported_by_name: null }],

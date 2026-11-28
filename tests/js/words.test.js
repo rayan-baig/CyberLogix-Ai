@@ -120,3 +120,11 @@ test("3.30.0: an open alert back in range says so, not 'Too warm'", () => {
   const warm = W.condition({ condition: { state: "alert", back_in_range: false, too: "warm", out_since: "2026-11-21T15:00:00Z" } });
   assert.equal(warm.word, "Too warm");
 });
+
+test("3.44.0: dateTime in a place's own clock, with the weekday, whatever the reader's", () => {
+  const W = require(path.join(__dirname, "..", "..", "static", "words.js"));
+  assert.equal(W.dateTime("2026-12-05T14:00:00Z", { zone: "America/Chicago" }), "Sat Dec 5, 8:00 AM");
+  assert.equal(W.dateTime("2026-12-05T14:00:00Z", { zone: "Europe/London" }), "Sat Dec 5, 2:00 PM");
+  // An unknown zone: the reader's clock, never an error.
+  assert.ok(W.dateTime("2026-12-05T14:00:00Z", { zone: "Nowhere/Atlantis" }).length > 0);
+});

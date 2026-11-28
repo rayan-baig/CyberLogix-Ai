@@ -185,15 +185,21 @@ function fixWaiting(i) {
     + "It closes by itself once it's cold.";
 }
 
-/* The card's own line under the headline that says the above. */
+/* The card's own line under the headline that says the above. Since
+   3.44.0 "It's fixed" stays on the card while the alert is open: once its
+   dialog was dismissed there was no way back to "Close anyway" on /today. */
 function fixWaitingShort(i) {
   const at = CLXWords.clock(i.fix_reported_at);
   return `${CLXWords.person(i.fix_reported_by_name, i.fix_reported_by)} said it's fixed${at ? ` at ${at}` : ""}. `
-    + "Nothing more to press.";
+    + "To close it before it's cold, press It's fixed again: Close anyway is there.";
 }
 
 function needButtons(i) {
-  if (fixSaid(i)) return "";
+  if (fixSaid(i)) {
+    return `<div class="need-acts">
+      <button class="btn" type="button" data-fixed="${esc(i.incident_id)}">It's fixed</button>
+    </div>`;
+  }
   return `<div class="need-acts">
       ${i.state === "open" ? `<button class="btn btn-primary" type="button"
           data-ack="${esc(i.incident_id)}">I'm on it</button>` : ""}
@@ -580,6 +586,7 @@ function monthLine(data, units) {
       <p class="answer-what">${esc(many ? `${a.unit}: ${who}.` : `${who}.`)}${open
         ? ` <button class="linkish answer-change" type="button" data-food-change="${id}">Change</button>` : ""}</p>
       ${a.note ? `<p class="answer-note">“${esc(a.note)}”</p>` : ""}
+      ${a.close_note ? `<p class="answer-note answer-closed">Why it was closed${a.closed_out_of_range ? " while still out of range" : ""}: “${esc(a.close_note)}”</p>` : ""}
       ${open ? `<div class="answer-change-to food-acts">
         <button class="btn btn-sm" type="button" data-food-kept="${id}"${a.disposition === "unaffected" && !a.auto ? ' aria-pressed="true"' : ""}>${a.disposition === "unaffected" && !a.auto ? "✓ " : ""}Food kept</button>
         <button class="btn btn-sm" type="button" data-food-thrown="${id}"${a.thrown ? ' aria-pressed="true"' : ""}>${a.thrown ? "✓ " : ""}Thrown away</button>
