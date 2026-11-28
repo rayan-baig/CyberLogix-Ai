@@ -287,13 +287,13 @@ def _render_operator(digest: Dict[str, Any]) -> str:
     people = digest["people"]
     if people["expired_and_blocking"]:
         out.append(
-            f"{people['expired_and_blocking']} staff licence(s) required "
+            f"{people['expired_and_blocking']} staff license(s) required "
             "for the job have expired. Somebody on shift may not be "
             "allowed to be."
         )
     elif people["expiring_soon"]:
         out.append(
-            f"{people['expiring_soon']} staff licence(s) expire within 30 "
+            f"{people['expiring_soon']} staff license(s) expire within 30 "
             "days."
         )
     if people["leavers_still_on_the_roster"]:
@@ -705,10 +705,10 @@ def weekly_text_body(tenant: Tenant, now: Optional[datetime] = None) -> str:
         # customer's expired licences as if they were its own.
         lapsing = people.calendar(tenant.tenant_id, days=30, today=now.date())
         if lapsing["expired_and_blocking"]:
-            bits.append(f"{lapsing['expired_and_blocking']} staff licence(s) "
+            bits.append(f"{lapsing['expired_and_blocking']} staff license(s) "
                         "expired")
         elif lapsing["expiring_within_30_days"]:
-            bits.append(f"{lapsing['expiring_within_30_days']} licence(s) due soon")
+            bits.append(f"{lapsing['expiring_within_30_days']} license(s) due soon")
     except Exception:  # noqa: BLE001 - a summary must not stop the text
         logger.exception("Could not read licences for the weekly text.")
 

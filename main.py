@@ -815,7 +815,10 @@ def pilot_facts() -> Dict[str, str]:
                         ALERT_AFTER_MINUTES_FOOD_FRIDGE, ALERT_AT_ONCE_DEGREES_F,
                         DISPATCH_SLA_SECONDS, SENSOR_OFFLINE_AFTER_MINUTES,
                         VOICE_ESCALATION_GRACE_MINUTES, unit_kind_limits)
-    from pricing import CANCELLATION_RULE, CHAIN_DISCOUNT_TIERS, PRICE_BOOK, headline
+    from pricing import (CANCELLATION_RULE, CHAIN_DISCOUNT_TIERS, PRICE_BOOK,
+                         SETUP_FEE_PER_SITE_USD, YEARLY_MONTHS_CHARGED,
+                         YEARLY_MONTHS_COVERED, headline)
+    from store import KEEP_DETAIL_DAYS, KEEP_READINGS_MONTHS
 
     facts = headline()
     landing = _landing_facts()
@@ -864,6 +867,15 @@ def pilot_facts() -> Dict[str, str]:
         # How long a finished trial is still watched (3.41.0), for Pilot's
         # "What happens after the trial?".
         "grace-days": str(LICENCE_GRACE_DAYS),
+        # 3.42.0, for Pilot's "Is there a setup fee?", "Is it cheaper
+        # yearly?" and "How long do you keep my data?": the setup fee (0 is
+        # none), the yearly offer (pay this many months, get that many) and
+        # how long readings are kept (store.py, the privacy statement).
+        "setup-fee": dollars(SETUP_FEE_PER_SITE_USD),
+        "yearly-charged": str(YEARLY_MONTHS_CHARGED),
+        "yearly-covered": str(YEARLY_MONTHS_COVERED),
+        "keep-readings-months": str(KEEP_READINGS_MONTHS),
+        "keep-detail-days": str(KEEP_DETAIL_DAYS),
         # Every sector with a page at /for/<slug> (3.41.0): "slug|name|price|per"
         # joined by ";", so "Do you do florists?" finds the florists' page
         # and price, and any sector offered is recognised.

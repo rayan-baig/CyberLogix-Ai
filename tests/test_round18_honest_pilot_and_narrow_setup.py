@@ -186,10 +186,11 @@ def test_an_every_location_report_counts_its_locations_and_shows_the_ladder(demo
     report = proofreports.build(tenant, None, date(first.year, first.month, 1))
     assert report["location"] == {"name": "Every location", "scope": "all", "locations": 3}
     steps = report["alerted"]["steps"]
-    assert steps[0] == "At once: a text to all 3 people on call."
-    assert steps[1] == "After 10 minutes with nobody acknowledging: a phone call to the 1st person on the list."
-    assert steps[2] == "If that call does not get through: the 2nd person on the list."
-    assert len(steps) == 4
+    # 3.42.0: from the live list, as the Team tab: the demo's rotation
+    # texts and phones whoever's turn it is, not all 3 (test_round19).
+    assert steps[0] == "At once: a text to the person whose turn it is in the on-call rotation."
+    assert steps[1] == "After 10 minutes with nobody acknowledging: a phone call to the person on call."
+    assert len(steps) == 2
     site = STORE.sites_for(tenant.tenant_id)[0]
     one = proofreports.build(tenant, site.site_id, date(first.year, first.month, 1))
     assert one["location"]["scope"] == "one" and one["location"]["locations"] == 1
@@ -277,5 +278,5 @@ def test_for_counts_its_own_cards():
 
 
 def test_version_is_3_41_0():
-    assert (ROOT / "VERSION").read_text().strip() == "3.41.0"
+    # 3.42.0 followed; its entry stays in the changelog.
     assert "## 3.41.0" in (ROOT / "CHANGELOG.md").read_text()

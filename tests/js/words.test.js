@@ -16,7 +16,12 @@ test("minutes say what the server says", () => {
   assert.equal(W.minutes(2.5), "2 minutes");     // halves to even, as Python rounds
   assert.equal(W.minutes(3.5), "4 minutes");
   assert.equal(W.minutes(59.4), "59 minutes");
-  assert.equal(W.minutes(90), "about 2 hours");
+  // 3.42.0: under three hours, the hours and minutes; past that, the hour.
+  assert.equal(W.minutes(60), "1 hour");
+  assert.equal(W.minutes(88), "1 hour 28 minutes");
+  assert.equal(W.minutes(90), "1 hour 30 minutes");
+  assert.equal(W.minutes(121), "2 hours 1 minute");
+  assert.equal(W.minutes(200), "about 3 hours");
 });
 
 test("out for runs from out since to closed, never negative", () => {

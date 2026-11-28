@@ -91,7 +91,7 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
 
     pause = current_pause(tenant.tenant_id, now)
     if state == "suspended":
-        headline = "This licence is suspended. Get in touch to restore it."
+        headline = "This license is suspended. Get in touch to restore it."
         severity = "critical"
     elif pause is not None:
         # The loudest thing on the page while it lasts: an owner who paused
@@ -107,14 +107,14 @@ def account_state(tenant, now=None) -> Dict[str, Any]:
     elif state == "grace":
         left = grace_days_left(tenant, now)
         headline = (
-            f"The licence expired. Monitoring continues for {left} more "
+            f"The license expired. Monitoring continues for {left} more "
             f"day{'' if left == 1 else 's'}, then stops. Reporting is "
             "withheld until it is renewed."
         )
         severity = "critical"
     elif (not contracted and days_left is not None
           and days_left <= warning_window(tenant)):
-        subject = "The trial" if tenant.plan == "trial" else "This licence"
+        subject = "The trial" if tenant.plan == "trial" else "This license"
         # Measured in hours, because a day count cannot tell "this evening"
         # from "tomorrow evening" — and those read very differently to
         # somebody deciding whether to deal with it now.

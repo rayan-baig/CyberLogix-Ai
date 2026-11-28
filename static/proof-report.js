@@ -33,17 +33,31 @@ function mins(value) {
 function pct(value) {
   return value === null || value === undefined ? "—" : `${value}%`;
 }
+// The business's own clock (3.42.0): the report's "timezone", from its
+// on-call rotation; UTC for a report made before it was written down.
+// The times in the report stay UTC; only how they are shown changes.
+const CLOCK = { zone: "UTC" };
 function stamp(iso) {
   if (!iso) return "";
   const at = new Date(iso);
-  return isNaN(at) ? String(iso) : at.toLocaleString([], {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "numeric", minute: "2-digit", timeZone: "UTC",
-  }) + " UTC";
+  if (isNaN(at)) return String(iso);
+  try {
+    return at.toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", timeZone: CLOCK.zone, timeZoneName: "short",
+    });
+  } catch (_) {
+    return at.toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", timeZone: "UTC",
+    }) + " UTC";
+  }
 }
+// A day of the report's month: the month is counted in UTC, so its
+// first and last days are written as UTC dates.
 function day(iso) {
   const at = new Date(iso);
-  return isNaN(at) ? "" : at.toLocaleDateString([], {
+  return isNaN(at) ? "" : at.toLocaleDateString("en-US", {
     day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
@@ -90,6 +104,7 @@ function tenth(value) {
 function render(seen) {
   const r = seen.report;
   const u = r.temperature_unit;
+  CLOCK.zone = r.timezone || "UTC";
   document.title = `Proof of monitoring, ${r.month_label} — ${r.business}`;
   $("business").textContent = r.business;
   $("where").textContent = `${r.location.name} · ${r.month_label}${
@@ -151,7 +166,9 @@ function render(seen) {
   $("link").textContent = link;
   $("code").textContent = seen.verify_code;
   $("fingerprint").textContent = seen.fingerprint;
-  $("fine").textContent = `Made ${stamp(r.issued_at)}. Open the link, or go to `
+  const clockNote = CLOCK.zone === "UTC" ? "Times are in UTC. "
+    : `Times are on the business's clock (${CLOCK.zone.replace(/_/g, " ")}). `;
+  $("fine").textContent = `Made ${stamp(r.issued_at)}. ${clockNote}Open the link, or go to `
     + `/verify and type the code, to see that this report is genuine and `
     + `unchanged. The fingerprint there must match the one above. `
     + `${BRAND.short} is a monitoring service, not an insurer.`;

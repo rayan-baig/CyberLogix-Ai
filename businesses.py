@@ -212,7 +212,7 @@ def switch_business(
     if licence_state(tenant) == "suspended":
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"The licence for {tenant.company_name} is suspended.",
+            detail=f"The license for {tenant.company_name} is suspended.",
         )
     return _open(record, user, session)
 

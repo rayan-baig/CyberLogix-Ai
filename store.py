@@ -3293,16 +3293,18 @@ class HubStore:
         return [c for c in everyone if c.site_id is None]
 
     def sms_recipients(
-        self, tenant: Tenant, site_id: Optional[str] = None
+        self, tenant: Tenant, site_id: Optional[str] = None,
+        now: Optional[datetime] = None,
     ) -> List[Contact]:
         """Everyone who should get the text, in escalation order.
 
         Falls back to the tenant's own contact so a customer who never built
-        a roster is still reachable.
+        a roster is still reachable. `now` is for a report frozen at the
+        moment it was made (proofreports.py); it defaults to the clock.
         """
         import oncall
 
-        now = utc_now()
+        now = now or utc_now()
         roster = self._roster_for_site(tenant, site_id, "sms", now)
         if roster:
             # Quiet hours narrow the text, never to nobody: with everyone
@@ -3319,7 +3321,8 @@ class HubStore:
         ]
 
     def voice_ladder(
-        self, tenant: Tenant, site_id: Optional[str] = None
+        self, tenant: Tenant, site_id: Optional[str] = None,
+        now: Optional[datetime] = None,
     ) -> List[Contact]:
         """Who to phone, in the order to try them.
 
@@ -3328,7 +3331,7 @@ class HubStore:
         """
         import oncall
 
-        now = utc_now()
+        now = now or utc_now()
         roster = self._roster_for_site(tenant, site_id, "voice", now)
         if roster:
             awake, asleep = oncall.awake_first(roster, now)

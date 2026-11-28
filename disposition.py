@@ -225,7 +225,7 @@ def assess(
         "not_a_ruling": (
             "This is a measurement and a widely-taught rule of thumb, not "
             "a food safety decision. The sensor reads the air, not the "
-            "centre of the product. Your written plan and your local code "
+            "center of the product. Your written plan and your local code "
             "decide, and if they disagree with this, they are right."
         ),
     }

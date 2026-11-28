@@ -159,7 +159,7 @@ PRICE_BOOK: Dict[str, Dict[str, Any]] = {
         "monthly_usd": 1199.0,
         "custom_quote": True,
         "pitch": (
-            "Documents environmental control to the standard a state licence "
+            "Documents environmental control to the standard a state license "
             "renewal is judged against."
         ),
         "loss_avoided_usd": 60000.0,

@@ -64,7 +64,7 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "in each fridge still sees the warming, and we alert your team "
             "within minutes."
         ),
-        "licences": ["Pharmacist licence", "Pharmacy technician registration",
+        "licences": ["Pharmacist license", "Pharmacy technician registration",
                      "Immunisation certification",
                      "Controlled substance registration"],
     },
@@ -102,14 +102,14 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "the journey."
         ),
         "asks_after": "the receiver, the shipper and the insurer",
-        "licences": ["Commercial driving licence",
+        "licences": ["Commercial driving license",
                      "DOT medical examiner certificate",
                      "Hazmat endorsement", "Forklift operator certification"],
     },
     "cannabis": {
         "protects": "the grow rooms and the drying rooms",
         "loses": (
-            "A crop, and possibly the licence. This is one of the most "
+            "A crop, and possibly the license. This is one of the most "
             "closely watched industries there is, and a gap in the "
             "environmental record is a compliance problem before it is a "
             "money problem."
@@ -136,7 +136,7 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "and the service credits you owe the customers who were on it."
         ),
         "asks_after": "your customers, under the uptime you promised them",
-        "licences": ["Data centre technician certification",
+        "licences": ["Data center technician certification",
                      "Electrical safety training"],
     },
     "solar_infrastructure": {
@@ -148,7 +148,7 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "is the hazard."
         ),
         "asks_after": "the fire authority and your insurer",
-        "licences": ["Electrical licence", "Arc flash training",
+        "licences": ["Electrical license", "Arc flash training",
                      "Working at height"],
     },
     "private_aviation": {
@@ -160,7 +160,7 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
             "than one without."
         ),
         "asks_after": "the aviation authority, and the next buyer",
-        "licences": ["Airframe and powerplant licence",
+        "licences": ["Airframe and powerplant license",
                      "Inspection authorisation", "Ramp safety certification"],
     },
     "superyacht": {

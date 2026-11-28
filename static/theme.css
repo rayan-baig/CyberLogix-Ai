@@ -1810,6 +1810,16 @@ body.wall #rotation-form, body.wall #quiet-form { display: none !important; }
   .needs-bar-acts { width: 100%; }
   .finder { top: auto; }
 }
+/* On a small phone (3.42.0) the pinned bar took 164px of a 320px screen:
+   the unit and its reading in one tighter line, the buttons shorter, and
+   who has it (or nobody) left to the alert's own card just below. */
+@media (max-width: 480px) {
+  .needs-bar-in { padding: 6px 12px; gap: 3px 8px; }
+  .needs-bar-kicker { font-size: 10px; }
+  .needs-bar-what { font-size: 13px; line-height: 1.35; }
+  .needs-bar-who { display: none; }
+  .needs-bar .btn { min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
+}
 
 /* Calm states in sentence case: "Waiting for its first reading",
    "Watching", "Too warm". The capitals are for nothing now. */

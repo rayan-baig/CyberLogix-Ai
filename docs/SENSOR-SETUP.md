@@ -18,7 +18,7 @@ cloud, you copy one key from us and paste it in one place:
    `https://kryozyn.mtrxhorizyn.com/api/sensor-pulse` as the address and the key as the
    header `X-Kryozyn-Sensor-Key`. If its maker's cloud gives you an
    API key instead, press the **Advanced** tab in the console, open
-   **Fetch from a sensor cloud**, choose the kind of cloud and paste
+   **Sensor maker's cloud**, choose the kind of cloud and paste
    that key.
 3. Wait a few minutes for the first reading.
 
@@ -43,7 +43,7 @@ Roughly: a basic Wi-Fi temperature sensor costs about $30 to $100, and a commerc
 1. Buy one sensor for each fridge or freezer you want watched. Check that it can send to a web address, or that its maker's cloud has an API.
 2. Put the sensor (or its probe) inside the fridge or freezer, away from the door, and connect it to your Wi-Fi or gateway as its maker says.
 3. In Kryozyn, use Add a fridge or freezer. Say where it is and whether it is a fridge or a freezer, then copy the sensor key it shows you.
-4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker's cloud, add it under Fetch from a sensor cloud, in the console's Advanced tab.
+4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand below, with that key. Or, for a maker's cloud, add it under Sensor maker's cloud, in the console's Advanced tab.
 5. Wait for the first reading. Getting started ticks First reading received when it arrives, usually within a few minutes.
 6. Add the people who should get alerts, and send a test alert to check the texts arrive.
 
@@ -60,7 +60,7 @@ Gateways and hubs that let you set the address, headers and body of what they se
 3. Set the device to send an HTTPS POST to https://kryozyn.mtrxhorizyn.com/api/sensor-pulse every few minutes.
 4. Add two headers: X-Kryozyn-Sensor-Key with the sensor key, and Content-Type: application/json.
 5. Send a JSON body with sensor_id (the Sensor ID from step 1) and the temperature as temperature_fahrenheit or temperature_celsius. You may add humidity_percent, battery_percent and signal_percent; a battery level lets us warn you before it goes flat.
-6. Check the answer. 200 means the reading was taken and the unit shows it in the console. 401 means the key was not recognised; 403 means the key belongs to a different unit; 404 means no unit has that Sensor ID.
+6. Check the answer. 200 means the reading was taken and the unit shows it in the console. 401 means the key was not recognized; 403 means the key belongs to a different unit; 404 means no unit has that Sensor ID.
 
 What one message looks like:
 
@@ -81,7 +81,7 @@ Wi-Fi and cellular loggers whose cloud forwards each reading to a web address, w
 3. In the device's or vendor's forwarding settings, set the address to https://kryozyn.mtrxhorizyn.com/api/v1/bridge/sensor-webhook-ingest and the method to POST, sending JSON.
 4. Shape the body with these fields: device_sn (the serial from step 1), api_key_token (the sensor key), reading_value (the number) and metric_type, which says what the number is: temperature_f, temperature_c, humidity_pct, battery_pct, signal_pct. Optionally location_label.
 5. Send temperature as its own message from humidity or battery: one reading per message.
-6. Check the answer. 200 means it was taken. 202 means the serial is not on any unit yet: the reading is held under Devices knocking in the console, where one tap adds it and keeps what it sent. 401 means the key was not recognised.
+6. Check the answer. 200 means it was taken. 202 means the serial is not on any unit yet: the reading is held under Devices knocking in the console, where one tap adds it and keeps what it sent. 401 means the key was not recognized.
 
 What one message looks like:
 
@@ -124,7 +124,7 @@ What one message looks like:
 SensorPush sensors with a G1 gateway, which reports to SensorPush's own cloud and not to any address you choose.
 
 1. In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device's own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. For SensorPush the serial is the sensor's id as its cloud names it.
-2. The gateway cannot be pointed at us, so the readings have to be fetched from SensorPush's cloud and passed on. Our fetcher (Fetch from a sensor cloud, in the next guide) only sends GET requests with headers you fix in advance. If the account's data can be read that way, use it. If reading it needs a sign-in step that hands out a short-lived token, or a POST, the fetcher cannot do it: run a small relay of your own that reads SensorPush and sends each reading on, as below.
+2. The gateway cannot be pointed at us, so the readings have to be fetched from SensorPush's cloud and passed on. Our fetcher (Sensor maker's cloud, in the next guide) only sends GET requests with headers you fix in advance. If the account's data can be read that way, use it. If reading it needs a sign-in step that hands out a short-lived token, or a POST, the fetcher cannot do it: run a small relay of your own that reads SensorPush and sends each reading on, as below.
 3. The relay sends an HTTPS POST to https://kryozyn.mtrxhorizyn.com/api/v1/bridge/any with the sensor key in the X-Kryozyn-Sensor-Key header (or the business key in X-Kryozyn-Key, for several sensors).
 4. Each reading as JSON with sensor (the sensor's id), temperature and observed. A SensorPush temperature is read as Fahrenheit, which is what it reports unless the account was changed; if yours is in Celsius, send sensor_id and temp_c instead, which say so.
 5. If nothing appears, open Use a sensor you already own in the console: every payload that reached /api/v1/bridge/any is listed there as it arrived (keys removed), with what was read from it and what was missing. A device that is not listed never reached us.
@@ -145,7 +145,7 @@ Hardware that only talks to its maker's cloud, when that cloud gives you an HTTP
 
 1. In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits, and type the device's own serial number into Third-party device serial. That serial is how a reading finds this unit. Press Add it. The serial is whatever the vendor's data calls the device.
 2. Get the address and the credential from the vendor: an HTTPS address that answers a plain GET with JSON, and the header it wants the credential in, such as Authorization.
-3. In the console, open Fetch from a sensor cloud (under the Advanced tab). Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.
+3. In the console, open Sensor maker's cloud (under the Advanced tab). Give it a name, the address, and the header name and value. Choose how often to fetch: every 5 to 120 minutes, 10 if you leave it.
 4. Press Try now. It fetches once and says what came back: readings taken, nothing new, or why nothing could be used.
 5. What comes back is read the same way as the send-anything route below: one reading, a list, or readings under samples, readings, data, results or sensors, and each needs a serial that is on one of your units.
 6. The address must start with https and point at the public internet. Redirects are not followed: save the final address. After 5 failures in a row it stops asking and the owner is emailed; Try now starts it again.

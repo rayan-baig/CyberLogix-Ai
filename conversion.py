@@ -298,7 +298,7 @@ def _three(tenant: Tenant, ev: Dict[str, Any], days: int) -> Dict[str, Any]:
             "What happens at the end is deliberately not a cliff: "
             f"monitoring keeps running for {LICENCE_GRACE_DAYS} days after "
             "the trial expires, because a fridge does not stop needing "
-            "watching on the day a licence lapses. After that it stops.\n\n"
+            "watching on the day a license lapses. After that it stops.\n\n"
             f"Open {_console_url()} to continue, or reply and we will do it "
             "for you."
         ),

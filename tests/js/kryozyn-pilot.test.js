@@ -602,9 +602,15 @@ test("3.28.0: 'What does this alert mean?' says 'we have phoned' only when a cal
 
 test("3.28.0: the robot keeps off /today's fridge rows and temperatures and the demo cards", () => {
   const avoid = J(mountAt("/today", { overview: overviewWith() }).avoid);
-  for (const sel of [".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", "#needs", ".need"]) {
+  // 3.42.0: on /today the alert's own words and buttons, not its whole
+  // cards, so the robot's handle has an edge to peek in at on a phone.
+  for (const sel of [".thing-temp", ".thing-name", ".demo-unit-temp", ".demo-unit-top", ".need-what", ".need-when", ".need-acts", "#verdict > *"]) {
     assert.ok(avoid.includes(sel), sel);
   }
+  for (const sel of ["#needs", ".need", "#verdict"]) assert.ok(!avoid.includes(sel), sel);
+  // The console keeps its whole cards listed.
+  const consoleAvoid = J(mountAt("/console", { overview: overviewWith() }).avoid);
+  for (const sel of ["#needs", ".need", "#verdict", "#needs-wrap"]) assert.ok(consoleAvoid.includes(sel), sel);
 });
 
 // ---------------------------------------------------------------- core 1.4.1 (3.29.0)
@@ -1319,7 +1325,7 @@ function chatAt(pathname, opts = {}) {
     bills: () => (signedIn && opts.bills !== undefined ? opts.bills : null) };
   if (pathname === "/today") win.KryozynToday = { overview: () => overview, did: () => null };
   const doc = { getElementById: () => ({ dataset: { ...NAMES, ...DATA, restaurantPrice: "149", pharmacyPrice: "199",
-    unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10", graceDays: "14", sectors: SECTORS_DATA } }), title: "Restaurants",
+    unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10", graceDays: "14", sectors: SECTORS_DATA, ...(opts.data || {}) } }), title: "Restaurants",
     addEventListener: (type, fn, capture) => { if (type === "submit" && capture) listener = fn; },
     querySelector: (q) => (q === ".pilot-input" ? box : null) };
   vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL, setTimeout, document: doc });
@@ -1878,7 +1884,7 @@ test("3.40.0: the eight wrong answers are put right, each true to the product", 
   assert.match(texts, /^Alert texts go to everyone under \*\*Who gets alerts\*\* on the console's \*\*Team\*\* tab who isn't muted/);
   assert.match(texts, /Texts are not switched on for this server/);
   const wed = await say("Was the food in the walk-in freezer ok on Wednesday?");
-  assert.match(wed, /^\*\*Old Mill \/ Walk-in freezer\*\* went out of range at .+ for about 2 hours, at worst 21\.0°F \(limit 10°F\), and it is closed\. It was recorded as \*\*kept\*\*/, wed);
+  assert.match(wed, /^\*\*Old Mill \/ Walk-in freezer\*\* went out of range at .+ for 1 hour 30 minutes, at worst 21\.0°F \(limit 10°F\), and it is closed\. It was recorded as \*\*kept\*\*/, wed);
   assert.match(await say("Was the food in the walk-in freezer ok on Thursday?"),
     /^No alert on \*\*Walk-in freezer 1\*\*, \*\*Walk-in freezer 2\*\*, \*\*Walk-in freezer\*\* and 1 more on Thursday: they stayed in range/);
   assert.match(await say("What is Kryozyn?"), /^Kryozyn watches the temperature of your fridges and freezers, day and night\./);
@@ -2104,4 +2110,320 @@ test("3.41.0: the calls answer has no owner jargon", () => {
   const got = chatAt("/today", { overview: demoOverview() }).send("How many phone calls do I have left?").text;
   assert.doesNotMatch(got, /Spending limits|Advanced/);
   assert.match(got, /daily cap on calls/);
+});
+// ---------------------------------------------------------------- 3.42.0: an adversarial table
+//
+// Questions a visitor (signed out, /pricing), an owner (signed in on
+// /today, a paid plan) and a business on the free trial (signed in on the
+// console) really type: varied wording, typos, run-ons, and unit names or
+// food words that turn up only in passing. Each has the answer it must
+// get, "a|b" when either is right, and "miss" where no built-in answer
+// fits and the honest note is right: a confident wrong answer is worse
+// than a miss. A string is for all three; {v, o, t} for each.
+const ADVERSARIAL = [
+  // Prices, fees, the year.
+  ["how much is it", "price"], ["Whats the price per month?", "price"], ["is it expensive", "price"],
+  ["how much dose it cost", "price"], ["Is the price per fridge or per location?", "price"],
+  ["how much for 4 fridges", "quote"], ["price for 2 restaurants", "quote"], ["how much for 6 restaurants", "quote"],
+  ["how much does it cost for a pharmacy", "pharmacy"],
+  ["Is there a setup fee?", "fees"], ["any hidden fees?", "fees"], ["are there any extra charges I should know about", "fees"],
+  ["Do you charge for installation?", "fees|easy"], ["Are texts extra?", "fees"], ["do you charge per text", "fees|price"],
+  ["is there a discount if I pay yearly", "yearly"], ["Can I pay annually?", "yearly"], ["yearly plan price?", "yearly"],
+  ["do you do an annual discount", "yearly"], ["Is it cheaper if I pay for the whole year?", "yearly"],
+  ["what does it cost per year", "yearly|price"], ["is there a monthly contract or yearly", "cancel|yearly"],
+  ["is there a cheaper plan for small cafes", "plan|price"], ["which plan should i pick for my coffee shop", "plan"],
+  ["Whats the difference between starter and growth", "plan"], ["do i need growth for phone calls", "plan|calls"],
+  ["Do you have a chain discount?", "miss|price"], ["do sensors come included in the price", "sensors|price"],
+  ["hi how much is it for a small cafe with 2 fridges and a freezer", "quote|plan|price"],
+  ["we have a walk in and two reach ins and a bar fridge what plan do we need", "plan|quote"],
+  ["food truck pricing", "cafe|price"], ["how many sensors can I have", "price|plan|trial|addunit|miss"],
+  ["Does it work with 5 fridges?", "quote|plan|cafe"],
+  // Cancelling, the data, how long it is kept.
+  ["can i get a refund", "cancel"], ["how do i cancel", "cancel"], ["I want to cancel", "cancel"],
+  ["is there a contract or can i leave anytime", "cancel"],
+  ["What happens to my data if I cancel?", "retention"], ["if i cancel do you delete everything", "retention"],
+  ["How long do you keep my temperature records?", "retention"], ["how long is data stored", "retention"],
+  ["how far back can i see readings", "retention"], ["do you keep records for 2 years?", "retention"],
+  ["how long do you store data after I cancel", "retention"], ["do you delete readings", "retention"],
+  ["how many months of history do you keep", "retention"], ["will I lose my records if I stop paying", "retention|trialafter"],
+  ["Can I export my data before I leave?", "retention|privacy"], ["please delete my account", "retention|cancel|privacy"],
+  ["is my data safe", "privacy"], ["who can see our readings", "privacy"], ["do you sell my data", "privacy"],
+  // The trial, signing up, the demo.
+  ["how long is the free trial", "trialend|trial"], ["do I need a credit card for the trial", "trial"],
+  ["whats included in the trial", "trial"], ["is ther a free trail", "trial|miss"],
+  ["what happens when the trial ends", "trialafter"], ["will you charge me automatically after the trial?", "trialafter|trial"],
+  ["do I have to pay when the trial ends", "trialafter"], ["how do I sign up", { v: "signup", o: "signup|miss", t: "signup|miss" }],
+  ["can i try it without buying sensors", "try"], ["is there a demo", "demo|try"], ["show me a demo", "demo|try"],
+  ["am I on the trial", { v: "trial|trialend|miss", o: "trialend|trial|bill", t: "trialend|trial|bill" }],
+  ["can I add more than 5 sensors on the trial", "trial|addunit|miss"],
+  // Who it is for.
+  ["I have a food truck, is that ok?", "cafe"], ["will it work in a food truck", "cafe"], ["do you support bakeries", "cafe"],
+  ["I run a small deli", "cafe|miss"], ["We're a pizza place with 3 fridges, does this work?", "cafe|quote"],
+  ["is it good for a coffee shop", "cafe"], ["Will it work for my restaurant?", "cafe"], ["cn i use it 4 my resturant", "cafe|miss"],
+  ["do you work with flower shops", "sector"], ["I own a flower shop", "sector"], ["flower shop", "sector"],
+  ["is this for florists", "sector"], ["can a brewery use it", "sector"], ["can i use it for a florist cooler", "sector|miss"],
+  ["We're a flower shop with one cooler", "sector|miss"], ["do you do pharmacies", "pharmacy"],
+  ["is it suitable for a vaccine fridge", "pharmacy|sector"],
+  ["Can I use it for two restaurants?", "addsite"], ["I have three restaurants, can I see them all in one place?", "addsite"],
+  ["We own 2 cafes", "addsite|quote"], ["does it work for multiple locations", "addsite"], ["can one account cover two sites", "addsite"],
+  ["do you work in canada", "canada"], ["does it show celsius", "canada"], ["do you work in the UK?", "miss"],
+  ["Is it HACCP compliant?", "haccp"], ["does it help with haccp", "haccp"], ["is haccp included", "haccp"],
+  ["do you give me a haccp plan", "haccp"], ["what about food safety compliance", "haccp|log"],
+  ["Will this keep the health inspector happy?", "log|haccp"], ["can i print a temperature log for the inspector", "log"],
+  ["do I still need paper logs", "log|haccp"],
+  ["I have a fridge full of food at home, can I use this?", "miss|cafe"], ["we sell ice cream from a cart", "sector|cafe|miss"],
+  // Sensors and batteries.
+  ["Which sensor should I get for a walk-in freezer?", "sensors"], ["what sensors work with this", "sensors"],
+  ["do you sell the sensors", "sensors"], ["does it work with monnit", "sensors"], ["can i use my existing sensorpush sensors", "sensors"],
+  ["will a sensor work inside a metal walk in", "sensors"], ["best probe for a chest freezer", "sensors"],
+  ["what thermometer do i need", "sensors"], ["how much are the sensors", "sensors|price"], ["wat sensors do i need", "sensors"],
+  ["Which sensor for a pharmacy vaccine fridge?", "sensors|pharmacy"], ["what's the range of the sensor", "sensors"],
+  ["Can I put a sensor in a wine fridge?", "sensors|sector|miss"], ["do the sensors fit in a small bar fridge", "sensors|miss"],
+  ["Does the walk-in freezer need its own sensor?", "sensors|addunit|connect"], ["do the sensors need wifi", "sensors|power"],
+  ["can the sensor run on cellular", "sensors|miss"], ["does it work without wifi", "power|sensors"],
+  ["Do the sensors need batteries?", "battery"], ["how long do sensor batteries last", "battery"],
+  ["what happens when the battery dies", "battery"], ["the sensor battery is dying", "battery"], ["low battery warning?", "battery"],
+  ["the sensor battery is low what do i do", "battery"], ["how do I know if a battery is dying", "battery"], ["replace battery", "battery"],
+  ["do I need an electrician", "easy"], ["is it hard to install", "easy"], ["how long does setup take", "setuptime"],
+  ["how do i connect a sensor", "connect"], ["how do i set it up", "connect|steps|easy|setuptime"], ["What's a sensor key", "sensorkey"],
+  // How the alerts work.
+  ["how quickly will i get a text", "speed"], ["How fast are the alerts?", "speed"],
+  ["how long does it take for the text to arrive", "speed"], ["is the text instant", "speed"],
+  ["if the freezer breaks how soon do i find out", "speed"], ["how long until i get the text after the fridge gets warm", "speed|door"],
+  ["will a door left open set it off", "door"], ["what if someone leaves the walk-in door open for a minute", "door"],
+  ["Will it wake me up every time the door opens?", "door"], ["I'm worried about false alarms", "door"],
+  ["too many false alarms with our old system", "door|miss"],
+  ["my last system texted me at 3am for nothing because someone opened the door, does yours do that", "door"],
+  ["my staff keep leaving the walk in door open", "door"], ["can it tell me who left the door open", "door|miss"],
+  ["how long does it wait before alerting", "door|wait"], ["Can I change how long it waits before alerting?", "wait"],
+  ["can i make it wait longer before it texts", "wait"], ["change the alert wait to 30 minutes", "wait"],
+  ["can i change the temperature limit", "limit"], ["can i set my own limits", "limit"], ["can I set different limits for each fridge", "limit"],
+  ["how do I change the limit on the walk-in to 38", "limit"], ["can operators change limits", "limit|miss"],
+  ["what temperature does it alert at", "limits"], ["what temp should a walk in cooler be", "limits"],
+  ["what should my freezer be set to", "limits"], ["how cold should the walk in be", "limits"],
+  ["Is 38 ok for a fridge", "limits|reading"], ["is 5 degrees too warm for a freezer", "limits|reading"],
+  ["do you call at 3am", "calls"], ["Do you phone if nobody answers the text?", "calls"], ["what if nobody responds", "calls"],
+  ["do u call at nite", "calls|miss"], ["what if my phone is off", "calls|miss"], ["can it call my landline", "calls|miss"],
+  ["How do I stop getting texts at 3am?", "quiet"], ["can I turn off alerts at night for one person", "quiet"],
+  ["does it have quiet hours", "quiet"], ["can I mute someone", "quiet"], ["my manager doesnt want texts on her day off", "quiet|miss"],
+  ["i dont want to be woken up at night by texts", "quiet"], ["stop texting me at night", "quiet"],
+  ["Can I stop alerts while we're closed for christmas", "pause"], ["can i pause it for the winter", "pause"],
+  ["what if the wifi goes down", "power"], ["what happens in a power cut", "power"], ["what if the sensor goes offline", "power"],
+  ["if the power goes out at night do you still text me", "power"], ["does it still work if the internet is down at night", "power"],
+  ["who gets the texts", "team"], ["Who gets the alerts?", "team"], ["can more than one person get alerts", "team"],
+  ["can i add my chef to the alerts", "team"], ["how many people can get texts", "team"], ["can it text my whole team at once", "team"],
+  ["Who gets the alerts right now?", "team|oncall"], ["add my sous chef to the texts", "team"],
+  ["Do you send emails as well as texts?", "miss"], ["Can I get alerts by email", "miss|team"],
+  ["can I get texts only for the walk-in", "miss|team"],
+  ["is there an app", "app"], ["can i see it on my phone", "mobile"], ["does it work on android", "app|mobile"],
+  ["how is this better than a cheap fridge thermometer", "versus"], ["what does kryozyn do", "what"], ["how does it work", "what"],
+  ["what is this", "what|miss"], ["hi", "hello"], ["hello there", "hello"],
+  ["what's the insurance pack", "pack"], ["will my insurer accept this", "pack"],
+  ["can it help me make an insurance claim after a power cut", "pack"], ["can i get my insurance cheaper with this", "pack|miss"],
+  // Not ours to answer: the honest note, never a guess.
+  ["thanks", "miss"], ["ok", "miss"], ["lol", "miss"], ["What's the weather tomorrow?", "miss"], ["can you write me a menu", "miss"],
+  ["how do I cook a turkey safely", "miss"], ["what's the best chicken recipe", "miss"], ["do you have a phone number I can call", "miss"],
+  ["Can I talk to a human?", "miss"], ["is your company legit", "miss"], ["Where are you based?", "miss"],
+  ["can i monitor the temperature of my food deliveries", "miss"], ["can it track food expiry dates", "miss"], ["does it count stock", "miss"],
+  ["can it monitor my oven", "miss"], ["can I monitor humidity", "miss"], ["how do I clean the fridge", "miss"],
+  ["my fridge is making a weird noise", "miss"], ["the freezer door seal is broken, who should I call", "miss"],
+  ["can you recommend a fridge repair company", "miss"], ["what fridge should I buy for my restaurant", "miss"],
+  ["is it ok to keep raw chicken above cooked food", "miss"], ["how long can food stay out of the fridge", "food|miss"],
+  ["is it safe to refreeze thawed meat", "miss|food"], ["do I need a thermometer in every fridge by law", "miss|log|haccp|sensors"],
+  ["can it post to slack", "miss"], ["do you integrate with toast pos", "miss"], ["is there an api", "miss"],
+  ["how do I log out", "miss"], ["what can a viewer do", "miss|addlogin"], ["is the food truck generator a problem", "power|cafe|miss"],
+  ["how do I change my password", { v: "password", o: "miss", t: "miss" }], ["I forgot my password", { v: "password", o: "miss", t: "miss" }],
+  ["how do I sign in", { v: "signin", o: "miss", t: "miss" }],
+  // Your own fridges, signed in. Signed out, these say to sign in.
+  ["which fridges need me", "status"], ["is the walk-in ok", "status"], ["how's the bar fridge doing", "status"],
+  ["whats the freezer at right now", "status"], ["anything wrong?", "status"], ["Is everything ok right now?", "status"],
+  ["what's the temperature in the dairy cooler", "status"], ["what's the fridge temperature right now", "status"],
+  ["what does this alert mean", { v: "alert|warm", o: "alert", t: "alert" }],
+  ["why is the walk-in alarming", { v: "alarm|warm|miss", o: "alarm|alert", t: "alarm|alert" }],
+  ["the walk in cooler is beeping", { v: "alarm|warm|miss", o: "alarm", t: "alarm" }],
+  ["i got a text saying walk in cooler too warm what do i do", { v: "warm|alarm|miss", o: "alert|alarm", t: "alert|alarm" }],
+  ["got an alert but the fridge feels cold", { v: "warm|alarm|miss", o: "alert|alarm", t: "alert|alarm" }],
+  ["how long has the walk in been warm", { v: "alert|miss", o: "alert", t: "alert" }],
+  ["did anyone answer the walk in alert", { v: "alert|delivery|miss", o: "alert|delivery", t: "alert|delivery" }],
+  ["who answered the alert", { v: "miss|alert", o: "alert|miss", t: "alert|miss" }], ["is someone on it already", "alert|miss"],
+  ["how do I acknowledge the alert", { v: "alert|warm|miss", o: "alert|miss", t: "alert|miss" }],
+  ["hey so the walk in has been warm since like 2am and nobody answered whats going on", { v: "calls|warm|miss", o: "alert|alarm|status|calls", t: "alert|alarm|status|calls" }],
+  ["ok the freezer alarm went off last night but its fine now do i need to do anything", { v: "warm|alarm|miss", o: "alarm|alert|food|fixed", t: "alarm|alert|food|fixed" }],
+  ["why did I get a text at 3am", { v: "miss|calls|quiet|alert", o: "alert|alarm|week|quiet", t: "alert|alarm|week|quiet" }],
+  ["my alert says nobody answered, what now", { v: "calls|warm|alarm", o: "calls|alert|alarm", t: "calls|alert|alarm" }],
+  ["the alarm keeps going off for no reason", { v: "door|warm|miss", o: "door|alarm|miss", t: "door|alarm|miss" }],
+  ["can i snooze an alert", "alert|pause|miss|fixed"],
+  ["its fixed", { v: "miss|fixed", o: "fixed", t: "fixed" }], ["I fixed the door, how do I close the alert?", { v: "miss|fixed|warm", o: "fixed", t: "fixed" }],
+  ["is the food still ok", "food"], ["Is the chicken in the walk-in still safe to use?", "food"], ["should i throw out the milk", "food"],
+  ["can I still serve the fish from the prep fridge", "food"], ["the fridge was at 50 for an hour is the food ok", "food|reading"],
+  ["I threw the food away, how do I record that?", "foodrecord"], ["how do i mark the food as thrown away", "foodrecord"],
+  ["where do I say we kept the food", "foodrecord"], ["we binned everything in the freezer, where do I log it", "foodrecord"],
+  ["what was thrown away", { v: "miss|foodrecord", o: "lossnote", t: "lossnote" }],
+  ["Who is getting texted tonight", "oncall|team"], ["who's on call this weekend", "oncall"], ["who is on call", "oncall"],
+  ["how do I add someone who can log in", "addlogin"], ["can my manager have their own login", "addlogin"],
+  ["give my business partner access to the console", "addlogin"], ["how do i invite a coworker", "addlogin"],
+  ["can my staff have their own logins", "addlogin"], ["can more than one person log in", "addlogin"],
+  ["does each manager get a separate login", "addlogin"], ["can my accountant see the bills", "addlogin|privacy|miss"],
+  ["remove Theo from the account", "removeperson"], ["Jess left, how do I stop her getting texts", "removeperson|quiet"],
+  ["how do I change Priya's phone number", "number"],
+  ["how do I remove a fridge", "removeunit"], ["we got rid of the old chest freezer, how do I delete it", "removeunit"],
+  ["delete a sensor", "removeunit"], ["how do i get rid of a unit we don't use anymore", "removeunit"],
+  ["remove the old bar fridge", "removeunit"], ["stop monitoring the ice cream freezer", "removeunit|pause|miss"],
+  ["how do i add another fridge", "addunit"], ["I bought a new freezer, how do I add it", "addunit"],
+  ["my sensor isn't showing readings", "noreadings"], ["the new sensor says waiting for first reading", "noreadings"],
+  ["why is my sensor not sending data", "noreadings"], ["sensor shows no signal", "power|noreadings"],
+  ["the prep fridge sensor stopped reporting", "noreadings|power"], ["no readings from my sensor", "noreadings"],
+  ["can I stop alerts for the bar fridge, its being repaired", "pause|miss"],
+  ["how much am i paying", { v: "price", o: "bill", t: "bill" }], ["when is my next bill", { v: "miss|price", o: "bill", t: "bill" }],
+  ["show me my last invoice", { v: "miss|price", o: "bill", t: "bill" }], ["what plan am i on", { v: "miss|price|plan", o: "bill", t: "bill" }],
+  ["how many alerts this week", "week"], ["which unit is warmest", "warmest"], ["how many fridges do we have at old mill", "sites"],
+  ["how much has it saved us", "saved"], ["is anything about to fail", "forecast"],
+  ["make a log for the inspector", "log"], ["I need the temperature records for last month for the health department", "log"],
+  ["make the insurance pack", "pack"], ["add my address to the insurance pack", "address"],
+  ["why didn't I get a text", "delivery"], ["nobody got the alert text last night", "delivery"], ["turn on texts", "texts"],
+  ["how many calls do I have left", "callsleft"], ["when does my trial end", "trialend"], ["how many days left on my trial", "trialend"],
+  ["what do I do next", "next"], ["what did kryozyn do for me this week", "did"],
+  ["My freezer is at 15 degrees", "reading"], ["the walk-in says 45", "reading"], ["the dessert display is at 44, is that bad?", "reading|status|miss"],
+  ["can i see the temperature history", "log|status|miss"], ["can i download a graph of the fridge temps", "log|miss"],
+  ["export to csv", "log|retention|miss"],
+  // Two more rounds, written after the first was put right, to check the
+  // fixes are the pattern and not the instances.
+  ["whats the monthly cost for one location", "price|quote"], ["do you charge a startup fee", "fees"], ["any fees on top of the monthly price?", "fees"],
+  ["is there a discount for paying up front for 12 months", "yearly"], ["how much do i save going annual", "yearly"],
+  ["what happens to all my temperature logs if we close down", "retention"], ["do you keep the alerts forever", "retention"],
+  ["how soon after the fridge warms up do I hear about it", "speed|door"], ["are alerts sent in real time", "speed"],
+  ["can I set a quiet time for my sous chef", "quiet"], ["I don't want my phone buzzing at 2am", "quiet"],
+  ["how to stop alerts going to me at the weekend", "quiet"], ["who will get texted if the walk-in fails", "team"],
+  ["Which people get notified", "team"], ["the milk was thrown out, where do I put that", "foodrecord"],
+  ["how do I tell the system we kept the stock", "foodrecord"], ["we're a food trailer, would it work", "cafe"],
+  ["I run a juice bar", "miss|cafe"], ["do you do florist shops", "sector"], ["flower stall with a cooler room", "sector|miss"],
+  ["ive got 2 restaurants can i use one account", "addsite|quote"], ["can it cover both of my cafes", "addsite"],
+  ["does this meet HACCP requirements", "haccp"], ["do you help with food safety audits", "haccp|log"],
+  ["new sensor not showing up", "noreadings"], ["the sensor isnt connecting", "noreadings"], ["I plugged in the sensor and nothing happens", "noreadings|miss"],
+  ["can my head chef log in too", "addlogin"], ["set up a login for my manager", "addlogin"],
+  ["get rid of the dessert fridge from my list", "removeunit"], ["we sold the bar freezer, remove it", "removeunit"],
+  ["the battery on the walk in sensor is at 10%", "battery"], ["do batteries need changing", "battery"],
+  ["what sensor would you buy for a reach-in", "sensors"], ["recommend me a probe for the walk in", "sensors"],
+  ["my walk in freezer is at 12, is that bad", "reading"], ["is 43 too warm for a fridge", "reading|limits"],
+  ["how cold does a freezer need to be", "limits"], ["will it text me if my chef leaves the door open all night", "door|calls"],
+  ["does it ring my phone if no one replies", "calls"], ["can i get phone calls on starter", "plan|calls"],
+  ["can I see the walk-in temp now", "status"], ["anything I need to deal with?", "status"], ["is everything cold", "status|miss"],
+  ["whats going on with the prep fridge", "status|alarm"], ["the bar fridge alarm went off", { v: "alarm|warm|miss", o: "alarm", t: "alarm" }],
+  ["is the cheese ok after the power cut", "food|power"], ["should we bin the chicken", "food"],
+  ["how do i get the inspection report", "log"], ["print my temperature sheets", "log"],
+  ["our health inspection is next week what do I need", "log|haccp"], ["what does the insurer get", "pack"],
+  ["can I get a demo first", "demo|try"], ["do I have to give a card for the trial", "trial"],
+  ["what happens on day 15 of the trial", "trialafter|trial|miss"], ["can I cancel any time", "cancel"],
+  ["who do I call for support", "miss"], ["do you integrate with my POS", "miss"], ["what's your refund policy", "cancel"],
+  ["can it measure the temperature of food on the pass", "miss"], ["how do i defrost a freezer", "miss"],
+  ["can I use it at home for my wine", "miss|sector"], ["is my info shared with anyone", "privacy"],
+  ["can I change the number that gets the texts", "number"], ["how do I add another freezer", "addunit"],
+  ["what's the cheapest plan", "price|plan"], ["can I set the limit to 5C", "limit|canada"],
+  ["our pastry chef wants to know if the walk-in is cold enough", "status"], ["is the ice cream freezer ok", "status"],
+  ["can you text my partner as well when there's a problem", "team"], ["how many phone numbers can I add for alerts", "team"],
+  ["what does the text message look like", "miss|alert|team"], ["can I customise the alert message", "miss"],
+  ["I run a catering company with 2 vans", "cafe|addsite|quote"], ["is this ok for a school kitchen", "sector|cafe|miss"],
+  ["do you work with hospitals", "sector|pharmacy|miss"], ["can a pharmacy with 3 vaccine fridges use it", "pharmacy|quote"],
+  ["whats the catch", "fees|miss"], ["is it really free for 14 days", "trial"], ["do I get charged if I forget to cancel the trial", "trialafter|trial"],
+  ["will my data be deleted when the trial ends", "retention|trialafter"], ["how long do readings stay in the system", "retention"],
+  ["how fast do you call if nobody answers", "calls|speed"], ["is there a delay before the text", "speed|door"],
+  ["can it email me a weekly report", "did|miss"], ["send me a summary every monday", "did|miss"],
+  ["can I see last weeks alerts", { v: "miss", o: "week", t: "week" }], ["the freezer was at 20 for 3 hours, can I keep the meat", "food|reading"],
+  ["is frozen chicken safe after a power cut", "food|power"], ["will a power cut set off an alert", "power"],
+  ["what if the router reboots", "power"], ["will it work in a basement walk in with no signal", "sensors|power"],
+  ["do sensors work in a blast chiller", "sensors|miss"], ["can I put two sensors in one walk-in", "sensors|miss|addunit"],
+  ["my manager is on holiday, can she stop getting alerts", "quiet|pause"], ["mute the alerts for tonight", "quiet|pause"],
+  ["how do I make sure someone always gets the alert at night", "quiet|oncall|team|calls|miss"], ["set up a rota for the weekend", "oncall"],
+  ["Remove Sam's access", "removeperson"], ["take Lucy off the alert list", "removeperson"],
+  ["delete the test fridge I added", "removeunit"], ["I added the wrong freezer by mistake", "removeunit|miss"],
+  ["whats the sensor battery level", "battery"], ["how long does a sensor last", "battery|sensors|miss"],
+  ["do I need to keep paper records as well", "log|haccp"], ["what records does the inspector want", "log|haccp"],
+  ["will this lower my insurance premium", "pack|miss"], ["how do I prove to my insurer the fridge was fine", "pack"],
+  ["where is the bill", { v: "miss|price", o: "bill", t: "bill" }], ["upgrade to growth", "plan|miss"],
+  ["how do I switch plans", "plan|miss|bill"], ["can I downgrade", "plan|miss|cancel"],
+  ["the alert says too cold, what do I do", { v: "alarm|warm|miss", o: "alarm|alert", t: "alarm|alert" }],
+  ["the reading looks wrong", "miss|noreadings"], ["my sensor shows 99 degrees", "miss|reading|noreadings"],
+  ["thank you!", "miss"], ["you're useless", "miss"], ["how old are you", "miss"],
+  ["Make a proof report", "proof"], ["make a proof of monitoring report", "proof"], ["how do I make a proof report for my insurer", "proof"],
+];
+
+// The answers only a signed-in business gets, and the ones only somebody
+// signed out gets: elsewhere they are a miss.
+const SIGNED_IN_ONLY = new Set(["lossnote", "bill", "week", "warmest", "sites"]);
+const SIGNED_OUT_ONLY = new Set(["signin", "password", "warm"]);
+const ADVERSARIAL_AT = {
+  v: () => chatAt("/pricing", { signedIn: false }),
+  o: () => chatAt("/today", { overview: bigOverview() }),
+  t: () => chatAt("/console", { overview: bigOverview({ trial: true }) }),
+};
+
+test("3.42.0: an adversarial table of over 300 questions: each gets its answer or the honest note, never a confident wrong one", async () => {
+  assert.ok(ADVERSARIAL.length >= 300, String(ADVERSARIAL.length));
+  const wrong = [];
+  for (const [words, want] of ADVERSARIAL) {
+    for (const who of ["v", "o", "t"]) {
+      const ok = String(typeof want === "string" ? want : want[who]).split("|")
+        .map((x) => ((who === "v" && SIGNED_IN_ONLY.has(x)) || (who !== "v" && SIGNED_OUT_ONLY.has(x)) ? "miss" : x));
+      const chat = ADVERSARIAL_AT[who]();
+      const got = chat.send(words);
+      const topic = got.label ? (chat.given.answeredTopic() || (/^LINK /.test(got.text || "") && got.label === "See it live" ? "demo" : null)) : null;
+      if (!ok.includes(topic || "miss")) wrong.push(`${who}: ${words} -> ${topic || "miss"} (want ${ok.join("|")})`);
+      // A miss is the note naming the question, never a list of fridges.
+      if (!topic) assert.match(got.note || got.text || "", /built-in answer|built in either/, `${who}: ${words}`);
+      else assert.doesNotMatch(got.text || "", /undefined|NaN|\[object Object|Morgan Hale|\+1 555/, `${who}: ${words}`);
+      await chat.tick();
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("3.42.0: the five named misroutes get the right answer, true to the console", async () => {
+  const visitor = chatAt("/pricing", { signedIn: false });
+  assert.match(visitor.send("I have a food truck, is that ok?").text, /^Yes, while its fridges have internet: a food truck is watched the same way as a restaurant/);
+  await visitor.tick();
+  const night = visitor.send("How do I stop getting texts at 3am?").text;
+  assert.match(night, /\*\*Quiet hours\*\*/);
+  assert.match(night, /\*\*A rotation\*\*/);
+  assert.match(night, /\*\*Mute\*\* beside a name under \*\*Who gets alerts\*\*/);
+  assert.doesNotMatch(night, /Yes, on plans with calls/);
+  await visitor.tick();
+  const sensor = visitor.send("Which sensor should I get for a walk-in freezer?").text;
+  assert.match(sensor, /^We don't sell sensors\.[\s\S]*For a walk-in or a freezer, pick one made for freezer temperatures/);
+  await visitor.tick();
+  const trial = chatAt("/console", { overview: bigOverview({ trial: true }) });
+  assert.match(trial.send("Who gets the alerts right now?").text, /^Right now an alert text goes to \*\*Morgan\*\*\./);
+  await trial.tick();
+  const thrown = trial.send("I threw the food away, how do I record that?").text;
+  assert.match(thrown, /\*\*Food kept\*\* or \*\*Thrown away\*\*\. Press \*\*Thrown away\*\*, then \*\*Add what was thrown away\*\*/);
+  assert.doesNotMatch(thrown, /rule of thumb/);
+});
+
+test("3.42.0: the new answers say only what the product does, from the server's figures", async () => {
+  const v = chatAt("/pricing", { signedIn: false });
+  const ask = async (words) => { const got = v.send(words); await v.tick(); return got.text || "(missed)"; };
+  assert.match(await ask("Is there a setup fee?"), /^\*\*No setup fee, and no hidden fees\.\*\* You pay the plan's monthly price: Starter \$59 a month/);
+  assert.match(await ask("How long do you keep my temperature records?"), /^\*\*Readings: 13 months\.\*\* Every reading is kept in full for 30 days/);
+  assert.match(await ask("What happens to my data if I cancel?"), /^\*\*If you cancel\*\*, nothing is deleted: the service runs to the end of what you have paid for/);
+  assert.match(await ask("how quickly will i get a text"), /^\*\*Within 60 seconds of the alert opening\*\*/);
+  assert.match(await ask("is there a discount if I pay yearly"), /^\*\*Yes: pay yearly and you get 12 months for the price of 10 \(2 months free\)\.\*\* Starter is then \$590 a year, and Growth \$1,490 a year a location/);
+  assert.match(await ask("Is it HACCP compliant?"), /It is a record, not a certificate/);
+  assert.match(await ask("Can I use it for two restaurants?"), /^Yes\. Once you've signed up, on the console's \*\*Setup\*\* tab, open \*\*Your locations\*\*/);
+  assert.match(await ask("I own a flower shop"), /\(\/for\/florists\)/);
+  assert.match(await ask("my sensor isn't showing readings"), /\*\*Waiting for its first reading\*\* until one arrives/);
+  assert.match(await ask("can my manager have their own login"), /\*\*People who can sign in\*\* on the console's \*\*Team\*\* tab: \*\*Add someone\*\*/);
+  assert.match(await ask("how do I remove a fridge"), /^Press \*\*Remove\*\* on the unit's card on the console's \*\*Fridges\*\* tab/);
+  assert.match(await ask("the sensor battery is dying"), /after 30 minutes everyone on call is texted that it has/);
+  assert.match(await ask("Can I change how long it waits before alerting?"), /^Yes\. Press \*\*Alert wait\*\* on the unit's card in the console/);
+  // The figures are the server's: a setup fee or another yearly offer would show.
+  const data = { setupFee: "25", yearlyCharged: "11", yearlyCovered: "12", keepReadingsMonths: "24" };
+  const sent = (words) => chatAt("/pricing", { signedIn: false, data }).send(words).text || "(missed)";
+  assert.match(sent("Is there a setup fee?"), /^\*\*A one-off setup fee of \$25 a location/);
+  assert.match(sent("Can I pay annually?"), /12 months for the price of 11 \(1 month free\)/);
+  assert.match(sent("how long is data stored"), /^\*\*Readings: 24 months\.\*\*/);
+  // Signed in, the battery and the readings answers name the units.
+  const own = bigOverview();
+  own.sensors[2].battery_low = true;
+  own.sensors[2].battery_percent = 12;
+  const o = chatAt("/today", { overview: own });
+  assert.match(o.send("low battery warning?").text, /^Low now: \*\*Prep fridge x\(\/evil\)\*\* \(12%\)\./);
 });

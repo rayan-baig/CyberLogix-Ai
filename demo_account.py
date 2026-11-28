@@ -199,7 +199,7 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
     import legal
     import oncall
     from contracts import bill_period
-    from domain import evaluate_breach
+    from domain import VOICE_ESCALATION_GRACE_MINUTES, evaluate_breach
     from store import GAP_KIND, STORE, iso, utc_now
 
     found = what_is_there()
@@ -368,6 +368,18 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         {"channel": "sms", "contact_name": person.full_name, "to": person.phone,
          "delivered": True, "status": "delivered", "provider_sid": f"DEMO-SM-{n:04d}", "demo": True}
         for n, person in enumerate(STORE.sms_recipients(tenant), len(CONTACTS) + 1)]
+    # Nobody has answered it, so the call step came when the ladder says,
+    # 10 minutes after it opened (3.42.0), not when the demo was seeded or
+    # first swept: the timeline said "Would have phoned the list" at the
+    # seed time, after the texts by fifty minutes. No call is placed from
+    # the demo, so each is marked as a server with calls off marks it.
+    still.voice_escalated_at = still.opened_at + timedelta(minutes=VOICE_ESCALATION_GRACE_MINUTES)
+    still.voice_fanout = [
+        {"channel": "voice", "to": person.phone, "delivered": False, "status": "not_configured",
+         "provider_sid": None, "detail": "No call is placed from the demo.", "demo": True,
+         "contact_id": person.contact_id, "contact_name": person.full_name}
+        for person in STORE.voice_ladder(tenant)]
+    still.voice_delivery = still.voice_fanout[0] if still.voice_fanout else None
     STORE._db.put("incident", still.incident_id, still.to_row())
 
     # A signed contract, its first month billed, and paid.
@@ -380,10 +392,17 @@ def seed(now: Optional[datetime] = None, password: Optional[str] = None,
         raise RuntimeError("The demo's first invoice could not be billed.")
     invoice, _ = STORE.settle_invoice(invoice, "DEMO-WIRE-0001")
 
-    STORE.record_audit(tid, f"{owner.full_name} <{owner.email}>", "owner",
-                       "contract.signed", "1-year term, prices rise 5% a year, monthly.")
-    STORE.record_audit(tid, who, "operator", "incident.resolved",
-                       f"{incident.incident_id} on {HANDLED}.")
+    # Each at its own moment (3.42.0), not the seed time: the activity log
+    # had the contract signed and the alert closed "just now", beside a
+    # term that began a week ago and an alert closed days before.
+    for actor, role, action, detail, at in (
+            (f"{owner.full_name} <{owner.email}>", "owner", "contract.signed",
+             "1-year term, prices rise 5% a year, monthly.", sub.started_at),
+            (who, "operator", "incident.resolved", f"{incident.incident_id} on {HANDLED}.",
+             incident.resolved_at)):
+        entry = STORE.record_audit(tid, actor, role, action, detail)
+        entry.at = at or entry.at
+        STORE._db.put("audit", entry.entry_id, entry.to_row())
 
     # A business a week in has done its first day (3.38.0): the demo
     # still said "Getting started 3 of 4" and "Agreements to accept"

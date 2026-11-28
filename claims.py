@@ -101,6 +101,25 @@ def reader_zone(name: Optional[str]):
         return timezone.utc
 
 
+def business_zone(tenant: Tenant, incident: Incident):
+    """The business's own clock for this alert's site (3.42.0), as far as
+    the account says (its on-call rotation, else somebody's quiet hours:
+    sitewide.site_timezone), or None. Every time on the pack is written
+    in it, labelled, so a pack read in another zone still says when the
+    fridge warmed on the kitchen's clock. Display only: the stored times
+    and the sealed readings stay UTC."""
+    from sitewide import site_timezone
+
+    sensor = STORE.get_sensor(incident.sensor_id) if incident.sensor_id else None
+    name = site_timezone(tenant, sensor.site_id if sensor else None, "")
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return None
+
+
 def when_words(moment: Optional[datetime], zone=timezone.utc) -> str:
     """"Nov 23, 2026, 1:58 AM EST": a date a loss adjuster reads, never
     "2026-11-23T01:58:35Z" (3.33.0)."""
@@ -1075,7 +1094,7 @@ def claim_packet(
 ):
     """Assemble the evidence packet for one incident."""
     incident = _load_incident(incident_id, tenant)
-    zone = reader_zone(tz)
+    zone = business_zone(tenant, incident) or reader_zone(tz)
     packet = build_packet(tenant, incident, zone)
 
     if cover_letter:

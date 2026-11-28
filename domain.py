@@ -133,14 +133,24 @@ def wait_words() -> str:
 
 
 def minutes_words(minutes: float) -> str:
-    """"about 1 minute", "3 minutes", "about 2 hours": never "0.73 min"."""
+    """"under a minute", "3 minutes", "1 hour 28 minutes", "about 4
+    hours": never "0.73 min".
+
+    Under three hours, the hours and minutes (3.42.0): "about 1 hour" was
+    said of 88 minutes, which is nearer an hour and a half. Past that, to
+    the nearest hour, where the minutes no longer change what anybody does.
+    static/words.js `minutes` says the same; a test checks it."""
     whole = int(round(minutes))
     if whole < 1:
         return "under a minute"
     if whole < 60:
         return f"{whole} minute{'' if whole == 1 else 's'}"
+    if whole < 180:
+        hours, rest = divmod(whole, 60)
+        head = f"{hours} hour{'' if hours == 1 else 's'}"
+        return f"{head} {rest} minute{'' if rest == 1 else 's'}" if rest else head
     hours = round(minutes / 60.0)
-    return f"about {hours} hour{'' if hours == 1 else 's'}"
+    return f"about {hours} hours"
 
 
 # When the sweep sends an incident's alert text again, in minutes after the
@@ -382,7 +392,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "asset_plural": "refrigerators",
         "shortcut_name": "VFC Storage & Handling Record",
         "shortcut_description": (
-            "Produces the continuous temperature record a vaccine programme "
+            "Produces the continuous temperature record a vaccine program "
             "audit asks for, with every excursion and its response."
         ),
     },

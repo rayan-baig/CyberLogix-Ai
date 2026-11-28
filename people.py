@@ -79,15 +79,15 @@ COMMON_CREDENTIALS = {
         "Bloodborne pathogen training",
     ],
     "pharmacy": [
-        "Pharmacist licence", "Pharmacy technician registration",
+        "Pharmacist license", "Pharmacy technician registration",
         "Immunisation certification", "Controlled substance registration",
     ],
     "logistics": [
-        "Commercial driving licence", "DOT medical examiner certificate",
+        "Commercial driving license", "DOT medical examiner certificate",
         "Hazmat endorsement", "Forklift operator certification",
     ],
     "private_aviation": [
-        "Airframe and powerplant licence", "Inspection authorisation",
+        "Airframe and powerplant license", "Inspection authorization",
         "Ramp safety certification",
     ],
     "cryostorage": [
@@ -113,7 +113,7 @@ COST_KIND = "leaver_cost"
 # will not remember the parking permit. They add their own.
 COMMON_LEAKS = {
     "phone": ("Mobile phone plan", 55.0),
-    "software": ("Software seat or licence", 25.0),
+    "software": ("Software seat or license", 25.0),
     "benefits": ("Health or dental cover", 320.0),
     "vehicle": ("Vehicle lease or insurance", 410.0),
     "fuel": ("Fuel or fleet card", 180.0),
@@ -760,7 +760,7 @@ def _render_alert(tenant: Tenant, items: List[Dict[str, Any]],
     body += [
         "",
         "Renewals, dates and who is on the roster are all on the "
-        "Licences & people card in your console.",
+        "Staff cards tab in your console.",
     ]
     if urgent:
         body += [
@@ -822,7 +822,7 @@ def send_licence_alerts(now: Optional[datetime] = None,
                         + (
                             f"{len(items)} thing(s) needing attention today"
                             if urgent else
-                            f"{len(items)} licence(s) coming up for renewal"
+                            f"{len(items)} staff license(s) coming up for renewal"
                         )
                     ),
                     body=_render_alert(tenant, items, urgent),
@@ -869,7 +869,7 @@ class Credential(BaseModel):
     name: str = Field(..., min_length=2, max_length=160)
     expires_on: str = Field(..., description="YYYY-MM-DD.")
     reference: str = Field("", max_length=160,
-                           description="Certificate or licence number.")
+                           description="Certificate or license number.")
     required_to_work: bool = Field(
         True,
         description="Whether this person may not do the job without it.",

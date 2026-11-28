@@ -43,7 +43,10 @@ function degreesOf(value) {
 
 function nameOf(unit) {
   const where = (unit.location_name || "").split("/").pop().trim();
-  return where || unit.sensor_id;
+  // With a capital (3.42.0): a name typed "walk-in fridge" starts many of
+  // this page's sentences, and "walk-in fridge is 61°" read as a typo.
+  const name = where || unit.sensor_id || "";
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /* The same name, but enough of it to know which one. Two sites both have

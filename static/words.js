@@ -16,15 +16,21 @@
     return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
   }
 
-  /* "under a minute", "1 minute", "6 minutes", "about 2 hours". */
+  /* "under a minute", "1 minute", "6 minutes", "1 hour 28 minutes",
+     "about 4 hours" (3.42.0: "about 1 hour" was said of 88 minutes). */
   function minutes(value) {
     const m = Number(value);
     if (!Number.isFinite(m)) return "";
     const whole = roundHalfEven(m);
     if (whole < 1) return "under a minute";
     if (whole < 60) return `${whole} minute${whole === 1 ? "" : "s"}`;
-    const hours = roundHalfEven(m / 60);
-    return `about ${hours} hour${hours === 1 ? "" : "s"}`;
+    if (whole < 180) {
+      const hours = Math.floor(whole / 60);
+      const rest = whole % 60;
+      const head = `${hours} hour${hours === 1 ? "" : "s"}`;
+      return rest ? `${head} ${rest} minute${rest === 1 ? "" : "s"}` : head;
+    }
+    return `about ${roundHalfEven(m / 60)} hours`;
   }
 
   function at(iso) {

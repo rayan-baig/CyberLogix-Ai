@@ -49,7 +49,7 @@ ${f.appShort} does not sell sensors. Buy a wireless temperature sensor for each 
 1. Buy one sensor for each fridge or freezer. Check it can send to a web address, or that its maker's cloud has an API.
 2. Put the sensor (or its probe) inside, away from the door, and connect it to your Wi-Fi or gateway as its maker says.
 3. In the console, use "Add a fridge or freezer" (Setup tab): say where it is and whether it's a fridge or a freezer, then copy the sensor key it shows once.
-4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand, with that key. Or, for a maker's cloud, add it under "Fetch from a sensor cloud".
+4. In the sensor's app or cloud, set it to send readings to the address in the guide for your brand, with that key. Or, for a maker's cloud, add it under "Sensor maker's cloud".
 5. Wait for the first reading; Getting started ticks "First reading received", usually within a few minutes.
 6. Add the people who should get alerts, and send a test alert.
 A new business sees "Getting started" at the top of the console with these steps ticked off as they're done.
@@ -66,7 +66,7 @@ An owner can make a proof of monitoring report for one location (or all) and one
 
 ## Simple view and the Advanced console
 - The Simple view (/today) answers one question in plain words: is there anything I have to do? It shows a headline ("Nothing is spoiling", or what needs you now), what needs you with what to do, and each fridge and freezer as Fine, Too warm, Heading the wrong way or No signal. "All the detail" opens the full console.
-- The console (/console) has everything, in tabs: Everything, Fridges, Alerts, Licences, People, Money, Proof, Setup and Advanced. A search box finds any card. A small account (a trial or Starter with a few units) opens on the Simple view once it's set up; the tools for bigger businesses wait under the Advanced tab.
+- The console (/console) has everything, in tabs: Everything, Fridges, Alerts, Staff cards, People, Money, Proof, Setup and Advanced. A search box finds any card. A small account (a trial or Starter with a few units) opens on the Simple view once it's set up; the tools for bigger businesses wait under the Advanced tab.
 - No sensor yet? An owner can press Simulate on the Fridges tab (or "No hardware yet? Try a simulated one" while the list is empty): pretend units that warm up, never recorded and never texted. /demo shows the whole story in a pretend kitchen, with no account.
 - The console can be installed on a phone's home screen. Each unit's card opens a drawer with its history and an "Is the food still good?" button.
 

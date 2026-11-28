@@ -98,9 +98,11 @@ VERIFY_LIMIT = Limit("proof-verify", per_caller=30, total=1000,
                      window_seconds=600, words="report checks")
 
 # Plain words for each role. Never a person's name.
-_ROLE_WORDS = {"owner": "Owner", "manager": "Manager",
-               "kitchen staff": "Staff", "on-call staff": "On-call person"}
-_TEAM_WORDS = {"owner": "Owners", "operator": "Managers", "viewer": "View-only staff"}
+# The console's own names for the roles (3.42.0): the report said "by the
+# manager" and "Managers" where the Team tab says "operator".
+_ROLE_WORDS = {"owner": "Owner", "manager": "Operator",
+               "kitchen staff": "Viewer", "on-call staff": "On-call person"}
+_TEAM_WORDS = {"owner": "Owners", "operator": "Operators", "viewer": "Viewers"}
 
 STATE_WORDS = {
     "genuine": "Genuine and unchanged since it was made.",
@@ -292,13 +294,23 @@ def _ordinal(n: int) -> str:
     return f"{n}{tail}"
 
 
-def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
+def _who_is_alerted(tenant: Tenant, site_id: Optional[str],
+                    now: Optional[datetime] = None) -> Dict[str, Any]:
     """The on-call list and the team, by role: never a name or a number.
 
     Phone calls are mentioned only where the plan includes them. This is
     the page an insurer reads, and it used to promise "the phone calls go
     down the list" for a Starter account that never places one.
+
+    Who a real alert reaches comes from the same place the Team tab's "A
+    real alert right now" does (3.42.0): STORE.sms_recipients and
+    STORE.voice_ladder, so a rotation and quiet hours count. The report
+    said "a text to all 3 people on call" while the Team tab said "Text to
+    Morgan Hale", the person whose turn it was.
     """
+    import oncall
+
+    now = now or utc_now()
     calls = bool(tenant.entitlements().get("voice_escalation"))
     roster = [c for c in STORE.contacts_for(tenant.tenant_id) if c.active]
     if site_id:
@@ -317,17 +329,30 @@ def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
         })
     # The ladder as it runs (3.41.0), in steps, still by position only:
     # "1. On-call person" three times said nothing about what happens.
-    texted = [c for c in roster if c.receives_sms]
-    called = [c for c in roster if c.receives_voice and calls]
+    # Live, as the dispatcher would run it now (3.42.0): with a rotation,
+    # only whoever's turn it is, and "all N" only when there is none.
+    def real(people: List[Any]) -> List[Any]:
+        return [c for c in people if c.contact_id != "fallback"]
+
+    texted = real(STORE.sms_recipients(tenant, site_id, now=now)) if roster else []
+    ladder = real(STORE.voice_ladder(tenant, site_id, now=now)) if roster and calls else []
+    turns = [r for r in oncall.rotations_for(STORE._db, tenant.tenant_id)
+             if r.members and (r.site_id is None or r.site_id == site_id or site_id is None)]
+    rota = bool(turns) and any(c.contact_id in {m for r in turns for m in r.members} for c in texted)
     steps: List[str] = []
     if texted:
-        steps.append(f"At once: a text to {'the one person' if len(texted) == 1 else f'all {len(texted)} people'} on call.")
-    for n, _contact in enumerate(called, start=1):
-        place = _ordinal(roster.index(_contact) + 1)
+        who = ("the person whose turn it is in the on-call rotation" if rota and len(texted) == 1
+               else f"the {len(texted)} people on call now (a rotation decides whose turn it is)" if rota
+               else "the one person on call" if len(texted) == 1
+               else f"all {len(texted)} people on call")
+        steps.append(f"At once: a text to {who}.")
+    for n, _contact in enumerate(ladder, start=1):
+        place = ("person on call" if rota and len(ladder) == 1
+                 else f"{_ordinal(n)} person on the list")
         steps.append(
             f"After {VOICE_ESCALATION_GRACE_MINUTES} minutes with nobody acknowledging: "
-            f"a phone call to the {place} person on the list." if n == 1 else
-            f"If that call does not get through: the {place} person on the list.")
+            f"a phone call to the {place}." if n == 1 else
+            f"If that call does not get through: the {place}.")
     if texted and not calls:
         steps.append("No phone calls: this plan sends texts only.")
     team: Dict[str, int] = {}
@@ -344,12 +369,30 @@ def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
                  for role, count in sorted(team.items(), key=lambda kv: kv[0])
                  if role in _TEAM_WORDS],
         "calls": calls,
-        "rule": ("Every person on call gets a text at once. If nobody "
-                 "acknowledges, the phone calls go down the list until "
-                 "somebody does." if calls else
-                 "Every person on call gets a text at once. This plan "
-                 "sends texts only; it does not include phone calls."),
+        "rotation": rota,
+        "rule": (("Whoever is on call gets a text at once: the on-call "
+                  "rotation decides who, and it changes at each handover. "
+                  if rota else "Every person on call gets a text at once. ")
+                 + (("If nobody acknowledges, the person on call is phoned."
+                     if len(ladder) == 1 and rota else
+                     "If nobody acknowledges, the phone calls go down the list "
+                     "until somebody does.") if calls else
+                    "This plan sends texts only; it does not include phone calls.")),
     }
+
+
+def _zone_name(tenant: Tenant, site_id: Optional[str]) -> str:
+    """The IANA name of the business's clock, or "UTC" when the account
+    names none."""
+    import oncall
+    from sitewide import site_timezone
+
+    name = site_timezone(tenant, site_id, "UTC")
+    try:
+        oncall.zone(name)
+    except ValueError:
+        return "UTC"
+    return name
 
 
 def build(tenant: Tenant, site_id: Optional[str], first: date,
@@ -459,6 +502,10 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
         "period_end": iso(period_end),
         "month_complete": period_end >= month_end,
         "issued_at": iso(now),
+        # The business's own clock (3.42.0), for showing the times above
+        # and below: they stay UTC here, and the page writes them in this
+        # zone, labelled. From the on-call rotation (sitewide.site_timezone).
+        "timezone": _zone_name(tenant, site.site_id if site else None),
         "temperature_unit": unit_label,
         "gap_threshold_minutes": GAP_RECORD_MINUTES,
         "summary": {
@@ -480,7 +527,7 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
         "sensors": units,
         "alerts": alerts,
         "longest_gap": longest_gap,
-        "alerted": _who_is_alerted(tenant, site.site_id if site else None),
+        "alerted": _who_is_alerted(tenant, site.site_id if site else None, now),
         "coverage": {
             "gaps_recorded_since": iso(since),
             "covers_the_whole_period": covered,
@@ -614,6 +661,13 @@ def _mins(value: Any) -> str:
     return f"{hours} h {minutes} min" if minutes else f"{hours} h"
 
 
+def _hours(value: Any) -> str:
+    """"3,353.6", as the printed report writes hours (3.42.0), never
+    "3353.6"; a whole number without its ".0"."""
+    text = f"{float(value):,.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
 def online_words(summary: Dict[str, Any]) -> str:
     """"Time online" with the hours it is a share of, never a bare 100%."""
     hours = summary.get("hours_watched")
@@ -621,10 +675,10 @@ def online_words(summary: Dict[str, Any]) -> str:
     if pct is None:
         if hours is None:
             return "—"
-        return f"Not enough yet: {hours:g} hours watched so far"
+        return f"Not enough yet: {_hours(hours)} hours watched so far"
     if hours is None:  # a report made before the hours were written down
         return f"{pct:g}%"
-    return f"{pct:g}% of {hours:g} hours watched"
+    return f"{pct:g}% of {_hours(hours)} hours watched"
 
 
 def render_verify_html(result: Dict[str, Any], code: str) -> str:

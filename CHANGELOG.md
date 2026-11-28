@@ -6,6 +6,64 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.42.0 — 2026-11-28
+
+Pilot says "I don't have a built-in answer" rather than guess, and
+answers more of what visitors and owners ask; the proof report, the
+insurance pack, the demo and the console agree on who is alerted and
+when things happened; plainer US English. No price, plan, brand or
+sector offered has changed.
+
+- **Pilot misses honestly instead of guessing.** With no AI key, a
+  question is answered only when its words clearly ask for that answer;
+  otherwise Pilot says it has no built-in answer and offers the two
+  closest. Put right: "I have a food truck, is that ok?" (the food rule,
+  now the café answer), "How do I stop getting texts at 3am?" ("Yes, on
+  plans with calls", now quiet hours, the rotation and Mute), "Who gets
+  the alerts right now?" (the fridge list, now who is texted), "I threw
+  the food away, how do I record that?" (the rule of thumb, now the
+  alert's Food kept / Thrown away buttons) and "Which sensor should I
+  get for a walk-in freezer?" (the alert steps, now what to buy). "Right
+  now", "3am" and "food … ok" alone no longer pick an answer, nor does
+  "ok" typed on its own, and questions about calling us, a person or an
+  integration get the honest note.
+- **Pilot answers more.** A setup fee or hidden fees, how long data is
+  kept and what happens to it after cancelling, how fast a text comes,
+  paying yearly, two or three restaurants, a flower shop, HACCP, a
+  sensor with no readings, adding someone who can sign in, removing a
+  fridge, a flat battery, changing the alert wait, and making a proof
+  of monitoring report (it gave the insurance pack). Each from what the
+  console and the plan figures really have.
+- **Checked against over 450 questions** a visitor, an owner and a
+  business on the trial type, in the JavaScript tests: each gets its
+  answer or the honest note, never a confident wrong one.
+- **Add someone who can sign in.** People who can sign in has an Add
+  someone form for owners: name, email, role and a first password they
+  change when they sign in.
+- **One story on who is alerted.** The proof report's "Who gets alerted"
+  comes from the same live list as the Team tab: with a rotation, "a
+  text to the person whose turn it is", not "all 3 people". Roles are
+  "Operator" everywhere, not "manager" in one place.
+- **The demo's record agrees with itself.** Its contract and its closed
+  alert are in the activity log at the moments they happened, and the
+  open alert's "Would have phoned the list" is 10 minutes after it
+  opened, as the ladder says.
+- **Times on the kitchen's clock.** The proof report and the insurance
+  pack show times in the business's time zone (from its rotation),
+  labelled ("9:11 AM CST"). Stored times stay UTC, so every report's seal
+  still checks. The /verify page writes hours as "3,358.6".
+- **Plainer words.** The Licences tab is Staff cards; "analyzed",
+  "modeled" and "license" in US spelling; "breaching" is "out of range";
+  Setup's "Fetch from a sensor cloud", "OmniArmor connection" and "Your
+  business key" are "Sensor maker's cloud", "Send the daily record to
+  OmniArmor" and "Key for other software", under Advanced.
+- **Polish.** /today starts a unit's sentence with a capital. 88 minutes
+  is "1 hour 28 minutes", not "about 1 hour". On a 320px phone the
+  pinned alert bar is about 105px instead of 164px, and on /today with an
+  alert open the Pilot robot sits beside the alert's words without a
+  scroll.
+
+
 ## 3.41.0 — 2026-11-28
 
 Pilot stops giving confident wrong answers with no AI key and answers
