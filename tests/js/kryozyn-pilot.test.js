@@ -924,7 +924,9 @@ test("1.4.3: the \"does/this\" workaround is gone; \"does\" and \"this\" alone n
 test("1.4.3: with no key, a question nothing fits gets the core's note in the chat with this page's own answers under it, never a prompt", () => {
   for (const [pathname, signedIn] of PAGES_143) {
     const given = mountAt(pathname, { overview: overviewWith(), signedIn });
-    assert.equal("noKeyReply" in given, false, "the core's default: the note in the chat");
+    // 3.37.0: this app's own note, for the question that missed; with no
+    // question being sent, nothing, so the core's own words.
+    assert.equal(given.noKeyReply, "", "no question, no note of this app's own");
     const pillsHere = PANEL.ownPills(given.welcomePills, BASE + pathname);
     const chipsHere = PANEL.cleanChips(given.chips(given.screen()), BASE + pathname);
     const row = Array.from(PANEL.noKeyItems(pillsHere, chipsHere, true));
@@ -1111,7 +1113,7 @@ test("3.35.0: while the loss headline shows, the welcome offers the pack first",
 test("3.35.0: 'Is the food safe to eat?' respects a recorded 'Thrown away'", () => {
   for (const pathname of ["/today", "/console"]) {
     const got = typedAnswer(pathname, "Is the food safe to eat?", { overview: lossOverview() });
-    assert.match(got || "(none)", /You recorded it as thrown away at \d{1,2}:\d\d [AP]M, so there is nothing left to decide about that food\./, pathname);
+    assert.match(got || "(none)", /You recorded it as thrown away at (?:[A-Z][a-z]{2} \d{1,2}, |[A-Z][a-z]{2} )?\d{1,2}:\d\d [AP]M, so there is nothing left to decide about that food\./, pathname);
     assert.doesNotMatch(got, /rule of thumb/, "no rule of thumb over food already in the bin");
     assert.match(got, /#packet=INC-000009\)/);
     assert.doesNotMatch(got, NO_PEOPLE);
@@ -1214,7 +1216,9 @@ test("3.36.0: signed out, the insurer, setting up, the food and Canada are answe
     const canada = typedAnswer(pathname, "Does it work in Canada?", { signedIn: false, overview: null });
     assert.match(canada || "(none)", /^Yes\. Kryozyn can show every reading in Celsius/, pathname);
     assert.match(canada, /over 41°F \(5°C\) unless you set your own with \*\*Change limit\*\*/);
-    assert.match(canada, /Twilio to mobile numbers written with their country code; a Canadian number \(\+1\)/);
+    // 3.37.0: in plain words, no text provider's name for a visitor.
+    assert.match(canada, /reach any mobile number written with its country code: a Canadian number \(\+1\)/);
+    assert.doesNotMatch(canada, /Twilio/);
     assert.match(canada, /Prices are in US dollars/);
   }
   // On the person's own pages too.
@@ -1271,5 +1275,144 @@ test("3.36.0: every item's words fit the core's 20 in every situation", () => {
         }
       }
     }
+  }
+});
+
+// ---------------------------------------------------------------- 3.37.0: what a typed question is after, and every miss
+
+// The config on a page with a real chat box: the core's submit is the
+// chat box's own form, which this app listens to (capture), then the core
+// matches the question against the items as they are at that moment.
+function chatAt(pathname, opts = {}) {
+  let listener = null;
+  const box = { value: "" };
+  const form = { classList: { contains: (c) => c === "pilot-compose" }, querySelector: (q) => (q === ".pilot-input" ? box : null) };
+  let given = null;
+  const fetchTrap = () => { throw new Error("an answer called the network"); };
+  const signedIn = opts.signedIn !== undefined ? opts.signedIn : true;
+  const overview = opts.overview !== undefined ? opts.overview : overviewWith();
+  const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
+    localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
+  if (pathname === "/console") win.KryozynConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null) };
+  if (pathname === "/today") win.KryozynToday = { overview: () => overview, did: () => null };
+  const doc = { getElementById: () => ({ dataset: { ...NAMES, ...DATA, restaurantPrice: "149", pharmacyPrice: "199",
+    unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10" } }), title: "Restaurants",
+    addEventListener: (type, fn, capture) => { if (type === "submit" && capture) listener = fn; },
+    querySelector: (q) => (q === ".pilot-input" ? box : null) };
+  vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL, setTimeout, document: doc });
+  // Send a question as the core does: the form's submit (this app hears
+  // it first), then matchTyped over the welcome and the suggestions, then
+  // the answer, or on a miss the note (noKeyReply) and, once drawn, the
+  // suggestions again.
+  const send = (words) => {
+    box.value = words;
+    listener({ target: form });
+    const hit = PANEL.matchTyped(words, typedItems(given, pathname));
+    if (hit) {
+      box.value = "";
+      return { label: hit.label, text: hit.link ? `LINK ${hit.link}` : String(hit.answer({ facts: {}, ready: false, label: words })) };
+    }
+    return { label: null, note: PANEL.noKeyText(given.noKeyReply, true, true) };
+  };
+  return { given, send, tick: () => new Promise((r) => setTimeout(r, 0)) };
+}
+
+test("3.37.0: a price with a number is worked out from the plan figures, on every page", async () => {
+  for (const pathname of EVERY) {
+    const chat = chatAt(pathname);
+    const two = chat.send("how much for 2 fridges?");
+    assert.ok(two.label, `${pathname}: answered with no key`);
+    assert.match(two.text, /^\*\*2 fridges: Starter, \$59 a month\.\*\* It covers one café or shop with up to 3 fridges or freezers/, pathname);
+    await chat.tick();
+    const five = chat.send("What would 5 fridges cost?");
+    assert.match(five.text || "", /^\*\*5 fridges: Growth, \$149 a month\*\* \(Starter covers up to 3\)\./, `${pathname}: ${five.text}`);
+    await chat.tick();
+    const fourteen = chat.send("price for 14 units");
+    assert.match(fourteen.text || "", /^\*\*14 fridges or freezers: Growth, \$209 a month\*\*/, `${pathname}: ${fourteen.text}`);
+    assert.match(fourteen.text, /each one past that is \$15 a month: 4 more is \$60/);
+    await chat.tick();
+    const chain = chat.send("How much for 6 restaurants?");
+    assert.match(chain.text || "", /^\*\*6 locations: Growth, \$894 a month\*\*/, `${pathname}: ${chain.text}`);
+    assert.match(chain.text, /From 5 locations, 10% comes off/);
+    await chat.tick();
+    const pharmacy = chat.send("how much for 2 pharmacies");
+    assert.match(pharmacy.text || "", /^\*\*2 pharmacies: \$398 a month\*\*, \$199 a pharmacy\./, `${pathname}: ${pharmacy.text}`);
+    await chat.tick();
+  }
+});
+
+test("3.37.0: the night, 3am and a call get the calls answer; the Wi-Fi dropping the power answer; metal and walk-ins the sensors", async () => {
+  for (const pathname of EVERY) {
+    const chat = chatAt(pathname);
+    for (const words of ["What happens at 3am?", "Will you call me at night?", "do you ring people overnight", "If nobody answers at 2 am do you phone?"]) {
+      const got = chat.send(words);
+      assert.match(got.text || "(missed)", /^Yes, on plans with calls/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    for (const words of ["What if the wifi drops?", "our internet keeps dropping", "What happens when the sensor is offline?", "power cut last night", "My fridge says no signal"]) {
+      const got = chat.send(words);
+      assert.match(got.text || "(missed)", /^Sensors send their readings over your internet/, `${pathname}: ${words}`);
+      await chat.tick();
+    }
+    for (const words of ["Will a sensor work in a metal walk-in?", "Does the signal get through a walk-in freezer's walls?", "steel box, will it reach the wifi?"]) {
+      const got = chat.send(words);
+      assert.match(got.text || "(missed)", /^A walk-in's metal walls and door can block a wireless signal/, `${pathname}: ${words}`);
+      assert.match(got.text, /The sensors that work:\n- One that sends each reading to a web address/);
+      await chat.tick();
+    }
+    // A door left open at night is the door's answer, not the calls.
+    assert.match(chat.send("Will a door left open wake us at night?").text || "", /^No\. A door opened for a minute/, pathname);
+    await chat.tick();
+  }
+});
+
+test("3.37.0: every miss gets a note naming the question and the two closest answers first; a second miss is never silent", async () => {
+  for (const [pathname, signedIn] of PAGES_143) {
+    const chat = chatAt(pathname, { signedIn });
+    const first = chat.send("Write me a poem about fridges");
+    assert.equal(first.label, null, pathname);
+    assert.equal(first.note, "I don't have a built-in answer for “Write me a poem about fridges”. The two closest are first below. With an AI key, I can answer anything.");
+    await chat.tick();
+    const near = PANEL.cleanChips(chat.given.chips(chat.given.screen()), BASE + pathname);
+    assert.equal(near.length, 2, pathname);
+    for (const c of near) assert.equal(typeof c.answer, "function", `${pathname}: ${c.label}`);
+    // Fridges: the status answer first on the person's own pages.
+    if (signedIn && (pathname === "/console" || pathname === "/today")) assert.equal(near[0].label, "Which fridges need me?");
+    // Under the note the two lead the row, the key pill last.
+    const row = Array.from(PANEL.noKeyItems(PANEL.ownPills(chat.given.welcomePills, BASE + pathname), near, true));
+    assert.deepEqual(J(row.slice(0, 2).map((x) => x.label)), J(near.map((x) => x.label)));
+    assert.equal(row[row.length - 1].label, "Add my AI key");
+    // A second miss: other words in the note, so the chat changes.
+    const second = chat.send("Tell me a joke");
+    assert.equal(second.note, "That one isn't built in either: “Tell me a joke”. The two closest are first below. With an AI key, I can answer anything.");
+    assert.notEqual(second.note, first.note);
+    await chat.tick();
+    // The same words again: still a different note from the one before.
+    const third = chat.send("Tell me a joke");
+    assert.notEqual(third.note, second.note, pathname);
+    await chat.tick();
+    // Pressing one of the two answers it, and the page's own suggestions come back.
+    const pressed = PANEL.cleanChips(chat.given.chips(chat.given.screen()), BASE + pathname)[0];
+    assert.ok(String(pressed.answer({ facts: {}, ready: false, label: pressed.label })).length > 20);
+    const after = chat.given.chips(chat.given.screen()).map((c) => c.label);
+    assert.notDeepEqual(J(after), J(near.map((x) => x.label)), `${pathname}: back to the page's own`);
+  }
+});
+
+test("3.37.0: the earlier typed answers still go where they did, and every item's words still fit the core's 20", async () => {
+  for (const pathname of ["/console", "/today"]) {
+    const chat = chatAt(pathname);
+    assert.equal(chat.send("Is my walk-in fridge OK?").label !== null, true);
+    await chat.tick();
+    assert.match(chat.send("How much does it cost?").text, /Starter \$59 a month, up to 3 fridges or freezers/);
+    await chat.tick();
+    assert.match(chat.send("Is the food safe?").text, /rule of thumb|recorded/);
+    await chat.tick();
+  }
+  for (const pathname of EVERY) {
+    const chat = chatAt(pathname);
+    chat.send("how much for 2 fridges?");
+    for (const item of typedItems(chat.given, pathname)) assert.ok(!item.match || item.match.length <= 20, `${pathname}: ${item.label}`);
+    await chat.tick();
   }
 });

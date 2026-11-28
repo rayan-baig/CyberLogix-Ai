@@ -297,6 +297,8 @@ a { color: var(--accent); }
 /* The company chip doubles as the business switcher. */
 .chip-btn { cursor: pointer; font: inherit; font-size: 13px; color: var(--ink); }
 .chip-btn:hover { border-color: var(--border-lit); background: var(--accent-dim); }
+#chip-company .chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#chip-company .chip-caret { flex: none; }
 .biz-badge {
   margin-left: -12px; align-self: flex-start; min-width: 18px; height: 18px;
   padding: 0 5px; border-radius: 999px; background: var(--critical); color: #1a0702;
@@ -607,6 +609,25 @@ pre.snippet {
   padding: 0;
 }
 
+/* The notices line (3.37.0): who you are signed in as, texts switched
+   off, agreements to accept, in one quiet line with Details and a cross,
+   in place of up to three boxes on a phone's first screen. */
+.notice-line {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  padding: 7px 8px 7px 13px; border-radius: 10px; font-size: 13px;
+  border: 1px solid rgba(224,179,65,0.28); background: rgba(224,179,65,0.05); color: #8FC4F5;
+}
+.notice-line[hidden], .notices[hidden] { display: none; }
+.notice-words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.notice-more { flex: none; font-size: 13px; }
+.notice-close {
+  flex: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: inherit;
+  font: inherit; font-size: 20px; line-height: 1;
+}
+.notice-close:hover { border-color: var(--border-lit); }
+.notices.folded > .banner { display: none; }
+
 /* ---------- contract ---------- */
 .term-table { width: 100%; border-collapse: collapse; font-size: 13.5px;
               margin-top: 10px; }
@@ -891,6 +912,9 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   padding-left: 18px; border-left: 1px solid var(--accent-deep);
 }
 .doc-letter .quote-label { margin-bottom: 9px; }
+/* The summary in three short paragraphs (3.37.0), not one block. */
+.doc-letter p { margin: 0 0 10px; }
+.doc-letter p:last-child { margin-bottom: 0; }
 /* A small heading inside a section ("Change history", 3.33.0). */
 .doc-sub {
   font-size: 12.5px; color: var(--muted); margin: 14px 0 6px;
@@ -984,6 +1008,11 @@ body.wall .sensor.is-breaching .sensor-temp { color: var(--critical); }
   .doc-it { background: #fff; border-color: #ccc; color: #444; break-inside: avoid; }
   /* The Recorded evidence box with its heading, on one page (3.36.0). */
   .doc-keep { break-inside: avoid; }
+  /* Every box of the pack whole on one page (3.37.0): the Insured box
+     printed split across two, its heading on one and its rows on the
+     next. The summary's paragraphs and each timeline row too. */
+  .readout, .doc-letter p, .timeline li { break-inside: avoid; }
+  .doc-sub { break-after: avoid; }
   .doc-it-head, .doc-sub, .doc-issued-by { color: #555; }
   .doc-it a { color: #111; }
   .readout, .digest { border-color: #ccc; background: #fff; }
@@ -1078,7 +1107,9 @@ body.acct-small .nav .status-line { display: none; }
   .nav .pulse { display: none; }
   .nav .brand { gap: 8px; }
   .nav .brand-mark img { width: 28px; height: 28px; }
-  #chip-company { max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The name cut with "…", the ▾ kept (3.37.0): the ellipsis needs a
+     block of its own, which the flex chip itself is not. */
+  #chip-company { max-width: 10.5em; min-width: 0; }
   .nav .btn-sm { padding: 6px 10px; }
   .card { padding: 14px; }
   /* The seven summary tiles as a compact two-column grid: about a third
@@ -1502,6 +1533,16 @@ body[data-stale] #offline-banner {
 .checklist .btn { flex: none; min-height: 36px; }
 .checklist-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex: none; }
 .checklist-out { margin-top: 6px; }
+/* Readings arriving, a step or two left (3.37.0): one line, "Getting
+   started · 3 of 4 done · next: Send a test alert", and Show the steps. */
+.first-day .card-head { flex-wrap: wrap; row-gap: 4px; }
+.first-day-more { margin-left: auto; font-size: 13px; }
+.first-day-line { padding-top: 10px; padding-bottom: 10px; }
+#first-day.first-day-line .card-head { margin-bottom: 0; flex-wrap: nowrap; align-items: baseline; gap: 8px; }
+.first-day-line .card-title { font-size: 15px; flex: none; }
+.first-day-line .card-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.first-day-line .first-day-more { flex: none; }
+.first-day-line .card-plain, .first-day-line .checklist, .first-day-line .checklist-out { display: none; }
 @media (max-width: 520px) {
   /* The buttons go under the words rather than squeezing them into a
      column three words wide. */

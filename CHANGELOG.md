@@ -6,6 +6,59 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.37.0 — 2026-11-28
+
+Pilot answers what people actually type, every time is dated when it is
+not today, the note of what was thrown away has a way out, the console
+is calmer on a phone, and the insurance pack says what happened once and
+plainly. No price or plan term has changed.
+
+- **Pilot works out a price for a number.** "How much for 2 fridges?"
+  says Starter, $59 a month; "14 units" says Growth with the 4 extra
+  units added; "6 restaurants" says the price a location and that the
+  chain discount starts at 5. Every figure comes from the plan figures
+  the invoice uses.
+- **Pilot understands more ways of asking.** The night, "3am" or a call
+  get the phone-call answer; the Wi-Fi or the internet dropping, or a
+  card saying "No signal", get the power and Wi-Fi answer; a metal
+  walk-in or a weak signal get the sensors answer, which now starts with
+  what to do about a walk-in's metal walls.
+- **Pilot never goes quiet on a question it can't answer.** It says which
+  question it has no built-in answer for, and puts the two closest
+  answers first underneath. A second question it can't answer used to
+  show nothing at all: the note was replaced by the very same note. Now
+  each one says so in its own words.
+- **A date on every time that is not today.** "Sun 5:54 PM" this week,
+  "Nov 22, 5:54 PM" before that, on /today, the console's alert bar and
+  cards, and Pilot's answers. A bare "5:54 PM" about Sunday read as an
+  hour ago.
+- **"Add what was thrown away" has a way out.** Cancel (or Back, when it
+  was opened from "Thrown away. What next?"), a tap outside the box, or
+  Escape closes it. New notes start "From the Walk-in fridge after…"
+  instead of repeating "Thrown away".
+- **A calmer console on a phone.** Once readings arrive, Getting started
+  is one line with what is left and Show. The notices (texts switched off,
+  agreements to accept, who you are signed in as) are one line with
+  Details and a cross that puts it away until something changes. A long
+  business name ends in "…" instead of being cut mid-word.
+- **"Readings in range" never says 100% while a reading was out.** It
+  stops at 99.9%, and says beside it when an alert is open now.
+- **A clearer insurance pack.** The summary is three short paragraphs and
+  says "the Walk-in fridge". An alert that closed by itself after someone
+  said it was fixed says exactly that ("Rosa Diaz said it was fixed at
+  4:36 AM; it closed by itself at 4:41 AM, back to 38.2°F"), never
+  "Closed by Rosa Diaz". A note that starts "Thrown away" is said once.
+  The texts table has its heading, "Who was told", and every box prints
+  whole on one page. The sample pack shows the same.
+- **/today names the site** of the alert at the top on a business with
+  more than one.
+- **The demo agrees with itself.** Its handled freezer alert is recorded
+  as kept, as its note says, so /today no longer asks about that food; the
+  freezer alarms over 10°F, so its pack has the warm readings; and the
+  alert shows as texted to the people on call.
+- **Canada, in plain words.** Pilot's answer no longer names the text
+  provider to a visitor.
+
 ## 3.36.0 — 2026-11-24
 
 The insurance pack says exactly how people were told, every pop-up fits a

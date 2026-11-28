@@ -149,7 +149,7 @@ def test_the_saved_address_is_in_the_summary(api, break_gemini):
     pack = api.post(f"/api/claims/{incident_id}/packet", headers=owner).json()
     assert pack["location"]["site"] is None
     assert pack["cover_letter"].startswith(
-        "Maya's Bakery reports that Walk-in fridge at 12 Harbor Street, Springfield went out of its safe range at ")
+        "Maya's Bakery reports that the Walk-in fridge at 12 Harbor Street, Springfield went out of its safe range at ")
 
 
 def test_the_sample_pack_says_what_a_real_one_would():
@@ -157,9 +157,12 @@ def test_the_sample_pack_says_what_a_real_one_would():
     said = claims.told_words(_packet(notified=SENT), NEW_YORK, NIGHT)
     assert said in text, said
     assert "sent automatically" not in text
-    assert "Walk-in fridge at 12 Harbor Street, Springfield went out of its safe range at Mar 15, 2026, 1:58 AM EDT." in text
-    assert "The alert closed at 4:41 AM. The food was recorded as “Thrown away” by Rosa Diaz at 4:44 AM." in text
-    assert '<span class="k">Closed at</span><span class="v">Mar 15, 2026, 4:41 AM</span>' in SAMPLE
+    assert "the Walk-in fridge at 12 Harbor Street, Springfield went out of its safe range at Mar 15, 2026, 1:58 AM EDT." in text
+    # 3.37.0: closed by itself after Rosa said it was fixed, never "Closed by Rosa".
+    assert ("Rosa Diaz said it was fixed at 4:36 AM; the alert closed by itself at 4:41 AM, back to 38.2°F. "
+            "The food was recorded as “Thrown away” by Rosa Diaz at 4:44 AM.") in text
+    assert "Closed by Rosa" not in text
+    assert '<span class="k">Closed at</span><span class="v">Mar 15, 2026, 4:41 AM, back in range by itself</span>' in SAMPLE
     assert "closed at Mar" not in SAMPLE
     assert '<table class="doc-channels">' in SAMPLE and 'data-label="Outcome"' in SAMPLE
     assert '<div class="doc-keep">\n    <div class="doc-section">Recorded evidence</div>' in SAMPLE

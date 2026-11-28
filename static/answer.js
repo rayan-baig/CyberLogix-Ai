@@ -18,7 +18,7 @@
   let cfg = { token: () => null, done: () => {}, say: () => {},
     // The loss flow (3.32.0): what the discard note starts with for an
     // alert, and how this page opens its insurance pack.
-    discardNote: () => "Thrown away: ",
+    discardNote: () => "",
     packet: (id) => { location.href = `/console?view=full#packet=${encodeURIComponent(id)}`; } };
   let dialog = null;
 
@@ -203,6 +203,10 @@
       "aria-label": "What was thrown away" });
     const save = el("button", { class: "btn btn-primary", type: "button", id: "loss-save",
       text: "Save to the record" });
+    // A way out of the note (3.37.0): "Back" to the two next steps when
+    // it was opened from them, "Cancel" when the alert's own button opened
+    // it straight away. The box had no way out but Escape.
+    const back = el("button", { class: "btn linkish", type: "button", id: "loss-back", text: "Cancel" });
     lossDialog = el("dialog", { class: "confirm-dialog food-dialog loss-dialog", id: "loss-dialog",
       "aria-labelledby": "loss-title" }, [
       el("h2", { class: "confirm-title", id: "loss-title", text: "Thrown away. What next?" }),
@@ -212,14 +216,28 @@
       el("div", { class: "loss-write", id: "loss-write", hidden: true }, [
         el("label", { class: "fix-sub", for: "loss-text", text: "What was thrown away (what, how much):" }),
         box,
-        el("div", { class: "confirm-acts" }, [save]),
+        el("div", { class: "confirm-acts" }, [save, back]),
       ]),
       el("p", { class: "confirm-out", id: "loss-out", role: "status" }),
     ]);
     document.body.appendChild(lossDialog);
     pack.addEventListener("click", () => { lossDialog.close(); cfg.packet(lossDialog.dataset.id); });
     later.addEventListener("click", () => lossDialog.close());
-    note.addEventListener("click", () => openNote());
+    note.addEventListener("click", () => openNote(true));
+    back.addEventListener("click", () => {
+      if (lossDialog.dataset.from === "acts") showActs(lossDialog);
+      else lossDialog.close();
+    });
+    // A tap on the dimmed page around it closes it, as Escape does (the
+    // browser's own, for a modal dialog). A tap inside never does: the
+    // dialog's own padding counts as inside.
+    lossDialog.addEventListener("click", (event) => {
+      if (event.target !== lossDialog) return;
+      const r = lossDialog.getBoundingClientRect();
+      const inside = event.clientX >= r.left && event.clientX <= r.right
+        && event.clientY >= r.top && event.clientY <= r.bottom;
+      if (!inside) lossDialog.close();
+    });
     save.addEventListener("click", async () => {
       const text = box.value.trim();
       const out = lossDialog.querySelector("#loss-out");
@@ -240,26 +258,35 @@
     return lossDialog;
   }
 
-  function openNote() {
+  function openNote(fromActs) {
     const d = buildLoss();
+    d.dataset.from = fromActs ? "acts" : "alert";
+    d.querySelector("#loss-back").textContent = fromActs ? "Back" : "Cancel";
+    d.querySelector("#loss-out").textContent = "";
     d.querySelector("#loss-write").hidden = false;
     d.querySelector("#loss-acts").hidden = true;
     d.querySelector("#loss-title").textContent = "Add what was thrown away";
     const box = d.querySelector("#loss-text");
-    box.value = cfg.discardNote(d.dataset.id) || "Thrown away: ";
+    box.value = cfg.discardNote(d.dataset.id) || "";
     box.focus();
     box.setSelectionRange(box.value.length, box.value.length);
+  }
+
+  function showActs(d) {
+    d.querySelector("#loss-out").textContent = "";
+    d.querySelector("#loss-write").hidden = true;
+    d.querySelector("#loss-acts").hidden = false;
+    d.querySelector("#loss-title").textContent = "Thrown away. What next?";
   }
 
   function lossNext(id, writeNow) {
     const d = buildLoss();
     d.dataset.id = id;
-    d.querySelector("#loss-out").textContent = "";
-    d.querySelector("#loss-write").hidden = true;
-    d.querySelector("#loss-acts").hidden = false;
-    d.querySelector("#loss-title").textContent = "Thrown away. What next?";
-    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
-    if (writeNow) openNote();
+    showActs(d);
+    if (!d.open) {
+      if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+    }
+    if (writeNow) openNote(false);
   }
 
   function showStillOut(id, detail) {

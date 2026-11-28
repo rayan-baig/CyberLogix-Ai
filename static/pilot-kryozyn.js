@@ -76,6 +76,9 @@
     alertAfterFridge: d.alertAfterFridge || "", alertAfterFreezer: d.alertAfterFreezer || "",
     alertAfterVaccine: d.alertAfterVaccine || "", alertAtOnceDegrees: d.alertAtOnceDegrees || "",
     cancelRule: d.cancelRule || "",
+    // The chain discount's first step (3.37.0), for a typed "how much for
+    // 6 restaurants?": from this many locations, this much off.
+    chainFrom: d.chainFrom || "", chainPercent: d.chainPercent || "",
     // The names, from brand.py through Pilot's script tag (main.pilot_facts).
     appName: d.appName || "", appShort: d.appShort || "", companyName: d.companyName || "",
   };
@@ -462,25 +465,22 @@
   ].join("\n");
   // "Does it work in Canada?": only what the product does. Readings in
   // Celsius (the console's °F/°C button, everything follows), a limit of
-  // the business's own, texts through Twilio to a number with its country
-  // code, prices in US dollars (docs/FEATURES.md, pricing).
+  // the business's own, texts to a number with its country code (in plain
+  // words since 3.37.0: no text provider's name for a visitor), prices in
+  // US dollars (docs/FEATURES.md, pricing).
   const CANADA = () => {
     const limit = Number(fig(F.fridgeLimit, "41"));
     const celsius = Math.round(((limit - 32) * 5) / 9);
     return [
       `Yes. ${F.appShort} can show every reading in Celsius: press **°F** at the top of the console to switch to °C, and the alert texts, the inspector's log and the insurance packs follow.`,
       `A fridge alarms over ${limit}°F (${celsius}°C) unless you set your own with **Change limit** on its card, for example 4°C.`,
-      "Alert texts go out through Twilio to mobile numbers written with their country code; a Canadian number (+1) works the same as a US one.",
+      "Alert texts and calls reach any mobile number written with its country code: a Canadian number (+1) works the same as a US one.",
       `Prices are in US dollars, and sensors are bought separately. [See prices](/pricing)${ownPage && signedIn() ? "" : " · [Start a free trial](/signup)"}`,
     ].join("\n\n");
   };
   // When it was said: "4:44 AM" today, else the day too.
-  function saidAt(iso) {
-    const w = W();
-    if (!w || !iso) return "";
-    const t = Date.parse(iso);
-    return Number.isFinite(t) && Date.now() - t < 20 * 3600000 ? w.clock(iso) : w.dateTime(iso);
-  }
+  // Since 3.37.0 the clock itself adds the day whenever it is not today.
+  const saidAt = (iso) => clock(iso);
   // Signed in, "What was thrown away?": the business's own note, quoted,
   // from the loss in the last day or else the newest food thrown away.
   function thrownAnswer() {
@@ -599,8 +599,15 @@
     elitech: ["Elitech", `its cloud forwards each reading to ${F.appShort}`, "webhook"],
     dickson: ["Dickson", `its cloud forwards each reading to ${F.appShort}`, "webhook"],
   };
+  // A walk-in's metal box and the signal through it (3.37.0): "Will a
+  // sensor work in a metal walk-in?" got the list of brands and nothing
+  // about the walls.
+  const THROUGH_METAL = /\bmetal\b|\bsteel\b|\bsignal\b|\bwalk[\s-]*in\b.*\b(?:reach|range|through|wall|walls|wifi|wi-fi)\b/i;
+  const METAL_LEAD = "A walk-in's metal walls and door can block a wireless signal. The usual answer is a sensor with a probe on a thin cable: the probe goes inside, the sensor (or its gateway) sits outside the door where the Wi-Fi reaches. A sensor that talks to a gateway near the door (Monnit, SensorPush) works too. Ask the seller about range before you buy; once it is in, **Connect your sensor** ticks when its first reading arrives.";
   function sensorsLead(ctx) {
-    const typed = ctx && typeof ctx.label === "string" && !sameLabel(ctx.label, "What sensors do I need?") ? wordsIn(ctx.label) : [];
+    const said = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    if (said && THROUGH_METAL.test(said) && !/\bno signal\b/i.test(said)) return `${METAL_LEAD}\n\nThe sensors that work:`;
+    const typed = said && !sameLabel(said, "What sensors do I need?") ? wordsIn(said) : [];
     const brand = Object.keys(BRANDS).find((b) => typed.includes(b));
     if (brand) {
       const [name, how, guide] = BRANDS[brand];
@@ -689,6 +696,77 @@
     "[Read the privacy statement](/legal#privacy)",
   ].join("\n");
 
+  // ---------------------------------------------------------------- a price for a number (3.37.0)
+  //
+  // "How much for 2 fridges?", "What would 14 units cost?", "price for 3
+  // restaurants with 8 fridges each": the plan worked out from the real
+  // plan figures on Pilot's script tag (main.pilot_facts), the same rules
+  // the invoice uses (pricing.quote_monthly): Starter for one place with
+  // up to its few units, else Growth a location with its allowance and
+  // each unit past it extra. A pharmacy is priced as a pharmacy.
+  const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50, a: 1, an: 1 };
+  const UNIT_NOUN = /^(?:fridges?|freezers?|coolers?|units?|sensors?|refrigerators?|chillers?|walk-?ins?|appliances?)$/i;
+  const PLACE_NOUN = /^(?:locations?|sites?|restaurants?|stores?|shops?|cafes?|cafés?|kitchens?|branches?|bars?|pharmac(?:y|ies)|bakeries|bakery|outlets?)$/i;
+  const PRICE_WORDS = /\bhow much\b|\bcosts?\b|\bprices?\b|\bpricing\b|\bquote\b|\bpay\b|\bcharge\b|\bwhat would\b.*\bbe\b|\ba month\b|\bmonthly\b|\$/i;
+  // {units, places, pharmacy, noun} from a question, or null when it gives
+  // no number of fridges or places.
+  function countsIn(text) {
+    const tokens = String(text || "").toLowerCase().replace(/[?!.,;:()]/g, " ").split(/\s+/).filter(Boolean);
+    let units = null, places = null, noun = "";
+    tokens.forEach((t, n) => {
+      const value = /^\d{1,4}$/.test(t) ? Number(t) : (NUMBER_WORDS[t] && t.length > 2 ? NUMBER_WORDS[t] : null);
+      if (value === null) return;
+      // The noun it counts: the next word, or the one after a describing
+      // word ("2 small fridges", "3 walk-in freezers").
+      const next = [tokens[n + 1], tokens[n + 2]].find((w) => w && (UNIT_NOUN.test(w) || PLACE_NOUN.test(w)));
+      if (!next) {
+        if (units === null && n === tokens.length - 1) units = value;   // "how much for 2"
+        return;
+      }
+      if (UNIT_NOUN.test(next)) { if (units === null) { units = value; noun = next; } } else if (places === null) places = value;
+    });
+    if (units === null && places === null) return null;
+    const pharmacy = /pharmac/i.test(text);
+    return { units, places, pharmacy, noun: noun.replace(/s$/, "") };
+  }
+  const isQuote = (text) => PRICE_WORDS.test(String(text || "")) && Boolean(countsIn(text));
+  function QUOTE(ctx) {
+    const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
+    const c = countsIn(typed);
+    if (!c) return PRICE();
+    const money = (v) => `$${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    const starter = Number(fig(F.fromPrice, "59")), starterUnits = Number(fig(F.starterUnits, "3"));
+    const growth = Number(fig(F.restaurantPrice, "149")), pharmacy = Number(fig(F.pharmacyPrice, "199"));
+    const allowance = Number(fig(F.unitsPerLocation, "10")), extra = Number(fig(F.extraUnit, "15"));
+    const places = Math.max(1, c.places || 1);
+    const each = c.units === null ? null : (c.places && c.units > allowance * places ? Math.ceil(c.units / places) : c.units);
+    const kind = c.noun === "fridge" || c.noun === "freezer" ? c.noun : "fridge or freezer";
+    const many = (n) => (kind === "fridge or freezer" ? (n === 1 ? "fridge or freezer" : "fridges or freezers") : n === 1 ? kind : `${kind}s`);
+    const what = c.units === null ? (c.pharmacy ? count(places, "pharmacy", "pharmacies") : count(places, "location")) : `${c.units} ${many(c.units)}${places > 1 ? ` across ${places} locations` : ""}`;
+    const tail = `Sensors are bought separately. Start with the free ${fig(F.trialDays, "14")}-day trial, no card. [Work out your price](/pricing#calc-title)`;
+    const chain = F.chainFrom && F.chainPercent && places >= Number(F.chainFrom)
+      ? ` From ${F.chainFrom} locations, ${F.chainPercent}% comes off the location prices: the calculator shows the total.` : "";
+    if (c.pharmacy) {
+      const over = each === null ? 0 : Math.max(0, each - allowance);
+      const total = pharmacy * places + over * extra * places;
+      return [`**${what}: ${money(total)} a month**${places > 1 ? `, ${money(pharmacy)} a pharmacy` : " for the pharmacy"}.`,
+        `Each pharmacy covers up to ${allowance} fridges and freezers${over ? `; the ${over} past that ${over === 1 ? "is" : "are"} ${money(extra)} a month each` : ""}.${chain}`,
+        tail].join("\n\n");
+    }
+    if (places === 1 && c.units !== null && c.units <= starterUnits) {
+      return [`**${what}: Starter, ${money(starter)} a month.** It covers one café or shop with up to ${starterUnits} fridges or freezers: text alerts to everyone on call, the inspector's log and insurance packs.`,
+        `Phone calls when a text goes unanswered come with Growth, ${money(growth)} a month for the location.`, tail].join("\n\n");
+    }
+    const over = each === null ? 0 : Math.max(0, each - allowance);
+    const total = growth * places + over * extra * places;
+    const why = c.units !== null && places === 1 && c.units > starterUnits ? ` (Starter covers up to ${starterUnits})` : "";
+    return [`**${what}: Growth, ${money(total)} a month**${why}.`,
+      `${money(growth)} a month a location covers up to ${allowance} fridges and freezers there${over
+        ? `, and each one past that is ${money(extra)} a month: ${over} more ${places > 1 ? "at each" : ""} is ${money(over * extra * places)}`.replace(/ {2}/g, " ")
+        : ""}, with a phone call when a text goes unanswered.${chain}`, tail].join("\n\n");
+  }
+
   // Words a typed question may use for each answer or link that needs no
   // key (core 1.4.2, matchTyped). With no key, "Is my walk-in fridge OK?"
   // gets "Which fridges need me?" and "How much is it?" the prices, at
@@ -750,24 +828,30 @@
     { id: "status", labels: ["Which fridges need me?"], also: ["refrigerator", "cooler", "degree"], answer: needsAnswer },
     { id: "alert", labels: ["What does this alert mean?"], answer: alertAnswer },
     { id: "food", labels: ["Is the food still OK?"], answer: foodAnswer },
-    { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model", "monnit", "sensorpush", "elitech", "dickson"],
+    { id: "sensors", labels: ["What sensors do I need?"], also: ["recommend", "wireless", "model", "monnit", "sensorpush", "elitech", "dickson",
+      "metal", "steel", "range", "wall"],
       answer: SENSORS },
     { id: "price", labels: ["What does it cost?"], also: ["afford", "subscribe"], answer: PRICE },
     // 3.33.0: a pharmacy's price, cancelling, who gets the texts, and
     // whether the data is safe, each with its own words.
-    { id: "pharmacy", labels: [], also: ["pharmacy", "pharmacist", "chemist", "drugstore", "vaccine", "cost", "price", "much"], answer: PHARMACY },
-    { id: "cancel", labels: [], also: ["cancel", "cancellation", "unsubscribe", "refund", "quit", "contract", "subscription", "stop"],
-      answer: CANCEL },
+    { id: "pharmacy", labels: [], ask: "How much for a pharmacy?",
+      also: ["pharmacy", "pharmacist", "chemist", "drugstore", "vaccine", "cost", "price", "much"], answer: PHARMACY },
+    // 3.37.0: a price for a number of fridges or places, by phrase only.
+    { id: "quote", labels: [], ask: "What would mine cost?", answer: QUOTE },
+    { id: "cancel", labels: [], ask: "How do I cancel?",
+      also: ["cancel", "cancellation", "unsubscribe", "refund", "quit", "contract", "subscription", "stop"], answer: CANCEL },
     { id: "team", labels: ["Who gets the texts?"], answer: TEAM },
-    { id: "privacy", labels: [], also: ["data", "privacy", "private", "secure", "security", "gdpr", "sold", "safe"], answer: PRIVACY },
+    { id: "privacy", labels: [], ask: "Is my data safe?", also: ["data", "privacy", "private", "secure", "security", "gdpr", "sold", "safe"], answer: PRIVACY },
     { id: "plan", labels: ["Which plan for a café?"], also: ["tier", "option", "upgrade"], answer: PLAN },
     { id: "cafe", labels: ["Will it work for my café?"], answer: cafeAnswer },
     { id: "connect", labels: ["How do I connect a sensor?"], also: ["pair"], answer: CONNECT_HOW },
     { id: "steps", labels: ["Set up step by step"], answer: STEPS },
     { id: "trial", labels: ["What's in the trial?", "Start a free trial"], also: ["credit"], answer: TRIAL },
     { id: "door", labels: ["Will a door left open wake us?"], answer: DOOR },
-    { id: "power", labels: ["Wi-Fi or power goes off?", "Power or Wi-Fi goes off?"], also: ["battery"], answer: POWER },
-    { id: "calls", labels: ["Do you phone at night?", "Do you phone us?"], answer: CALLS },
+    { id: "power", labels: ["Wi-Fi or power goes off?", "Power or Wi-Fi goes off?"],
+      also: ["battery", "drop", "dropped", "router", "disconnect", "disconnected"], answer: POWER },
+    { id: "calls", labels: ["Do you phone at night?", "Do you phone us?"],
+      also: ["3am", "2am", "4am", "midnight", "overnight", "asleep", "nighttime", "late", "wake"], answer: CALLS },
     { id: "log", labels: ["Log for the inspector", "A log for the inspector"], answer: LOG },
     // What happens when a fridge is warm, for a visitor: on the person's
     // own pages "which fridges need me" says it with their own fridges.
@@ -779,14 +863,14 @@
     // to the pill, and from there to this answer).
     { id: "pack", labels: ["Make the insurance pack"], also: ["packet", "claim", "insurer", "adjuster", "evidence", "paperwork"],
       answer: packAnswer },
-    { id: "signup", labels: [], also: ["signup", "register", "registration", "join", "create"], answer: SIGNUP },
+    { id: "signup", labels: [], ask: "How do I sign up?", also: ["signup", "register", "registration", "join", "create"], answer: SIGNUP },
     // 3.36.0: how hard it is to set up, Canada, the note of what was thrown
     // away, why nobody got a text, and the pack's address.
-    { id: "easy", labels: [], also: ["hard", "easy", "difficult", "complicated", "technical", "simple"], answer: EASY },
-    { id: "canada", labels: [], also: ["canada", "canadian", "celsius", "metric", "province"], answer: CANADA },
-    { id: "lossnote", labels: [], also: ["binned", "note", "went", "lost"], answer: thrownAnswer, only: () => ownPage && signedIn() },
-    { id: "delivery", labels: [], also: ["nobody", "didnt", "delivered", "arrive", "arrived", "received", "receive"], answer: deliveryAnswer },
-    { id: "address", labels: [], also: ["address", "street"], answer: ADDRESS },
+    { id: "easy", labels: [], ask: "Is it hard to set up?", also: ["hard", "easy", "difficult", "complicated", "technical", "simple"], answer: EASY },
+    { id: "canada", labels: [], ask: "Does it work in Canada?", also: ["canada", "canadian", "celsius", "metric", "province"], answer: CANADA },
+    { id: "lossnote", labels: [], ask: "What was thrown away?", also: ["binned", "note", "went", "lost"], answer: thrownAnswer, only: () => ownPage && signedIn() },
+    { id: "delivery", labels: [], ask: "Why did nobody get a text?", also: ["nobody", "didnt", "delivered", "arrive", "arrived", "received", "receive"], answer: deliveryAnswer },
+    { id: "address", labels: [], ask: "How do I add my address?", also: ["address", "street"], answer: ADDRESS },
     { id: "seeing", labels: ["What am I seeing?"], answer: () => DEMO_WHAT, only: () => path === "/demo" },
     { id: "demo", labels: ["See it live"], answer: DEMO_LINK },
     { id: "signin", labels: ["How do I sign in?"], answer: () => SIGN_IN, only: () => !signedIn() },
@@ -815,6 +899,16 @@
     [/\bcanad|\bcelsius\b/i, "canada"],
     [/\b(?:my|the|our) insurer\b|\binsurance company\b/i, "pack"],
     [new RegExp(`\\bwhat (?:did|has|does) ${F.appShort.replace(/[^A-Za-z0-9]/g, "") || "it"}\\b.*\\b(?:do|done)\\b`, "i"), "did"],
+    // 3.37.0: a price with a number of fridges or places, worked out.
+    [{ test: isQuote }, "quote"],
+    // The Wi-Fi or the power dropping, and a card's "No signal".
+    [/\b(?:wi-?fi|internet|power|connection|router|network|broadband|electricity)\b.*\b(?:drops?|dropped|dropping|down|off|out|cuts?|fails?|failed|goes|went|lost|lose|loses|outage|offline)\b|\b(?:drops?|dropped|lost|lose|no)\b.*\b(?:wi-?fi|internet|power|connection)\b|\boffline\b|\boutage\b|\bblackout\b|\bpower cut\b|\bno signal\b/i, "power"],
+    // The door before the night: "will a door left open wake us at night?".
+    [/\bdoors?\b.*\b(?:open|opened|opening|ajar|left)\b|\b(?:open|opened|opening)\b.*\bdoors?\b/i, "door"],
+    // The night, 3 AM, a call.
+    [/\bnight\b|\bovernight\b|\bmidnight\b|\b\d{1,2}\s?(?:am|a\.m)\b|\basleep\b|\bsleeping\b|\b(?:do|will|would|can) (?:you|it) (?:phone|call|ring)\b/i, "calls"],
+    // Metal walls, a walk-in, the signal: the sensors answer, with its lead.
+    [THROUGH_METAL, "sensors"],
   ];
   function bestTopic(text, own) {
     const phrased = PHRASES.find(([re, id]) => re.test(String(text || "")) && TOPICS.some((t) => t.id === id && (!t.only || t.only())));
@@ -831,15 +925,119 @@
     if (own && best && score(own) >= top - 1e-9) return own;
     return best;
   }
+  // ---------------------------------------------------------------- a typed question, and every miss (3.37.0)
+  //
+  // This file works out which built-in answer a typed question is after
+  // (sure: a phrase above, or two of its words that one answer has and
+  // they are half of what was typed), and tells the core by the words the
+  // item it should take carries for that one question (matching below):
+  // "How much for 2 fridges?", "Do you call at 3am?", "What if the wifi
+  // drops?" and "Will a sensor work in a metal walk-in?" each shared one
+  // word with two items, so the core took neither and said it needed a
+  // key. The core reads the items while the question is sent; `asking` is
+  // the question then, from the chat box's own submit, and only for that
+  // moment.
+  let asking = null;
+  try {
+    if (typeof document.addEventListener === "function") {
+      document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!form || !form.classList || !form.classList.contains("pilot-compose")) return;
+        const box = form.querySelector(".pilot-input");
+        const text = box ? String(box.value || "").trim() : "";
+        if (!text) return;
+        asking = { text, route: undefined };
+        setTimeout(() => { asking = null; }, 0);
+      }, true);
+    }
+  } catch (_) { /* no chat box here: the core's own matching, as before */ }
+
+  // The answer a question is surely after, or null.
+  function sureTopic(text) {
+    const typed = String(text || "");
+    const phrased = PHRASES.find(([re, id]) => re.test(typed) && TOPICS.some((t) => t.id === id && (!t.only || t.only())));
+    if (phrased) return TOPICS.find((t) => t.id === phrased[1]);
+    const asked = wordsIn(typed);
+    if (!asked.length) return null;
+    const best = bestTopic(typed, null);
+    if (!best) return null;
+    const hits = asked.filter((w) => best.words.includes(w)).length;
+    return (hits >= 2 && hits * 2 >= asked.length) || (asked.length === 1 && hits === 1) ? best : null;
+  }
+  // For the question being sent: {host, topic, words, stems}, or null. The
+  // host is the item on the page that answers it (its own pill or
+  // suggestion where there is one); it carries the question's own words,
+  // and no other item carries them, for this question only.
+  function typedRoute() {
+    if (!asking) return null;
+    if (asking.route !== undefined) return asking.route;
+    asking.route = null;
+    const topic = sureTopic(asking.text);
+    const asked = wordsIn(asking.text);
+    if (topic && asked.length && asked.length <= 12) {
+      const items = pageItems().filter((i) => i.answers);
+      const host = items.find((i) => TOPIC_OF[i.label] === topic) || items[0];
+      if (host) asking.route = { host: host.label, topic, words: asked.slice(0, MOST), stems: new Set(asked) };
+    }
+    return asking.route;
+  }
+
+  // The last question nothing answered, for the note and the two closest
+  // answers under it: {text, from, again}. Cleared by any answer of this
+  // app's own.
+  let lastMiss = null;
+  // The answers closest to some typed words, best first: `n` of them,
+  // topped up with the page's usual first questions when fewer come close.
+  function closest(text, n) {
+    const asked = wordsIn(text);
+    const near = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)));
+    const usable = TOPICS.filter((t) => (!t.only || t.only()) && t.id !== "quote");
+    const scored = usable.map((t, order) => ({ t, order,
+      n: asked.reduce((sum, w) => sum + (t.words.some((x) => near(x, w)) ? 1 / (SHARED[w] || 1) : 0), 0) }))
+      .filter((x) => x.n > 0).sort((a, b) => b.n - a.n || a.order - b.order).map((x) => x.t);
+    const sure = sureTopic(text);
+    const fill = (ownPage && signedIn() ? ["status", "alert", "food", "calls", "power"] : ["price", "cafe", "sensors", "calls"])
+      .map((id) => usable.find((t) => t.id === id)).filter(Boolean);
+    const out = [];
+    [sure].concat(scored, fill).forEach((t) => { if (t && out.length < n && !out.includes(t)) out.push(t); });
+    return out;
+  }
+  const askOf = (t) => t.ask || t.labels[0] || "";
+  // The note in the chat when nothing fits (core 1.4.3's noKeyReply, read
+  // as each question misses): which question, and that the two closest are
+  // under it. A second miss says so in other words, so the chat changes:
+  // the core puts each miss's note in place of the last, and with the same
+  // words every time a second miss looked like no reply at all.
+  function missNote() {
+    let text = asking ? asking.text : "";
+    if (!text) {
+      try { const box = document.querySelector(".pilot-input"); text = box ? String(box.value || "").trim() : ""; } catch (_) { text = ""; }
+    }
+    if (!text) return "";
+    const from = asking || text;
+    if (!lastMiss || lastMiss.from !== from) {
+      const again = lastMiss && sameLabel(lastMiss.text, text) ? lastMiss.again + 1 : (lastMiss ? 1 : 0);
+      lastMiss = { text, from, again };
+    }
+    const quoted = text.replace(/\s+/g, " ").slice(0, 80) + (text.length > 80 ? "…" : "");
+    const lead = lastMiss.again === 0 ? "I don't have a built-in answer for"
+      : lastMiss.again % 2 ? "That one isn't built in either:" : "Still no built-in answer for";
+    return `${lead} \u201c${quoted}\u201d. The two closest are first below. With an AI key, I can answer anything.`;
+  }
+  const answered = (fn) => (ctx) => { lastMiss = null; return fn(ctx); };
+
   // An item's answer, routed: pressed (the label itself), its own; typed,
-  // the best of every built-in answer.
+  // the answer the question is surely after (3.37.0), else the best of
+  // every built-in answer.
   function routed(label, own) {
-    return (ctx) => {
+    return answered((ctx) => {
       const typed = ctx && typeof ctx.label === "string" ? ctx.label : "";
       if (!typed || sameLabel(typed, label)) return own(ctx);
+      const route = asking && sameLabel(asking.text, typed) ? typedRoute() : null;
+      if (route) return route.topic.answer(ctx);
       const pick = bestTopic(typed, TOPIC_OF[label] || null);
       return (pick ? pick.answer : own)(ctx);
-    };
+    });
   }
 
   // ---------------------------------------------------------------- the words each item carries (3.36.0)
@@ -955,6 +1153,12 @@
     return lastPlan.words;
   }
   function matching(label) {
+    const route = typedRoute();
+    if (route) {
+      if (label === route.host) return { match: route.words };
+      const rest = (planWords()[label] || ownWords(label)).filter((w) => !route.stems.has(stemWord(w)));
+      return rest.length ? { match: rest.slice(0, MOST) } : {};
+    }
     const list = planWords()[label] || ownWords(label);
     return list.length ? { match: list.slice(0, MOST) } : {};
   }
@@ -1046,6 +1250,14 @@
   }
 
   function chips() {
+    // After a question nothing answered (3.37.0): the two answers closest
+    // to it, as this page's suggestions, so they lead the row under the
+    // note. Back to the page's own once anything is answered.
+    // (The core may draw before the question's moment is over: the miss
+    // of the question being sent counts already.)
+    if (lastMiss && (!asking || lastMiss.from === asking)) {
+      return closest(lastMiss.text, 2).map((t) => ({ label: askOf(t), answer: answered((ctx) => t.answer({ ...ctx, label: askOf(t) })) }));
+    }
     return chipList().map(([label, what]) => {
       if (typeof what === "string") return { label, prompt: what };
       const plain = what.answer ? { answer: routed(label, what.answer) } : what;
@@ -1138,7 +1350,10 @@
     // the chat ("I need an AI key to answer that one...") with this page's
     // answers and the key pill under it, the words kept in the box
     // (noKeyReply left at its default).
-    screenChip: ownPage ? { label: "Sum up my fridges", answer: summaryAnswer } : undefined,
+    screenChip: ownPage ? { label: "Sum up my fridges", answer: answered(summaryAnswer) } : undefined,
+    // Core 1.4.3's note when nothing fits, in this app's words for each
+    // question (3.37.0, missNote above): read as the question misses.
+    get noKeyReply() { return missNote(); },
     // Kryozyn has no use for making pictures or videos.
     hideKeySections: ["image", "video"],
     // With every corner busy the robot shrinks into its corner, wholly on

@@ -439,6 +439,38 @@ def told_words(packet: Dict[str, Any], zone=timezone.utc, day: Optional[datetime
     return said
 
 
+def closed_words(incident: Incident, unit: str, zone=timezone.utc) -> str:
+    """How the alert closed, for the pack's timeline (3.37.0).
+
+    Closed by the reading coming back after somebody said it was fixed:
+    "Rosa Diaz said it was fixed at 4:56 AM; it closed by itself at 4:57
+    AM, back to 38.2°F." Closed by itself with nobody's word: "Back in
+    range by itself." Closed by a person: "Closed by Rosa Diaz." The
+    store keeps the person who said it was fixed as the one who closed
+    it, for the inspector's log; the pack says what happened."""
+    if incident.resolved_at is None:
+        return ""
+    back = (f", back to {pack_temperature(incident.close_temperature_f, unit)}"
+            if incident.close_temperature_f is not None else "")
+    if incident.resolved_note:
+        if incident.fix_reported_at:
+            who = full_name(incident.fix_reported_by) or "Somebody"
+            said = clock_words(incident.fix_reported_at, zone, incident.resolved_at)
+            closed = clock_words(incident.resolved_at, zone, incident.resolved_at)
+            return f"{who} said it was fixed at {said}; it closed by itself at {closed}{back}."
+        return f"Back in range by itself{back}."
+    if incident.resolved_by:
+        return f"Closed by {full_name(incident.resolved_by)}."
+    return ""
+
+
+def unit_phrase(label: Optional[str]) -> str:
+    """A unit as a sentence says it (3.37.0): "the Walk-in fridge", never
+    "reports that Walk-in fridge went"."""
+    name = (label or "").strip() or "unit"
+    return name if name.lower().startswith(("the ", "our ", "my ")) else f"the {name}"
+
+
 def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[str, Any]:
     """Assemble the whole evidential record for one incident. `zone` is
     the reader's clock, for the dates written out in words."""
@@ -571,9 +603,9 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
         )
     if incident.resolved_at:
         timeline.append({
-            "at": iso(incident.resolved_at), "event": "Closed",
-            "detail": ("Back in range by itself." if incident.resolved_note and not incident.resolved_by
-                       else f"Closed by {full_name(incident.resolved_by)}." if incident.resolved_by else ""),
+            "at": iso(incident.resolved_at),
+            "event": "Closed by itself" if incident.resolved_note else "Closed",
+            "detail": closed_words(incident, unit, zone),
         })
     # In the order it happened: a re-send at 15 minutes comes after the
     # call at 10. Stable, so events at one moment keep their order.
@@ -652,8 +684,18 @@ def build_packet(tenant: Tenant, incident: Incident, zone=timezone.utc) -> Dict[
             "minutes_open": incident.minutes_open(),
             "out_since": iso(incident.started_at),
             "resolved_at": iso(incident.resolved_at),
-            "closed_by_itself": bool(incident.resolved_at and incident.resolved_note
-                                     and not incident.resolved_by),
+            # Closed by the reading coming back, never by a person: also
+            # after somebody said "It's fixed" while it was still warm, when
+            # their name is kept on it for the log (3.37.0: the pack said
+            # "Closed by Rosa" for an alert that closed by itself).
+            "closed_by_itself": bool(incident.resolved_at and incident.resolved_note),
+            "fix_said_by": (full_name(incident.fix_reported_by)
+                            if incident.fix_reported_at and incident.resolved_note else None),
+            "fix_said_at": (iso(incident.fix_reported_at)
+                            if incident.fix_reported_at and incident.resolved_note else None),
+            "closed_at_reading": (pack_temperature(incident.close_temperature_f, unit)
+                                  if incident.resolved_note and incident.close_temperature_f is not None
+                                  else None),
         },
         # What happened to the food (3.33.0), the part of the record an
         # adjuster weighs a loss by: the answer, who and when, the note of
@@ -773,8 +815,13 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
         return clock_words(_parsed(value), zone, day)
 
     if event["state"] == "resolved":
-        closed = (f"The alert closed at {later(event.get('resolved_at'))}"
-                  + (", when the unit came back in range by itself." if event.get("closed_by_itself") else "."))
+        back = f", back to {event['closed_at_reading']}" if event.get("closed_at_reading") else ""
+        if event.get("closed_by_itself") and event.get("fix_said_at"):
+            closed = (f"{event.get('fix_said_by') or 'Somebody'} said it was fixed at {later(event['fix_said_at'])}; "
+                      f"the alert closed by itself at {later(event.get('resolved_at'))}{back}.")
+        else:
+            closed = (f"The alert closed at {later(event.get('resolved_at'))}"
+                      + (f", when the unit came back in range by itself{back}." if event.get("closed_by_itself") else "."))
     elif event["state"] == "acknowledged":
         closed = "The alert was still being dealt with when this pack was issued."
     else:
@@ -782,14 +829,26 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
     ack = event["minutes_to_acknowledge"]
     answered = ("" if ack is None else
                 f" and acknowledged {_minutes(ack)} after detection")
-    if food.get("answer"):
+    note = (food.get("note") or "").strip()
+    stop = "" if note.endswith((".", "!", "?")) else "."
+    if food.get("answer") and note and note_repeats(food["answer"], note):
+        # The note already starts "Thrown away" (3.37.0): said once, in
+        # the note's own words, never "recorded as “Thrown away”. The note
+        # of what went: “Thrown away from ...”".
+        who = food.get("by") or "Somebody"
+        said = (f"{who} recorded"
+                + (f" at {later(food.get('at'))}" if food.get("at") else "")
+                + f": \u201c{note}{stop}\u201d")
+    elif food.get("answer"):
         who = food.get("by")
         said = (f"The food was recorded as \u201c{food['answer']}\u201d"
                 + (f" by {who}" if who else "")
                 + (f" at {later(food.get('at'))}" if food.get("at") else "") + ".")
-        if food.get("note"):
-            note = food["note"].strip()
-            said += f" The note of what went: \u201c{note}\u201d" + ("" if note.endswith((".", "!", "?")) else ".")
+        if note:
+            # "of what went" only for food that went (3.37.0): a note on
+            # food kept is just the note.
+            said += (f" The note of what went: \u201c{note}\u201d" if food.get("thrown")
+                     else f" The note: \u201c{note}\u201d") + stop
     else:
         said = "Nobody had recorded what happened to the food when this pack was issued."
     peak = evidence.get("peak_reading")
@@ -805,6 +864,16 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
         "closed": closed,
         "food": said,
     }
+
+
+def note_repeats(answer: Optional[str], note: Optional[str]) -> bool:
+    """Whether a food note starts with its own answer ("Thrown away from
+    the walk-in: ..." under "Thrown away"), so a page says it once."""
+    def flat(text: Optional[str]) -> str:
+        return " ".join("".join(ch if ch.isalnum() else " " for ch in (text or "").lower()).split())
+
+    a, n = flat(answer), flat(note)
+    return bool(a) and (n == a or n.startswith(a + " "))
 
 
 def _outside(readings: int, out: int) -> str:
@@ -834,25 +903,31 @@ def build_cover_letter(tenant: Tenant, packet: Dict[str, Any], zone=timezone.utc
     location = packet["location"]
     facts = cover_facts(packet, zone)
     unit_name = location.get("asset_label") or location["asset"]
+    # "Old Mill / Walk-in freezer at Juniper Old Mill" said the site twice
+    # (3.37.0): where the site is named, the unit's own part of its name.
+    if location.get("site") and "/" in unit_name:
+        unit_name = unit_name.rsplit("/", 1)[1].strip() or unit_name
     # The site's name and its address, or the address alone where the
     # site has no name (3.36.0): the saved address was on the pack but
     # never in its summary.
     where = ", ".join(x for x in (location.get("site"), location.get("address")) if x)
 
-    fallback = (
-        f"{tenant.company_name} reports that {unit_name}"
+    # Three short paragraphs (3.37.0), as the drafted letter is asked for:
+    # what happened, how people were told and what became of the food,
+    # and the evidence. It was one block of nine sentences.
+    fallback = "\n\n".join([
+        f"{tenant.company_name} reports that {unit_phrase(unit_name)}"
         + (f" at {where}" if where else "")
         + f" went out of its safe range at {facts['started']}. "
-        + (f"Continuous monitoring recorded {facts['readings']} from {facts['window']}; "
-           f"{facts['outside']} the documented safe band"
-           + (f", the worst {facts['peak']}" if facts["peak"] else "")
-           if evidence["readings_in_window"] else
-           f"No readings were kept from {facts['window']}")
-        + f". The probable cause is {event['probable_cause'].lower()}. "
-        + facts["told"] + " "
-        + facts["closed"] + " " + facts["food"]
-        + " All readings are hash-chained and independently verifiable."
-    )
+        + f"The probable cause is {event['probable_cause'].lower()}.",
+        f"{facts['told']} {facts['closed']} {facts['food']}",
+        (f"Continuous monitoring recorded {facts['readings']} from {facts['window']}; "
+         f"{facts['outside']} the documented safe band"
+         + (f", the worst {facts['peak']}" if facts["peak"] else "") + "."
+         if evidence["readings_in_window"] else
+         f"No readings were kept from {facts['window']}.")
+        + " All readings are hash-chained and independently verifiable.",
+    ])
 
     prompt = f"""
     You are writing the covering letter that sits at the front of an

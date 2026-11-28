@@ -54,10 +54,24 @@
     return String(text).replace(/(^|[^\d:])0(\d:\d\d)(?=\s*[AaPp]\.?\s?[Mm])/g, "$1$2");
   }
 
+  /* The time of day alone: "5:54 PM". */
+  function timeOf(d) {
+    return unpad(d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  }
+
+  /* A moment as the reader's own clock says it, with the day whenever it
+     is not today (3.37.0): "5:54 PM" today, "Sun 5:54 PM" within the week
+     either side, else "Nov 22, 5:54 PM". A bare "5:54 PM" on Tuesday
+     about Sunday read as an alert from an hour ago. */
   function clock(iso) {
     const d = at(iso);
     if (!d) return "";
-    return unpad(d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    const today = new Date(now());
+    const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const days = Math.round(Math.abs(midnight(d) - midnight(today)) / 86400000);
+    if (days === 0) return timeOf(d);
+    if (days < 7) return `${d.toLocaleDateString([], { weekday: "short" })} ${timeOf(d)}`;
+    return unpad(d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
   }
 
   /* A day and a time: "Nov 21, 5:50 PM" (and the year with `year`). For
