@@ -399,7 +399,7 @@
           <p class="card-plain">Every reading, saved and sealed, so an inspector or an insurer gets a fact instead of a promise.</p>
           <div id="vault-body"></div>
           <div class="row u-mt-12">
-            <button class="btn btn-sm" id="vault-attest">Issue attestation</button>
+            <button class="btn btn-sm" id="vault-attest">Make a checkable summary</button>
             <button class="btn btn-sm" id="vault-verify">Verify the record</button>
           </div>
         </section>
@@ -547,7 +547,7 @@
           </div>
           <p class="card-plain">Each alert text and call has one line saying
              what to check first, worded by AI when it can and by a plain
-             template when it cannot. Save your own Google AI Studio API key here
+             template when it cannot. Save your own AI helper key here (optional)
              and that line is written on your key, for your alerts only.</p>
           <p class="card-plain" id="aikey-unavailable" hidden></p>
           <div id="aikey-owner" hidden>
@@ -555,8 +555,8 @@
               <div class="row u-mb-8">
                 <input id="aikey-key" class="grow" type="password" maxlength="300"
                        autocomplete="off" spellcheck="false"
-                       placeholder="Your Google AI Studio API key"
-                       aria-label="Your Google AI Studio API key">
+                       placeholder="AI helper key (optional)"
+                       aria-label="AI helper key (optional)">
               </div>
               <div class="row u-gap-8 u-flex-wrap">
                 <button class="btn btn-sm btn-primary" type="submit">Save key</button>
@@ -817,7 +817,9 @@
               <input id="ct-name" class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink"
                      placeholder="Name" autocomplete="name" required>
               <label class="sr" for="ct-phone">Mobile number</label>
-              <input id="ct-phone" type="tel" placeholder="Mobile, e.g. +1 555 010 0100"
+              <!-- Short enough for a 320px phone (3.43.0): "Mobile, e.g. +1
+                   555 010 0100" was cut off; it wraps under the name there. -->
+              <input id="ct-phone" type="tel" placeholder="Mobile, +1 555…"
                      autocomplete="tel" required
                      class="grow u-p-9-11 u-bg-sunken u-bd u-r-9 u-c-ink">
             </div>
@@ -1043,7 +1045,7 @@
             <span class="card-title">Pause or cancel</span>
             <span class="card-note" id="pause-note"></span>
           </div>
-          <p class="card-plain">Closed for the season or a refit? Pause instead of cancelling, and keep everything.</p>
+          <p class="card-plain">Closed for the season or a refit? Pause instead of canceling, and keep everything.</p>
           <div id="pause-body"></div>
         </section>
 
@@ -1150,7 +1152,7 @@
 
 <footer id="terminal" hidden>
   <div class="term-head">
-    <span>// system terminal output log</span>
+    <span>Recent activity</span>
     <button class="btn btn-sm" id="term-clear">Clear</button>
   </div>
   <div id="term-body" aria-live="polite"></div>

@@ -120,7 +120,7 @@ TRADES: Dict[str, Dict[str, Any]] = {
         "risk": (
             "Vaccine fridges have to stay inside a narrow range. Too warm or "
             "frozen, and doses may have to be thrown away and patients asked "
-            "back. Programmes expect a continuous temperature record, and a "
+            "back. Programs expect a continuous temperature record, and a "
             "fridge that drifts overnight is noticed the next morning."
         ),
         "asset": "vaccine fridge",

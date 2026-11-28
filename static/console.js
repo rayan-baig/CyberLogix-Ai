@@ -2911,10 +2911,27 @@ function renderBilling(subscription, roi, tenant) {
     + upgradeBlock(tenant);
 }
 
+// The roster card's note (3.43.0): how many people are on the list, and
+// who a real alert reaches now, from the same live preview as "A real
+// alert right now" under it. "3 on call" sat beside a rotation texting
+// only Morgan.
+function rosterNote() {
+  const roster = state.roster;
+  if (!roster) return;
+  if (roster.using_fallback) { $("roster-note").textContent = "using fallback contact"; return; }
+  const people = CLXWords.count(roster.count, "person", "people");
+  const texted = state.escalation ? (state.escalation.sms_recipients || []) : null;
+  const first = (r) => String(r.name || "").trim().split(/\s+/)[0];
+  const now = texted === null ? ""
+    : texted.length === 0 ? " · nobody on call now"
+      : texted.length <= 2 ? ` · ${texted.map(first).join(" and ")} on call now`
+        : ` · ${texted.length} on call now`;
+  $("roster-note").textContent = `${people}${now}`;
+}
+
 function renderRoster(roster) {
-  $("roster-note").textContent = roster.using_fallback
-    ? "using fallback contact"
-    : `${roster.count} on call`;
+  state.roster = roster;
+  rosterNote();
 
   if (!roster.contacts.length) {
     $("roster-body").innerHTML =
@@ -3378,9 +3395,15 @@ function renderContract(contract, pipeline, tenant) {
     : "";
   body.innerHTML = `
     <div class="u-fs-12-5 u-c-muted u-lh-1-6">
-      ${esc(isYearly ? `Billed yearly (${yearly.label || ""})` : "Billed monthly")},
-      ${c.escalator_percent}% a year, ${
-        c.auto_renew ? "renews automatically" : "does not auto-renew"}.
+      ${esc(isYearly ? `Billed yearly (${yearly.label || ""})` : "Billed monthly")}.
+      ${c.escalator_percent
+        ? `The price rises ${esc(c.escalator_percent)}% each year after the first.`
+        : "The price stays the same each year."}
+      ${c.auto_renew
+        ? `When this ${esc(c.term_years)}-year term ends, a new one starts by itself.`
+        : `This ${esc(c.term_years)}-year term does not renew by itself.`}
+      Cancel any time: nothing more is billed after you cancel, with no fee
+      for leaving early.
       Next invoice ${esc(CLXWords.date(c.next_billing_at))}.
     </div>
     ${switching}
@@ -4915,6 +4938,8 @@ function renderClaims(eligible) {
    do with it, which is not always the same thing -- a contact with both
    channels muted is on the roster and reaches nobody. */
 function renderEscalation(preview) {
+  state.escalation = preview;
+  rosterNote();
   // The trial's few calls are said once, in the card's own first line
   // (roster-plain), not again under this.
   const texted = preview.sms_recipients || [];
@@ -5019,7 +5044,9 @@ async function openPacket(incidentId) {
       <div><span class="k">Answer</span><span class="v">${esc(repeats ? food.note : food.answer)}</span></div>
       <div><span class="k">Who</span><span class="v">${esc(food.by || "not recorded")}</span></div>
       <div><span class="k">When</span><span class="v">${esc(at(food.at))}</span></div>
-      ${food.note && !repeats ? `<div><span class="k">What went</span><span class="v">${esc(food.note)}</span></div>` : ""}
+      ${food.note && !repeats ? `<div><span class="k">${food.thrown ? "What went" : "Note"}</span><span class="v">${esc(food.note)}</span></div>` : ""}
+      ${food.close_reason ? `<div><span class="k">Why it was closed</span><span class="v">${esc(food.close_reason)}${
+        food.closed_out_of_range ? " (closed while still out of range)" : ""}</span></div>` : ""}
     </div>
     ${food.note ? "" : `<div class="card-note u-mt-8">No note of what was thrown away yet.${
       food.thrown ? " Add one from the alert: it makes this pack complete." : ""}</div>`}
@@ -5530,9 +5557,9 @@ function renderVault(attestation) {
     $("vault-note").textContent = "ready";
     $("vault-body").innerHTML =
       `<div class="card-note">
-         Every reading is chained: altering one changes every digest after
-         it. Issue an attestation to hand an insurer or an auditor a figure
-         they can check without trusting either of us.
+         Every reading is sealed in order: changing one later would show.
+         Make a checkable summary to hand an insurer or an auditor one code
+         that proves the record is unchanged, without trusting either of us.
        </div>`;
     return;
   }
@@ -5544,7 +5571,7 @@ function renderVault(attestation) {
     <div class="readout">
       <div><span class="k">Period</span><span class="v">${
         esc(held.period_days)} days</span></div>
-      <div><span class="k">${Noun(2)} attested</span><span class="v">${
+      <div><span class="k">${Noun(2)} covered</span><span class="v">${
         esc(held.sensors)}</span></div>
       <div><span class="k">Within tolerance</span><span class="v">${
         held.within_band_percent === null ? "—"
@@ -5552,8 +5579,8 @@ function renderVault(attestation) {
       <div><span class="k">Counter-signed</span><span class="v">${
         held.signing.counter_signed ? "yes" : "no"}</span></div>
     </div>
-    <div class="digest" title="The one figure that fixes this whole record">
-      <span class="digest-label">Estate digest</span>
+    <div class="digest" title="The one code that fixes this whole record">
+      <span class="digest-label">Check code for the whole record</span>
       <code>${esc(held.estate_digest)}</code>
     </div>
     ${held.signing.counter_signed ? "" :
@@ -7470,7 +7497,7 @@ $("vault-attest").addEventListener("click", async () => {
   btn.disabled = true;
   try {
     renderVault(await api("/api/vault/attestation?days=30"));
-    toast("Attestation issued. The digest fixes this record.", "ok");
+    toast("Summary made. Its check code fixes this record.", "ok");
   } catch (err) { toast(err.message, "err"); }
   finally { btn.disabled = false; }
 });
@@ -7488,10 +7515,10 @@ $("vault-verify").addEventListener("click", async () => {
       api(`/api/vault/verify/${encodeURIComponent(s.sensor_id)}?days=30`)));
     const broken = results.filter((r) => !r.intact);
     if (broken.length) {
-      toast(`${broken.length} record(s) do not verify. Investigate now.`, "err");
+      toast(`${broken.length} record(s) do not check out: something was changed. Look into it now.`, "err");
     } else {
       const links = results.reduce((n, r) => n + r.links_checked, 0);
-      toast(`${links.toLocaleString()} links re-derived. Record intact.`, "ok");
+      toast(`${links.toLocaleString()} readings checked. Nothing has been changed.`, "ok");
     }
   } catch (err) { toast(err.message, "err"); }
   finally { btn.disabled = false; }

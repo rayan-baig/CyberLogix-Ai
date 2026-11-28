@@ -34,18 +34,25 @@
 <div class="circuit-veil" aria-hidden="true"></div>
 
 <div class="wrap">
-  <div class="top">
+  <!-- Pricing and Sign in on every size of screen (3.43.0): a phone
+       had only "All trades". -->
+  <header class="top">
     <span class="brand-mark" aria-hidden="true">
       <img src="/static/logo.svg" alt="" width="30" height="30">
     </span>
     <span class="brand-name">%%APP_WORDMARK%%</span>
     <span class="grow"></span>
-    <a class="btn btn-sm" href="/for">All trades</a>
-  </div>
+    <nav class="top-nav" aria-label="Elsewhere">
+      <a href="/for">All trades</a>
+      <a href="/pricing">Pricing</a>
+      <a class="btn btn-sm" href="/console">Sign in</a>
+    </nav>
+  </header>
   <main id="page">%%BODY%%</main>
 </div>
 
 <script src="/static/circuit.js"></script>
+<script src="/static/signedin.js" defer></script>
 <script src="/static/motion.js"></script>
 <!--pilot-->
 </body>

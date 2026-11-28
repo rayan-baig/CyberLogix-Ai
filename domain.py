@@ -495,7 +495,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     },
     "cryostorage": {
         "name": "IVF Clinics & Cryostorage",
-        "catastrophe": "Cryogenic Tank Nitrogen Boil-Off / Vapour Space Warming",
+        "catastrophe": "Cryogenic Tank Nitrogen Boil-Off / Vapor Space Warming",
         "slogan": "The tank warms on Saturday. The phone calls start on Monday.",
         # Vapour-phase storage sits near −190°C. What actually matters is
         # the glass transition of water at about −130°C (−202°F): warmer
@@ -513,7 +513,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
         "asset_plural": "tanks",
         "shortcut_name": "Cryostorage Continuity Record",
         "shortcut_description": (
-            "Proves every tank held vapour-phase temperature across a given "
+            "Proves every tank held vapor-phase temperature across a given "
             "window, and names who was alerted when one did not."
         ),
     },

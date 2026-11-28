@@ -239,6 +239,15 @@ def food_record(incident: Incident) -> Dict[str, Any]:
             "at": row.get("at"),
         })
     auto = incident.food_auto_minutes is not None
+    # Why a person closed it (3.43.0), on its own line: "Close anyway"
+    # copies its reason ("Moved the food to another fridge") into the
+    # corrective action, and the pack showed it as "What went" beside
+    # "Thrown away". "What went" is only the note added with "Add what was
+    # thrown away"; the close reason is "Why it was closed".
+    reason = ((incident.close_note or "").strip() or None) if incident.resolved_by else None
+    note = (incident.corrective_action or "").strip() or None
+    if note and reason and note == reason:
+        note = None
     return {
         "answer": incident.food_words(),
         "disposition": incident.product_disposition,
@@ -247,9 +256,12 @@ def food_record(incident: Incident) -> Dict[str, Any]:
                if incident.product_disposition else None),
         "at": iso(incident.food_answered_at),
         "auto": auto,
-        "note": incident.corrective_action or None,
-        "note_by": full_name(incident.corrective_action_by) if incident.corrective_action else None,
-        "note_at": iso(incident.corrective_action_at) if incident.corrective_action else None,
+        "note": note,
+        "note_by": full_name(incident.corrective_action_by) if note else None,
+        "note_at": iso(incident.corrective_action_at) if note else None,
+        "close_reason": reason,
+        "closed_out_of_range": bool(incident.closed_out_of_range),
+        "closed_by": full_name(incident.resolved_by) if reason else None,
         "history": history,
     }
 
@@ -307,7 +319,9 @@ def _delivery_rows(fanout: List[Dict[str, Any]], single: Optional[Dict[str, Any]
             "channel": row.get("channel"),
             "channel_words": channel_words(row.get("channel")),
             # The demo's made-up receipts say so (3.39.0).
-            "outcome_words": ("pretend text, demo" if row.get("demo")
+            # A phone call's pretend receipt is a call (3.43.0), not a text.
+            "outcome_words": (("pretend call, demo, no call placed" if row.get("channel") == "voice"
+                               else "pretend text, demo") if row.get("demo")
                               else outcome_words(bool(row.get("delivered")), row.get("status"))),
             "to": row.get("to"),
             "recipient": row.get("contact_name"),
@@ -919,6 +933,13 @@ def cover_facts(packet: Dict[str, Any], zone=timezone.utc) -> Dict[str, str]:
                      else f" The note: \u201c{note}\u201d") + stop
     else:
         said = "Nobody had recorded what happened to the food when this pack was issued."
+    reason = (food.get("close_reason") or "").strip()
+    if reason:
+        # Why it was closed (3.43.0), its own sentence: never "the note of
+        # what went".
+        rstop = "" if reason.endswith((".", "!", "?")) else "."
+        said += (f" Why it was closed{' while still out of range' if food.get('closed_out_of_range') else ''}: "
+                 f"\u201c{reason}{rstop}\u201d")
     peak = evidence.get("peak_reading")
     return {
         "started": at(event.get("out_since") or event["opened_at"]),

@@ -52,7 +52,7 @@ def _add_unit_step(serial: bool) -> str:
         + (", and type the device's own serial number into Third-party "
            "device serial. That serial is how a reading finds this unit."
            if serial else
-           ". Give it a Sensor ID you will recognise, such as WALKIN-1, "
+           ". Give it a Sensor ID you will recognize, such as WALKIN-1, "
            "or leave it blank and one is made from the location.")
         + " Press Add it."
     )

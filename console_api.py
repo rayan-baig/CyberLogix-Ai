@@ -424,12 +424,29 @@ def console_overview(
         # Pilot's "Who gets the texts?" to the person signed in: in their
         # browser, never sent anywhere.
         "texted_first_names": texted_first_names(tenant),
+        # Whether a rotation decides who that is (3.43.0), as the proof
+        # report's "Who gets alerted" says it: Pilot's "Who gets the
+        # texts?" said "Everyone on the list is texted" beside a rotation
+        # texting one person.
+        "texted_by_rotation": texted_by_rotation(tenant),
         # A short blip's food is recorded safe by itself under this many
         # minutes out (food_value.SHORT_MINUTES, 3.32.0); 0 when it is off.
         "food_safe_minutes": food_value.SHORT_MINUTES,
         # Where the About card tells people to write, or "" for only /help.
         "support_email": support_address(),
     }
+
+
+def texted_by_rotation(tenant: Tenant) -> bool:
+    """True when an on-call rotation decides who an alert text goes to now."""
+    try:
+        import oncall
+
+        texted = {c.contact_id for c in STORE.sms_recipients(tenant)}
+        turns = [r for r in oncall.rotations_for(STORE._db, tenant.tenant_id) if r.members]
+        return any(m in texted for r in turns for m in r.members)
+    except Exception:  # noqa: BLE001 - a roster problem must not cost the overview
+        return False
 
 
 def texted_first_names(tenant: Tenant, most: int = 6) -> list:

@@ -55,7 +55,7 @@ Your sensors send readings over your internet. If the power or the internet at y
 
 Gateways and hubs that let you set the address, headers and body of what they send; a Raspberry Pi; your own script.
 
-1. In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits. Give it a Sensor ID you will recognise, such as WALKIN-1, or leave it blank and one is made from the location. Press Add it.
+1. In the console, open Setup and use Add a fridge or freezer: say where it is, which industry it is in and, where it asks, whether it is a fridge or a freezer, so it gets the right limits. Give it a Sensor ID you will recognize, such as WALKIN-1, or leave it blank and one is made from the location. Press Add it.
 2. Copy the sensor key the console shows next. It is shown once. It lets a device report readings for this one unit and do nothing else, so it is the key to put on hardware or in a vendor's settings.
 3. Set the device to send an HTTPS POST to https://kryozyn.mtrxhorizyn.com/api/sensor-pulse every few minutes.
 4. Add two headers: X-Kryozyn-Sensor-Key with the sensor key, and Content-Type: application/json.

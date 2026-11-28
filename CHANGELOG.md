@@ -6,6 +6,76 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.43.0 — 2026-11-28
+
+Pilot tells the past from the present, a change from a status, and the
+night from a phone call; the proof report and the insurance pack say how
+an alert really closed; the Team tab and Pilot agree on who is alerted;
+plainer words. No price, plan, brand or sector offered has changed.
+
+- **Pilot: the past is the 7-day history.** "Was the Old Mill freezer
+  alert on Wednesday handled?" and "Who answered the Wednesday alert?"
+  got "No alert is open" and today's alert. A day, "yesterday", "last
+  night", "this week" or "was it handled" now lists those alerts only,
+  for the unit, the place and the day asked about, with how each closed
+  and what happened to the food; a visitor gets the honest note. Pilot
+  still names nobody: who answered is on the alert.
+- **Pilot: a change is the button that makes it.** "Change the walk-in
+  freezer alarm to 5 degrees" got "No alert is open… check the door"; it
+  now gets **Change limit**, for the units that fit. "We're defrosting
+  the ice-cream freezer, stop it alarming" says honestly that there is no
+  pause for one unit, that a freezer's own defrost cycle is learned and
+  not texted about, a longer **Alert wait** for a short clean, and **I'm
+  on it** for a unit switched off on purpose.
+- **Pilot: a unit or a place named is that one.** "Warmest the
+  Harbourside walk-in got this week?" gave the bakery fridge. A place
+  named keeps every answer to its units; a name nobody here has ("the
+  sushi fridge", "the Downtown site") is said so, never answered with
+  another unit's numbers.
+- **Pilot: the night is quiet hours.** "My phone keeps buzzing at night"
+  and "different person woken on weekends" got "Yes, on plans with
+  calls"; they get quiet hours, the rotation and Mute. The calls answer
+  is for questions about calls or phoning.
+- **Pilot answers more:** adding someone to the alerts ("add my sous chef
+  Marco to alerts"), why no call came (only on plans with calls, after
+  the text goes unanswered, and never from a server with calls off), a
+  reading not showing, being charged after 14 days, "6 pizza places",
+  the internet dying at night, staff with no training, and email alerts
+  (a copy to the business's own address; the list takes mobile numbers).
+- **Checked against 235 new questions** (175 written and scored first,
+  then 60 unseen), as a visitor, an owner, a business on the trial and
+  the demo's console, in the JavaScript tests. Before: 289 of 700 and 176
+  of 240 right; after: all of them, and the 591 earlier ones still.
+- **The proof report says how an alert closed.** "Back to normal" only
+  when it was; an alert closed by hand while still out of range says
+  "closed by hand while still out of range at 46.4°F". New reports carry
+  how each alert closed, inside their seal; a report made before says
+  "closed", and its seal still checks at /verify.
+- **The insurance pack:** "What went" is only the note added with "Add
+  what was thrown away"; the reason given for closing is its own "Why it
+  was closed" line. A demo phone call's row says "pretend call, demo, no
+  call placed", not "pretend text".
+- **One story on who is alerted.** With a rotation, Pilot says whoever is
+  on call in it is texted, not "everyone on the list". The Team tab's
+  badge says "3 people · Morgan on call now", from the same live preview
+  as "A real alert right now".
+- **The Money tab says what the contract does:** billed monthly, the
+  price rising 5% each year after the first, a new term starting by
+  itself, and cancelling any time with nothing more billed and no fee for
+  leaving early, as Pilot's "No lock-in" says.
+- **Plainer words.** "AI helper key (optional)" on Setup, without naming a
+  provider; "Make a checkable summary" and "Check code for the whole
+  record" on the Proof tab, not attestation and digest; the activity log
+  is "Recent activity". US spelling: "Vapor", "recognize",
+  "authorization", "Programs", "Canceling", "Unrecognized".
+- **Polish.** The Team tab's mobile number field is never cut off at
+  320px; the industry pages have Pricing and Sign in on every screen;
+  /today's robot keeps off the "Texts are not switched on" note; a
+  sensor key's reading with no serial number on /api/v1/bridge/any is
+  that sensor's, and the business key with no serial gets a plain
+  message saying which key to use.
+
+
 ## 3.42.0 — 2026-11-28
 
 Pilot says "I don't have a built-in answer" rather than guess, and
