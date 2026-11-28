@@ -287,7 +287,9 @@ def _delivery_rows(fanout: List[Dict[str, Any]], single: Optional[Dict[str, Any]
         {
             "channel": row.get("channel"),
             "channel_words": channel_words(row.get("channel")),
-            "outcome_words": outcome_words(bool(row.get("delivered")), row.get("status")),
+            # The demo's made-up receipts say so (3.39.0).
+            "outcome_words": ("pretend text, demo" if row.get("demo")
+                              else outcome_words(bool(row.get("delivered")), row.get("status"))),
             "to": row.get("to"),
             "recipient": row.get("contact_name"),
             "delivered": bool(row.get("delivered")),

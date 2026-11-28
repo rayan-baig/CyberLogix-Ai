@@ -6,6 +6,83 @@ file; a test checks that it does. Entries before 3.34.0 use the names of
 their time.
 
 
+## 3.39.0 — 2026-11-28
+
+The forecast leaves a fridge that has already failed to the alerts, the
+demo's numbers agree with each other, /today says each thing once and
+lists the warm fridge first, a restaurant sees its own trade first, Pilot
+answers more with no AI key and keeps off the page's words on a phone,
+and readings keep their tenth. No price or plan term has changed.
+
+- **No forecast for a fridge that is out of range now.** A fridge at
+  46.5°F sat under "Heading for trouble: still fine, but drifting" with
+  "in under an hour", and the At-risk tile counted it. A unit out of
+  range is an alert, not a forecast: the forecast's list and the tile
+  leave it out. The drift reads "+0.7°F/h", to one decimal.
+- **The demo agrees with itself.** The open alert opens at the reading
+  taken then: "Reading at detection 43.5°F", the same as its own table,
+  and 46.5°F is its worst. The handled one opens at its first reading out
+  of range (12.5°F), not half an hour later at 21°F, and closes after its
+  last warm reading. Its texts are labelled "pretend text, demo" on the
+  alert's timeline, in the insurance pack, in What Kryozyn did for you
+  ("4 pretend alert texts (demo)", not "4 alert texts delivered") and in
+  Pilot's answer, beside "Texts are not switched on". The made-up numbers are spaced as a trial
+  types them: "+1 555 010 0141".
+- **The Money tab's figure is the food kept.** It said "Loss avoided
+  $30,000, 2 real failures caught" while /today said "About $4,000 of food
+  kept". It now counts only closed alerts with the food recorded as kept,
+  at the same estimate /today uses, "Food kept · 30 days: about $4,000",
+  and the multiple of the subscription follows from that.
+- **/today says it once.** Under the top banner the alert cards have no
+  "Needs you now" of their own in any state: being dealt with, back in
+  range or said fixed. A unit's pill says "Back in range", not "Back in
+  range: press It's fixed" a third time on one screen. The front page's
+  phone picture is taken again without the repeated heading, by a new
+  `tools/hero_shot.js`.
+- **The warm fridge first.** /today's list puts units out of range
+  first, then anything else not fine (back in range, no signal, warming),
+  then the fine ones, each by name. On the demo's twenty units the warm
+  one was fourth.
+- **A restaurant's own trade first.** "Turn meeting notes into jobs" is
+  under Advanced only, not the first thing on a restaurant's Money tab.
+  The sector lists on /pricing, in the console and on /for go
+  restaurants, then other food service, then pharmacies, then the rest A
+  to Z; on /for the food trades' pages (butchers, grocery stores,
+  ice-cream shops, school cafeterias) come before the niche industries.
+  Every sector is still there.
+- **The Money tab fits a 320px phone.** "Pause for 3 months / back on
+  ..." wraps instead of scrolling the page 52px sideways. The yearly
+  escalator is no longer listed with the add-ons as if it were one to
+  buy.
+- **Pilot answers more with no key.** "How do I add a second fridge?"
+  points to Add a fridge or freezer, and opens it. "Can I try it without
+  a sensor?" and "Can I see it working before signing up?" get the
+  simulated units and /demo. "Do you have an app?" says it installs from
+  the browser to the home screen. "How many alerts this week?" counts
+  them from the page. A butcher's, a bakery or a deli gets the restaurant
+  answer. "15 at one, 4 at the other" is priced location by location, as
+  the calculator does. "Which is warmest?" is one line, and "Is the bar
+  fridge ok?" is about the bar fridges, with the other eighteen in a
+  line.
+- **Pilot says less twice.** "Here's what I can tell you without an AI
+  key:" shows once in a chat. On-call times read "Fri Dec 4, 8:00 AM".
+  Nobody signed in is told to start the free trial; somebody on it is
+  told they are on it.
+- **Pilot keeps off the words on a phone.** At 320 and 375 the robot no
+  longer sits over /today's notice, the pricing page's opening lines or
+  a console tile: the words in its corners are kept clear, and it hides
+  rather than tuck over them. /today's column gets the side room the
+  other pages have.
+- **Readings keep their tenth.** Pilot writes "35.0°F" beside "36.4°F",
+  the demo's log "(42.0°F)", the pack's humidity "52.0%" beside "48.3%".
+  The food card says "1 hour 6 minutes above 41°", never "1.1 hours"
+  beside "about 1 hour".
+- **A key in the wrong header says which header.** A sensor key sent as
+  X-Kryozyn-Key (or as a bearer token) is told to use
+  X-Kryozyn-Sensor-Key, and the account key sent as a sensor key is told
+  the other way round, in place of a bare "Unrecognised API key."
+
+
 ## 3.38.0 — 2026-11-28
 
 Pilot answers the questions people ask most with no AI key, the demo

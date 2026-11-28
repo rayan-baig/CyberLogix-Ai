@@ -239,6 +239,7 @@ def console_overview(
             row["risk_level"] = projection["risk_level"]
             row["hours_until_breach"] = projection["hours_until_breach"]
             row["trend_f_per_hour"] = projection.get("trend_f_per_hour")
+            row["already_breached"] = bool(projection.get("already_breached"))
         else:
             row["risk_level"] = None
             row["hours_until_breach"] = None
@@ -330,10 +331,13 @@ def console_overview(
     else:
         fleet_noun, fleet_plural = "asset", "assets"
 
+    # Out of range now is an alert, not a forecast (3.39.0): the At-risk
+    # tile counted the fridge already at 46.5°F.
     at_risk = sum(
         1
         for s in sensors
         if s["risk_level"] in {"critical", "high", "elevated"}
+        and not s["breaching"] and not s.get("already_breached")
     )
 
     from costs import calls_offer

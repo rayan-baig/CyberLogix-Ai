@@ -910,6 +910,18 @@ def headline() -> Dict[str, Any]:
     }
 
 
+# The order a sector list is read in (3.39.0), on /pricing, the console
+# and /for: restaurants, then other food service, then pharmacies, then
+# the rest A to Z. The calculator opened on "Data centers" for a café.
+SECTOR_FIRST = ("restaurant", "country_club", "pharmacy")
+
+
+def sector_order(vertical: str) -> Tuple[int, str]:
+    """A sort key for a sector list: SECTOR_FIRST in order, then A to Z."""
+    rank = SECTOR_FIRST.index(vertical) if vertical in SECTOR_FIRST else len(SECTOR_FIRST)
+    return rank, INDUSTRY_PROFILES[vertical]["name"]
+
+
 def calculator_rates() -> Dict[str, Any]:
     """Everything the public price calculator works from.
 
@@ -933,10 +945,8 @@ def calculator_rates() -> Dict[str, Any]:
             "per_site": per_site(vertical),
             "units_per_location": units_per_location(vertical),
         }
-        # The published prices first, then the trades priced by quote.
-        for vertical, entry in sorted(
-            PRICE_BOOK.items(),
-            key=lambda kv: (custom_quote(kv[0]), INDUSTRY_PROFILES[kv[0]]["name"]))
+        # Restaurants, other food service, pharmacies, then A to Z (3.39.0).
+        for vertical, entry in sorted(PRICE_BOOK.items(), key=lambda kv: sector_order(kv[0]))
     ]
     return {
         "currency": "USD",
@@ -1332,72 +1342,21 @@ def chain_factor(counts: Dict[str, int]) -> float:
     return chain_discount(total, places)["after_usd"] / total
 
 
-# What makes an alert a caught failure rather than noise, for the "loss
-# avoided" figure. The figure used to count every answered incident, so a
-# healthy fridge alarming against a wrong limit, answered and closed, was
-# shown as "$15,000 avoided, 100× the subscription".
-SAVE_ANSWERED_WITHIN_HOURS = 2.0   # food is still recoverable (disposition.py)
-SAVE_MIN_MINUTES_OUT = 15.0        # a door opened for a delivery is not a failure
-SAVE_MIN_RISE_F = 5.0              # it was warming, not sitting above a low limit
-SAVE_BASELINE_MINUTES = 60         # what "normal" was, just before
-
-
-def caught_failure(incident: Any) -> Tuple[bool, str]:
-    """Whether an incident was a genuinely dangerous failure, caught in time.
-
-    All of: somebody answered it within two hours; it is a unit's own
-    alert (a site-wide alert sits on top of its units' alerts and would
-    count them twice); the food was not thrown away; and the readings show
-    a real failure -- out of range for at least fifteen minutes, and at
-    least 5°F warmer than the same unit in the hour before. A unit whose
-    first readings were already over its limit has no "before", and that
-    is the shape of a limit set wrong at setup, not of a failure.
-    """
-    from datetime import timedelta
-
-    if incident.acknowledged_at is None:
-        return False, "nobody answered it"
-    if getattr(incident, "kind", "unit") != "unit":
-        return False, "a site-wide alert, counted through its units"
-    waited = (incident.acknowledged_at - incident.opened_at).total_seconds() / 3600.0
-    if waited > SAVE_ANSWERED_WITHIN_HOURS:
-        return False, "answered after the food was likely past saving"
-    if (incident.product_disposition or "") == "discarded":
-        return False, "the food was thrown away"
-    sensor = STORE.get_sensor(incident.sensor_id)
-    above = sensor.bounds()[0] if sensor is not None else None
-    if above is None:
-        return False, "no upper limit to measure against"
-    from disposition import exposure
-
-    start = incident.opened_at - timedelta(minutes=SAVE_BASELINE_MINUTES)
-    end = incident.resolved_at or utc_now()
-    history = sorted((r for r in STORE.readings_for(incident.sensor_id, since=start, complete=True, until=end)
-                      if r.recorded_at <= end), key=lambda r: r.recorded_at)
-    before = [r.temperature_fahrenheit for r in history
-              if r.recorded_at < incident.opened_at and r.temperature_fahrenheit <= above]
-    during = [r for r in history if r.recorded_at >= incident.opened_at]
-    if not before:
-        return False, "no normal readings before it to compare with"
-    measured = exposure(during, above, now=end)
-    peak = max([incident.temperature_fahrenheit]
-               + [r.temperature_fahrenheit for r in during])
-    baseline = sorted(before)[len(before) // 2]  # the median of "before"
-    if peak - baseline < SAVE_MIN_RISE_F:
-        return False, "a small rise, not a failure"
-    if measured["minutes_above"] < SAVE_MIN_MINUTES_OUT:
-        return False, "back in range within minutes"
-    return True, "a real failure, answered in time"
-
-
 def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
-    """Weigh what the subscription costs against what it caught.
+    """Weigh what the subscription costs against the food it kept.
 
-    A prevented failure is counted only where that vertical has a supplied
-    loss figure. Incidents in the other verticals are still listed, marked
-    unquantified, so the total is never inflated by a number nobody gave us.
+    Only a closed alert somebody recorded as kept counts, valued with the
+    same estimate /today and the monthly summary use (food_value.protected:
+    what a typical unit of that kind holds; nothing for a short blip). It
+    was the sector's whole-failure figure for every alert answered in time
+    (3.39.0): the demo's Money tab said "Loss avoided $30,000, 2 real
+    failures caught" while /today said "About $4,000 of food kept". An
+    alert in a sector with no estimate is listed, marked unquantified, so
+    the total is never inflated by a number nobody gave us.
     """
     from datetime import timedelta
+
+    import food_value
 
     since = utc_now() - timedelta(days=days)
     incidents = STORE.incidents_for(tenant.tenant_id, since=since)
@@ -1407,8 +1366,19 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
     unquantified: List[Dict[str, Any]] = []
 
     for incident in incidents:
-        entry = PRICE_BOOK[incident.industry_vertical]
-        caught, why = caught_failure(incident)
+        sensor = STORE.get_sensor(incident.sensor_id)
+        kept = food_value.protected(incident, sensor) if sensor is not None else None
+        fate = incident.product_disposition or ""
+        if kept:
+            why = "closed, and the food was recorded as kept"
+        elif incident.resolved_at is None:
+            why = "still open"
+        elif fate == "discarded":
+            why = "the food was thrown away"
+        elif fate in food_value.KEPT:
+            why = "kept, after too short a time out to count"
+        else:
+            why = "nobody has said the food was kept"
         row = {
             "incident_id": incident.incident_id,
             "sensor_id": incident.sensor_id,
@@ -1416,18 +1386,16 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
             "catastrophe": incident.catastrophe,
             "opened_at": iso(incident.opened_at),
             "answered": incident.acknowledged_at is not None,
-            "caught_failure": caught,
+            # Kept the name: true when it counts, closed and kept.
+            "caught_failure": bool(kept),
             "why": why,
-            "loss_avoided_usd": entry["loss_avoided_usd"],
+            "loss_avoided_usd": float(kept["usd"]) if kept else None,
         }
-        (quantified if entry["loss_avoided_usd"] else unquantified).append(row)
+        estimable = sensor is not None and food_value.estimate(sensor) is not None
+        (quantified if estimable else unquantified).append(row)
 
-    # Only a genuinely dangerous failure that somebody answered in time is a
-    # prevented loss. One nobody responded to is a warning that went
-    # unheeded, and a false alarm prevented nothing; claiming either as a
-    # save would be a lie the customer can check.
-    answered = [row for row in quantified if row["caught_failure"]]
-    protected = round(sum(row["loss_avoided_usd"] for row in answered), 2)
+    saved = [row for row in quantified if row["caught_failure"]]
+    protected = round(sum(row["loss_avoided_usd"] for row in saved), 2)
     period_cost = round(subscription["monthly_total_usd"] * (days / 30.0), 2)
 
     return {
@@ -1436,7 +1404,7 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
         "period_days": days,
         "incidents_total": len(incidents),
         "incidents_answered": sum(1 for i in incidents if i.acknowledged_at),
-        "quantified_saves": len(answered),
+        "quantified_saves": len(saved),
         "unquantified_saves": len(unquantified),
         "loss_avoided_usd": protected,
         "subscription_cost_usd": period_cost,
@@ -1446,12 +1414,12 @@ def build_roi(tenant: Tenant, days: int) -> Dict[str, Any]:
         ),
         "detail": quantified + unquantified,
         "note": (
-            "Counts only real failures a person answered within two hours: "
-            "out of range for at least 15 minutes and at least 5°F warmer "
-            "than normal, with the food not thrown away. False alarms, short "
-            "door-open blips and alerts nobody answered are not counted. "
-            "Verticals without a supplied loss figure are listed but "
-            "excluded from the total rather than estimated."
+            "Counts only alerts that are closed with the food recorded as "
+            "kept, at an estimate of what a typical fridge or freezer of "
+            "that kind holds: the same figure as the food kept on the Simple "
+            "view. Alerts still open, food thrown away or not answered for, "
+            "and short blips are not counted. Sectors with no estimate are "
+            "listed but left out of the total rather than guessed."
         ),
     }
 

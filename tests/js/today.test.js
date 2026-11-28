@@ -128,7 +128,9 @@ test("3.30.0: an open alert whose reading is back in range says 'Back in range: 
     incidents: [live],
   }));
   assert.match(nodes.verdict.innerHTML, /Back in range: press It's fixed/);
-  assert.match(nodes.things.innerHTML, /Back in range: press It&#39;s fixed/);
+  // The unit's pill says "Back in range" only (3.39.0): the banner and the card say press It's fixed.
+  assert.match(nodes.things.innerHTML, />Back in range</);
+  assert.doesNotMatch(nodes.things.innerHTML, /press It&#39;s fixed/);
   assert.doesNotMatch(nodes.things.innerHTML, /Too warm/);
   assert.doesNotMatch(nodes.todo.innerHTML, /warming up/, "not a second, wrong job for the same fridge");
   assert.match(nodes.needs.innerHTML, /back in range at 38°/);
@@ -315,4 +317,37 @@ test("3.36.0: after It's fixed while still warm, 'Being dealt with' waits: who s
   assert.match(before.nodes.needs.innerHTML, /data-fixed="INC-3"/);
   assert.match(before.nodes.verdict.innerHTML, /Press <b>It's fixed<\/b> once it is cold again/);
   assert.equal(before.nodes["needs-h"].textContent, "Needs you now");
+});
+
+test("3.39.0: the list puts the units with a problem first (out of range, then a warning, then fine), each by name", async () => {
+  const unit = (id, name, condition, extra) => Object.assign(fridge(condition), { sensor_id: id, location_name: name }, extra || {});
+  const { nodes } = await today(base({ sensors: [
+    unit("A", "Bar fridge", { state: "ok" }),
+    unit("B", "Blast chiller", { state: "ok" }),
+    unit("C", "Dairy cooler", { state: "offline" }),
+    unit("D", "Prep fridge, bakery", { state: "alert", too: "warm", out_since: NOW }, { last_temperature_display: 46.5 }),
+    unit("E", "Walk-in cooler", { state: "watching", too: "warm", out_since: NOW, alert_at: NOW }, { last_temperature_display: 42 }),
+    unit("F", "Ice-cream freezer", { state: "ok" }, { hours_until_breach: 2 }),
+  ] }));
+  const order = Array.from(nodes.things.innerHTML.matchAll(/class="thing-name">([^<]+)</g), (m) => m[1]);
+  assert.deepEqual(order, ["Prep fridge, bakery", "Walk-in cooler", "Dairy cooler", "Ice-cream freezer", "Bar fridge", "Blast chiller"]);
+});
+
+test("3.39.0: under the top banner the cards never repeat 'Needs you now', whatever the state", async () => {
+  const live = (extra) => Object.assign({ incident_id: "INC-2", sensor_id: "WALK-1", state: "open", opened_at: NOW, out_since: NOW,
+    temperature_display: 47 }, extra);
+  for (const [incident, condition] of [
+    [live(), { state: "alert", too: "warm", out_since: NOW }],
+    [live({ state: "acknowledged", acknowledged_by_name: "Jo" }), { state: "alert", too: "warm", out_since: NOW }],
+    [live({ state: "acknowledged", acknowledged_by_name: "Jo" }), { state: "alert", back_in_range: true, too: null, out_since: NOW }],
+    [live({ state: "acknowledged", acknowledged_by_name: "Jo", fix_reported_at: NOW, fix_reported_by_name: "Jo" }), { state: "alert", too: "warm", out_since: NOW }],
+  ]) {
+    const { nodes } = await today(base({ sensors: [fridge(condition, 47)], incidents: [incident] }));
+    assert.equal(nodes["needs-h"].hidden, true, `${incident.state} ${JSON.stringify(condition)}: ${nodes.verdict.innerHTML.slice(0, 60)}`);
+    assert.equal(nodes["needs-wrap"].hidden, false);
+  }
+  // Paused, the banner is the pause: the cards keep their heading.
+  const { nodes } = await today(base({ sensors: [fridge({ state: "alert", too: "warm", out_since: NOW }, 47)], incidents: [live()],
+    account: { paused: { resume_on: "1 February 2027", words: "Paused." } } }));
+  assert.equal(nodes["needs-h"].hidden, false);
 });

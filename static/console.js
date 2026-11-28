@@ -416,6 +416,7 @@ async function enter(token, user) {
   followPacketLink();
   followTeamLink();
   followAddressLink();
+  followAddUnitLink();
 }
 
 /* Tearing down the session locally, without calling the API — used when
@@ -593,18 +594,18 @@ async function loadIndustries() {
   state.industries = body.industries;
   // The knocking card may already be on screen with an empty dropdown.
   fillKnockIndustries();
-  // Food and medicine first, the made-to-order trades last: a café's
-  // add form opened on "Data centers — Custom pricing".
+  // Restaurants first, then other food service, then pharmacies, then the
+  // rest A to Z (3.39.0, as /pricing and /for): a café's add form opened on
+  // "Data centers — Custom pricing", and the meeting notes' list still did.
   const ordered = body.industries.slice().sort((a, b) =>
     ((ADD_FIRST.indexOf(a.vertical) + 1) || 99) - ((ADD_FIRST.indexOf(b.vertical) + 1) || 99)
-    || Number(a.monthly_usd == null) - Number(b.monthly_usd == null)
     || a.name.localeCompare(b.name));
   $("add-vertical").innerHTML = ordered
     .map((i) => `<option value="${esc(i.vertical)}">`
       + `${esc(i.name)} — ${i.monthly_usd == null ? esc(i.price_label)
         : `$${i.monthly_usd} / ${esc(i.billing_unit)}`}</option>`)
     .join("");
-  const plain = body.industries
+  const plain = ordered
     .map((i) => `<option value="${esc(i.vertical)}">${esc(i.name)}</option>`)
     .join("");
   $("tx-vertical").innerHTML = plain;
@@ -615,7 +616,7 @@ async function loadIndustries() {
 }
 
 // The order of the add form's list when nothing is known yet.
-const ADD_FIRST = ["restaurant", "pharmacy", "medical_lab", "country_club"];
+const ADD_FIRST = ["restaurant", "country_club", "pharmacy"];
 
 $("add-trade-change").addEventListener("click", () => {
   state.tradeOpened = true;
@@ -2180,6 +2181,11 @@ function incidentTimeline(i) {
   if (i.texts_off) {
     steps.push({ cls: "hit", when: i.opened_at,
       text: "Alert opened. Not sent: texts are off on this server" });
+  } else if (texted && (i.sms_fanout || []).every((f) => f.demo)) {
+    // The demo's made-up receipts (3.39.0): said as pretend, beside "Texts
+    // are not switched on for this server", never "1 delivered".
+    steps.push({ cls: "hit", when: i.opened_at,
+      text: `Alert sent: pretend text to ${texted} ${texted === 1 ? "person" : "people"} (demo)` });
   } else if (texted) {
     const landed = (i.sms_fanout || []).filter((f) => f.delivered).length
       || (i.sms_delivery && i.sms_delivery.delivered ? 1 : 0);
@@ -2816,19 +2822,20 @@ function renderBilling(subscription, roi, tenant) {
   const saved = roi && roi.loss_avoided_usd
     ? `<div class="u-bt u-mt-9 u-pt-9">
          <div class="u-d-flex u-justify-between u-fs-12-5">
-           <span class="u-c-ink-2">Loss avoided · 30 days</span>
+           <span class="u-c-ink-2">Food kept · 30 days</span>
            <span class="s-good u-fw-650 u-tnum">
-             $${roi.loss_avoided_usd.toLocaleString()}</span>
+             about $${roi.loss_avoided_usd.toLocaleString("en-US")}</span>
          </div>
          <div class="u-fs-11-5 u-c-muted u-mt-3">
-           ${roi.quantified_saves} real failure${roi.quantified_saves === 1 ? "" : "s"}
-           caught in time (false alarms and short blips are not counted)${
+           ${roi.quantified_saves} closed alert${roi.quantified_saves === 1 ? "" : "s"}
+           with the food recorded as kept: an estimate of what a typical
+           fridge or freezer of each kind holds, as on the Simple view${
              roi.return_multiple ? ` · ${roi.return_multiple}× the subscription` : ""
            }
          </div>
        </div>`
     : `<div class="u-bt u-mt-9 u-pt-9 u-fs-11-5 u-c-muted">
-         No quantified saves yet this period.
+         No alert closed with the food recorded as kept in the last 30 days.
        </div>`;
 
   $("bill-body").innerHTML = lines
@@ -3436,13 +3443,16 @@ function opportunities(pipeline, contract) {
   // A café on a trial or Starter was shown "Not on this contract — $14,364
   // a year" of estate add-ons. That list is for estates.
   if (smallAccount()) return "";
-  const rows = (pipeline.opportunities || []).slice(0, 4);
+  // Not the escalator (3.39.0): "Year 2 escalator" sat among the add-ons
+  // as if it were one to buy. It is the yearly rise already signed for,
+  // shown with the contract's term, and not counted in this total.
+  const offered = (pipeline.opportunities || []).filter((o) => o.kind !== "escalator");
+  const rows = offered.slice(0, 4);
   if (!rows.length) return "";
-  const attached = (contract && contract.add_ons) || [];
+  const yearly = offered.reduce((sum, o) => sum + (Number(o.annual_usd) || 0), 0);
   return `<div class="u-mt-14">
     <div class="card-note u-mb-4">
-      Not on this contract${pipeline.identified_annual_usd
-        ? " — " + money(pipeline.identified_annual_usd) + " a year" : ""}
+      Not on this contract${yearly ? " — " + money(yearly) + " a year" : ""}
     </div>
     ${rows.map((o) => `<div class="opp">
         <span class="grow">${esc(o.name)}</span>
@@ -4645,6 +4655,13 @@ addEventListener("online", () => {
   refresh().then(() => { markFresh(); startPolling(); }).catch(() => {});
 });
 
+/* A humidity with its tenth, always (3.39.0): the pack's column read
+   "52%" beside "48.3%". "—" when none was sent. */
+function humidityWords(value) {
+  if (value === null || value === undefined || value === "" || !isFinite(Number(value))) return "—";
+  return `${(Math.round(Number(value) * 10) / 10).toFixed(1)}%`;
+}
+
 /* A date a person reads, not an instant a machine wrote. */
 function shortDate(value) {
   if (!value) return "unknown";
@@ -4710,11 +4727,11 @@ function renderForecast(fleet) {
         : `in about ${Math.round(f.hours_until_breach)}h`;
     // The forecast measures drift in Fahrenheit; a Celsius account reads
     // it in Celsius, or "+1.8°/h" is a degree an hour it is not.
+    // To one decimal (3.39.0): "+0.734°F/h" read as a lab figure.
     const perHour = f.trend_f_per_hour === null ? null
-      : state.unit === "C" ? Math.round(f.trend_f_per_hour * 5 / 9 * 1000) / 1000
-      : f.trend_f_per_hour;
+      : Math.round((state.unit === "C" ? f.trend_f_per_hour * 5 / 9 : f.trend_f_per_hour) * 10) / 10;
     const trend = perHour === null ? "" :
-      `${perHour > 0 ? "+" : ""}${perHour}°${state.unit || "F"}/h`;
+      `${perHour > 0 ? "+" : ""}${perHour.toFixed(1)}°${state.unit || "F"}/h`;
     const shape = f.pattern || {};
     return `<div class="fc-row${muted ? " u-o-62" : ""}" data-forecast-sensor="${esc(f.sensor_id)}">
       <span class="fc-when ${esc(muted ? "" : f.risk_level)}">${
@@ -4897,7 +4914,7 @@ async function openPacket(incidentId) {
       <td>${esc(stamp(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical" : ""}">${
         esc(oneDecimal(r.temperature))}°${esc(ev.temperature_unit)}</td>
-      ${humid ? `<td class="num">${r.humidity === null || r.humidity === undefined ? "—" : esc(r.humidity) + "%"}</td>` : ""}
+      ${humid ? `<td class="num">${esc(humidityWords(r.humidity))}</td>` : ""}
       <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
   const issuer = packet.issuer || {};
@@ -5243,11 +5260,20 @@ function followAddressLink() {
   goTo("address");
 }
 
+/* "/console#add-unit" opens Add a fridge or freezer at its Where is it?
+   box (3.39.0), once: Pilot's "How do I add a second fridge?" comes here. */
+function followAddUnitLink() {
+  if (location.hash !== "#add-unit" || !state.token || !state.data) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  goTo("sensor");
+}
+
 // A link followed while the console is already open changes only the hash.
 window.addEventListener("hashchange", () => {
   if (!state.token) return;
   followTeamLink();
   followAddressLink();
+  followAddUnitLink();
   followConnectLink();
   followPacketLink();
   followInspectorLink().catch(() => { /* the estate is the page */ });
@@ -5626,7 +5652,7 @@ async function openDrawer(sensorId, options = {}) {
       <td>${esc(CLXWords.dateTime(r.at))}</td>
       <td class="num${r.breached ? " u-c-critical u-fw-650" : ""}">
         ${esc(r.temperature)}°${esc(unit)}</td>
-      <td class="num">${r.humidity === null ? "—" : esc(r.humidity) + "%"}</td>
+      <td class="num">${esc(humidityWords(r.humidity))}</td>
       <td>${r.breached ? "out of range" : "in range"}</td>
     </tr>`).join("");
 
@@ -7748,6 +7774,10 @@ function inTab(card, searching) {
   }
   // A card a button just led to is shown, wherever it is filed.
   if ((finder.tab === "all" || simpleTabs()) && finder.reveal.has(card.id)) return true;
+  // Under Advanced only, for every account (data-advanced-only, 3.39.0):
+  // "Turn meeting notes into jobs" opened a restaurant's Money tab, with
+  // Data centers first in its sector list. A search still finds it.
+  if (card.getAttribute("data-advanced-only") === "1" && !searching) return false;
   const hiddenAsAdvanced = advanced && smallAccount() && !searching;
   if (hiddenAsAdvanced) return false;
   if (shortList(searching) && !inShortList(card)) return false;
@@ -7871,8 +7901,9 @@ function countTheTabs() {
   const counts = {};
   const small = smallAccount();
   findableCards().forEach((card) => {
-    // On a small account an Advanced card is counted under Advanced only.
-    if (isAdvanced(card) && small) return;
+    // On a small account an Advanced card is counted under Advanced only,
+    // and an Advanced-only one on every account (3.39.0).
+    if (isAdvanced(card) && (small || card.getAttribute("data-advanced-only") === "1")) return;
     const group = card.getAttribute("data-group");
     counts[group] = (counts[group] || 0) + 1;
   });

@@ -188,6 +188,7 @@ def test_roi_counts_only_answered_incidents(
     # real failure, not a door opened for a delivery.
     incident = STORE.get_incident(first)
     incident.opened_at -= timedelta(minutes=55)
+    incident.out_since = incident.opened_at
     STORE._db.put("incident", first, incident.to_row())
     _warm_for("FRZ-1", 55, 47.0)
 
@@ -196,13 +197,25 @@ def test_roi_counts_only_answered_incidents(
     assert unanswered["quantified_saves"] == 0
     assert unanswered["loss_avoided_usd"] == 0
 
+    # 3.39.0: answered is not yet kept. Only a closed alert with the food
+    # recorded as kept counts, at /today's estimate (food_value.protected).
     api.post(f"/api/voice/acknowledge/{first}", headers=headers, json={})
     answered = api.get("/api/billing/roi", headers=headers).json()
-    assert answered["quantified_saves"] == 1
-    assert answered["loss_avoided_usd"] == 15000.0
-    assert answered["subscription_cost_usd"] == 149.0
-    # One saved walk-in against one month: $15,000 / $149.
-    assert answered["return_multiple"] == pytest.approx(15000.0 / 149.0, abs=0.1)
+    assert answered["quantified_saves"] == 0
+    assert answered["loss_avoided_usd"] == 0
+    assert answered["detail"][0]["why"] == "still open"
+
+    incident = STORE.get_incident(first)
+    who = "Dana <dana@example.com>"
+    STORE.record_corrective_action(incident, who, "Door shut, stock probed.", disposition="unaffected")
+    STORE.resolve_incident(incident, who)
+    kept = api.get("/api/billing/roi", headers=headers).json()
+    assert kept["quantified_saves"] == 1, kept["detail"][0]["why"]
+    assert kept["detail"][0]["why"] == "closed, and the food was recorded as kept"
+    assert kept["loss_avoided_usd"] == 800.0
+    assert kept["subscription_cost_usd"] == 149.0
+    # One kept fridge against one month: $800 / $149.
+    assert kept["return_multiple"] == pytest.approx(800.0 / 149.0, abs=0.1)
 
 
 def test_a_false_alarm_answered_at_once_avoided_no_loss(
@@ -243,12 +256,14 @@ def test_a_door_left_open_for_a_minute_avoided_no_loss(
 
 
 def test_roi_never_invents_a_figure(api, tenant_factory, sensor_factory):
-    """Verticals with no supplied loss figure are listed, not estimated."""
+    """Verticals with no estimate of what a unit holds are listed, not
+    estimated (3.39.0: food_value's estimate, as /today uses; a lab has one
+    now, a data center none)."""
     headers, _ = tenant_factory()
-    sensor_factory(headers, sensor_id="VAULT-1", vertical="medical_lab")
+    sensor_factory(headers, sensor_id="VAULT-1", vertical="cybersecurity")
     incident = api.post(
         "/api/sensor-pulse", headers=headers,
-        json={"sensor_id": "VAULT-1", "temperature_fahrenheit": 55.0},
+        json={"sensor_id": "VAULT-1", "temperature_fahrenheit": 120.0},
     ).json()["incident_id"]
     api.post(f"/api/voice/acknowledge/{incident}", headers=headers, json={})
 

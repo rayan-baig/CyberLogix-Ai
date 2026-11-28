@@ -127,7 +127,8 @@ def test_every_address_is_on_the_reserved_domain_and_every_number_is_fictional(d
     text = str(rows)
     emails = set(re.findall(r"[\w.+-]+@[\w.-]+", text))
     assert emails and all(e.endswith(".example") for e in emails), emails
-    phones = set(re.findall(r"\+1555\d{4}", text))
+    # Spaced as a trial's are since 3.39.0: "+1 555 010 0141".
+    phones = {p.replace(" ", "") for p in re.findall(r"\+1 ?555[\d ]{4,9}\d", text)}
     assert phones and all(p[5:7] == "01" for p in phones), phones
 
 

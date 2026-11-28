@@ -247,7 +247,8 @@ def _resolve_tenant(
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session token is invalid or expired. Sign in again.",
+                detail=_wrong_header(token, "Authorization")
+                or "Session token is invalid or expired. Sign in again.",
             )
         user = STORE.get_user(session.user_id)
         if user is None or not STORE.person_active(user):
@@ -276,9 +277,28 @@ def _resolve_tenant(
     if tenant is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unrecognised API key.",
+            detail=_wrong_header(x_kryozyn_key, "X-Kryozyn-Key")
+            or ("Unrecognised API key. X-Kryozyn-Key takes the account's API "
+                "key; a sensor's own key goes in X-Kryozyn-Sensor-Key."),
         )
     return tenant
+
+
+def _wrong_header(key: str, header: str) -> Optional[str]:
+    """What to say when a key that is real was sent in the wrong header
+    (3.39.0): a sensor key as X-Kryozyn-Key got a bare "Unrecognised API
+    key." None when the key is not one we know in another header."""
+    key = (key or "").strip()
+    if not key:
+        return None
+    if header != "X-Kryozyn-Sensor-Key" and STORE.sensor_by_ingest_key(key) is not None:
+        return (f"That is a sensor key, sent as {header}. Send it in the "
+                "X-Kryozyn-Sensor-Key header instead: it reports readings for "
+                "its own sensor.")
+    if header != "X-Kryozyn-Key" and STORE.tenant_by_key(key) is not None:
+        return (f"That is the account's API key, sent as {header}. Send it in "
+                "the X-Kryozyn-Key header instead.")
+    return None
 
 
 class IngestPrincipal:
@@ -341,7 +361,8 @@ def require_ingest(
         if sensor is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unrecognised sensor key.",
+                detail=_wrong_header(x_kryozyn_sensor_key, "X-Kryozyn-Sensor-Key")
+                or "Unrecognised sensor key.",
             )
         tenant = STORE.get_tenant(sensor.tenant_id)
         if tenant is None:

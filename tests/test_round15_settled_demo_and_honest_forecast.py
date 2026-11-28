@@ -67,8 +67,9 @@ def _open_alert(tenant_id):
 
 def test_the_demo_numbers_are_full_length_made_up_ones():
     for _, phone in demo_account.CONTACTS:
-        # +1 555 010 01xx: ten digits after the +1, in the 555-01xx range.
-        assert re.fullmatch(r"\+1555010(01\d\d)", phone), phone
+        # +1 555 010 01xx: ten digits after the +1, in the 555-01xx range,
+        # spaced as a trial's are since 3.39.0.
+        assert re.fullmatch(r"\+1 555 010 01\d\d", phone), phone
 
 
 def test_the_open_alert_was_texted_to_the_person_on_call_as_the_handled_one_was(demo, api):
@@ -77,7 +78,7 @@ def test_the_open_alert_was_texted_to_the_person_on_call_as_the_handled_one_was(
     tenant = STORE.get_tenant(tid)
     on_call = [c.full_name for c in STORE.sms_recipients(tenant)]
     assert [r["contact_name"] for r in still.sms_fanout] == on_call and on_call
-    assert all(r["delivered"] and re.fullmatch(r"\+1555010\d{4}", r["to"]) for r in still.sms_fanout)
+    assert all(r["delivered"] and re.fullmatch(r"\+1 555 010 \d{4}", r["to"]) for r in still.sms_fanout)
     # The contacts existed before the alert opened.
     assert STORE.contacts_for(tid)
     owner = _sign_in_demo(api)
@@ -290,5 +291,6 @@ def test_temperatures_side_by_side_all_have_one_decimal():
 
 def test_the_alert_card_drops_the_heading_the_hero_already_says():
     needs = _function(SIMPLE_JS, "renderNeeds")
-    assert 'heading.hidden = !(data.account || {}).paused && live.some((i) => i.state === "open");' in needs
+    # 3.39.0: in every state the banner shows, not only while nobody has answered.
+    assert 'heading.hidden = !(data.account || {}).paused && live.length > 0;' in needs
     assert "An alert needs" in _function(SIMPLE_JS, "verdict")

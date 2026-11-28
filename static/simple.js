@@ -88,7 +88,9 @@ function stateOf(unit) {
     return { word: "Waiting for its first reading", cls: "w-quiet", why: c.line, first: true };
   }
   if (c.state === "watching" || c.state === "alert" || c.state === "paused") {
-    return { word: c.back ? "Back in range: press It's fixed" : c.word,
+    // "Back in range" (3.39.0): the banner and the card already say press
+    // It's fixed, and the pill said it a third time on one phone screen.
+    return { word: c.back ? "Back in range" : c.word,
              cls: WORD_CLASS[c.kind], why: c.line, state: c.state, back: Boolean(c.back),
              held: Boolean(c.held), overdue: Boolean(c.overdue) };
   }
@@ -98,6 +100,24 @@ function stateOf(unit) {
                being one ${howLongUntil(unit.hours_until_breach)}.` };
   }
   return { word: "Fine", cls: "w-ok", why: "" };
+}
+
+/* The list worst first (3.39.0), then by name: out of range (alerting,
+   watching, paused), then anything else not fine (back in range, no
+   signal, warming, waiting for a first reading), then the fine ones. Twenty
+   fridges in the order they were added put the warm one fourth on a
+   phone. */
+function troubleRank(unit) {
+  const s = stateOf(unit);
+  if (s.state === "watching" || s.state === "paused" || (s.state === "alert" && !s.back)) return 0;
+  return s.cls === "w-ok" ? 2 : 1;
+}
+
+function byTrouble(units) {
+  return units.map((unit) => ({ unit, rank: troubleRank(unit), name: nameOf(unit).toLowerCase() }))
+    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)
+      || String(a.unit.site_name || "").localeCompare(String(b.unit.site_name || "")))
+    .map((row) => row.unit);
 }
 
 /* The alerts still live: nobody has answered (open), or somebody has it
@@ -113,9 +133,12 @@ function renderNeeds(data, units) {
   // Nothing more to press on any of them (3.36.0): waiting, not needing.
   const heading = $("needs-h");
   if (heading) heading.textContent = live.length && !sitewide.length && live.every(fixSaid) ? "Waiting to get cold" : "Needs you now";
-  // Under "An alert needs you now" the cards need no "Needs you now" of
-  // their own (3.38.0): the page said it twice, one under the other.
-  if (heading) heading.hidden = !(data.account || {}).paused && live.some((i) => i.state === "open");
+  // Under the top banner the cards need no heading of their own (3.38.0:
+  // "An alert needs you now", then "Needs you now"). Since 3.39.0 in every
+  // state the banner speaks for them: being dealt with, back in range,
+  // said fixed. Only paused (the banner is the pause) or a site-wide alert
+  // alone (the banner is not about it) keeps it.
+  if (heading) heading.hidden = !(data.account || {}).paused && live.length > 0;
   const byId = Object.fromEntries(units.map((u) => [u.sensor_id, u]));
   const cards = sitewide.map((i) => `
     <div class="need">
@@ -715,7 +738,7 @@ function render(data) {
       </span>
     </div>`).join("");
 
-  $("things").innerHTML = units.length ? units.map((unit) => {
+  $("things").innerHTML = units.length ? byTrouble(units).map((unit) => {
     const state = stateOf(unit);
     return `<div class="thing">
       <span class="thing-temp">${

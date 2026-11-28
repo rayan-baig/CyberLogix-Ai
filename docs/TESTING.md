@@ -170,6 +170,14 @@ PYTHON=.venv/bin/python node tools/first_day_walk.js          # phone
 WIDE=1 PYTHON=.venv/bin/python node tools/first_day_walk.js   # desktop
 ```
 
+`tools/hero_shot.js` makes the front page's phone picture
+(`static/hero-today.webp`) from a running server with the demo business
+in it; how to start one is at the top of the file:
+
+```bash
+BASE_URL=http://127.0.0.1:8080 DEMO_PASSWORD=... node tools/hero_shot.js
+```
+
 `tests/test_every_route_is_tested.py` fails a whole-suite run if any route
 the app serves is not reached by at least one test.
 

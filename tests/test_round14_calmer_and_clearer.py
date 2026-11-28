@@ -204,7 +204,9 @@ def test_the_demo_records_the_kept_answer_its_note_gives():
     handled = next(i for i in STORE.incidents_for(made["tenant_id"]) if i.sensor_id == demo_account.HANDLED)
     assert handled.corrective_action.endswith("Kept.")
     assert handled.product_disposition == "unaffected"
-    assert handled.food_answered_at == handled.opened_at + timedelta(minutes=50)
+    # 3.39.0: opened at its first reading out, half an hour earlier, so
+    # answered an hour and a half on, as it closes after its last warm one.
+    assert handled.food_answered_at == handled.opened_at + timedelta(minutes=90)
     assert utc_now() - handled.food_answered_at > timedelta(days=2)
     sensor = STORE.get_sensor(handled.sensor_id)
     assert food_value.question(handled, sensor) is None, "nobody is asked about food already answered"

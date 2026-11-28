@@ -320,12 +320,15 @@ the front page's plan cards, the pricing page's plan table and `GET
 any plan that takes them). Every page starts from the lowest price anybody
 pays, Starter's: "From $59 a month".
 
-**The loss avoided figure** (`build_roi`) counts only a real failure that
-somebody answered within two hours: out of range for at least 15 minutes,
-at least 5°F warmer than the same unit in the hour before, its own alert
-(not a site-wide one), and the food not thrown away. A false alarm, a
-short door-open blip, a unit whose first readings were already over a
-limit set wrong, or an alert nobody answered is not counted.
+**The loss avoided figure** (`build_roi`, "Food kept" on the Money tab)
+counts only a unit's own alert that is closed with the food recorded as
+kept, at the estimate /today and the monthly summary use
+(`food_value.protected`: what a typical unit of that kind holds, nothing
+for a short blip). Since 3.39.0; before, it counted each alert answered in
+time at the sector's whole-failure figure, and the demo's Money tab said
+"$30,000" beside /today's "About $4,000 of food kept". An alert still
+open, food thrown away or not answered for, and a short blip are not
+counted.
 
 ### Starter, for a small cafe or shop
 
@@ -458,15 +461,14 @@ not only the first (`prepay_discount_usd` and `payable_usd` on each row).
 `GET /api/billing/roi?days=30` weighs loss avoided against what the
 subscription cost over the period.
 
-Two rules keep that number honest. Only an incident **a person answered**
-counts — an alert nobody acted on is a warning that went unheeded, not a
-save. And only verticals with a **supplied** loss figure contribute: wine
-and art storage ($250,000), superyachts ($150,000), cannabis cultivation
-($60,000), data centres ($50,000), pharmacies ($40,000) and restaurants
-($15,000). Incidents in the other verticals are listed and counted
-separately as `unquantified_saves`, never folded into the total with an
-invented number. Add a figure for one of those (`loss_avoided_usd` in
-`pricing.py`) and its incidents count too.
+Two rules keep that number honest. Only an alert **closed with the food
+recorded as kept** counts, valued as /today values it (`food_value.py`,
+where the owner tunes the figures). And only sectors with an estimate
+contribute (restaurants and country clubs on the food list, pharmacies
+and labs on the clinical one); alerts in the other sectors are listed and
+counted separately as `unquantified_saves`, never folded into the total
+with an invented number. The sector's whole-failure figure
+(`loss_avoided_usd` in `pricing.py`) is still what the price list shows.
 
 ## Account credit
 

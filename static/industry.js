@@ -17,25 +17,43 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
 /* The vertical is the last path segment. /for on its own is the index. */
 const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
 
+/* The food trades ahead of the niche ones (3.39.0): restaurants, other
+   food service and the food trades' own pages (a butcher, a grocery
+   store), then pharmacies and a vaccine clinic, then everything else A to
+   Z under "More trades with cold stock". Cannabis was fourth, ahead of
+   every food trade but two. Every page is still listed. */
+function indexOrder(rows, trades) {
+  const card = (row) => (row.vertical
+    ? { href: `/for/${row.vertical}`, name: row.name, line: row.slogan }
+    : { href: `/for/${row.slug}`, name: row.name, line: row.lede });
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+  const food = rows.filter((r) => r.group === "food")
+    .concat(trades.filter((t) => t.plan === "restaurant").sort(byName));
+  const pharmacy = rows.filter((r) => r.group === "pharmacy")
+    .concat(trades.filter((t) => t.plan === "pharmacy").sort(byName));
+  const first = food.concat(pharmacy);
+  const rest = rows.filter((r) => !first.includes(r))
+    .concat(trades.filter((t) => !first.includes(t))).sort(byName);
+  return { first: first.map(card), rest: rest.map(card) };
+}
+
 function renderIndex(rows, trades) {
   document.title = `${BRAND.short} — who this is for`;
+  const { first, rest } = indexOrder(rows, trades);
+  const grid = (cards) => cards.map((c) => `
+       <a class="ind" href="${esc(c.href)}">
+         <b>${esc(c.name)}</b>
+         <span>${esc(c.line)}</span>
+       </a>`).join("");
   $("page").innerHTML =
     `<div class="eyebrow">Who this is for</div>
      <h1 class="lede">Twelve industries with the same problem.</h1>
      <p class="standfirst">Something you own has to stay at a temperature,
         it fails quietly and usually overnight, and afterwards somebody
         asks you to prove what happened. Pick yours.</p>
-     <div class="grid">${rows.map((row) => `
-       <a class="ind" href="/for/${esc(row.vertical)}">
-         <b>${esc(row.name)}</b>
-         <span>${esc(row.slogan)}</span>
-       </a>`).join("")}</div>
-     ${trades.length ? `<h2 class="more-head">More trades with cold stock</h2>
-     <div class="grid">${trades.map((row) => `
-       <a class="ind" href="/for/${esc(row.slug)}">
-         <b>${esc(row.name)}</b>
-         <span>${esc(row.lede)}</span>
-       </a>`).join("")}</div>` : ""}`;
+     <div class="grid">${grid(first)}</div>
+     ${rest.length ? `<h2 class="more-head">More trades with cold stock</h2>
+     <div class="grid">${grid(rest)}</div>` : ""}`;
 }
 
 function renderIndustry(d) {
