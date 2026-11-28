@@ -161,14 +161,14 @@ CONTEXT: Dict[str, Dict[str, Any]] = {
         ),
         "asks_after": "the aviation authority, and the next buyer",
         "licences": ["Airframe and powerplant license",
-                     "Inspection authorisation", "Ramp safety certification"],
+                     "Inspection authorization", "Ramp safety certification"],
     },
     "superyacht": {
         "protects": "engine spaces and the provisions store",
         "loses": (
             "An engine room running hot at sea is a problem you cannot "
             "walk away from, and the guest food store is a charter "
-            "cancelled. Both happen while everybody is asleep."
+            "canceled. Both happen while everybody is asleep."
         ),
         "asks_after": "the flag state, the charter broker and the owner",
         "licences": ["STCW basic safety training", "Engineering certificate of competency"],

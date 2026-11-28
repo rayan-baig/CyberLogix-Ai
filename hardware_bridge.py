@@ -145,7 +145,7 @@ def _authenticate_webhook(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=(
-                "Unrecognised credentials. Send api_key_token in the body, or "
+                "Unrecognized credentials. Send api_key_token in the body, or "
                 "an Authorization bearer token."
             ),
         )
@@ -617,7 +617,35 @@ def _ingest_any(payload, k, authorization, x_kryozyn_key, x_signature):
 
     verdict = byod.detect(payload)
 
+    # A sensor key names its one sensor (3.43.0): a reading sent with it
+    # and no serial is that sensor's, as /api/sensor-pulse takes it. It
+    # was refused for want of a serial the key already gave.
+    if scoped is not None and not verdict["serial"]:
+        verdict = dict(verdict, serial=scoped.sensor_id,
+                       missing=[m for m in verdict["missing"] if "serial" not in m])
+        verdict["understood"] = not verdict["missing"]
+        verdict["fields_used"] = dict(verdict.get("fields_used") or {}, serial="(the sensor key)")
+
     if not verdict["understood"]:
+        if scoped is None and not verdict["serial"] and verdict["value"] is not None:
+            # A reading with no serial and a key for the whole business:
+            # which sensor it is cannot be told, so it is said plainly.
+            byod.remember(tenant.tenant_id, payload, verdict, "not_understood")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "message": (
+                        "This reading has no serial number, and the business "
+                        "key does not say which sensor sent it, so nothing "
+                        "was recorded."),
+                    "missing": verdict["missing"],
+                    "looked_at": sorted(byod.flatten(payload))[:40],
+                    "next": (
+                        "Send it with that sensor's own key (X-Kryozyn-Sensor-Key, "
+                        "shown when the unit was added, or New key on its card), "
+                        "or add the device's serial to the payload."),
+                },
+            )
         # Kept anyway, and this is the whole point: the answer to "why did
         # my sensor not show up" is then the payload itself.
         byod.remember(tenant.tenant_id, payload, verdict, "not_understood")

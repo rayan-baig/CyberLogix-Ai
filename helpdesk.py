@@ -345,7 +345,7 @@ def faq() -> List[Dict[str, Any]]:
                 "monthly and yearly at renewal: an owner changes it under "
                 "Money, Contract, and the change starts when what you have "
                 "paid for runs out.",
-                f"<b>Cancelling:</b> {e(CANCELLATION_RULE)}",
+                f"<b>Canceling:</b> {e(CANCELLATION_RULE)}",
             ],
         },
         {

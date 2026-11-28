@@ -101,6 +101,23 @@ function tenth(value) {
   return value === null || value === undefined || value === "" || !Number.isFinite(n) ? String(value ?? "—") : n.toFixed(1);
 }
 
+// How an alert closed (3.43.0), true to the record: "back to normal" only
+// when it was back in range; closed by hand while still out of range says
+// so, with the reading then. A report made before 3.43.0 does not say how
+// its alerts closed, so it says only "closed".
+function closedWords(a, u) {
+  if (!a.closed_at) return "still open";
+  const at = esc(stamp(a.closed_at));
+  if (a.closed_how === "by_hand_out_of_range") {
+    const temp = a.closed_at_temperature !== null && a.closed_at_temperature !== undefined
+      ? ` at ${esc(tenth(a.closed_at_temperature))}°${esc(u)}` : "";
+    return `<span class="late">closed by hand while still out of range${temp}</span>, ${at}`;
+  }
+  if (a.closed_how === "by_hand") return `back to normal, closed by hand ${at}`;
+  if (a.closed_how === "on_its_own") return `back to normal ${at}`;
+  return `closed ${at}`;
+}
+
 function render(seen) {
   const r = seen.report;
   const u = r.temperature_unit;
@@ -130,8 +147,7 @@ function render(seen) {
       : a.limit_below !== null ? `limit ${esc(a.limit_below)}°${esc(u)}` : "";
     return `<div class="alert"><div><strong>${esc(a.unit)}</strong> reached
         ${esc(tenth(a.worst))}°${esc(u)}${limit ? ` (${limit})` : ""}</div>
-      <div class="when">${esc(stamp(a.opened_at))}${a.closed_at
-        ? ` · back to normal ${esc(stamp(a.closed_at))}` : " · still open"}</div>
+      <div class="when">${esc(stamp(a.opened_at))} · ${closedWords(a, u)}</div>
       <div>${answered}</div></div>`;
   }).join("") : `<p class="none">No temperature alerts in this period.</p>`;
 

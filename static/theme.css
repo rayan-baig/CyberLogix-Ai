@@ -1477,6 +1477,10 @@ body[data-stale] #offline-banner {
 }
 .card form .row > input::placeholder, .card form.row > input::placeholder { color: var(--muted); }
 #password-form .row > input { flex: 1 1 180px; }
+/* Add who gets alerts (3.43.0): name and mobile side by side where both
+   fit, each on its own line on a 320px phone, so the mobile's hint is
+   never cut off. */
+#contact-form .row > input { flex: 1 1 150px; }
 @media (max-width: 720px) {
   .finder { padding: 9px 0; gap: 6px; }
   .f-tab { padding: 8px 11px; font-size: 13px; min-height: 36px; }

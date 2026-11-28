@@ -480,6 +480,12 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
                 "minutes_to_acknowledge": minutes,
                 "acknowledged_by_role": _alert_role(tenant, incident.acknowledged_by),
                 "closed_at": iso(incident.resolved_at),
+                # How it closed (3.43.0), so the page never says "back to
+                # normal" of an alert closed by hand at 46.4°F: on its own
+                # once back in range, by hand back in range, or by hand while
+                # still out of range ("Close anyway"), with the reading then.
+                # A report made before this has neither, and says "closed".
+                **_closed_how(incident, unit_label),
             })
     alerts.sort(key=lambda a: a["opened_at"] or "")
     times = [a["minutes_to_acknowledge"] for a in alerts
@@ -554,6 +560,18 @@ def _link(code: str) -> Dict[str, str]:
 
     path = f"/verify/{pretty_code(code)}"
     return {"path": path, "url": f"{PUBLIC_BASE_URL}{path}" if PUBLIC_BASE_URL else ""}
+
+
+def _closed_how(incident, unit_label: str) -> Dict[str, Any]:
+    """How a closed alert closed, for the report's alert list."""
+    if incident.resolved_at is None:
+        return {}
+    if incident.closed_out_of_range:
+        temp = incident.close_temperature_f
+        return {"closed_how": "by_hand_out_of_range",
+                "closed_at_temperature": (display_temperature(temp, unit_label)
+                                          if temp is not None else None)}
+    return {"closed_how": "by_hand" if incident.resolved_by else "on_its_own"}
 
 
 def make(tenant: Tenant, site_id: Optional[str], first: date,

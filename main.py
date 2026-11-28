@@ -876,6 +876,9 @@ def pilot_facts() -> Dict[str, str]:
         "yearly-covered": str(YEARLY_MONTHS_COVERED),
         "keep-readings-months": str(KEEP_READINGS_MONTHS),
         "keep-detail-days": str(KEEP_DETAIL_DAYS),
+        # 3.43.0, for Pilot's "Why wasn't I called?": "no" when this server
+        # has no phone service switched on, so no call is ever placed.
+        "calls-live": "yes" if delivery_ready() else "no",
         # Every sector with a page at /for/<slug> (3.41.0): "slug|name|price|per"
         # joined by ";", so "Do you do florists?" finds the florists' page
         # and price, and any sector offered is recognised.

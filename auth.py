@@ -278,7 +278,7 @@ def _resolve_tenant(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_wrong_header(x_kryozyn_key, "X-Kryozyn-Key")
-            or ("Unrecognised API key. X-Kryozyn-Key takes the account's API "
+            or ("Unrecognized API key. X-Kryozyn-Key takes the account's API "
                 "key; a sensor's own key goes in X-Kryozyn-Sensor-Key."),
         )
     return tenant
@@ -362,7 +362,7 @@ def require_ingest(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=_wrong_header(x_kryozyn_sensor_key, "X-Kryozyn-Sensor-Key")
-                or "Unrecognised sensor key.",
+                or "Unrecognized sensor key.",
             )
         tenant = STORE.get_tenant(sensor.tenant_id)
         if tenant is None:

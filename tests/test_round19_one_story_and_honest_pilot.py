@@ -256,6 +256,6 @@ def test_on_today_the_robot_keeps_off_the_alerts_words_not_its_whole_cards():
 
 
 def test_the_changelog_and_version_say_3_42_0():
-    assert (ROOT / "VERSION").read_text().strip() == "3.42.0"
-    assert (ROOT / "CHANGELOG.md").read_text().split("## ")[1].startswith("3.42.0")
+    # 3.43.0 followed; its entry stays in the changelog.
+    assert "## 3.42.0" in (ROOT / "CHANGELOG.md").read_text()
     assert claims.business_zone  # the pack's clock comes from the business

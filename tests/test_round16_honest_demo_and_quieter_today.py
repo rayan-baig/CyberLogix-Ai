@@ -310,7 +310,7 @@ def test_a_key_in_the_wrong_header_names_the_right_one(api, tenant_factory, sens
     assert master.status_code == 401 and "X-Kryozyn-Key header" in master.json()["detail"]
     unknown = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Key": "not-a-key"}, json=pulse)
     assert unknown.status_code == 401
-    assert unknown.json()["detail"].startswith("Unrecognised API key.") and "X-Kryozyn-Sensor-Key" in unknown.json()["detail"]
+    assert unknown.json()["detail"].startswith("Unrecognized API key.") and "X-Kryozyn-Sensor-Key" in unknown.json()["detail"]
     right = api.post("/api/sensor-pulse", headers={"X-Kryozyn-Sensor-Key": sensor_key}, json=pulse)
     assert right.status_code == 200, right.text
 

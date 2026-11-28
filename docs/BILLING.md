@@ -698,7 +698,7 @@ Stripe will keep re-sending.
 
 Only the checkout session carries a payment link's invoice id. The
 payment intent and the charge do not, so when one of them is already on
-an invoice it is recognised as that payment rather than listed as money
+an invoice it is recognized as that payment rather than listed as money
 nobody can place; and when one arrives first and is listed, the checkout
 that follows matches it and takes it off the list.
 
