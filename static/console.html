@@ -592,7 +592,7 @@
           <section class="card mod-telemetry" id="find-byod-sensor-webhook" data-advanced="1" data-group="setup" data-find="use a sensor you already own byod sensor webhook your own sensors monnit sensorpush connect api" data-label="Use a sensor you already own">
           <div class="card-head">
             <span class="card-title">Use a sensor you already own</span>
-            <span class="mod-chip c-telemetry">3rd-party gateway</span>
+            <span class="mod-chip c-telemetry">Any brand</span>
           </div>
           <p class="card-plain">Paste one message from any brand of sensor and we will read it.</p>
 
@@ -605,12 +605,12 @@
                tool. The route itself is in docs/API.md.) -->
           <h3 class="sub-head">Paste what your sensor sends</h3>
           <p class="card-note u-m-0-0-10">
-            One real payload, copied out of your vendor's console. Nothing
-            is recorded &mdash; this only says what would be read out of it.
+            One real message, copied from your sensor maker's website or app.
+            Nothing is recorded &mdash; this only says what we would read in it.
           </p>
           <form id="shape-form">
             <div class="field">
-              <label for="shape-json">Payload</label>
+              <label for="shape-json">Its message</label>
               <textarea id="shape-json" rows="4" required
                         class="u-w-100pc u-ff-mono u-fs-12 u-bg-sunken u-c-ink u-bd u-r-8 u-p-9"
                         placeholder='{"SensorID":"556677","DataValues":"-2.5","DataTypes":"TemperatureC"}'></textarea>
@@ -624,7 +624,7 @@
 
           <details class="u-mt-12">
             <summary class="u-cursor-pointer u-fs-12 u-c-muted">
-              Wire real hardware to this endpoint</summary>
+              Advanced: the address your sensor sends to</summary>
             <pre class="snippet u-mt-8" id="byod-snippet"></pre>
           </details>
           </section>
@@ -1047,11 +1047,11 @@
         <section class="card" id="find-autopilot" data-small-advanced="1" data-group="setup" data-find="what runs by itself autopilot automation runs itself sweep schedule" data-label="What runs by itself">
           <div class="card-head">
             <span class="card-title">What runs by itself</span>
-            <span class="card-note">Unattended watchdog</span>
+            <span class="card-note">runs on its own</span>
           </div>
           <p class="card-plain">The jobs this app does without anybody asking, and when each last ran.</p>
           <div class="row">
-            <button class="btn btn-sm" id="run-sweep">Run sweep now</button>
+            <button class="btn btn-sm" id="run-sweep">Check everything now</button>
             <button class="btn btn-sm" id="run-compliance">Compliance report</button>
             <button class="btn btn-sm" id="download-csv">Export CSV</button>
           </div>

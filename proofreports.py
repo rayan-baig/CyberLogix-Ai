@@ -66,6 +66,7 @@ from store import (
     GAP_RECORD_MINUTES,
     SENSOR_OFFLINE_AFTER_MINUTES,
     STORE,
+    VOICE_ESCALATION_GRACE_MINUTES,
     Tenant,
     User,
     _parse,
@@ -285,6 +286,12 @@ def _alert_role(tenant: Tenant, acknowledged_by: Optional[str]) -> Optional[str]
     return _ROLE_WORDS.get(role or "", "On-call person") if role else None
 
 
+def _ordinal(n: int) -> str:
+    """1 -> "1st", 2 -> "2nd", 11 -> "11th"."""
+    tail = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{tail}"
+
+
 def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
     """The on-call list and the team, by role: never a name or a number.
 
@@ -308,6 +315,21 @@ def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
             "gets": gets,
             "covers": "this location" if contact.site_id else "every location",
         })
+    # The ladder as it runs (3.41.0), in steps, still by position only:
+    # "1. On-call person" three times said nothing about what happens.
+    texted = [c for c in roster if c.receives_sms]
+    called = [c for c in roster if c.receives_voice and calls]
+    steps: List[str] = []
+    if texted:
+        steps.append(f"At once: a text to {'the one person' if len(texted) == 1 else f'all {len(texted)} people'} on call.")
+    for n, _contact in enumerate(called, start=1):
+        place = _ordinal(roster.index(_contact) + 1)
+        steps.append(
+            f"After {VOICE_ESCALATION_GRACE_MINUTES} minutes with nobody acknowledging: "
+            f"a phone call to the {place} person on the list." if n == 1 else
+            f"If that call does not get through: the {place} person on the list.")
+    if texted and not calls:
+        steps.append("No phone calls: this plan sends texts only.")
     team: Dict[str, int] = {}
     for user in STORE.users_for(tenant.tenant_id):
         if user.disabled:
@@ -315,6 +337,7 @@ def _who_is_alerted(tenant: Tenant, site_id: Optional[str]) -> Dict[str, Any]:
         team[user.role] = team.get(user.role, 0) + 1
     return {
         "on_call": on_call,
+        "steps": steps,
         # With nobody on the list, alerts go to the business's own number.
         "falls_back_to_main_number": not on_call,
         "team": [{"role": _TEAM_WORDS.get(role, role.title()), "count": count}
@@ -423,10 +446,13 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
 
     covered = since <= period_start
     location_name = (safe_text(site.name, words) or "One location") if site else "Every location"
+    # How many locations an every-location report covers (3.41.0): it said
+    # "20 at this location".
+    places = len({s.site_id for s in sensors if s.site_id}) if site is None else 1
     return {
         "format": 1,
         "business": tenant.company_name,
-        "location": {"name": location_name, "scope": "one" if site else "all"},
+        "location": {"name": location_name, "scope": "one" if site else "all", "locations": places},
         "month": first.strftime("%Y-%m"),
         "month_label": first.strftime("%B %Y"),
         "period_start": iso(period_start),
@@ -460,7 +486,7 @@ def build(tenant: Tenant, site_id: Optional[str], first: date,
             "covers_the_whole_period": covered,
             "note": ("" if covered else
                      f"Gaps in data have been written down since "
-                     f"{since.strftime('%d %B %Y')}. Time before that is not "
+                     f"{since.strftime('%b')} {since.day}, {since.year}. Time before that is not "
                      "counted in the figures above."),
         },
         "how_measured": (

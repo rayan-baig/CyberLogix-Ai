@@ -431,9 +431,9 @@ test("1.4.0: 'Which fridges need me?' lists the units out of range or quiet from
     assert.doesNotMatch(text, /\]\(\/evil\)/, "a unit's name can't add a link");
     assert.doesNotMatch(text, /Dana|Reyes|dana@|\+1555/);
   }
-  // All fine: says so, with the count.
-  assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ quiet: true }) }), "/console")[0]),
-    /Nothing needs you right now\. All 2 are within their limits:\n- \*\*Kitchen walk-in\*\* 47.0°F, fine\n- \*\*Bar freezer\*\* 2.0°F, fine/);
+  // All fine: says so, with the count, in one line (3.41.0).
+  assert.equal(ask(pills(mountAt("/console", { overview: overviewWith({ quiet: true }) }), "/console")[0]),
+    "Nothing needs you right now: all 2 are within their limits.");
   // A unit still waiting for its sensor: the wizard.
   assert.match(ask(pills(mountAt("/console", { overview: overviewWith({ waiting: true }) }), "/console")[0]),
     /\*\*Dessert fridge\*\* is waiting for a first reading\. \[Connect a sensor\]\(\/console#connect\)/);
@@ -450,8 +450,15 @@ test("1.4.0: 'What does this alert mean?' explains the open alert from its own r
   // A reading far past the limit alerts at once: it never claims the wait passed.
   const fast = overviewWith();
   fast.incidents[0].opened_at = fast.incidents[0].out_since;
+  fast.incidents[0].temperature_display = 57;
   assert.match(ask(meaningOf("/console", fast)),
     /It went far enough past its limit to alert at once, without its 20-minute wait\./);
+  // Opened early but only 6°F over (3.41.0): never "far enough to alert
+  // at once", and never that the wait passed.
+  const early = overviewWith();
+  early.incidents[0].opened_at = early.incidents[0].out_since;
+  const said = ask(meaningOf("/console", early));
+  assert.doesNotMatch(said, /alert at once|stayed out longer than its/);
   assert.match(open, /Nobody has answered yet\. Press \*\*I'm on it\*\* at the top of the page/);
   assert.match(open, /Check the door is shut/);
   assert.match(open, /\*\*Is the food still good\?\*\* button/);
@@ -843,12 +850,13 @@ test("3.32.0: 'is my fridge OK' gives temperatures, the unit asked about first, 
   for (const pathname of ["/console", "/today"]) {
     const walk = typedAnswer(pathname, "Is my walk-in fridge OK?", { overview: ok });
     assert.ok(walk.startsWith("**Walk-in fridge** 37.9°F, fine."), walk);
-    assert.ok(walk.includes("- **Prep fridge** 38.4°F, fine"), walk);
+    // The rest in one line (3.41.0), not listed.
+    assert.ok(walk.includes("Nothing needs you right now: the other one is within its limits too."), walk);
     const freezer = typedAnswer(pathname, "How is the freezer?", { overview: ok });
     assert.ok(freezer.startsWith("You haven't added a freezer. [Connect one](/console#connect)"), freezer);
-    // Pressed, the pill lists every unit with its temperature.
+    // Pressed, with nothing to do: one line (3.41.0), not every unit.
     const pressed = ask(pills(mountAt(pathname, { overview: ok }), pathname)[0]);
-    assert.ok(pressed.includes("- **Walk-in fridge** 37.9°F, fine\n- **Prep fridge** 38.4°F, fine"), pressed);
+    assert.equal(pressed, "Nothing needs you right now: all 2 are within their limits.");
     assert.ok(!pressed.includes("haven't added"), pressed);
   }
 });
@@ -1287,6 +1295,15 @@ test("3.36.0: every item's words fit the core's 20 in every situation", () => {
 // The config on a page with a real chat box: the core's submit is the
 // chat box's own form, which this app listens to (capture), then the core
 // matches the question against the items as they are at that moment.
+// Every page under /for, as main.pilot_facts puts them on Pilot's script
+// tag (3.41.0): "slug|name|monthly dollars|per", "" priced by quote.
+const SECTORS_DATA = ["cannabis|Licensed Cannabis Cultivation||", "country_club|High-End Country Clubs||", "cryostorage|IVF Clinics & Cryostorage||",
+  "cybersecurity|Data centers||", "logistics|High-Stakes Cold-Chain Transport||", "medical_lab|Medical Labs & Blood Banks||",
+  "pharmacy|Retail & Hospital Pharmacies|199|pharmacy", "private_aviation|Private Aviation Hangars||", "restaurant|Restaurants & Cafés|149|location",
+  "solar_infrastructure|Solar Infrastructure & Storage||", "superyacht|Luxury Superyacht Engine Bays||", "wine_and_art|Fine Wine & Art Storage||",
+  "breweries|Breweries||", "butchers|Butchers|149|location", "florists|Florists||", "grocery-stores|Grocery stores|149|location",
+  "ice-cream-shops|Ice-cream shops|149|location", "school-cafeterias|School cafeterias|149|location", "vaccine-clinics|Vaccine clinics|199|pharmacy"].join(";");
+
 function chatAt(pathname, opts = {}) {
   let listener = null;
   const box = { value: "" };
@@ -1298,10 +1315,11 @@ function chatAt(pathname, opts = {}) {
   const win = { Pilot: { mount: (c) => { given = c; } }, location: { pathname, href: BASE + pathname },
     localStorage: { getItem: (k) => (signedIn && k === "cyberlogix.session" ? "t" : null) }, CLXWords: Words, fetch: fetchTrap };
   if (pathname === "/console") win.KryozynConsole = { signedIn: () => signedIn, tab: () => "Fridges", overview: () => (signedIn ? overview : null),
-    rotations: () => (signedIn && opts.rotations !== undefined ? opts.rotations : null) };
+    rotations: () => (signedIn && opts.rotations !== undefined ? opts.rotations : null),
+    bills: () => (signedIn && opts.bills !== undefined ? opts.bills : null) };
   if (pathname === "/today") win.KryozynToday = { overview: () => overview, did: () => null };
   const doc = { getElementById: () => ({ dataset: { ...NAMES, ...DATA, restaurantPrice: "149", pharmacyPrice: "199",
-    unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10" } }), title: "Restaurants",
+    unitsPerLocation: "10", extraUnit: "15", chainFrom: "5", chainPercent: "10", graceDays: "14", sectors: SECTORS_DATA } }), title: "Restaurants",
     addEventListener: (type, fn, capture) => { if (type === "submit" && capture) listener = fn; },
     querySelector: (q) => (q === ".pilot-input" ? box : null) };
   vmx.runInNewContext(CONFIG, { window: win, fetch: fetchTrap, XMLHttpRequest: fetchTrap, URL, setTimeout, document: doc });
@@ -1497,7 +1515,7 @@ test("3.38.0: signed in, what's wrong, who is on call, the bill, a pause and a l
     await chat.tick();
 
     const limit = chat.send("change the bar fridge limit to 38").text || "(missed)";
-    assert.match(limit, /^For \*\*Bar fridge\*\* at Harbourside \(now over 41°F\): Press \*\*Change limit\*\* on its card/, `${pathname}: ${limit}`);
+    assert.match(limit, /^For \*\*Bar fridge\*\* at Harbourside \(limit 41°F\): Press \*\*Change limit\*\* on its card/, `${pathname}: ${limit}`);
     assert.match(limit, /type 38 under \*\*Text us if it goes over\*\*, and press \*\*Save\*\*/);
     await chat.tick();
   }
@@ -1720,7 +1738,7 @@ test("3.39.0: on a phone the words in the robot's corners are named for it to ke
 // the built-in answer it must get. Signed in on /today with twenty units;
 // the visitor's rows on /pricing. `topicFor` is the config's own answer to
 // "which built-in answer does this get?"; the chat must also answer it.
-const OWN_ONLY = new Set(["sites", "week", "warmest", "status"]);
+const OWN_ONLY = new Set(["sites", "week", "warmest", "status", "bill"]);
 const PHRASINGS = [
   // Wrong before 3.40.0.
   ["Does it work for a food truck?", "cafe"], ["Would this suit a food truck?", "cafe"], ["We do catering, is it for us?", "cafe"],
@@ -1767,6 +1785,21 @@ const PHRASINGS = [
   ["Change the bar fridge limit to 38", "limit"], ["How many alerts this week?", "week"], ["Which is warmest?", "warmest"],
   ["Do you have an app?", "app"], ["How do I add a second fridge?", "addunit"], ["Is there a contract?", "cancel"],
   ["Does it work in Canada?", "canada"], ["Is it hard to set up?", "easy"], ["How do I make the insurance pack?", "pack"],
+  // 3.41.0: wrong or missed before.
+  ["the bakery fridge alarm, what should i do", "alarm"], ["the walk-in is beeping", "alarm"], ["the prep fridge alarm keeps going off", "alarm"],
+  ["Who can see my temperature readings?", "privacy"], ["Can your staff see my data?", "privacy"], ["Is my data private?", "privacy"],
+  ["what sensor do you recommend for a walk-in freezer?", "sensors"], ["Which sensor is best for a freezer?", "sensors"],
+  ["What did I pay last month?", "bill"], ["show me my last invoice", "bill"], ["When is my next bill?", "bill"],
+  ["what if I have 12 fridges in one restaurant?", "quote"], ["We have 2 restaurants with 12 fridges each", "quote"],
+  ["Change the walk-in limit to 38", "limit"],
+  ["Do you do florists?", "sector"], ["good for a florist shop?", "sector"], ["Do you work with breweries?", "sector"],
+  ["Is it for data centers?", "sector"], ["Do you do labs?", "sector"], ["What about ice cream shops?", "sector"],
+  ["What happens after the trial?", "trialafter"], ["what happens when my trial ends?", "trialafter"],
+  ["Can I add a second location?", "addsite"], ["How do I add another site?", "addsite"],
+  ["Can I change the alert wait to 30 minutes?", "wait"], ["can it wait longer before texting?", "wait"],
+  ["remove Theo from the account", "removeperson"], ["How do I remove someone from the team?", "removeperson"],
+  ["How do I change Priya's phone number?", "number"], ["Morgan has a new mobile number", "number"],
+  ["Which fridges need me right now?", "status"],
 ];
 
 test("3.40.0: about a hundred phrasings each get the answer they are after, with no key", async () => {
@@ -1811,6 +1844,12 @@ function demoOverview({ trial = false, starter = false, steps = 4 } = {}) {
   o.incidents.push({ incident_id: "INC-W", sensor_id: "OML-WIF-1", state: "resolved", opened_at: iso(wed.getTime()), out_since: iso(wed.getTime()),
     out_until: iso(wed.getTime() + 90 * 60000), resolved_at: iso(wed.getTime() + 92 * 60000), peak_display: 21, temperature_display: 12.5,
     product_disposition: "unaffected", food_auto: false, food_answered_at: iso(wed.getTime() + 90 * 60000) });
+  // Last Wednesday's alert is the walk-in freezer's at Old Mill only
+  // (3.41.0): bigOverview's 72-hours-ago alert on "Walk-in freezer 1" fell
+  // on a Wednesday afternoon too when the suite ran on a Saturday
+  // afternoon, and was the newer of the two. Here it is the walk-in
+  // cooler's.
+  o.incidents.filter((i) => i.incident_id === "INC-8").forEach((i) => { i.sensor_id = "U-0"; });
   o.entitlements = trial ? { voice_escalation: false, predictive_forecasting: false,
     calls: { mode: "trial", left: 3, total: 5, words: "Your free trial includes 5 phone calls (about a minute each) so you can hear what an alert call sounds like; 3 left. After that, alerts are texts only until you move to a plan with calls (Growth)." } }
     : starter ? { voice_escalation: false, predictive_forecasting: false, calls: { mode: "none", left: null, total: null, words: "Your Starter plan sends texts, not phone calls. Growth includes phone calls." } }
@@ -1888,4 +1927,181 @@ test("3.40.0: hello, insurance, a thermometer alarm, setup time, the next step, 
   const key = await say("What is a sensor key?");
   assert.match(key, /^A sensor key is the password one sensor uses to send its readings to Kryozyn\./);
   assert.match(key, /\*\*New key\*\*/);
+});
+
+// ---------------------------------------------------------------- 3.41.0
+//
+// The review's confident wrong answers and misses, each answered from the
+// product's own rules and the page's own data.
+function bakeryAlert() {
+  const o = demoOverview();
+  const bakery = o.sensors.find((u) => u.location_name === "Prep fridge, bakery");
+  bakery.location_name = "Commissary / Prep fridge, bakery";
+  bakery.last_temperature_display = 46.5;
+  bakery.condition = { state: "alert", too: "warm", out_since: o.incidents[0].out_since };
+  bakery.alert_after_minutes = 20;
+  const walk = o.sensors.find((u) => u.sensor_id === "WALKIN-1");
+  walk.condition = { state: "ok" };
+  walk.last_temperature_display = 37.1;
+  o.incidents[0].sensor_id = bakery.sensor_id;
+  o.incidents[0].peak_display = 46.5;
+  return o;
+}
+const DEMO_BILLS = { ledger: { invoices: [{ invoice_id: "INV-006732", number: "CLX-2026-0001", state: "paid", total_usd: 447,
+  issued_at: new Date(Date.now() - 3600 * 1000).toISOString(), paid_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+  due_at: "2026-12-28T12:44:25Z", lines: [{ description: "Restaurants & Cafés — 3 locations (20 sensors)" }] }] },
+  contract: { next_billing_at: "2026-12-20T12:44:23Z" } };
+
+test("3.41.0: an alarm on a unit named gets that unit's alert, never the pitch for its trade", async () => {
+  for (const where of ["/today", "/console"]) {
+    const chat = chatAt(where, { overview: bakeryAlert() });
+    const bakery = chat.send("the bakery fridge alarm, what should i do").text || "(missed)";
+    assert.match(bakery, /^\*\*Commissary \/ Prep fridge, bakery\*\* is too warm: 46\.5°F, above its 41°F limit\./, `${where}: ${bakery}`);
+    assert.match(bakery, /Nobody has answered yet\. Press \*\*I'm on it\*\*/);
+    assert.doesNotMatch(bakery, /watched the same way as a restaurant|Starter is \$59/);
+    await chat.tick();
+    const beep = chat.send("the walk-in is beeping").text || "(missed)";
+    assert.match(beep, /^No alert is open on any of the \d+ that fit: all are within their limits\./, `${where}: ${beep}`);
+    assert.match(beep, /A beep in the kitchen is the unit's own alarm, not Kryozyn's/);
+    assert.match(beep, /The alert open now is on \*\*Commissary \/ Prep fridge, bakery\*\*/);
+    await chat.tick();
+  }
+  // Nothing open on the bakery fridge: what it reads, and what to do.
+  const calm = chatAt("/today", { overview: demoOverview() });
+  const quiet = calm.send("the bakery fridge alarm, what should i do").text;
+  assert.match(quiet, /^No alert is open on \*\*Prep fridge, bakery\*\*: it reads 35\.0°F, under its 41°F limit\./, quiet);
+  assert.match(quiet, /Check the door is shut and sealing/);
+  // Signed out: what happens when a fridge is warm, never the bakery pitch.
+  const visitor = chatAt("/", { signedIn: false }).send("the bakery fridge alarm, what should i do").text;
+  assert.match(visitor, /^When a fridge stays out of range past its wait, everyone on call is texted/);
+  // A bakery as a business is still a bakery.
+  assert.match(chatAt("/", { signedIn: false }).send("Do you work for a bakery?").text, /^Yes: a bakery is watched the same way as a restaurant/);
+});
+
+test("3.41.0: who can see the readings and which sensor to buy are answered before anything about your fridges", () => {
+  for (const [where, signedIn] of [["/", false], ["/pricing", false], ["/today", true]]) {
+    const who = chatAt(where, { signedIn, overview: bigOverview() }).send("Who can see my temperature readings?").text || "(missed)";
+    assert.match(who, /^The people who can sign in to your account see your readings: owners, operators and viewers/, `${where}: ${who}`);
+    assert.match(who, /Nobody else gets your readings in bulk\./);
+    assert.match(who, /\[Read the privacy statement\]\(\/legal#privacy\)/);
+    assert.doesNotMatch(who, /Sign in to see your fridges|need you/);
+    const sensor = chatAt(where, { signedIn, overview: bigOverview() }).send("what sensor do you recommend for a walk-in freezer?").text || "(missed)";
+    assert.match(sensor, /^We don't sell sensors\. We don't back one brand either/, `${where}: ${sensor}`);
+    assert.match(sensor, /probe on a thin cable/);
+    assert.match(sensor, /\[Which sensors work, brand by brand\]\(\/help\/sensors\)/);
+  }
+});
+
+test("3.41.0: the bills come from the page's own bills, never the price list", async () => {
+  const chat = chatAt("/console", { overview: accountOverview(), bills: DEMO_BILLS });
+  const paid = chat.send("What did I pay last month?").text || "(missed)";
+  const month = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  assert.match(paid, new RegExp(`^Nothing was billed in ${month}\\. Your last bill: \\*\\*\\$447 on [A-Z][a-z]{2} \\d{1,2}, \\d{4}\\*\\*, paid [A-Z][a-z]{2} \\d{1,2}, \\d{4}, for Restaurants & Cafés — 3 locations \\(20 sensors\\)\\. It's your first bill\\.`), paid);
+  assert.match(paid, /\[Open the bill\]\(\/console#invoice=INV-006732\)/);
+  assert.doesNotMatch(paid, /Starter \$59|a month a location/);
+  await chat.tick();
+  assert.match(chat.send("show me my last invoice").text, /^Your last bill: \*\*\$447 on /);
+  await chat.tick();
+  assert.match(chat.send("When is my next bill?").text, /^\*\*Your next bill is on Dec 20, 2026\*\*: about \$447, for 3 locations \(20 sensors\), at the units you have today\. \[Open your bills\]\(\/console#bills\)/);
+  // /today loads no bills: where they are, and the plan.
+  const today = chatAt("/today", { overview: accountOverview() }).send("What did I pay last month?").text;
+  assert.match(today, /^Your bills are on the console's \*\*Money\*\* tab, under \*\*Bills\*\*/);
+  assert.match(today, /\[Open your bills\]\(\/console\?view=full#bills\)/);
+  // On the trial, nothing is billed.
+  assert.match(chatAt("/console", { overview: accountOverview({ trial: true }), bills: DEMO_BILLS }).send("When is my next bill?").text,
+    /^You're on the free trial: nothing is billed\./);
+});
+
+test("3.41.0: a count in one place is priced as the calculator prices it; a limit lists every unit that fits, with its limit", async () => {
+  for (const [where, signedIn] of [["/", false], ["/today", true]]) {
+    const q = chatAt(where, { signedIn, overview: bigOverview() }).send("what if I have 12 fridges in one restaurant?").text || "(missed)";
+    assert.match(q, /^\*\*12 fridges: Growth, \$179 a month\*\* \(Starter covers up to 3\)\./, `${where}: ${q}`);
+    assert.match(q, /each one past that is \$15 a month: 2 more is \$30/);
+  }
+  const o = demoOverview();
+  const limit = chatAt("/today", { overview: o }).send("Change the walk-in limit to 38").text;
+  const walkIns = o.sensors.filter((u) => /walk-in/i.test(u.location_name || "")).length;
+  assert.match(limit, new RegExp(`The ${walkIns} that fit:\\n`), limit);
+  assert.match(limit, /- \*\*Walk-in freezer\*\* at Old Mill \(limit 10°F\)/);
+  assert.match(limit, /\(limit 41°F\)/);
+  assert.doesNotMatch(limit, /now over/);
+  assert.equal((limit.match(/^- /gm) || []).length, walkIns);
+});
+
+test("3.41.0: any sector with a page is recognised, with its page and its price", () => {
+  for (const words of ["Do you do florists?", "good for a florist shop?"]) {
+    const got = chatAt("/", { signedIn: false }).send(words).text || "(missed)";
+    assert.match(got, /^Yes: Kryozyn is set up for florists, with limits of their own\./, words);
+    assert.match(got, /The price: priced for what you run: ask for a quote on its page\./);
+    assert.match(got, /\[Kryozyn for florists\]\(\/for\/florists\)/);
+  }
+  assert.match(chatAt("/", { signedIn: false }).send("What about ice cream shops?").text, /\$149 a month per location, for up to 10 fridges and freezers there\.[\s\S]*\(\/for\/ice-cream-shops\)/);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("Do you work with breweries?").text, /\(\/for\/breweries\)/);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("Is it for data centers?").text, /\(\/for\/cybersecurity\)/);
+  assert.match(chatAt("/pricing", { signedIn: false }).send("Do you do labs?").text, /\(\/for\/medical_lab\)/);
+  // Every sector on the script tag is reached by its own page's name.
+  for (const row of SECTORS_DATA.split(";")) {
+    const [slug, name] = row.split("|");
+    if (["restaurant", "pharmacy", "butchers"].includes(slug)) continue;
+    const got = chatAt("/", { signedIn: false }).send(`Do you work for ${name.toLowerCase()}?`).text || "(missed)";
+    assert.ok(got.includes(`(/for/${slug})`), `${name}: ${got}`);
+  }
+  // Words that only look like a sector stay where they were.
+  const plain = chatAt("/", { signedIn: false });
+  assert.equal(plain.given.topicFor("Is my data private?"), "privacy");
+  assert.notEqual(plain.given.topicFor("Does it work in my country?"), "sector");
+});
+
+test("3.41.0: after the trial, a second location, the alert wait, taking someone off and a new number, true to the console", async () => {
+  const trial = chatAt("/console", { overview: demoOverview({ trial: true }) });
+  const after = trial.send("What happens after the trial?").text || "(missed)";
+  assert.match(after, /^Your trial ends on \*\*Dec 12, 2026\*\*\. When it ends, nothing is billed and nothing moves you to a paid plan by itself\./);
+  assert.match(after, /still watched, alerts and all, for 14 more days while you decide\. After that, alerts stop until you choose a plan\. Nothing is deleted/);
+  await trial.tick();
+  assert.match(trial.send("Can I add a second location?").text, /^Yes\. On the console's \*\*Setup\*\* tab, open \*\*Your locations\*\*, type the new one's name and press \*\*Add site\*\*\. The free trial takes as many locations as you like/);
+  await trial.tick();
+  assert.match(chatAt("/", { signedIn: false }).send("What happens after the trial?").text, /^When it ends, nothing is billed/);
+  const growth = chatAt("/today", { overview: demoOverview() });
+  assert.match(growth.send("Can I add a second location?").text, /On Growth a restaurant pays \$149 a month a location, for up to 10 fridges and freezers there/);
+  await growth.tick();
+  const wait = growth.send("Can I change the alert wait to 30 minutes?").text || "(missed)";
+  assert.match(wait, /^Yes\. Press \*\*Alert wait\*\* on the unit's card in the console \(the \*\*Fridges\*\* tab\), pick \*\*30 min\*\*, and press \*\*Save\*\*\./, wait);
+  assert.match(wait, /a reading 15°F or more past the limit is sent at once/);
+  await growth.tick();
+  const off = growth.send("remove Theo from the account").text || "(missed)";
+  assert.match(off, /To stop alert texts and calls to Theo: press \*\*Remove\*\* beside the name under \*\*Who gets alerts\*\*/);
+  assert.match(off, /To stop Theo signing in: press \*\*Remove\*\* beside the name under \*\*People who can sign in\*\*/);
+  assert.match(off, /\[Open People who can sign in\]\(\/console\?view=full#people\)/);
+  await growth.tick();
+  const num = growth.send("How do I change Priya's phone number?").text || "(missed)";
+  assert.match(num, /^Under \*\*Who gets alerts\*\* on the console's \*\*Team\*\* tab, press \*\*Change number\*\* beside Priya/, num);
+  assert.match(num, /Priya keeps the same place in the call order/);
+});
+
+test("3.41.0: nothing needing you is one line; a miss offers two sensible answers, never 'It's fixed now' with no alert open", async () => {
+  const calm = bigOverview();
+  calm.incidents = calm.incidents.filter((i) => i.state === "resolved");
+  calm.sensors.forEach((u) => { u.condition = { state: "ok" }; });
+  for (const words of ["Which fridges need me?", "Which fridges need me right now?"]) {
+    const got = chatAt("/today", { overview: calm }).send(words).text || "(missed)";
+    assert.equal(got.split("\n").length, 1, `${words}: ${got}`);
+    assert.match(got, /^Nothing needs you right now: all \d+ (?:fridges )?are within their limits/, words);
+  }
+  const busy = chatAt("/today", { overview: bigOverview() }).send("Which fridges need me right now?").text;
+  assert.match(busy, /^These 2 need you, worst first:/, busy);
+  // A miss: two answers under the note, neither of them about an alert
+  // when none is open.
+  const chat = chatAt("/today", { overview: calm });
+  const miss = chat.send("can you sing me a song about penguins");
+  assert.equal(miss.label, null);
+  await chat.tick();
+  const offered = chat.given.chips(chat.given.screen()).slice(0, 2).map((c) => c.label);
+  assert.equal(offered.length, 2);
+  for (const label of offered) assert.ok(!["It's fixed now", "What does this alert mean?"].includes(label), label);
+});
+
+test("3.41.0: the calls answer has no owner jargon", () => {
+  const got = chatAt("/today", { overview: demoOverview() }).send("How many phone calls do I have left?").text;
+  assert.doesNotMatch(got, /Spending limits|Advanced/);
+  assert.match(got, /daily cap on calls/);
 });

@@ -114,8 +114,14 @@ async function show(slug) {
     const doc = await resp.json();
     // Version and date are already the second line of the document; the
     // stamp adds only the thing the document cannot state about itself.
-    docEl.innerHTML = renderMarkdown(doc.body_markdown)
-      + `<p class="stamp">SHA-256 of this text: ${esc(doc.sha256)}</p>`;
+    // The date in the site's own style (3.41.0): "Effective Nov 23, 2026",
+    // not "2026-11-23". Only on the page: the text served at
+    // /api/legal/{slug}, and its hash, are unchanged, so nobody is asked
+    // to accept the same terms again.
+    docEl.innerHTML = renderMarkdown(String(doc.body_markdown).replace(
+      /Effective (\d{4})-(\d{2})-(\d{2})/, (_, y, m, d) => "Effective " + new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12))
+        .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })))
+      + `<p class="stamp">SHA-256 of the text served at /api/legal/${esc(slug)}: ${esc(doc.sha256)}</p>`;
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (err) {
     docEl.innerHTML = `<p>That agreement could not be loaded

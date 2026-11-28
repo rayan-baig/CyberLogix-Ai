@@ -52,6 +52,7 @@ td { padding: 8px 8px 8px 0; border-top: 1px solid var(--border); color: var(--i
 .people { list-style: none; padding: 0; margin: 0 0 8px; }
 .people li { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--ink); }
 .people li:first-child { border-top: 0; }
+ol.people { list-style: decimal; padding-left: 22px; }
 
 .seal { margin-top: 30px; border: 1px solid var(--border-lit); border-radius: 13px;
         padding: 14px 16px; display: grid; gap: 10px; background: var(--surface); }

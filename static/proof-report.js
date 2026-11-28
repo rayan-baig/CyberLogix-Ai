@@ -52,18 +52,27 @@ function fail(html) {
   $("err").innerHTML = html;
 }
 
-function figs(s) {
+/* "3,353.6" (3.41.0), never "3353.6". */
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 1 }) : String(value ?? "");
+}
+
+function figs(s, place) {
   const acknowledged = s.alerts
     ? `${s.alerts_acknowledged} of ${s.alerts} acknowledged`
     : "no alerts this month";
   return [
-    ["Sensors watched", String(s.sensors_watched), "at this location"],
+    // An every-location report says how many (3.41.0): it said "20 at
+    // this location".
+    ["Sensors watched", String(s.sensors_watched), !place || place.scope !== "all" ? "at this location"
+      : place.locations > 1 ? `across ${place.locations} locations` : "at every location"],
     // The hours behind the share, so 100% of nothing never reads as 100%.
     ["Time online", s.online_percent === null || s.online_percent === undefined
       ? (s.hours_watched === undefined ? "—" : "Not enough yet")
       : pct(s.online_percent),
      s.hours_watched === undefined ? "all sensors together"
-       : `of ${s.hours_watched} sensor-hours watched`],
+       : `of ${num(s.hours_watched)} sensor-hours watched`],
     ["Temperature alerts", String(s.alerts), acknowledged],
     ["Typical answer", mins(s.median_minutes_to_acknowledge),
      s.slowest_minutes_to_acknowledge === null ? "time to acknowledge"
@@ -87,10 +96,10 @@ function render(seen) {
     r.month_complete ? "" : " (so far)"} · ${day(r.period_start)} to ${day(r.period_end)}`;
   $("state").textContent = seen.state_words;
   $("state").classList.toggle("bad", seen.state !== "genuine");
-  $("figs").innerHTML = figs(r.summary);
+  $("figs").innerHTML = figs(r.summary, r.location);
 
   $("sensors").innerHTML = r.sensors.map((s) => `<tr>
-      <td>${esc(s.name)}<span class="sub">${esc(s.watched_hours)} hours watched</span></td>
+      <td>${esc(s.name)}<span class="sub">${esc(num(s.watched_hours))} hours watched</span></td>
       <td class="num">${esc(s.online_percent === null ? "under an hour" : pct(s.online_percent))}</td>
       <td class="num">${esc(s.longest_gap_minutes === null ? "none" : mins(s.longest_gap_minutes))}</td>
       <td class="num">${esc(s.alerts)}</td>
@@ -118,7 +127,11 @@ function render(seen) {
     : `No sensor went ${r.gap_threshold_minutes} minutes or more without sending data.`;
 
   const who = r.alerted;
-  const roster = who.on_call.length
+  // The ladder as it runs (3.41.0), where the report has it; an older
+  // report lists each person on call by position, as it always did.
+  const roster = (who.steps || []).length
+    ? `<ol class="people">${who.steps.map((st) => `<li>${esc(st)}</li>`).join("")}</ol>`
+    : who.on_call.length
     ? `<ul class="people">${who.on_call.map((p) => `<li>${esc(p.position)}. ${
         esc(p.role)} · gets ${esc(p.gets)} · ${esc(p.covers)}</li>`).join("")}</ul>`
     : `<p class="para">Nobody is on the on-call list, so alerts go to the business's main phone number.</p>`;

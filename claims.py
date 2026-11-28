@@ -487,20 +487,32 @@ def closed_words(incident: Incident, unit: str, zone=timezone.utc) -> str:
     range by itself." Closed by a person: "Closed by Rosa Diaz." The
     store keeps the person who said it was fixed as the one who closed
     it, for the inspector's log; the pack says what happened."""
-    if incident.resolved_at is None:
+    how = closed_how(incident)
+    if not how:
         return ""
     back = (f", back to {pack_temperature(incident.close_temperature_f, unit)}"
             if incident.close_temperature_f is not None else "")
-    if incident.resolved_note:
-        if incident.fix_reported_at:
-            who = full_name(incident.fix_reported_by) or "Somebody"
-            said = clock_words(incident.fix_reported_at, zone, incident.resolved_at)
-            closed = clock_words(incident.resolved_at, zone, incident.resolved_at)
-            return f"{who} said it was fixed at {said}; it closed by itself at {closed}{back}."
+    if how == "fixed_then_itself":
+        who = full_name(incident.fix_reported_by) or "Somebody"
+        said = clock_words(incident.fix_reported_at, zone, incident.resolved_at)
+        closed = clock_words(incident.resolved_at, zone, incident.resolved_at)
+        return f"{who} said it was fixed at {said}; it closed by itself at {closed}{back}."
+    if how == "itself":
         return f"Back in range by itself{back}."
-    if incident.resolved_by:
-        return f"Closed by {full_name(incident.resolved_by)}."
-    return ""
+    return f"Closed by {full_name(incident.resolved_by)}."
+
+
+def closed_how(incident: Incident) -> str:
+    """Which of closed_words' three it is (3.41.0), for the console's
+    timeline to say the same as the pack: "fixed_then_itself" (somebody
+    said it was fixed, and the reading coming back closed it), "itself",
+    "person", or "" while it is open. The console said "Closed by Morgan"
+    where the pack said it closed by itself."""
+    if incident.resolved_at is None:
+        return ""
+    if incident.resolved_note:
+        return "fixed_then_itself" if incident.fix_reported_at else "itself"
+    return "person" if incident.resolved_by else ""
 
 
 def unit_phrase(label: Optional[str]) -> str:

@@ -123,7 +123,7 @@ def test_the_report_counts_sensors_time_online_alerts_and_the_longest_gap(api, g
     report = made["report"]
     s = report["summary"]
     assert report["business"] == "Harbor Grill"
-    assert report["location"] == {"name": "Harbor Street", "scope": "one"}
+    assert report["location"] == {"name": "Harbor Street", "scope": "one", "locations": 1}
     assert s["sensors_watched"] == 2
     assert s["alerts"] == 1 and s["alerts_acknowledged"] == 1
     assert s["median_minutes_to_acknowledge"] == 7
@@ -174,7 +174,7 @@ def test_a_unit_named_after_a_person_is_not_printed(api, grill, sensor_factory):
 
 def test_every_location_covers_the_whole_business(api, grill):
     made = _make(api, grill, site=False)
-    assert made["report"]["location"] == {"name": "Every location", "scope": "all"}
+    assert made["report"]["location"] == {"name": "Every location", "scope": "all", "locations": 1}
     assert made["location"] == "Every location"
 
 
